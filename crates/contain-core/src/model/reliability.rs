@@ -46,6 +46,8 @@ pub struct CaptureStats {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PipelineStats {
+    pub arrival_peak_per_100ms: Option<u64>,
+    pub overflow_first_ns: Vec<u64>,
     pub callback_records: u64,
     pub deliberately_filtered: u64,
     pub unsupported_records: u64,

@@ -24,19 +24,31 @@ jobs:
         with:
           ref: f8037e90658cdf46aab93d397508036ebc7c22ee
           path: baseline
+      - uses: actions/checkout@v4
+        with:
+          ref: bef6ac17cf3c816733e661fb76dc8974f5a30f12
+          path: regression
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
             candidate -> target
             baseline -> target
+            regression -> target
       - name: Comparable release trials (failed quality gates retained as data)
         working-directory: candidate
         shell: pwsh
         env:
           FILES: ${{ inputs.files }}
           TRIALS: ${{ inputs.trials }}
-        run: ./scripts/compare-release.ps1 -BaselineDirectory ../baseline -Files ([int]$env:FILES) -Trials ([int]$env:TRIALS)
+        run: ./scripts/compare-release.ps1 -BaselineDirectory ../baseline -Files ([int]$env:FILES) -Trials ([int]$env:TRIALS) -SingleScale -SkipExtras -Profile -RegressionDirectory ../regression
+      - name: Synthetic disk replay (not an ETW gate)
+        working-directory: candidate
+        shell: pwsh
+        run: |
+          $env:CONTAIN_PROFILE_PATH="target/release-comparison/replay-profile.json"
+          cargo test --release --locked -p contain-core synthetic_disk_replay -- --ignored --nocapture | Tee-Object target/release-comparison/replay.txt
+          if($LASTEXITCODE -ne 0){throw "replay failed"}
       - name: Target Windows provider manifest inventory
         working-directory: candidate
         shell: pwsh

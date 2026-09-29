@@ -1,4 +1,5 @@
 use crate::lifetime::LifetimeCache;
+use crate::profile::{self, measured};
 use crate::storage::{Storage, stream::RawBuffer};
 use crate::{
     attribution, filesystem, inventory,
@@ -29,6 +30,7 @@ pub struct InstallOptions {
 }
 
 pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
+    profile::start();
     let capture_clock = Instant::now();
     let mut phases = std::collections::BTreeMap::new();
     let before_clock = Instant::now();
@@ -132,13 +134,13 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     let mut poll_at = Instant::now();
     let exit_code = loop {
         if Instant::now() >= poll_at {
-            process_observer.poll();
+            measured!("capture_process_poll", process_observer.poll());
             poll_at = Instant::now() + Duration::from_millis(30);
         }
         let incoming = source.drain();
         let full_page = incoming.len() == crate::storage::stream::PAGE;
         for e in &incoming {
-            live_cache.ingest(e);
+            measured!("capture_lifetime_ingest", live_cache.ingest(e));
         }
         journal.append(db, incoming);
         if let Some(status) = child.try_wait()? {
@@ -168,7 +170,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     let mut drain_timed_out = false;
     loop {
         if Instant::now() >= poll_at {
-            process_observer.poll();
+            measured!("capture_process_poll", process_observer.poll());
             poll_at = Instant::now() + Duration::from_millis(30);
         }
         for p in process_observer.records() {
@@ -177,19 +179,19 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         let incoming = source.drain();
         let full_page = incoming.len() == crate::storage::stream::PAGE;
         for e in &incoming {
-            cache.ingest(e);
+            measured!("lifetime_ingest", cache.ingest(e));
             if e.event_type == "file" || (e.event_type == "registry" && e.raw.resource_resolved) {
                 last_activity = Instant::now();
             }
         }
         journal.append(db, incoming);
-        cache.attach((root_pid, root_birth), &id);
+        measured!("lifetime_attach", cache.attach((root_pid, root_birth), &id));
         let descendants_live = cache
             .processes
             .values()
             .filter(|p| p.pid != root_pid && p.confidence == Confidence::High)
             .any(|p| {
-                native::process_identity(p.pid)
+                measured!("capture_descendant_query", native::process_identity(p.pid))
                     .is_some_and(|live| Some(live.creation_time) == p.creation_time)
             });
         match crate::drain::decide(
@@ -255,7 +257,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
             break;
         }
         for e in &page {
-            cache.ingest(e);
+            measured!("lifetime_ingest", cache.ingest(e));
         }
         let last = page.last().unwrap();
         cursor = (last.timestamp_ticks, last.sequence);
@@ -266,7 +268,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         && !backend.has_loss()
         && cache.dropped == 0;
     if lifecycle_complete {
-        cache.attach((root_pid, root_birth), &id);
+        measured!("lifetime_attach", cache.attach((root_pid, root_birth), &id));
     }
     backend.context_losses += cache.dropped;
     if let Some(p) = &mut backend.pipeline {
@@ -294,9 +296,12 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         let mut ops = Vec::new();
         for mut e in page.drain(..) {
             if lifecycle_complete {
-                cache.resolve_event(&mut e);
+                measured!("post_lifetime_resolve", cache.resolve_event(&mut e));
             }
-            attribution::attribute(&mut e, &processes, &id);
+            measured!(
+                "post_attribution",
+                attribution::attribute(&mut e, &processes, &id)
+            );
             if e.event_type == "lifecycle"
                 && !processes.iter().any(|p| {
                     Some(p.pid) == e.evidence.pid
@@ -334,7 +339,10 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
                 );
                 e = pair.remove(0);
                 if source_intact {
-                    attribution::attribute(&mut e, &processes, &id);
+                    measured!(
+                        "post_attribution",
+                        attribution::attribute(&mut e, &processes, &id)
+                    );
                 }
                 for o in &mut normalized {
                     o.confidence = e.confidence;
@@ -350,7 +358,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
             backend: backend.clone(),
             ..Default::default()
         };
-        crate::reliability::finish(&mut batch);
+        measured!("post_quality_graph", crate::reliability::finish(&mut batch));
         add_stats(&mut raw_stats, &batch.stats);
         db.append_evidence(&batch)?;
     }
@@ -511,10 +519,14 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
             r.reason = "Session continuity unverified; final promotion suppressed".into();
         }
     }
-    db.save(&capture)?;
-    db.mark_finished(&capture)?;
+    measured!("post_summary_write", db.save(&capture))?;
+    measured!(
+        "post_final_downgrade_full_commit",
+        db.mark_finished(&capture)
+    )?;
     // Summary returns no full raw-event vector. Full/paged history remains in Storage.
-    capture = db.load_summary(&capture.id)?;
+    capture = measured!("post_summary_read", db.load_summary(&capture.id))?;
+    profile::finish()?;
     tracing::info!(session_id = %capture.id, events = capture.events.len(), files = capture.files.len(),
         dropped = capture.backend.dropped_events, "capture completed");
     Ok(capture)

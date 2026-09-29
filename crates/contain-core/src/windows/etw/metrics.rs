@@ -33,18 +33,40 @@ pub enum Time {
     Enqueue,
     QueueDelay,
 }
-#[derive(Default)]
 pub struct Metrics {
     counts: [AtomicU64; 14],
     times: [AtomicU64; 9],
     max_delay: AtomicU64,
+    profile_start: Option<Instant>,
+    arrivals: AtomicU64,
+    peak_arrivals: AtomicU64,
+    overflow_times: [AtomicU64; 64],
+}
+impl Default for Metrics {
+    fn default() -> Self {
+        Self {
+            counts: Default::default(),
+            times: Default::default(),
+            max_delay: AtomicU64::new(0),
+            profile_start: std::env::var_os("CONTAIN_PROFILE_PATH").map(|_| Instant::now()),
+            arrivals: AtomicU64::new(0),
+            peak_arrivals: AtomicU64::new(0),
+            overflow_times: std::array::from_fn(|_| AtomicU64::new(0)),
+        }
+    }
 }
 impl Metrics {
     pub fn record_lock(&self, ns: u64) {
         self.times[Time::Lock as usize].fetch_add(ns, Relaxed);
     }
     pub fn add(&self, c: Count, n: u64) {
-        self.counts[c as usize].fetch_add(n, Relaxed);
+        let prior = self.counts[c as usize].fetch_add(n, Relaxed);
+        if matches!(c, Count::Overflow)
+            && prior < 64
+            && let Some(start) = self.profile_start
+        {
+            self.overflow_times[prior as usize].store(start.elapsed().as_nanos() as u64, Relaxed);
+        }
     }
     pub fn get(&self, c: Count) -> u64 {
         self.counts[c as usize].load(Relaxed)
@@ -53,6 +75,28 @@ impl Metrics {
         Timer(self, t, Instant::now())
     }
     pub fn entering(&self) -> u64 {
+        if let Some(start) = self.profile_start {
+            let window = (start.elapsed().as_millis() as u64 / 100).min(u32::MAX as u64);
+            let value = self
+                .arrivals
+                .fetch_update(Relaxed, Relaxed, |old| {
+                    Some(
+                        (window << 32)
+                            | if old >> 32 == window {
+                                (old & 0xffffffff) + 1
+                            } else {
+                                1
+                            },
+                    )
+                })
+                .unwrap();
+            let count = if value >> 32 == window {
+                (value & 0xffffffff) + 1
+            } else {
+                1
+            };
+            self.peak_arrivals.fetch_max(count, Relaxed);
+        }
         self.counts[Count::Pending as usize].fetch_add(1, Relaxed) + 1
     }
     pub fn admitted(&self, pending: u64) {
@@ -72,6 +116,13 @@ impl Metrics {
     }
     pub fn snapshot(&self) -> PipelineStats {
         PipelineStats {
+            arrival_peak_per_100ms: self.profile_start.map(|_| self.peak_arrivals.load(Relaxed)),
+            overflow_first_ns: self
+                .overflow_times
+                .iter()
+                .map(|v| v.load(Relaxed))
+                .filter(|v| *v != 0)
+                .collect(),
             callback_records: self.get(Count::Callback),
             unsupported_records: self.get(Count::Unsupported),
             decode_attempted: self.get(Count::Attempted),

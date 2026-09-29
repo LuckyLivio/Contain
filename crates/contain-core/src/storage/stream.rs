@@ -2,6 +2,7 @@
 //! Only the application consumer uses SQLite; ETW callbacks never call this module.
 use super::*;
 use crate::model::*;
+use crate::profile::{self, measured};
 use std::time::{Duration, Instant};
 
 pub const PAGE: usize = 256;
@@ -35,6 +36,8 @@ pub struct StreamStats {
     pub max_batch_bytes: u64,
     pub persistence_ns: u64,
     pub error: Option<String>,
+    #[serde(default)]
+    pub sqlite_version: Option<String>,
     pub sqlite_synchronous: Option<u32>,
     pub wal_autocheckpoint_pages: Option<u32>,
     pub sqlite_page_size_bytes: Option<u32>,
@@ -55,6 +58,7 @@ impl RawBuffer {
         db.save(capture)?;
         let stats = StreamStats {
             quota_bytes: quota,
+            sqlite_version: Some(rusqlite::version().into()),
             sqlite_synchronous: Some(db.connection.pragma_query_value(
                 None,
                 "synchronous",
@@ -91,7 +95,7 @@ impl RawBuffer {
                 self.stats.failed += 1;
                 continue;
             }
-            let document = match serde_json::to_string(&e) {
+            let document = match measured!("raw_serialize", serde_json::to_string(&e)) {
                 Ok(d) => d,
                 Err(err) => {
                     self.stats.failed += 1;
@@ -132,6 +136,7 @@ impl RawBuffer {
         let result = (|| -> Result<()> {
             let tx = db.connection.transaction()?;
             {
+                let _insert_clock = profile::timer("raw_insert");
                 let mut insert=tx.prepare_cached("INSERT INTO raw_stream VALUES (?1,json_extract(?2,'$.sequence'),CAST(json_extract(?2,'$.timestamp_ticks') AS INTEGER),json_extract(?2,'$.event_type'),json_extract(?2,'$.raw.header_pid'),json_extract(?2,'$.raw.related_event'),?2)")?;
                 for e in &self.batch {
                     insert.execute(params![self.session, e])?;
@@ -145,10 +150,12 @@ impl RawBuffer {
                 "UPDATE capture_runs SET stats_json=?2 WHERE session_id=?1",
                 params![self.session, serde_json::to_string(&stats)?],
             )?;
-            tx.commit()?;
+            measured!("raw_commit_including_autocheckpoint", tx.commit())?;
             Ok(())
         })();
-        self.stats.persistence_ns += start.elapsed().as_nanos() as u64;
+        let elapsed = start.elapsed().as_nanos() as u64;
+        profile::batch(self.batch.len(), self.bytes, elapsed);
+        self.stats.persistence_ns += elapsed;
         self.stats.max_batch_bytes = self.stats.max_batch_bytes.max(self.bytes as u64);
         match result {
             Ok(()) => {
@@ -202,6 +209,7 @@ impl Storage {
         Ok(())
     }
     pub(crate) fn raw_page(&self, session: &str, after: (u64, u64)) -> Result<Vec<SystemEvent>> {
+        let _clock = profile::timer("post_raw_read");
         let mut q=self.connection.prepare_cached("SELECT document FROM raw_stream WHERE session_id=?1 AND (ticks,sequence)>(?2,?3) ORDER BY ticks,sequence LIMIT 256")?;
         q.query_map(params![session, after.0, after.1], |r| {
             r.get::<_, String>(0)
@@ -210,9 +218,11 @@ impl Storage {
         .collect()
     }
     pub(crate) fn scoped_header(&self, session: &str, pid: u32) -> Result<bool> {
+        let _clock = profile::timer("post_header_query");
         Ok(self.connection.query_row("SELECT EXISTS(SELECT 1 FROM raw_stream WHERE session_id=?1 AND kind='file' AND header_pid=?2)",params![session,pid],|r|r.get(0))?)
     }
     pub(crate) fn completion(&self, session: &str, id: &str) -> Result<Option<SystemEvent>> {
+        let _clock = profile::timer("post_completion_query");
         let mut q = self.connection.prepare_cached(
             "SELECT document FROM raw_stream WHERE session_id=?1 AND related=?2 LIMIT 2",
         )?;
@@ -226,11 +236,12 @@ impl Storage {
         }
     }
     pub(crate) fn append_evidence(&mut self, c: &Capture) -> Result<()> {
+        let _clock = profile::timer("post_derived_write");
         let tx = self.connection.transaction()?;
-        evidence::save_events(&tx, c)?;
-        reliability::save_details(&tx, c)?;
-        save_documents(&tx, c)?;
-        tx.commit()?;
+        measured!("post_observations", evidence::save_events(&tx, c))?;
+        measured!("post_details_edges", reliability::save_details(&tx, c))?;
+        measured!("post_documents", save_documents(&tx, c))?;
+        measured!("post_derived_commit", tx.commit())?;
         Ok(())
     }
     pub(crate) fn resource_events(
@@ -238,6 +249,7 @@ impl Storage {
         session: &str,
         resource: &str,
     ) -> Result<Option<Vec<SystemEvent>>> {
+        let _clock = profile::timer("post_resource_read");
         let mut q = self.connection.prepare_cached(
             "SELECT document FROM event_documents WHERE session_id=?1 AND resource=?2 LIMIT 513",
         )?;
@@ -615,3 +627,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "replay.rs"]
+mod replay;

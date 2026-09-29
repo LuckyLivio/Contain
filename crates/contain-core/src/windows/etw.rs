@@ -257,6 +257,8 @@ impl EtwSource {
 
 impl EventSource for EtwSource {
     fn drain(&mut self) -> Vec<SystemEvent> {
+        crate::profile::drain();
+        let _clock = crate::profile::timer("capture_queue_take");
         self.rx
             .try_iter()
             .take(crate::storage::stream::PAGE)
