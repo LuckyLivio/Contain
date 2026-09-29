@@ -4,7 +4,7 @@ use crate::model::{AttributionEvidence, BackendReport, EvidenceSource, SystemEve
 use crate::monitor::EventSource;
 mod decode;
 mod metrics;
-use ferrisetw::provider::{Provider, TraceFlags};
+use ferrisetw::provider::{EventFilter, Provider, TraceFlags};
 use ferrisetw::trace::{TraceProperties, TraceTrait};
 use ferrisetw::{EventRecord, SchemaLocator, UserTrace};
 use metrics::{Count, Metrics, Time, measured};
@@ -22,6 +22,7 @@ const FILE_PROVIDER: &str = "edd08927-9cc4-4e65-b970-c2560fb5c289";
 const REGISTRY_PROVIDER: &str = "70eb4f03-c1de-4f73-a051-33d13d5413bd";
 const QUEUE_CAPACITY: usize = 8192;
 const OBJECT_CAPACITY: usize = 16384;
+pub(crate) const FILE_EVENT_IDS: &[u16] = &[12, 14, 16, 24, 26, 27, 30];
 
 struct Decoder {
     paths: HashMap<u64, (String, String)>,
@@ -151,10 +152,16 @@ impl EtwSource {
         }));
         source.report.pipeline = Some(Default::default());
         let file_decoder = decoder.clone();
-        let file = Provider::by_guid(FILE_PROVIDER)
+        let filter_ids = std::env::var_os("CONTAIN_ETW_EVENT_ID_FILTER").is_none_or(|v| v != "0");
+        source.report.file_event_id_filter = Some(filter_ids);
+        let mut file = Provider::by_guid(FILE_PROVIDER)
             .any(0x1ef0)
             .level(4)
-            .trace_flags(TraceFlags::EVENT_ENABLE_PROPERTY_PROCESS_START_KEY)
+            .trace_flags(TraceFlags::EVENT_ENABLE_PROPERTY_PROCESS_START_KEY);
+        if filter_ids {
+            file = file.add_filter(EventFilter::ByEventIds(FILE_EVENT_IDS.to_vec()));
+        }
+        let file = file
             .add_callback(move |record, locator| {
                 dispatch(&file_decoder, record, locator, Decoder::file);
             })
@@ -204,24 +211,26 @@ impl EtwSource {
                     "not_requested"
                 }
                 .into();
-                let ready = native::synchronize_providers(&name, registry_enabled).and_then(|()| {
-                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-                    while !consumer_ready.load(Ordering::Acquire)
-                        && std::time::Instant::now() < deadline
-                    {
-                        probe.emit()?;
-                        native::control_trace(
+                let ready = native::synchronize_providers(&name, registry_enabled, filter_ids)
+                    .and_then(|()| {
+                        let deadline =
+                            std::time::Instant::now() + std::time::Duration::from_secs(3);
+                        while !consumer_ready.load(Ordering::Acquire)
+                            && std::time::Instant::now() < deadline
+                        {
+                            probe.emit()?;
+                            native::control_trace(
                             &name,
                             windows_sys::Win32::System::Diagnostics::Etw::EVENT_TRACE_CONTROL_FLUSH,
                         )?;
-                        thread::sleep(std::time::Duration::from_millis(20));
-                    }
-                    if consumer_ready.load(Ordering::Acquire) {
-                        Ok(())
-                    } else {
-                        Err(1460)
-                    }
-                });
+                            thread::sleep(std::time::Duration::from_millis(20));
+                        }
+                        if consumer_ready.load(Ordering::Acquire) {
+                            Ok(())
+                        } else {
+                            Err(1460)
+                        }
+                    });
                 if let Err(code) = ready {
                     source.stop();
                     source.report.etw_file = "unavailable".into();

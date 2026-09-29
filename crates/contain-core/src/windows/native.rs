@@ -277,7 +277,7 @@ impl Drop for TraceProbe {
 }
 
 /// ferrisetw enables providers asynchronously. Wait for configuration before launch.
-pub fn synchronize_providers(name: &str, registry: bool) -> Result<(), u32> {
+pub fn synchronize_providers(name: &str, registry: bool, filter_ids: bool) -> Result<(), u32> {
     use windows_sys::Win32::System::Diagnostics::Etw::*;
     // SAFETY: query our UUID session into aligned storage, then reapply exactly its provider
     // configuration with a bounded synchronous timeout. No global logger is modified.
@@ -315,6 +315,33 @@ pub fn synchronize_providers(name: &str, registry: bool) -> Result<(), u32> {
             } else {
                 0
             };
+            // ferrisetw owns the allocation and alignment of the variable-length
+            // EVENT_FILTER_EVENT_ID payload. Both owner and descriptor stay alive
+            // across synchronous EnableTraceEx2. Only numeric descriptor fields
+            // are copied between windows-rs and windows-sys representations.
+            let filter = if i == 0 && filter_ids {
+                Some(
+                    ferrisetw::provider::EventFilter::ByEventIds(
+                        super::etw::FILE_EVENT_IDS.to_vec(),
+                    )
+                    .to_event_filter_descriptor()
+                    .map_err(|_| 87u32)?,
+                )
+            } else {
+                None
+            };
+            let mut descriptor = filter.as_ref().map(|owner| {
+                let raw = owner.as_event_filter_descriptor();
+                EVENT_FILTER_DESCRIPTOR {
+                    Ptr: raw.Ptr,
+                    Size: raw.Size,
+                    Type: raw.Type,
+                }
+            });
+            if let Some(descriptor) = &mut descriptor {
+                params.EnableFilterDesc = descriptor;
+                params.FilterDescCount = 1;
+            }
             let status = EnableTraceEx2(
                 handle,
                 &guid,

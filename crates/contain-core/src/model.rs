@@ -166,6 +166,8 @@ pub struct SystemEvent {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct BackendReport {
     #[serde(default)]
+    pub file_event_id_filter: Option<bool>,
+    #[serde(default)]
     pub stream: Option<crate::storage::stream::StreamStats>,
     #[serde(default)]
     pub pipeline: Option<PipelineStats>,

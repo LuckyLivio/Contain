@@ -37,6 +37,10 @@ jobs:
           FILES: ${{ inputs.files }}
           TRIALS: ${{ inputs.trials }}
         run: ./scripts/compare-release.ps1 -BaselineDirectory ../baseline -Files ([int]$env:FILES) -Trials ([int]$env:TRIALS)
+      - name: Target Windows provider manifest inventory
+        working-directory: candidate
+        shell: pwsh
+        run: ./scripts/provider-inventory.ps1 -OutputDirectory ./target/release-comparison/provider-inventory
       - name: Small release ETW fixture
         working-directory: candidate
         shell: pwsh

@@ -80,6 +80,8 @@ Selected changes (three closely scoped mechanisms):
    Owned decoded records carry issuing TID/time/sequence; retained process/thread
    intervals resolve them after drain. PID-only/TID-only live identity caches are
    not introduced. Registry live queries still protect registry object lifetimes.
+   Event-ID filtering is limited to the exact file IDs this decoder already supports;
+   close, completion and every version of selected IDs remain eligible.
 3. Drain bounded pages continuously, including while ControlTrace STOP and
    ProcessTrace are ending. Polling remains every 30 ms, independently of queue
    consumption; a full page is followed immediately by another page. Do not
@@ -140,6 +142,20 @@ completion joins. Registry open/context/close (1/2/13), delete key (3), set/dele
 value (5/6) maintain proven paths and user-visible operations. Unselected IDs and
 out-of-scope resources are deliberately counted. Mask/level filtering is unchanged;
 there is no measured claim that a narrower provider mask is safe or faster.
+
+The Windows 11 manifest inspection showed Close (14) only has FILEIO (0x20),
+which also admits unneeded file operations through MatchAnyKeyword. Removing it
+would break object invalidation. Instead, use ferrisetw's owned ByEventIds filter
+for `[12,14,16,24,26,27,30]` during both initial enable and synchronous readiness
+configuration. This uses Windows'
+[EVENT_FILTER_EVENT_ID](https://learn.microsoft.com/en-us/windows/win32/api/evntprov/ns-evntprov-event_filter_event_id)
+and [ENABLE_TRACE_PARAMETERS](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/ns-evntrace-enable_trace_parameters).
+The descriptor owner lives across EnableTraceEx2; numeric descriptor fields are
+copied across the two Windows Rust binding types. No raw event pointers move to
+another thread. No PID filter is used. The manual workflow inventories the target
+provider manifests and runs a separate filter-off trial (`CONTAIN_ETW_EVENT_ID_FILTER=0`)
+with the same supported evidence set. Provider-side removed counts are unavailable;
+only callbacks actually delivered are counted.
 
 Windows documents buffer reservation/limits and separate loss units in
 [EVENT_TRACE_PROPERTIES](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/ns-evntrace-event_trace_properties).

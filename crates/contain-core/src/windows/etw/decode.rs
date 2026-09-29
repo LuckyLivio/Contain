@@ -105,7 +105,7 @@ impl Decoder {
     }
     pub(super) fn file(&mut self, record: &EventRecord, locator: &SchemaLocator) {
         let id = record.event_id();
-        if !matches!(id, 12 | 14 | 16 | 24 | 26 | 27 | 30) {
+        if !FILE_EVENT_IDS.contains(&id) {
             return;
         }
         self.metrics.add(Count::Attempted, 1);
