@@ -25,7 +25,9 @@ try {
     if ($r.observed -ne 0 -or $r.unknown -ne 1) {throw 'oracle ignored syscall interval'}
     Write-Output 'SCORER VERIFIED: wrong actor, noise ownership, exact identity, Unknown and timestamp boundary.'
 } finally {
-    $resolved=(Resolve-Path -LiteralPath $root).Path
-    if ([IO.Path]::GetDirectoryName($resolved) -ne [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') -or [IO.Path]::GetFileName($resolved) -notlike 'contain-demo-score-*') {throw 'unexpected score test cleanup path'}
-    Remove-Item -LiteralPath $resolved -Recurse -Force
+    # Delete only our two known files, then remove an empty directory. No recursion.
+    foreach ($owned in @($journal,(Join-Path $root 'ground-truth.json'))) {
+        if (Test-Path -LiteralPath $owned) { Remove-Item -LiteralPath $owned -Force }
+    }
+    [IO.Directory]::Delete($root)
 }
