@@ -46,6 +46,9 @@ pub fn start() {
         }));
     }
 }
+pub fn epoch() -> Option<Instant> {
+    DATA.with(|p| p.borrow().as_ref().map(|p| p.start))
+}
 pub fn enabled() -> bool {
     DATA.with(|p| p.borrow().is_some())
 }

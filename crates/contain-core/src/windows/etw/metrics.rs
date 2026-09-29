@@ -41,6 +41,7 @@ pub struct Metrics {
     arrivals: AtomicU64,
     peak_arrivals: AtomicU64,
     overflow_times: [AtomicU64; 64],
+    last_overflow: AtomicU64,
 }
 impl Default for Metrics {
     fn default() -> Self {
@@ -48,10 +49,11 @@ impl Default for Metrics {
             counts: Default::default(),
             times: Default::default(),
             max_delay: AtomicU64::new(0),
-            profile_start: std::env::var_os("CONTAIN_PROFILE_PATH").map(|_| Instant::now()),
+            profile_start: crate::profile::epoch(),
             arrivals: AtomicU64::new(0),
             peak_arrivals: AtomicU64::new(0),
             overflow_times: std::array::from_fn(|_| AtomicU64::new(0)),
+            last_overflow: AtomicU64::new(0),
         }
     }
 }
@@ -62,10 +64,13 @@ impl Metrics {
     pub fn add(&self, c: Count, n: u64) {
         let prior = self.counts[c as usize].fetch_add(n, Relaxed);
         if matches!(c, Count::Overflow)
-            && prior < 64
             && let Some(start) = self.profile_start
         {
-            self.overflow_times[prior as usize].store(start.elapsed().as_nanos() as u64, Relaxed);
+            let at = start.elapsed().as_nanos() as u64;
+            self.last_overflow.store(at, Relaxed);
+            if prior < 64 {
+                self.overflow_times[prior as usize].store(at, Relaxed);
+            }
         }
     }
     pub fn get(&self, c: Count) -> u64 {
@@ -116,6 +121,7 @@ impl Metrics {
     }
     pub fn snapshot(&self) -> PipelineStats {
         PipelineStats {
+            overflow_last_ns: self.profile_start.map(|_| self.last_overflow.load(Relaxed)),
             arrival_peak_per_100ms: self.profile_start.map(|_| self.peak_arrivals.load(Relaxed)),
             overflow_first_ns: self
                 .overflow_times
