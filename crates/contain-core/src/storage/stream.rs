@@ -267,9 +267,22 @@ impl Storage {
         }
         Ok(())
     }
+    fn raw_table(&self, session: &str) -> Result<&'static str> {
+        let staged: bool = self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM raw_ingest WHERE session_id=?1)",
+            [session],
+            |r| r.get(0),
+        )?;
+        // The staging-to-indexed move is atomic, so one session is never split.
+        Ok(if staged { "raw_ingest" } else { "raw_stream" })
+    }
     pub(crate) fn raw_page(&self, session: &str, after: (u64, u64)) -> Result<Vec<SystemEvent>> {
         let _clock = profile::timer("post_raw_read");
-        let mut q=self.connection.prepare_cached("SELECT document FROM (SELECT ticks,sequence,document FROM raw_stream WHERE session_id=?1 AND (ticks,sequence)>(?2,?3) UNION ALL SELECT ticks,sequence,document FROM raw_ingest WHERE session_id=?1 AND (ticks,sequence)>(?2,?3)) ORDER BY ticks,sequence LIMIT 256")?;
+        let table = self.raw_table(session)?;
+        let sql = format!(
+            "SELECT document FROM {table} WHERE session_id=?1 AND (ticks,sequence)>(?2,?3) ORDER BY ticks,sequence LIMIT 256"
+        );
+        let mut q = self.connection.prepare_cached(&sql)?;
         q.query_map(params![session, after.0, after.1], |r| {
             r.get::<_, String>(0)
         })?
@@ -443,11 +456,14 @@ impl Storage {
             );
         }
         let sql = if unfinished {
-            "SELECT document FROM (SELECT ticks,sequence,document FROM raw_stream WHERE session_id=?1 UNION ALL SELECT ticks,sequence,document FROM raw_ingest WHERE session_id=?1) ORDER BY ticks,sequence LIMIT ?2 OFFSET ?3"
+            format!(
+                "SELECT document FROM {} WHERE session_id=?1 ORDER BY ticks,sequence LIMIT ?2 OFFSET ?3",
+                self.raw_table(session)?
+            )
         } else {
-            "SELECT document FROM event_documents WHERE session_id=?1 ORDER BY ticks,sequence,id LIMIT ?2 OFFSET ?3"
+            "SELECT document FROM event_documents WHERE session_id=?1 ORDER BY ticks,sequence,id LIMIT ?2 OFFSET ?3".into()
         };
-        let mut q = self.connection.prepare_cached(sql)?;
+        let mut q = self.connection.prepare_cached(&sql)?;
         let mut rows = q
             .query_map(params![session, limit, offset], |r| r.get::<_, String>(0))?
             .map(|r| Ok(serde_json::from_str(&r?)?))
@@ -598,6 +614,44 @@ mod tests {
             serde_json::to_string(&page[0]).unwrap()
         );
     }
+    #[test]
+    fn v3_raw_history_migrates_without_losing_indexes_or_paged_order() {
+        let mut db = Storage::open(Path::new(":memory:")).unwrap();
+        let c = capture();
+        let mut w = RawBuffer::new(&mut db, &c, DEFAULT_QUOTA).unwrap();
+        w.append(&mut db, (1..=257).rev().map(event).collect());
+        w.finish(&mut db).unwrap();
+        db.prepare_raw(&c.id).unwrap();
+        db.connection
+            .execute_batch("DROP TABLE raw_ingest; PRAGMA user_version=3;")
+            .unwrap();
+        let mut db = Storage::from_connection(db.connection).unwrap();
+        let page = db.raw_page(&c.id, (0, 0)).unwrap();
+        assert_eq!(page.first().unwrap().sequence, 1);
+        assert_eq!(page.last().unwrap().sequence, 256);
+        let mut newer = c.clone();
+        newer.id = "new-session".into();
+        let mut w = RawBuffer::new(&mut db, &newer, DEFAULT_QUOTA).unwrap();
+        w.append(&mut db, vec![event(500)]);
+        w.finish(&mut db).unwrap();
+        for session in [&c.id, &newer.id] {
+            let table = db.raw_table(session).unwrap();
+            let sql = format!(
+                "EXPLAIN QUERY PLAN SELECT document FROM {table} WHERE session_id=?1 AND (ticks,sequence)>(?2,?3) ORDER BY ticks,sequence LIMIT 256"
+            );
+            let mut q = db.connection.prepare(&sql).unwrap();
+            let plan: Vec<String> = q
+                .query_map(params![session, 0, 0], |r| r.get(3))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect();
+            assert!(plan.iter().all(|s| !s.contains("TEMP B-TREE")), "{plan:?}");
+            assert!(plan.iter().any(|s| s.contains("INDEX")), "{plan:?}");
+        }
+        assert_eq!(db.load(&c.id).unwrap().events.len(), 257);
+        assert_eq!(db.load(&newer.id).unwrap().events.len(), 1);
+    }
+
     #[test]
     fn staged_scalars_and_atomic_index_failure_preserve_raw_evidence() {
         let mut db = Storage::open(Path::new(":memory:")).unwrap();
