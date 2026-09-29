@@ -1,5 +1,10 @@
 name: Capture hot-path query experiments
 on:
+  workflow_call:
+    inputs:
+      phase:
+        type: string
+        required: true
   workflow_dispatch:
     inputs:
       phase:

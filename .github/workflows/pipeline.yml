@@ -2,6 +2,11 @@ name: Release capture comparison
 on:
   workflow_dispatch:
     inputs:
+      query_phase:
+        description: Hot-path query experiment; off retains the existing comparison
+        default: 'off'
+        type: choice
+        options: ['off', 'light', 'final']
       files:
         description: 1000 first; request 10000 to run it only after three passing 1000 trials
         default: '10000'
@@ -11,7 +16,13 @@ on:
         default: '3'
         type: string
 jobs:
+  hotpath:
+    if: inputs.query_phase == 'light' || inputs.query_phase == 'final'
+    uses: ./.github/workflows/hotpath.yml
+    with:
+      phase: ${{ inputs.query_phase }}
   compare:
+    if: inputs.query_phase != 'light' && inputs.query_phase != 'final'
     runs-on: windows-latest
     timeout-minutes: 90
     permissions:
