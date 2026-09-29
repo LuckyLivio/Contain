@@ -72,7 +72,12 @@ impl Truth {
         let result = run();
         let end = ticks();
         let entry = json!({"role":self.role,"pid":std::process::id(),"creation_time":self.birth.to_string(),"operation":operation,"resource":resource,"destination":destination.map(|p|p.to_string_lossy()),"start_ticks":start.to_string(),"end_ticks":end.to_string(),"success":result.is_ok(),"error":result.as_ref().err().and_then(|e|e.raw_os_error())});
-        writeln!(self.journal.borrow_mut(), "{entry}")?;
+        // Value::Display streams JSON fragments through Write::write_fmt. Sending
+        // those fragments straight to File creates many observable WriteFile calls.
+        // Serialize first so one oracle row performs one ordinary small file write.
+        let mut line = serde_json::to_vec(&entry)?;
+        line.push(b'\n');
+        self.journal.borrow_mut().write_all(&line)?;
         Ok(result.is_ok())
     }
     pub fn write(&self, path: &Path, bytes: &[u8]) -> Result<()> {

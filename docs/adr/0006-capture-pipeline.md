@@ -150,3 +150,19 @@ documents provider enable semantics; the readiness acknowledgement is preserved.
 
 Comparable repeated results will be appended after measurement. No GUI, cleanup,
 driver, sandbox or broader application-ownership claims are introduced.
+
+## Rejected preliminary result, preserved
+
+[First complete comparison](../examples/comparison-release-v031-preliminary.json),
+candidate a241758: all three 1000- and 10000-file trials failed. At 10000 files the
+candidate median was 71.113 s versus baseline 18.751 s, with roughly five million
+ETW events lost and zero promoted attribution. These are regressions, not a speedup.
+The isolated 1000-write exit burst passed, narrowing the problem to the stress path.
+
+Inspection of the oracle showed `writeln!(File, "{serde_json::Value}")` streams many
+JSON fragments as separate File writes. Moving that journal out of scope avoids
+retaining it, but does not remove its global ETW traffic. The corrected common
+fixture serializes one row to bytes before a single small `write_all`. Both baseline
+and candidate must be repeated with this same fixture. Business syscalls, supported
+semantics, four workers, independent noise and the 25000-operation denominator do
+not change. This is an oracle correction, not a claimed capture optimization.

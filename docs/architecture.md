@@ -1,4 +1,4 @@
-# Contain v0.3 architecture
+# Contain v0.3.1 architecture
 
 ## Capture and evidence flow
 
@@ -6,12 +6,13 @@
 CLI -> baseline snapshots + read-only inventories
     -> ETW session with confirmed provider configuration and consumer callback readiness
     -> launch installer through owned handle
+    -> bounded owned-record queue -> continuous SQLite raw-journal batches
     -> process/thread lifetimes and scoped resource operations
     -> root exit -> bounded descendant/quiet drain -> stop/drain ETW
-    -> retained lifetime resolution -> raw event attribution
+    -> paged lifetime resolution -> raw event attribution and persistence
     -> IRP completion + stable file ID endpoint correlation
     -> state diff + confidence dimensions + quality/statistics
-    -> one SQLite transaction -> inspect / history / explain
+    -> final state/metadata transaction + continuity gate -> inspect / history / explain
 ```
 
 `crates/contain-core` implements this flow; `contain-cli` renders summaries or JSON.
@@ -87,3 +88,16 @@ No Job Object assignment, GUI, AI, driver, automatic elevation or actual cleanup
 `remove --dry-run` preserves the prior rules. See ADRs for [identity](adr/0002-process-identity.md),
 [file operations](adr/0003-file-operation-correlation.md),
 [registry](adr/0004-registry-path-resolution.md) and [jobs/drain](adr/0005-job-objects.md).
+
+## v0.3.1 streaming and read boundaries
+
+The database/WAL/SHM must be outside watched roots. The independent oracle is also
+outside business roots; capture never reads it. Additive raw journal, session-state
+and document tables preserve schema-3 history. A crash leaves earlier WAL commits
+and an unfinished session, without final attribution. Final continuity checks also
+downgrade provisional observations stored earlier. No automatic resume is promised.
+Summary, focused explain and requested pages avoid loading every event; complete
+JSON export explicitly requests full history. See [ADR 0006](adr/0006-capture-pipeline.md)
+and [counter definitions](capture-counters.md) for limits, units and balances.
+The legacy aggregate drop field includes context failures and is a continuity guard,
+not a raw-event accounting identity.

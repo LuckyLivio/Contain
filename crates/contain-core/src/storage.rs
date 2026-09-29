@@ -200,6 +200,13 @@ impl Storage {
             )?;
             capture.backend.stream = Some(serde_json::from_str(&stats)?);
             capture.quality.level = crate::model::QualityLevel::Incomplete;
+            capture.stats.high_confidence_events = 0;
+            for file in &mut capture.files {
+                file.confidence = Confidence::Unknown;
+            }
+            for value in &mut capture.registry {
+                value.confidence = Confidence::Unknown;
+            }
             capture.quality.reasons.push("Unfinished capture; committed raw evidence remains readable. No final attribution.".into());
             if full {
                 capture.events.clear();

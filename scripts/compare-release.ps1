@@ -44,14 +44,14 @@ function Run-Trial([string]$Mode,[int]$Count,[int]$Trial,[string]$Role='stress',
         $process.WaitForExit();$watch.Stop()
         if($process.ExitCode -ne 0){throw "Capture failed: $label; see preserved stderr and database $db"}
         if($noise -and (-not $noise.WaitForExit(30000) -or $noise.ExitCode -ne 0)){throw 'noise fixture failed'}
-        $raw=(& $bins[$Mode] --db $db inspect ReleaseFixture --json) -join "`n"
-        if($LASTEXITCODE -ne 0){throw 'database export failed'}
-        $raw | Set-Content -LiteralPath (Join-Path $dest 'capture.json') -Encoding utf8
-        $capture=($raw | ConvertFrom-Json).data
+        $export=Start-Process -WindowStyle Hidden -FilePath $bins[$Mode] -ArgumentList @('--db',('"'+$db+'"'),'inspect','ReleaseFixture','--json') -PassThru -Wait -RedirectStandardOutput (Join-Path $dest 'capture.json') -RedirectStandardError (Join-Path $dest 'export.stderr.txt')
+        if($export.ExitCode -ne 0){throw 'database export failed'}
+        $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        & python -X utf8 "$PSScriptRoot/score-release.py" $dest $truthRoot $sid
+        if($LASTEXITCODE -ne 0){throw 'release scoring failed'}
+        $capture=Get-Content -Raw -LiteralPath (Join-Path $dest 'metadata.json') | ConvertFrom-Json
+        $score=$capture.score
         if(-not $SnapshotOnly -and $capture.backend.etw_file -ne 'active'){throw 'real ETW is required'}
-        $score=& "$PSScriptRoot/score-fixture.ps1" -Capture $capture -Root $truthRoot
-        $score | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $dest 'score.json') -Encoding utf8
-        Copy-Item -LiteralPath (Join-Path $truthRoot 'ground-truth.json') -Destination $dest
         $expected=if($Role -eq 'burst'){$Count}else{$total=0;foreach($w in 0..3){$n=[Math]::Floor($Count/4)+[int]($w -lt ($Count%4));$total+=2*$n+[Math]::Ceiling($n/2)};$total}
         if($score.groups.target_success.expected -ne $expected){throw 'fixed target-success denominator incomplete'}
         if($Role -eq 'stress' -and $score.groups.noise_success.expected -ne 300){throw 'independent noise denominator incomplete'}

@@ -81,7 +81,7 @@ the first sample. `admitted_events_per_second` divides decoded/admitted source
 observations by full capture wall time; it is not total machine event throughput.
 Database size is measured after the CLI connection closes. These are debug builds.
 
-## Bounds and overload behavior
+## Historical v0.3 bounds and overload behavior
 
 - Producer channel: 8192 observations, nonblocking `try_send` with drop accounting.
 - Session raw-event vector: 100000. Excess records are counted and discarded.
@@ -96,3 +96,31 @@ timeout gives Incomplete; application promotion is suppressed when source contin
 is unverified. Raw metadata, known actor identity and the loss counters remain
 available. The event cap does not bound file-snapshot hashing size or every byte of
 memory; large watched trees and global lifecycle traffic still have a cost.
+
+## v0.3.1 hardening and release protocol
+
+The above debug results are preserved and are not optimization baselines.
+[ADR 0006](adr/0006-capture-pipeline.md) freezes supported-operation denominators
+and 10000-file acceptance before optimization. The
+[initial instrumented release diagnostic](examples/profile-server2025-release-v031-before.json)
+identified identity-query cost, channel/retention losses and expensive final writes;
+its noisy in-root oracle is also diagnostic only.
+
+The manual **Release capture comparison** workflow builds instrumented baseline
+`f8037e90658cdf46aab93d397508036ebc7c22ee` and candidate using release + locked
+dependencies, on one runner/compiler/token/filesystem. Both run the same fixture
+and independent scorer, with truth outside watched roots and independent noise.
+Three pairs alternate order at 1000 and 10000 files; exit burst, intentional quota
+exhaustion and a small release fixture are separate cases.
+
+```powershell
+./scripts/compare-release.ps1 -BaselineDirectory <baseline-checkout> -Files 10000 -Trials 3
+# Ordinary-token fallback is measured separately, not an ETW comparison:
+./scripts/compare-release.ps1 -BaselineDirectory <baseline-checkout> -Files 1000 -Trials 3 -SnapshotOnly
+```
+
+Current bounds and recovery are in the ADR. Raw evidence persists throughout
+capture; it no longer stops at a 100000-entry Vec. Queue reads and association
+passes are bounded pages. SQLite includes indexes, raw journal, typed evidence and
+document copies; payload quota is distinct from physical DB/WAL size. Full export
+and scoring are outside measured capture wall time and can be expensive themselves.

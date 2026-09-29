@@ -183,7 +183,7 @@ impl Storage {
         }
         Ok(())
     }
-    pub fn raw_page(&self, session: &str, after: (u64, u64)) -> Result<Vec<SystemEvent>> {
+    pub(crate) fn raw_page(&self, session: &str, after: (u64, u64)) -> Result<Vec<SystemEvent>> {
         let mut q=self.connection.prepare_cached("SELECT document FROM raw_stream WHERE session_id=?1 AND (ticks,sequence)>(?2,?3) ORDER BY ticks,sequence LIMIT 256")?;
         q.query_map(params![session, after.0, after.1], |r| {
             r.get::<_, String>(0)
@@ -191,10 +191,10 @@ impl Storage {
         .map(|r| Ok(serde_json::from_str(&r?)?))
         .collect()
     }
-    pub fn scoped_header(&self, session: &str, pid: u32) -> Result<bool> {
+    pub(crate) fn scoped_header(&self, session: &str, pid: u32) -> Result<bool> {
         Ok(self.connection.query_row("SELECT EXISTS(SELECT 1 FROM raw_stream WHERE session_id=?1 AND kind='file' AND header_pid=?2)",params![session,pid],|r|r.get(0))?)
     }
-    pub fn completion(&self, session: &str, id: &str) -> Result<Option<SystemEvent>> {
+    pub(crate) fn completion(&self, session: &str, id: &str) -> Result<Option<SystemEvent>> {
         let mut q = self.connection.prepare_cached(
             "SELECT document FROM raw_stream WHERE session_id=?1 AND related=?2 LIMIT 2",
         )?;
@@ -207,7 +207,7 @@ impl Storage {
             Ok(None)
         }
     }
-    pub fn append_evidence(&mut self, c: &Capture) -> Result<()> {
+    pub(crate) fn append_evidence(&mut self, c: &Capture) -> Result<()> {
         let tx = self.connection.transaction()?;
         evidence::save_events(&tx, c)?;
         reliability::save_details(&tx, c)?;
@@ -215,7 +215,11 @@ impl Storage {
         tx.commit()?;
         Ok(())
     }
-    pub fn resource_events(&self, session: &str, resource: &str) -> Result<Vec<SystemEvent>> {
+    pub(crate) fn resource_events(
+        &self,
+        session: &str,
+        resource: &str,
+    ) -> Result<Vec<SystemEvent>> {
         let mut q = self.connection.prepare_cached(
             "SELECT document FROM event_documents WHERE session_id=?1 AND resource=?2 LIMIT 513",
         )?;
@@ -233,7 +237,7 @@ impl Storage {
             .map(|r| Ok(serde_json::from_str(&r)?))
             .collect()
     }
-    pub fn mark_finished(&mut self, c: &Capture) -> Result<()> {
+    pub(crate) fn mark_finished(&mut self, c: &Capture) -> Result<()> {
         let tx = self.connection.transaction()?;
         if c.backend.dropped_events > 0
             || c.backend.decode_errors > 0
@@ -265,7 +269,7 @@ impl Storage {
             .optional()?)
     }
 
-    pub fn event_explanation(&self, id: &str) -> Result<Option<Capture>> {
+    pub(crate) fn event_explanation(&self, id: &str) -> Result<Option<Capture>> {
         let found: Option<(String, String)> = self
             .connection
             .query_row(

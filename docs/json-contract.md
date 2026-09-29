@@ -54,3 +54,19 @@ SQLite versioning is independent (`PRAGMA user_version=3`). Real v1 -> v3 and v2
 migration tests preserve historical observations. Legacy captures explicitly identify
 missing metadata. Newer databases are rejected before schema mutation. The authoritative
 lifetime table is `process_instances`; PID-only v1 rows are compatibility data.
+
+## v0.3.1 additive capture metadata
+
+The envelope remains schema version 3. `capture_state` is null for legacy captures
+or `capturing`, `finalizing`, `failed`, `finished` for new sessions. Non-finished
+sessions are Incomplete and public evidence is provisional Unknown.
+`backend.pipeline` and `backend.stream` add stage counters; missing measurements
+are null, including ETL-log buffer loss in realtime-only capture. See
+[counter definitions](capture-counters.md). Historic v1/v2/v3 full readback remains.
+
+Core `capture::install(options, storage)` returns a summary with persisted counters;
+use `Storage::load` for full history, `load_summary` for summary, `events_page` for
+1–4096 records, and `for_event` for focused explanation. CLI `inspect --json` and
+unpaged history retain complete export semantics. CLI history accepts `--limit`
+and `--offset`; legacy databases without a document index explicitly ask for
+unpaged history. Requested pagination never claims to contain every event.

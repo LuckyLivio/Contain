@@ -6,7 +6,7 @@
 
 ## Which app changed this?
 
-Contain v0.3 observes Windows installation sessions, links real events to verified process instances, and explains the evidence. **Contain distinguishes observed changes from attributed changes.**
+Contain v0.3.1 observes Windows installation sessions, links real events to verified process instances, and explains the evidence. **Contain distinguishes observed changes from attributed changes.**
 
 Contain records evidence and offers a cleanup **dry run**. It does not guarantee zero leftovers or isolate an installer.
 
@@ -65,6 +65,13 @@ cargo build --workspace --locked
 Watch directories must already exist. Repeat `--watch` for each scope. Without it only the installer's directory is watched. `--registry-key` selects one HKCU Software key: values are compared at that key; ETW may also observe operations beneath it. Installer arguments follow `--`. Use `--no-etw` to disable tracing. After root exit, `--settle-ms` (default 1500) sets the quiet period and `--max-drain-ms` (default 10000) bounds waiting for descendants/activity. A timeout marks the session Incomplete.
 
 `--db <path>` selects a database; default is `%LOCALAPPDATA%\Contain\contain.db`. `list --json`, `inspect --json`, `diff --json`, `history --json`, and `doctor --json` use a [versioned JSON contract](docs/json-contract.md). `install --manifest <path>` exports an inspect document. FILETIME identity fields use decimal strings to preserve full precision.
+
+v0.3.1 continuously commits a bounded raw evidence journal, then finalizes evidence
+in pages. Keep the database outside watched roots. `--evidence-quota-mib` defaults
+to 256; quota/write failures remain visible. Interrupted sessions are explicitly
+unfinished and expose no final attribution. `history <app> --json --limit 256
+--offset 0` reads a page; default inspect reads a summary. See the
+[pipeline ADR](docs/adr/0006-capture-pipeline.md) and [counter definitions](docs/capture-counters.md).
 
 ## What v0.3 records
 
