@@ -76,6 +76,7 @@ pub fn diff(key: &str, before: &RegistrySnapshot, after: &RegistrySnapshot) -> V
                 confidence: Confidence::Unknown,
                 reason: "Scoped registry values changed during session; writer process is unknown."
                     .into(),
+                evidence: vec![],
             })
         })
         .collect()

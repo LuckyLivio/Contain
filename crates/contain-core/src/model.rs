@@ -1,11 +1,12 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Confidence {
     Certain,
     High,
     Medium,
     Low,
+    #[default]
     Unknown,
 }
 
@@ -21,7 +22,7 @@ impl Confidence {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ProcessRecord {
     pub pid: u32,
     pub parent_pid: Option<u32>,
@@ -29,9 +30,14 @@ pub struct ProcessRecord {
     pub first_seen: String,
     pub confidence: Confidence,
     pub reason: String,
+    pub creation_time: Option<u64>,
+    pub parent_creation_time: Option<u64>,
+    pub last_seen: String,
+    pub ended_at: Option<u64>,
+    pub evidence: AttributionEvidence,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct FileChange {
     pub path: String,
     pub operation: String,
@@ -41,9 +47,10 @@ pub struct FileChange {
     pub notification_seen: bool,
     pub confidence: Confidence,
     pub reason: String,
+    pub evidence: Vec<AttributionEvidence>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct RegistryChange {
     pub key: String,
     pub name: String,
@@ -52,10 +59,12 @@ pub struct RegistryChange {
     pub after_value: Option<String>,
     pub confidence: Confidence,
     pub reason: String,
+    pub evidence: Vec<AttributionEvidence>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Capture {
+    pub schema_version: u32,
     pub id: String,
     pub name: String,
     pub installer: String,
@@ -68,6 +77,125 @@ pub struct Capture {
     pub files: Vec<FileChange>,
     pub registry: Vec<RegistryChange>,
     pub warnings: Vec<String>,
+    pub events: Vec<SystemEvent>,
+    pub inventory: Vec<InventoryChange>,
+    pub backend: BackendReport,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EvidenceSource {
+    ProcessApi,
+    EtwFile,
+    EtwRegistry,
+    FileNotification,
+    ServiceInventory,
+    TaskInventory,
+    StartupRegistry,
+    #[default]
+    Snapshot,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AttributionRule {
+    InstallerPid,
+    DescendantProcess,
+    ExecutablePathMatch,
+    UnrelatedProcess,
+    AmbiguousLifetime,
+    MixedWriters,
+    EventLoss,
+    #[default]
+    SnapshotOnly,
+    MissingWriter,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttributionEvidence {
+    pub source: EvidenceSource,
+    pub pid: Option<u32>,
+    /// Windows FILETIME ticks (100 ns since 1601), serialized without losing precision.
+    pub process_creation_time: Option<u64>,
+    pub process_image: Option<String>,
+    pub parent_pid: Option<u32>,
+    pub ancestor_pid: Option<u32>,
+    pub session_id: Option<String>,
+    pub rule: AttributionRule,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct SystemEvent {
+    pub id: String,
+    pub timestamp: String,
+    pub timestamp_ticks: u64,
+    pub event_type: String,
+    pub operation: String,
+    pub resource: String,
+    pub confidence: Confidence,
+    pub reason: String,
+    pub evidence: AttributionEvidence,
+    /// None means the source does not provide an operation completion status.
+    pub success: Option<bool>,
+    pub state_validated: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct BackendReport {
+    pub etw_file: String,
+    pub etw_registry: String,
+    pub dropped_events: u64,
+    pub etw_events_lost: Option<u64>,
+    pub decode_errors: u64,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceState {
+    pub name: String,
+    pub display_name: String,
+    pub binary_path: String,
+    pub startup_type: String,
+    pub account: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskAction {
+    pub executable: String,
+    pub arguments: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScheduledTaskState {
+    pub path: String,
+    pub actions: Vec<TaskAction>,
+    pub triggers: Vec<String>,
+    pub enabled: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StartupEntry {
+    pub source: String,
+    pub name: String,
+    pub command: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "state")]
+pub enum InventoryState {
+    Service(ServiceState),
+    ScheduledTask(ScheduledTaskState),
+    Startup(StartupEntry),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InventoryChange {
+    pub kind: String,
+    pub name: String,
+    pub operation: String,
+    pub before: Option<InventoryState>,
+    pub after: Option<InventoryState>,
+    pub confidence: Confidence,
+    pub reason: String,
+    pub evidence: AttributionEvidence,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

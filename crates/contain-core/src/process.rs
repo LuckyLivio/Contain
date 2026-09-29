@@ -1,106 +1,96 @@
-use crate::model::{Confidence, ProcessRecord};
-use chrono::Utc;
+use crate::model::{
+    AttributionEvidence, AttributionRule, Confidence, EvidenceSource, ProcessRecord,
+};
+use crate::windows::native::{self, ProcessIdentity};
 use std::collections::BTreeMap;
 use sysinfo::{Pid, ProcessesToUpdate, System};
 
 pub struct ProcessObserver {
-    root_pid: u32,
+    root: ProcessIdentity,
+    session_id: String,
     system: System,
-    known: BTreeMap<u32, u64>,
-    records: BTreeMap<u32, ProcessRecord>,
+    records: BTreeMap<(u32, u64), ProcessRecord>,
 }
 
 impl ProcessObserver {
-    pub fn new(root_pid: u32, installer: &str) -> Self {
-        let root = ProcessRecord {
-            pid: root_pid,
-            parent_pid: None,
-            image: installer.into(),
-            first_seen: Utc::now().to_rfc3339(),
-            confidence: Confidence::Certain,
-            reason: "Process launched by Contain.".into(),
+    pub fn new(root: ProcessIdentity, session_id: &str) -> Self {
+        let time = native::timestamp(native::now_ticks());
+        let evidence = AttributionEvidence {
+            source: EvidenceSource::ProcessApi,
+            pid: Some(root.pid),
+            process_creation_time: (root.creation_time != 0).then_some(root.creation_time),
+            process_image: Some(root.image.clone()),
+            session_id: Some(session_id.into()),
+            rule: AttributionRule::InstallerPid,
+            ..Default::default()
         };
+        let record = ProcessRecord { pid: root.pid, image: root.image.clone(), first_seen: time.clone(), last_seen: time,
+            creation_time: (root.creation_time != 0).then_some(root.creation_time), confidence: Confidence::Certain,
+            reason: if root.creation_time != 0 { "Contain launched this process and queried its creation time through the owned process handle." } else { "Contain launched this process; creation time is unavailable and descendant attribution is disabled." }.into(),
+            evidence, ..Default::default() };
         Self {
-            root_pid,
+            records: BTreeMap::from([((root.pid, root.creation_time), record)]),
+            root,
+            session_id: session_id.into(),
             system: System::new(),
-            known: BTreeMap::new(),
-            records: BTreeMap::from([(root_pid, root)]),
         }
     }
 
     pub fn poll(&mut self) {
         self.system.refresh_processes(ProcessesToUpdate::All, true);
-        if let Some(root) = self.system.process(Pid::from_u32(self.root_pid)) {
-            self.known
-                .entry(self.root_pid)
-                .or_insert_with(|| root.start_time());
+        let time = native::timestamp(native::now_ticks());
+        let mut identities = BTreeMap::new();
+        for (&key, record) in &mut self.records {
+            if let Some(identity) =
+                native::process_identity(key.0).filter(|p| p.creation_time == key.1)
+            {
+                identities.insert(key.0, identity);
+                record.last_seen = time.clone();
+            }
         }
-        let mut found = true;
-        while found {
-            found = false;
+        let mut progress = true;
+        while progress {
+            progress = false;
             for (pid, process) in self.system.processes() {
-                let id = pid.as_u32();
-                let parent = process.parent().map(Pid::as_u32);
-                if self.records.contains_key(&id)
-                    || !parent.is_some_and(|p| self.parent_is_current(p, process.start_time()))
-                {
+                let Some(parent_pid) = process.parent().map(Pid::as_u32) else {
+                    continue;
+                };
+                let Some(parent) = identities.get(&parent_pid) else {
+                    continue;
+                };
+                if identities.contains_key(&pid.as_u32()) {
                     continue;
                 }
-                self.known.insert(id, process.start_time());
-                self.records.insert(
-                    id,
-                    ProcessRecord {
-                        pid: id,
-                        parent_pid: parent,
-                        image: process
-                            .exe()
-                            .map(|p| p.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| process.name().to_string_lossy().into_owned()),
-                        first_seen: Utc::now().to_rfc3339(),
-                        confidence: Confidence::High,
-                        reason: format!(
-                            "Sampled parent chain reaches installer PID {}.",
-                            self.root_pid
-                        ),
-                    },
-                );
-                found = true;
+                let Some(identity) = native::process_identity(pid.as_u32()) else {
+                    continue;
+                };
+                if identity.creation_time < parent.creation_time {
+                    continue;
+                }
+                let parent_creation_time = parent.creation_time;
+                let evidence = AttributionEvidence {
+                    source: EvidenceSource::ProcessApi,
+                    pid: Some(identity.pid),
+                    process_creation_time: Some(identity.creation_time),
+                    process_image: Some(identity.image.clone()),
+                    parent_pid: Some(parent_pid),
+                    ancestor_pid: Some(self.root.pid),
+                    session_id: Some(self.session_id.clone()),
+                    rule: AttributionRule::DescendantProcess,
+                };
+                self.records.entry((identity.pid, identity.creation_time)).or_insert(ProcessRecord {
+                    pid: identity.pid, parent_pid: Some(parent_pid), image: identity.image.clone(),
+                    first_seen: time.clone(), last_seen: time.clone(), creation_time: Some(identity.creation_time),
+                    parent_creation_time: Some(parent_creation_time), ended_at: None,
+                    confidence: Confidence::High, reason: "Sampled live parent chain with matching process creation times reaches installer.".into(), evidence,
+                });
+                identities.insert(identity.pid, identity);
+                progress = true;
             }
         }
     }
 
-    fn parent_is_current(&self, parent: u32, child_start: u64) -> bool {
-        let Some(&known_start) = self.known.get(&parent) else {
-            return false;
-        };
-        self.system
-            .process(Pid::from_u32(parent))
-            .is_some_and(|process| {
-                valid_parent_start(known_start, process.start_time(), child_start)
-            })
-    }
-
     pub fn finish(self) -> Vec<ProcessRecord> {
         self.records.into_values().collect()
-    }
-}
-
-fn valid_parent_start(known_start: u64, current_start: u64, child_start: u64) -> bool {
-    known_start == current_start && known_start <= child_start
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn root_is_certain() {
-        let records = ProcessObserver::new(42, "fixture.exe").finish();
-        assert_eq!(records[0].confidence, Confidence::Certain);
-    }
-    #[test]
-    fn reused_or_younger_parent_pid_is_ambiguous() {
-        assert!(valid_parent_start(100, 100, 101));
-        assert!(!valid_parent_start(100, 200, 201));
-        assert!(!valid_parent_start(200, 200, 100));
     }
 }

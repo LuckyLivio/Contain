@@ -3,6 +3,8 @@ use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::fs;
 use std::path::Path;
+mod evidence;
+mod migration;
 
 pub struct Storage {
     connection: Connection,
@@ -13,8 +15,9 @@ impl Storage {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let connection = Connection::open(path)
+        let mut connection = Connection::open(path)
             .with_context(|| format!("opening database {}", path.display()))?;
+        migration::check_version(&connection)?;
         connection.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;
             CREATE TABLE IF NOT EXISTS applications (
                 id TEXT PRIMARY KEY, name TEXT NOT NULL, installer TEXT NOT NULL
@@ -44,6 +47,7 @@ impl Storage {
                 event_id INTEGER PRIMARY KEY REFERENCES system_events(id), registry_key TEXT NOT NULL,
                 value_name TEXT NOT NULL, before_value TEXT, after_value TEXT
             );")?;
+        migration::apply(&mut connection)?;
         Ok(Self { connection })
     }
 
@@ -58,7 +62,7 @@ impl Storage {
                 serde_json::to_string(&capture.watch_roots)?, capture.registry_key, serde_json::to_string(&capture.warnings)?])?;
         for process in &capture.processes {
             tx.execute(
-                "INSERT INTO processes VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                "INSERT OR IGNORE INTO processes VALUES (?1,?2,?3,?4,?5,?6,?7)",
                 params![
                     capture.id,
                     process.pid,
@@ -100,6 +104,7 @@ impl Storage {
                 ],
             )?;
         }
+        evidence::save(&tx, capture)?;
         tx.commit()?;
         Ok(())
     }
@@ -128,6 +133,7 @@ impl Storage {
                 first_seen: row.get(3)?,
                 confidence: parse_confidence(&row.get::<_, String>(4)?),
                 reason: row.get(5)?,
+                ..Default::default()
             })
         })? {
             processes.push(row?);
@@ -144,6 +150,7 @@ impl Storage {
                 notification_seen: row.get(5)?,
                 confidence: parse_confidence(&row.get::<_, String>(6)?),
                 reason: row.get(7)?,
+                ..Default::default()
             })
         })? {
             files.push(row?);
@@ -159,11 +166,12 @@ impl Storage {
                 after_value: row.get(4)?,
                 confidence: parse_confidence(&row.get::<_, String>(5)?),
                 reason: row.get(6)?,
+                ..Default::default()
             })
         })? {
             registry.push(row?);
         }
-        Ok(Capture {
+        let mut capture = Capture {
             id: header.0,
             name: header.1,
             installer: header.2,
@@ -176,7 +184,10 @@ impl Storage {
             processes,
             files,
             registry,
-        })
+            ..Default::default()
+        };
+        evidence::load(&self.connection, &mut capture)?;
+        Ok(capture)
     }
 }
 
@@ -212,6 +223,7 @@ mod tests {
                 first_seen: "start".into(),
                 confidence: Confidence::Certain,
                 reason: "launched".into(),
+                ..Default::default()
             }],
             files: vec![FileChange {
                 path: "C:\\x\\created.txt".into(),
@@ -222,6 +234,7 @@ mod tests {
                 notification_seen: true,
                 confidence: Confidence::Unknown,
                 reason: "no PID".into(),
+                ..Default::default()
             }],
             registry: vec![RegistryChange {
                 key: "HKCU\\Software\\X".into(),
@@ -231,8 +244,11 @@ mod tests {
                 after_value: Some("01".into()),
                 confidence: Confidence::Unknown,
                 reason: "snapshot".into(),
+                ..Default::default()
             }],
             warnings: vec![],
+            schema_version: 2,
+            ..Default::default()
         };
         db.save(&capture).unwrap();
         let restored = db.load("test").unwrap();

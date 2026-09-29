@@ -1,23 +1,25 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use contain_core::capture::{InstallOptions, install};
-use contain_core::cleanup::plan;
-use contain_core::model::Capture;
-use contain_core::storage::Storage;
-use std::env;
-use std::path::PathBuf;
+use contain_core::{
+    capture::{InstallOptions, install},
+    cleanup::plan,
+    doctor,
+    storage::Storage,
+};
+use std::{env, path::PathBuf};
+mod render;
 
 #[derive(Parser)]
 #[command(
     name = "contain",
     version,
-    about = "Observe Windows application installation footprints"
+    about = "Observe, attribute and explain Windows application changes"
 )]
 struct Cli {
     #[arg(
         long,
         global = true,
-        help = "SQLite database path (default: LOCALAPPDATA\\Contain\\contain.db)"
+        help = "SQLite path; defaults to LOCALAPPDATA\\Contain\\contain.db"
     )]
     db: Option<PathBuf>,
     #[command(subcommand)]
@@ -32,23 +34,27 @@ enum Commands {
         name: Option<String>,
         #[arg(
             long = "watch",
-            help = "Existing directory to watch; repeat for more directories"
+            help = "Existing watch root; repeat for multiple directories"
         )]
         watch_roots: Vec<PathBuf>,
-        #[arg(long, help = "Subkey below HKCU, e.g. Software\\Contain\\Demo")]
+        #[arg(long)]
         registry_key: Option<String>,
+        #[arg(long, default_value_t = 500)]
+        settle_ms: u64,
         #[arg(
             long,
-            default_value_t = 300,
-            help = "Time to keep observing after installer exit"
+            help = "Use directory notifications and snapshots without attempting ETW"
         )]
-        settle_ms: u64,
-        #[arg(long, help = "Write captured manifest as JSON")]
+        no_etw: bool,
+        #[arg(long)]
         manifest: Option<PathBuf>,
         #[arg(last = true)]
         args: Vec<String>,
     },
-    List,
+    List {
+        #[arg(long)]
+        json: bool,
+    },
     Inspect {
         app: String,
         #[arg(long)]
@@ -56,39 +62,50 @@ enum Commands {
     },
     Diff {
         app: String,
+        #[arg(long)]
+        json: bool,
     },
     History {
-        app: Option<String>,
+        app: String,
+        #[arg(long)]
+        json: bool,
     },
     Remove {
         app: String,
         #[arg(long)]
         dry_run: bool,
     },
-    Doctor,
-}
-
-fn database_path(override_path: Option<PathBuf>) -> Result<PathBuf> {
-    match override_path {
-        Some(path) => Ok(path),
-        None => Ok(PathBuf::from(
-            env::var_os("LOCALAPPDATA").context("LOCALAPPDATA is unavailable; pass --db")?,
-        )
-        .join("Contain")
-        .join("contain.db")),
-    }
+    Doctor {
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() {
+    let _ = tracing_subscriber::fmt()
+        .json()
+        .with_writer(std::io::stderr)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()),
+        )
+        .try_init();
     if let Err(error) = run() {
         eprintln!("Contain error: {error:#}");
         std::process::exit(1);
     }
 }
 
+fn envelope(kind: &str, value: impl serde::Serialize) -> Result<String> {
+    Ok(serde_json::to_string_pretty(
+        &serde_json::json!({"schema_version":2,"kind":kind,"data":value}),
+    )?)
+}
+
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    let db_path = database_path(cli.db)?;
+    let db = cli.db.unwrap_or_else(|| {
+        PathBuf::from(env::var_os("LOCALAPPDATA").unwrap_or_default()).join("Contain/contain.db")
+    });
     match cli.command {
         Commands::Install {
             installer,
@@ -96,10 +113,13 @@ fn run() -> Result<()> {
             watch_roots,
             registry_key,
             settle_ms,
+            no_etw,
             manifest,
             args,
         } => {
-            println!("Contain\n────────────────────────────────\nWatching installation...");
+            println!(
+                "Contain\n────────────────────────────────\nCollecting baseline and watching installation..."
+            );
             let capture = install(InstallOptions {
                 name,
                 installer,
@@ -107,192 +127,117 @@ fn run() -> Result<()> {
                 watch_roots,
                 registry_key,
                 settle_ms,
+                etw: !no_etw,
             })?;
-            Storage::open(&db_path)?.save(&capture)?;
+            Storage::open(&db)?.save(&capture)?;
             if let Some(path) = manifest {
-                std::fs::write(&path, serde_json::to_vec_pretty(&capture)?)
+                std::fs::write(&path, envelope("inspect", &capture)?)
                     .with_context(|| format!("writing manifest {}", path.display()))?;
             }
-            summary(&capture);
+            render::summary(&capture);
+            for warning in &capture.warnings {
+                eprintln!("Warning: {warning}");
+            }
             println!(
-                "\nCaptured as {}\nInspect with: contain inspect {}",
-                capture.id, capture.id
+                "\nApp identity: {}\nInspect with: contain --db \"{}\" inspect {}",
+                capture.id,
+                db.display(),
+                capture.id
             );
         }
-        Commands::List | Commands::History { app: None } => {
-            let rows = Storage::open(&db_path)?.list()?;
-            if rows.is_empty() {
+        Commands::List { json } => {
+            let rows = Storage::open(&db)?.list()?;
+            if json {
+                println!("{}",envelope("list",rows.iter().map(|(id,name,started)|serde_json::json!({"id":id,"name":name,"started_at":started})).collect::<Vec<_>>())?);
+            } else if rows.is_empty() {
                 println!("No captured applications yet.");
+            } else {
+                for (id, name, started) in rows {
+                    println!("{name:<28} {started}  {id}");
+                }
             }
-            for (id, name, started) in rows {
-                println!("{name:<28} {started}  {id}");
-            }
-        }
-        Commands::History { app: Some(app) } => {
-            let capture = Storage::open(&db_path)?.load(&app)?;
-            println!(
-                "{}  {}  exit={:?}",
-                capture.started_at, capture.name, capture.exit_code
-            );
         }
         Commands::Inspect { app, json } => {
-            let capture = Storage::open(&db_path)?.load(&app)?;
+            let capture = Storage::open(&db)?.load(&app)?;
             if json {
-                println!("{}", serde_json::to_string_pretty(&capture)?);
+                println!("{}", envelope("inspect", &capture)?);
             } else {
-                summary(&capture);
-                println!(
-                    "\nInstaller: {}\nStarted: {}\nFinished: {}\nExit code: {:?}",
-                    capture.installer, capture.started_at, capture.finished_at, capture.exit_code
-                );
-                println!("\nPROCESSES");
-                for p in &capture.processes {
-                    println!(
-                        "  PID {} parent={:?} {} [{}] {}",
-                        p.pid,
-                        p.parent_pid,
-                        p.image,
-                        p.confidence.as_str(),
-                        p.reason
-                    );
-                }
-                println!("\nFILES");
-                for file in &capture.files {
-                    println!(
-                        "  {} {} ({} B) [{}]",
-                        symbol(&file.operation),
-                        file.path,
-                        file.after_size.unwrap_or(0),
-                        file.confidence.as_str()
-                    );
-                }
-                println!("\nREGISTRY VALUES");
-                for change in &capture.registry {
-                    println!(
-                        "  {} {}\\{} [{}]",
-                        symbol(&change.operation),
-                        change.key,
-                        change.name,
-                        change.confidence.as_str()
-                    );
-                }
-                println!("Services and scheduled tasks: not observed in v0.1.");
-                println!("\nWATCH ROOTS");
-                for root in &capture.watch_roots {
-                    println!("  {root}");
-                }
-                if let Some(key) = &capture.registry_key {
-                    println!("Registry scope: HKCU\\{key}");
-                }
-                println!("\nLIMITATIONS");
-                for warning in &capture.warnings {
-                    println!("  • {warning}");
-                }
+                render::inspect(&capture);
             }
         }
-        Commands::Diff { app } => {
-            let capture = Storage::open(&db_path)?.load(&app)?;
-            println!("{} — observed session diff\n", capture.name);
-            println!("FILES");
-            for f in &capture.files {
+        Commands::Diff { app, json } => {
+            let capture = Storage::open(&db)?.load(&app)?;
+            if json {
                 println!(
-                    "{} {} [{}] {}",
-                    symbol(&f.operation),
-                    f.path,
-                    f.confidence.as_str(),
-                    f.reason
+                    "{}",
+                    envelope(
+                        "diff",
+                        serde_json::json!({"app_id":capture.id,"files":capture.files,"registry":capture.registry,"inventory":capture.inventory,"warning":"Unattributed changes are not assumed to belong to this app."})
+                    )?
                 );
+            } else {
+                render::diff(&capture);
             }
-            println!("\nREGISTRY");
-            for r in &capture.registry {
+        }
+        Commands::History { app, json } => {
+            let capture = Storage::open(&db)?.load(&app)?;
+            if json {
                 println!(
-                    "{} {}\\{} [{}] {}",
-                    symbol(&r.operation),
-                    r.key,
-                    r.name,
-                    r.confidence.as_str(),
-                    r.reason
+                    "{}",
+                    envelope(
+                        "history",
+                        serde_json::json!({"app_id":capture.id,"events":capture.events})
+                    )?
                 );
+            } else {
+                render::history(&capture);
             }
-            println!(
-                "\nNo writer PID is available for file or registry changes. These are observations, not ownership claims."
-            );
         }
         Commands::Remove { app, dry_run } => {
             if !dry_run {
                 anyhow::bail!(
-                    "v0.1 only supports `contain remove <app> --dry-run`; no destructive removal is implemented"
+                    "Only `remove <app> --dry-run` is supported. No deletion executor is implemented."
                 );
             }
-            let capture = Storage::open(&db_path)?.load(&app)?;
+            let capture = Storage::open(&db)?.load(&app)?;
+            println!("Cleanup review for {} (dry-run)\n", capture.name);
             let candidates = plan(&capture);
-            println!(
-                "Dry-run cleanup review for {} (no system changes)\n",
-                capture.name
-            );
-            for candidate in &candidates {
+            for item in &candidates {
                 println!(
-                    "{:<10} {:>10} B  {}\n             {}",
-                    candidate.class.as_str(),
-                    candidate.size,
-                    candidate.path,
-                    candidate.reason
+                    "{:<10} {:>10} B {}\n  {}",
+                    item.class.as_str(),
+                    item.size,
+                    item.path,
+                    item.reason
                 );
             }
             println!(
-                "\n{} surviving tracked file(s). No deletion performed. Registry values are not cleaned.",
+                "\n{} surviving files. No deletion performed; registry values are preserved.",
                 candidates.len()
             );
         }
-        Commands::Doctor => {
-            println!("Contain v{}", env!("CARGO_PKG_VERSION"));
-            println!("Platform: {}", env::consts::OS);
-            println!("Database: {}", db_path.display());
-            println!("Filesystem: scoped watcher + before/after BLAKE3 state");
-            println!("Processes: sampled parent chain");
-            println!("Registry: optional scoped HKCU values snapshot");
-            println!(
-                "ETW, services, scheduled tasks, official uninstall, cleanup executor: unavailable"
-            );
+        Commands::Doctor { json } => {
+            let report = doctor::probe();
+            if json {
+                println!("{}", envelope("doctor", &report)?);
+            } else {
+                println!(
+                    "Contain {}\nDatabase: {}\nAdmin privileges: {}\nProcess observation: {}\nETW file provider: {}\nETW registry provider: {}\nServices: {:?}\nScheduled tasks: {:?}\nStartup entries: {:?}",
+                    env!("CARGO_PKG_VERSION"),
+                    db.display(),
+                    report.elevated,
+                    report.process_observation,
+                    report.etw_file,
+                    report.etw_registry,
+                    report.service_count,
+                    report.scheduled_task_count,
+                    report.startup_count
+                );
+                for warning in &report.warnings {
+                    println!("Warning: {warning}");
+                }
+            }
         }
     }
     Ok(())
-}
-
-fn symbol(operation: &str) -> &str {
-    match operation {
-        "created" => "+",
-        "modified" => "~",
-        "deleted" => "-",
-        _ => "?",
-    }
-}
-
-fn summary(capture: &Capture) {
-    let created = capture
-        .files
-        .iter()
-        .filter(|x| x.operation == "created")
-        .count();
-    let modified = capture
-        .files
-        .iter()
-        .filter(|x| x.operation == "modified")
-        .count();
-    let deleted = capture
-        .files
-        .iter()
-        .filter(|x| x.operation == "deleted")
-        .count();
-    let bytes: u64 = capture.files.iter().filter_map(|x| x.after_size).sum();
-    println!(
-        "────────────────────────────────\nApp: {}\nProcesses: {} observed\nFiles: +{} ~{} -{} ({} B current changed state)\nRegistry values: {} changed\nAttribution: installer Certain; files/registry Unknown",
-        capture.name,
-        capture.processes.len(),
-        created,
-        modified,
-        deleted,
-        bytes,
-        capture.registry.len()
-    );
 }

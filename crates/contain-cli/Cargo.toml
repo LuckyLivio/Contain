@@ -15,3 +15,5 @@ chrono.workspace = true
 clap.workspace = true
 contain-core = { path = "../contain-core" }
 serde_json.workspace = true
+serde.workspace = true
+tracing-subscriber.workspace = true

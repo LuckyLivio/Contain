@@ -181,6 +181,7 @@ pub fn diff(before: &Snapshot, after: &Snapshot, seen: &HashSet<PathBuf>) -> Vec
                 notification_seen,
                 confidence: Confidence::Unknown,
                 reason: reason.into(),
+                evidence: vec![],
             })
         })
         .collect()

@@ -1,5 +1,5 @@
 use crate::filesystem::is_reparse;
-use crate::model::{Capture, CleanupCandidate, CleanupClass};
+use crate::model::{Capture, CleanupCandidate, CleanupClass, Confidence};
 use std::fs;
 use std::path::Path;
 
@@ -24,13 +24,23 @@ pub fn plan(capture: &Capture) -> Vec<CleanupCandidate> {
             let current = fs::read(path)
                 .ok()
                 .map(|bytes| blake3::hash(&bytes).to_hex().to_string());
-            let (class, reason) = if current != change.after_hash {
+            let classification = classify(&change.path);
+            let (class, reason) = if classification.0 == CleanupClass::UserData {
+                classification
+            } else if current != change.after_hash {
                 (
                     CleanupClass::Unknown,
                     "File changed since capture; owner and content may differ.",
                 )
             } else {
-                classify(&change.path)
+                if change.confidence == Confidence::High {
+                    classification
+                } else {
+                    (
+                        CleanupClass::Unknown,
+                        "Writer is not attributed with High confidence; preserve.",
+                    )
+                }
             };
             Some(CleanupCandidate {
                 path: change.path.clone(),
@@ -56,7 +66,7 @@ fn classify(path: &str) -> (CleanupClass, &'static str) {
     } else if parts.iter().any(|part| matches!(*part, "cache" | "caches")) {
         (
             CleanupClass::Review,
-            "Cache or temporary path, but writing process is unverified.",
+            "Attributed cache candidate; human review is still required.",
         )
     } else {
         (
@@ -94,7 +104,9 @@ mod tests {
                 notification_seen: true,
                 confidence: Confidence::Unknown,
                 reason: "test".into(),
+                ..Default::default()
             }],
+            ..Default::default()
         }
     }
 

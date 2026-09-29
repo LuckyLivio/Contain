@@ -1,69 +1,69 @@
-param([switch]$KeepArtifacts)
+param([switch]$KeepArtifacts, [switch]$RequireEtw, [switch]$SnapshotOnly)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-
+if ($RequireEtw -and $SnapshotOnly) { throw 'Choose RequireEtw or SnapshotOnly, not both.' }
 $cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
 if (-not (Test-Path -LiteralPath $cargo)) { $cargo = 'cargo' }
-& $cargo build --workspace
-if ($LASTEXITCODE -ne 0) { throw 'cargo build failed' }
-
-$name = 'contain-demo-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
-$root = Join-Path $env:TEMP $name
-$db = Join-Path $env:TEMP ($name + '.db')
-$key = 'Software\Contain\Demo\' + $name
-$contain = Join-Path $PSScriptRoot '..\target\debug\contain.exe'
-$fixture = Join-Path $PSScriptRoot '..\target\debug\contain-test-installer.exe'
-New-Item -ItemType Directory -Path $root | Out-Null
-
+Push-Location (Join-Path $PSScriptRoot '..')
 try {
-    & $contain --db $db install $fixture --name TestFixture --watch $root --registry-key $key -- --root $root
-    if ($LASTEXITCODE -ne 0) { throw 'capture failed' }
-    & $contain --db $db inspect TestFixture
-    if ($LASTEXITCODE -ne 0) { throw 'inspect failed' }
-    & $contain --db $db diff TestFixture
-    if ($LASTEXITCODE -ne 0) { throw 'diff failed' }
-    $beforeDryRun = (Get-ChildItem -LiteralPath $root -File -Recurse | Get-FileHash -Algorithm SHA256 | Sort-Object Path | ConvertTo-Json -Compress)
-    $registryBeforeDryRun = @(
-        (Get-ItemPropertyValue -LiteralPath ('Registry::HKEY_CURRENT_USER\' + $key) -Name Installed),
-        (Get-ItemPropertyValue -LiteralPath ('Registry::HKEY_CURRENT_USER\' + $key) -Name ChildObserved)
-    ) -join '|'
-    & $contain --db $db remove TestFixture --dry-run
-    if ($LASTEXITCODE -ne 0) { throw 'dry-run failed' }
-    $afterDryRun = (Get-ChildItem -LiteralPath $root -File -Recurse | Get-FileHash -Algorithm SHA256 | Sort-Object Path | ConvertTo-Json -Compress)
-    $registryAfterDryRun = @(
-        (Get-ItemPropertyValue -LiteralPath ('Registry::HKEY_CURRENT_USER\' + $key) -Name Installed),
-        (Get-ItemPropertyValue -LiteralPath ('Registry::HKEY_CURRENT_USER\' + $key) -Name ChildObserved)
-    ) -join '|'
-    if ($beforeDryRun -ne $afterDryRun -or $registryBeforeDryRun -ne $registryAfterDryRun) { throw 'dry-run modified fixture state' }
-
-    $manifest = (& $contain --db $db inspect TestFixture --json | ConvertFrom-Json)
-    if ($manifest.processes.Count -lt 2) { throw 'child process was not observed' }
-    if ($manifest.files.Count -lt 4) { throw 'expected file changes were not observed' }
-    if ($manifest.registry.Count -lt 2) { throw 'expected registry changes were not observed' }
-    if ($manifest.files | Where-Object { $_.confidence -ne 'Unknown' }) { throw 'file ownership was overstated' }
-    Write-Output 'DEMO VERIFIED: process ancestry, real file changes, scoped registry changes, SQLite readback, and dry-run.'
-}
-finally {
-    if (-not $KeepArtifacts) {
-        if (Test-Path -LiteralPath (Join-Path $root '.contain-demo-marker')) {
+    & $cargo build --workspace --locked
+    if ($LASTEXITCODE -ne 0) { throw 'cargo build failed' }
+    $name = 'contain-demo-' + [guid]::NewGuid().ToString('N')
+    $root = Join-Path $env:TEMP $name
+    $db = Join-Path $env:TEMP ($name + '.db')
+    $key = 'Software\Contain\Demo\' + $name
+    $registryPath = 'Registry::HKEY_CURRENT_USER\' + $key
+    $contain = (Resolve-Path './target/debug/contain.exe').Path
+    $fixture = (Resolve-Path './target/debug/contain-test-installer.exe').Path
+    New-Item -ItemType Directory -Path $root | Out-Null
+    [IO.File]::WriteAllText((Join-Path $root '.contain-demo-marker'), 'Contain test fixture')
+    foreach ($file in @('settings.txt','rename-me.txt','delete-me.txt')) { [IO.File]::WriteAllText((Join-Path $root $file), 'baseline') }
+    New-Item -Path $registryPath -Force | Out-Null
+    New-ItemProperty -LiteralPath $registryPath -Name Installed -Value 'baseline' -PropertyType String | Out-Null
+    $unrelated = Start-Process -FilePath $fixture -ArgumentList @('--role','unrelated','--root',('"' + $root + '"')) -PassThru -WindowStyle Hidden
+    try {
+        $arguments = @('--db',$db,'install',$fixture,'--name','TestFixture','--watch',$root,'--registry-key',$key)
+        if ($SnapshotOnly) { $arguments += '--no-etw' }
+        $arguments += @('--','--root',$root)
+        & $contain @arguments
+        if ($LASTEXITCODE -ne 0) { throw 'capture failed' }
+        if (-not $unrelated.WaitForExit(10000)) { throw 'independent fixture timed out' }
+        if ($unrelated.ExitCode -ne 0) { throw 'independent fixture failed' }
+        $document = (& $contain --db $db inspect TestFixture --json | ConvertFrom-Json)
+        if ($LASTEXITCODE -ne 0 -or $document.schema_version -ne 2) { throw 'inspect JSON contract failed' }
+        $manifest = $document.data
+        if ($manifest.processes.Count -lt 3) { throw 'parent/child/grandchild were not all observed' }
+        if (@($manifest.processes | Where-Object pid -eq $unrelated.Id).Count -ne 0) { throw 'independent process was attached to installer' }
+        if (@($manifest.files | Where-Object operation -eq 'modified').Count -lt 1) { throw 'file modification not captured' }
+        if (@($manifest.files | Where-Object operation -eq 'deleted').Count -lt 1) { throw 'file deletion not captured' }
+        if (@($manifest.registry | Where-Object operation -eq 'modified').Count -lt 1) { throw 'registry update not captured' }
+        $unrelatedChanges = @($manifest.files | Where-Object { $_.path -like '*\unrelated.txt' -or $_.path -like '*\shared.txt' })
+        if ($unrelatedChanges.Count -lt 2 -or @($unrelatedChanges | Where-Object confidence -ne 'Unknown').Count -gt 0) { throw 'unrelated/mixed writer state was misattributed' }
+        if ($RequireEtw -and $manifest.backend.etw_file -ne 'active') { throw 'ETW was required but did not start' }
+        if ($manifest.backend.etw_file -eq 'active') {
+            $highFiles = @($manifest.events | Where-Object { $_.event_type -eq 'file' -and $_.confidence -eq 'High' })
+            $unknownFiles = @($manifest.events | Where-Object { $_.resource -like '*\unrelated.txt' -and $_.event_type -eq 'file' -and $_.confidence -eq 'Unknown' })
+            if ($highFiles.Count -eq 0) { throw 'no real High-confidence file source event captured' }
+            if ($unknownFiles.Count -eq 0) { throw 'independent ETW writer was not observed as Unknown' }
+            Write-Output "ETW VERIFIED: $($highFiles.Count) High file events; $($unknownFiles.Count) independent writer events remain Unknown."
+        } elseif (@($manifest.files | Where-Object confidence -ne 'Unknown').Count -ne 0) { throw 'snapshot fallback overstated attribution' }
+        foreach ($command in @('diff','history')) {
+            $json = (& $contain --db $db $command TestFixture --json | ConvertFrom-Json)
+            if ($LASTEXITCODE -ne 0 -or $json.schema_version -ne 2 -or $json.kind -ne $command) { throw "$command JSON contract failed" }
+        }
+        $before = (Get-ChildItem -LiteralPath $root -File -Recurse | Get-FileHash | Sort-Object Path | ConvertTo-Json -Compress)
+        $registryBefore = Get-ItemPropertyValue -LiteralPath $registryPath -Name Installed
+        & $contain --db $db remove TestFixture --dry-run
+        if ($LASTEXITCODE -ne 0) { throw 'dry-run failed' }
+        $after = (Get-ChildItem -LiteralPath $root -File -Recurse | Get-FileHash | Sort-Object Path | ConvertTo-Json -Compress)
+        if ($before -ne $after -or $registryBefore -ne (Get-ItemPropertyValue -LiteralPath $registryPath -Name Installed)) { throw 'dry-run changed fixture data' }
+        Write-Output "DEMO VERIFIED: $($manifest.processes.Count) processes, $($manifest.files.Count) file states, $($manifest.registry.Count) registry states, $($manifest.events.Count) timeline events; readback, JSON and dry-run passed."
+    } finally {
+        if (-not $unrelated.HasExited) { $unrelated.Kill(); $unrelated.WaitForExit() }
+        if (-not $KeepArtifacts) {
             & $fixture --root $root --cleanup
-            if ($LASTEXITCODE -ne 0) { Write-Warning 'fixture cleanup failed; inspect demo root manually' }
-            if (Test-Path -LiteralPath $root) { Write-Warning 'fixture root still exists after cleanup' }
-            if (Test-Path -LiteralPath ('Registry::HKEY_CURRENT_USER\' + $key)) { Write-Warning 'fixture registry key still exists after cleanup' }
-        }
-        if (Test-Path -LiteralPath $root) {
-            $resolved = (Resolve-Path -LiteralPath $root).Path
-            $tempResolved = (Resolve-Path -LiteralPath $env:TEMP).Path
-            if ((Split-Path $resolved -Parent) -eq $tempResolved -and (Split-Path $resolved -Leaf) -like 'contain-demo-*') {
-                Remove-Item -LiteralPath $root -Force
-            }
-        }
-        foreach ($suffix in @('', '-shm', '-wal')) {
-            $target = $db + $suffix
-            if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Force }
-        }
-    } else {
-        Write-Output "Demo root: $root"
-        Write-Output "Demo database: $db"
+            if ($LASTEXITCODE -ne 0 -or (Test-Path -LiteralPath $root) -or (Test-Path -LiteralPath $registryPath)) { throw 'fixture cleanup failed' }
+            foreach ($suffix in @('','-wal','-shm')) { $target=$db+$suffix; if(Test-Path -LiteralPath $target){ Remove-Item -LiteralPath $target -Force } }
+        } else { Write-Output "Fixture: $root`nDatabase: $db" }
     }
-}
+} finally { Pop-Location }
