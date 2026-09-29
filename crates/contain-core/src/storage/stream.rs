@@ -258,6 +258,59 @@ impl Storage {
             )
             .optional()?)
     }
+
+    pub fn event_explanation(&self, id: &str) -> Result<Option<Capture>> {
+        let found: Option<(String, String)> = self
+            .connection
+            .query_row(
+                "SELECT session_id,document FROM event_documents WHERE id=?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let Some((session, document)) = found else {
+            return Ok(None);
+        };
+        let mut c = self.load_summary(&session)?;
+        anyhow::ensure!(
+            c.capture_state.as_deref().is_none_or(|s| s == "finished"),
+            "Session is unfinished; use paged history for raw evidence"
+        );
+        c.events.push(serde_json::from_str(&document)?);
+        let mut nodes = vec![format!("event:{id}")];
+        let mut visited = std::collections::HashSet::new();
+        while let Some(node) = nodes.pop() {
+            if !visited.insert(node.clone()) {
+                continue;
+            }
+            anyhow::ensure!(visited.len() <= 4096, "Explanation ancestry quota exceeded");
+            let mut q=self.connection.prepare_cached("SELECT from_node,to_node,relation,confidence,reason FROM evidence_edges WHERE session_id=?1 AND to_node=?2 LIMIT 4097")?;
+            for row in q.query_map(params![session, node], |r| {
+                Ok(EvidenceEdge {
+                    from: r.get(0)?,
+                    to: r.get(1)?,
+                    relation: r.get(2)?,
+                    confidence: super::parse_confidence(&r.get::<_, String>(3)?),
+                    reason: r.get(4)?,
+                })
+            })? {
+                let edge = row?;
+                nodes.push(edge.from.clone());
+                c.edges.push(edge);
+                anyhow::ensure!(c.edges.len() <= 4096, "Explanation edge quota exceeded");
+            }
+        }
+        let mut q=self.connection.prepare_cached("SELECT detail_json FROM normalized_operations WHERE session_id=?1 AND EXISTS(SELECT 1 FROM json_each(normalized_operations.detail_json,'$.raw_events') WHERE value=?2) LIMIT 4097")?;
+        c.operations = q
+            .query_map(params![session, id], |r| r.get::<_, String>(0))?
+            .map(|r| Ok(serde_json::from_str(&r?)?))
+            .collect::<Result<Vec<_>>>()?;
+        anyhow::ensure!(
+            c.operations.len() <= 4096,
+            "Explanation operation quota exceeded"
+        );
+        Ok(Some(c))
+    }
     pub fn events_page(&self, session: &str, offset: u64, limit: u32) -> Result<Vec<SystemEvent>> {
         anyhow::ensure!((1..=4096).contains(&limit), "page limit must be 1..4096");
         let unfinished = self.stream_state(session)?.is_some_and(|s| s != "finished");
@@ -409,5 +462,39 @@ mod tests {
         assert_eq!(w.stats.failed, 1);
         assert!(w.stats.error.as_deref().unwrap().contains("full"));
         assert_eq!(db.events_page(&c.id, 0, 256).unwrap().len(), 0);
+    }
+    #[test]
+    fn busy_writer_and_reopen_preserve_prior_commits() {
+        let path =
+            std::env::temp_dir().join(format!("contain-stream-test-{}.db", uuid::Uuid::new_v4()));
+        {
+            let mut db = Storage::open(&path).unwrap();
+            let c = capture();
+            let mut w = RawBuffer::new(&mut db, &c, DEFAULT_QUOTA).unwrap();
+            w.append(&mut db, vec![event(1)]);
+            w.flush(&mut db);
+            let locked = Connection::open(&path).unwrap();
+            locked.execute_batch("BEGIN IMMEDIATE").unwrap();
+            w.append(&mut db, vec![event(2)]);
+            w.flush(&mut db);
+            assert_eq!(w.stats.failed, 1);
+            locked.execute_batch("ROLLBACK").unwrap();
+            drop(locked);
+            // Simulate interruption: no successful finish or final summary transaction.
+        }
+        {
+            let db = Storage::open(&path).unwrap();
+            let c = db.load("stream").unwrap();
+            assert_eq!(c.events.len(), 1);
+            assert_eq!(c.events[0].confidence, Confidence::Unknown);
+            assert_eq!(c.capture_state.as_deref(), Some("capturing"));
+            assert!(matches!(c.quality.level, QualityLevel::Incomplete));
+        }
+        for suffix in ["", "-wal", "-shm"] {
+            let owned = std::path::PathBuf::from(format!("{}{suffix}", path.display()));
+            if owned.exists() {
+                std::fs::remove_file(owned).unwrap();
+            }
+        }
     }
 }

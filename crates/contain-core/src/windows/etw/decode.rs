@@ -19,13 +19,20 @@ impl Decoder {
     pub(super) fn send(&self, mut event: SystemEvent) {
         event.sequence = self.received.fetch_add(1, Ordering::Relaxed) + 1;
         let _timer = self.metrics.timer(Time::Enqueue);
-        self.metrics.entering();
-        if self.tx.try_send((event, Instant::now())).is_err() {
-            self.metrics.leaving();
-            self.metrics.add(Count::Overflow, 1);
-            self.dropped.fetch_add(1, Ordering::Relaxed);
-        } else {
-            self.metrics.add(Count::Enqueued, 1);
+        let pending = self.metrics.entering();
+        match self.tx.try_send((event, Instant::now())) {
+            Ok(()) => self.metrics.admitted(pending),
+            Err(error) => {
+                self.metrics.leaving();
+                self.metrics.add(
+                    match error {
+                        mpsc::TrySendError::Full(_) => Count::Overflow,
+                        mpsc::TrySendError::Disconnected(_) => Count::Disconnected,
+                    },
+                    1,
+                );
+                self.dropped.fetch_add(1, Ordering::Relaxed);
+            }
         }
     }
     pub(super) fn lifecycle(&mut self, record: &EventRecord, locator: &SchemaLocator) {

@@ -1,4 +1,4 @@
-param([switch]$KeepArtifacts, [switch]$RequireEtw, [switch]$SnapshotOnly, [string]$OutputDirectory)
+param([switch]$Release, [switch]$KeepArtifacts, [switch]$RequireEtw, [switch]$SnapshotOnly, [string]$OutputDirectory)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($RequireEtw -and $SnapshotOnly) { throw 'Choose RequireEtw or SnapshotOnly, not both.' }
@@ -11,7 +11,8 @@ function Assert-JsonContract([string]$text) {
     }
 }
 try {
-    & $cargo build --workspace --locked
+    $buildArgs=@("build","--workspace","--locked");if($Release){$buildArgs+="--release"}
+    & $cargo @buildArgs
     if ($LASTEXITCODE -ne 0) { throw 'cargo build failed' }
     $name = 'contain-demo-' + [guid]::NewGuid().ToString('N')
     $root = Join-Path $env:TEMP $name
@@ -23,8 +24,9 @@ try {
     $env:CONTAIN_FIXTURE_TRUTH=$truthRoot
     $key = 'Software\Contain\Demo\' + $name
     $registryPath = 'Registry::HKEY_CURRENT_USER\' + $key
-    $contain = (Resolve-Path './target/debug/contain.exe').Path
-    $fixture = (Resolve-Path './target/debug/contain-test-installer.exe').Path
+    $profile=if($Release){"release"}else{"debug"}
+    $contain = (Resolve-Path "./target/$profile/contain.exe").Path
+    $fixture = (Resolve-Path "./target/$profile/contain-test-installer.exe").Path
     New-Item -ItemType Directory -Path $root | Out-Null
     [IO.File]::WriteAllText((Join-Path $root '.contain-demo-marker'), 'Contain test fixture')
     foreach ($file in @('settings.txt','rename-me.txt','delete-me.txt')) { [IO.File]::WriteAllText((Join-Path $root $file), 'baseline') }

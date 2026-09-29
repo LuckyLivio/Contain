@@ -250,6 +250,7 @@ impl EventSource for EtwSource {
     fn drain(&mut self) -> Vec<SystemEvent> {
         self.rx
             .try_iter()
+            .take(crate::storage::stream::PAGE)
             .map(|(event, at)| {
                 self.metrics.dequeued(at);
                 event
@@ -298,7 +299,14 @@ fn dispatch(
             metrics.add(Count::Unsupported, 1);
         }
         if d.received.load(Ordering::Relaxed) == before {
-            metrics.add(Count::Filtered, 1);
+            metrics.add(
+                if d.errors.load(Ordering::Relaxed) > errors {
+                    Count::FailedWithoutOutput
+                } else {
+                    Count::Filtered
+                },
+                1,
+            );
         }
     }
 }
@@ -347,6 +355,14 @@ impl EtwSource {
             sink(self.drain());
             drop(trace);
         }
+        // Producer and ProcessTrace have ended; drain every remaining bounded page.
+        loop {
+            let page = self.drain();
+            if page.is_empty() {
+                break;
+            }
+            sink(page);
+        }
         self.report.dropped_events = self.dropped.load(Ordering::Relaxed);
         self.report.events_received = self.received.load(Ordering::Relaxed);
         self.report.decode_errors = self.errors.load(Ordering::Relaxed);
@@ -387,5 +403,38 @@ mod tests {
         decoder.send(SystemEvent::default());
         assert_eq!(dropped.load(Ordering::Relaxed), 1);
         assert_eq!(rx.try_iter().count(), 1);
+    }
+
+    #[test]
+    fn final_drain_consumes_multiple_pages_and_balances_queue() {
+        let mut source = EtwSource::start(&[], None, false);
+        let (tx, rx) = mpsc::sync_channel(1024);
+        source.rx = rx;
+        let count = crate::storage::stream::PAGE * 3 + 17;
+        for n in 0..count {
+            let pending = source.metrics.entering();
+            tx.send((
+                SystemEvent {
+                    sequence: n as u64,
+                    ..Default::default()
+                },
+                Instant::now(),
+            ))
+            .unwrap();
+            source.metrics.admitted(pending);
+        }
+        drop(tx);
+        let mut received = 0;
+        let mut largest = 0;
+        source.stop_with(|page| {
+            received += page.len();
+            largest = largest.max(page.len());
+        });
+        let p = source.metrics.snapshot();
+        assert_eq!(received, count);
+        assert!(largest <= crate::storage::stream::PAGE);
+        assert_eq!(p.enqueued, p.dequeued);
+        assert_eq!(p.queue_pending, 0);
+        assert_eq!(p.queue_overflow, 0);
     }
 }

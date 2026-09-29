@@ -213,6 +213,9 @@ impl Storage {
     }
 
     pub fn for_event(&self, id: &str) -> Result<Capture> {
+        if let Some(capture) = self.event_explanation(id)? {
+            return Ok(capture);
+        }
         let session: String = self
             .connection
             .query_row(
@@ -420,15 +423,14 @@ mod tests {
         db.save(&c).unwrap();
         let a = db.for_event("later").unwrap();
         let b = db.load("v3").unwrap();
-        assert_eq!(a.events[0].id, "earlier");
-        assert_eq!(a.events[1].raw.status, Some(0xc0000022));
-        assert_eq!(a.events[1].dimensions.actor, Confidence::High);
+        assert_eq!(a.events.len(), 1);
+        assert_eq!(a.events[0].id, "later");
+        assert_eq!(a.events[0].raw.status, Some(0xc0000022));
+        assert_eq!(a.events[0].dimensions.actor, Confidence::High);
         assert_eq!(a.edges[0].reason, "test evidence");
         assert_eq!(a.operations[0].raw_events, vec!["later"]);
-        assert_eq!(
-            serde_json::to_string(&a.events).unwrap(),
-            serde_json::to_string(&b.events).unwrap()
-        );
+        assert_eq!(b.events[0].id, "earlier");
+        assert_eq!(b.events[1].id, "later");
     }
     #[test]
     fn round_trip() {

@@ -37,6 +37,10 @@ jobs:
           FILES: ${{ inputs.files }}
           TRIALS: ${{ inputs.trials }}
         run: ./scripts/compare-release.ps1 -BaselineDirectory ../baseline -Files ([int]$env:FILES) -Trials ([int]$env:TRIALS)
+      - name: Small release ETW fixture
+        working-directory: candidate
+        shell: pwsh
+        run: ./scripts/demo.ps1 -RequireEtw -Release -OutputDirectory ./target/release-comparison/small-release
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -18,6 +18,8 @@ pub enum Count {
     Pending,
     HighWater,
     ContextEvictions,
+    FailedWithoutOutput,
+    Disconnected,
 }
 #[derive(Clone, Copy)]
 pub enum Time {
@@ -33,7 +35,7 @@ pub enum Time {
 }
 #[derive(Default)]
 pub struct Metrics {
-    counts: [AtomicU64; 12],
+    counts: [AtomicU64; 14],
     times: [AtomicU64; 9],
     max_delay: AtomicU64,
 }
@@ -50,9 +52,13 @@ impl Metrics {
     pub fn timer(&self, t: Time) -> Timer<'_> {
         Timer(self, t, Instant::now())
     }
-    pub fn entering(&self) {
-        let n = self.counts[Count::Pending as usize].fetch_add(1, Relaxed) + 1;
-        self.counts[Count::HighWater as usize].fetch_max(n, Relaxed);
+    pub fn entering(&self) -> u64 {
+        self.counts[Count::Pending as usize].fetch_add(1, Relaxed) + 1
+    }
+    pub fn admitted(&self, pending: u64) {
+        self.counts[Count::HighWater as usize]
+            .fetch_max(pending.min(super::QUEUE_CAPACITY as u64), Relaxed);
+        self.add(Count::Enqueued, 1);
     }
     pub fn leaving(&self) {
         self.counts[Count::Pending as usize].fetch_sub(1, Relaxed);
@@ -71,6 +77,8 @@ impl Metrics {
             decode_attempted: self.get(Count::Attempted),
             decode_succeeded: self.get(Count::Succeeded),
             decode_failed: self.get(Count::Failed),
+            failed_without_output: self.get(Count::FailedWithoutOutput),
+            enqueue_disconnected: self.get(Count::Disconnected),
             deliberately_filtered: self.get(Count::Filtered),
             enqueued: self.get(Count::Enqueued),
             queue_overflow: self.get(Count::Overflow),

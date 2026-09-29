@@ -80,6 +80,10 @@ enum Commands {
         app: String,
         #[arg(long)]
         json: bool,
+        #[arg(long)]
+        limit: Option<u32>,
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
     },
     Remove {
         app: String,
@@ -218,8 +222,21 @@ fn run() -> Result<()> {
                 render::diff(&capture);
             }
         }
-        Commands::History { app, json } => {
-            let capture = Storage::open(&db)?.load(&app)?;
+        Commands::History {
+            app,
+            json,
+            limit,
+            offset,
+        } => {
+            let storage = Storage::open(&db)?;
+            let mut capture = if limit.is_some() {
+                storage.load_summary(&app)?
+            } else {
+                storage.load(&app)?
+            };
+            if let Some(limit) = limit {
+                capture.events = storage.events_page(&capture.id, offset, limit)?;
+            }
             if json {
                 println!(
                     "{}",

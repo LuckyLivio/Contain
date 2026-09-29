@@ -129,9 +129,14 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     let root_pid = identity.pid;
     let mut process_observer = ProcessObserver::new(identity, &id);
     let mut live_cache = LifetimeCache::default();
+    let mut poll_at = Instant::now();
     let exit_code = loop {
-        process_observer.poll();
+        if Instant::now() >= poll_at {
+            process_observer.poll();
+            poll_at = Instant::now() + Duration::from_millis(30);
+        }
         let incoming = source.drain();
+        let full_page = incoming.len() == crate::storage::stream::PAGE;
         for e in &incoming {
             live_cache.ingest(e);
         }
@@ -139,7 +144,9 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         if let Some(status) = child.try_wait()? {
             break status.code();
         }
-        thread::sleep(Duration::from_millis(30));
+        if !full_page {
+            thread::sleep(Duration::from_millis(1));
+        }
     };
     phases.insert(
         "installer_root".into(),
@@ -160,11 +167,15 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     let drain_start = Instant::now();
     let mut drain_timed_out = false;
     loop {
-        process_observer.poll();
+        if Instant::now() >= poll_at {
+            process_observer.poll();
+            poll_at = Instant::now() + Duration::from_millis(30);
+        }
         for p in process_observer.records() {
             cache.seed(p);
         }
         let incoming = source.drain();
+        let full_page = incoming.len() == crate::storage::stream::PAGE;
         for e in &incoming {
             cache.ingest(e);
             if e.event_type == "file" || (e.event_type == "registry" && e.raw.resource_resolved) {
@@ -195,7 +206,9 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
             crate::drain::Decision::Quiet => break,
             crate::drain::Decision::Wait => {}
         }
-        thread::sleep(Duration::from_millis(30));
+        if !full_page {
+            thread::sleep(Duration::from_millis(1));
+        }
     }
     let stop_clock = Instant::now();
     let mut backend = source.stop_with(|incoming| journal.append(db, incoming));
@@ -207,8 +220,8 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     backend.dropped_events += stream.quota_dropped + stream.failed;
     if let Some(p) = &mut backend.pipeline {
         p.retention_dropped = stream.quota_dropped;
-        p.persistence_succeeded = stream.persisted;
-        p.persistence_failed = stream.failed;
+        p.persistence_succeeded = Some(stream.persisted);
+        p.persistence_failed = Some(stream.failed);
     }
     if let Some(error) = &stream.error {
         backend.warnings.push(error.clone());
@@ -230,6 +243,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     {
         root.ended_at = Some(exited_at);
     }
+    drop(cache);
     let mut cache = LifetimeCache::default();
     for p in &processes {
         cache.seed(p.clone());

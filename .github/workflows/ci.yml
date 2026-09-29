@@ -24,7 +24,9 @@ jobs:
         run: cargo build --workspace
       - name: Ground truth scorer rejection cases
         shell: pwsh
-        run: ./scripts/test-score.ps1
+        run: |
+          ./scripts/test-score.ps1
+          python scripts/test-score.py
       - name: ETW fixture integration
         env:
           RUST_LOG: contain_core::windows::etw=debug

@@ -33,16 +33,18 @@ def score(capture, truth, sid=""):
             hi=bisect.bisect_right(entries,(int(t["end_ticks"]),len(events)))
             result.update(i for _,i in entries[lo:hi])
         return sorted(result)
-    used=set(); valid_positives=set(); invalid_positives=set(); rows=[]
+    used=set(); valid_positives=set(); rows=[]
+    # Audit each positive across all eligible oracle intervals. Concurrent calls may
+    # overlap in time on the same resource; one actor must not be blamed for another.
+    for t in truth:
+        if t["operation"] in SUPPORTED and t["role"] not in NOISE:
+            valid_positives.update(i for i in matches(t) if events[i]["confidence"] in {"High","Certain"} and identity(events[i],True)==identity(t))
     groups={g: Counter() for g in ["target_success", "noise_success", "failed", "unsupported"]}
     for t in sorted(truth,key=lambda t:(int(t["start_ticks"]),t["pid"],t["operation"],t["resource"])):
         supported=t["operation"] in SUPPORTED; noise=t["role"] in NOISE
         group="unsupported" if not supported else "failed" if not t["success"] else "noise_success" if noise else "target_success"
         g=groups[group]; g["expected"]+=1
         candidates=matches(t) if supported else []
-        high=[i for i in candidates if events[i]["confidence"] in {"High","Certain"}]
-        wrong=[i for i in high if noise or identity(events[i],True)!=identity(t)]
-        invalid_positives.update(wrong); valid_positives.update(set(high)-set(wrong))
         available=[i for i in candidates if i not in used]
         available.sort(key=lambda i:(identity(events[i],True)!=identity(t),i))
         matched=available[0] if available else None
@@ -51,7 +53,7 @@ def score(capture, truth, sid=""):
         attribution=None
         if matched is not None:
             e=events[matched]; positive=e["confidence"] in {"High","Certain"}
-            if wrong: attribution="incorrectly_attributed"
+            if positive and (noise or identity(e,True)!=identity(t)): attribution="incorrectly_attributed"
             elif positive and identity(e,True)==identity(t) and not noise: attribution="correctly_attributed"
             elif noise and identity(e,True)==identity(t) and not positive: attribution="correctly_not_assigned_to_target_app"
             else: attribution="observed_but_unresolved"
@@ -67,9 +69,9 @@ def score(capture, truth, sid=""):
         if e["operation"] not in SUPPORTED or e["confidence"] not in {"High","Certain"}: continue
         if path.rsplit("\\",1)[-1] in CONTROL_NAMES:
             excluded_control.append(e.get("id",str(i))); continue
-        if "\\transientkey\\" in path: continue  # Frozen uninstrumented small-fixture diagnostic.
+        if path.endswith("\\transientkey\\transientvalue"): continue  # Exact frozen uninstrumented diagnostic.
         if any(path==r or path.startswith(r+"\\") for r in tested_roots) or path in truth_paths: positives.add(i)
-    false=positives-valid_positives | (positives & invalid_positives)
+    false=positives-valid_positives
     for g in groups.values():
         for k in ["expected","observed","unobserved","unsupported_out_of_scope","correctly_attributed","incorrectly_attributed","observed_but_unresolved","correctly_not_assigned_to_target_app"]: g.setdefault(k,0)
         den=g["expected"]-g["unsupported_out_of_scope"]
