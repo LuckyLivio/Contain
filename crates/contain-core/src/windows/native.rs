@@ -234,6 +234,41 @@ pub struct TraceLoss {
     pub buffers: u64,
 }
 
+/// Private ephemeral ETW provider used only to acknowledge the realtime consumer.
+pub struct TraceProbe(windows_sys::Win32::System::Diagnostics::Etw::REGHANDLE);
+impl TraceProbe {
+    pub fn register(id: u128) -> Result<Self, u32> {
+        use windows_sys::Win32::System::Diagnostics::Etw::EventRegister;
+        let guid = windows_sys::core::GUID::from_u128(id);
+        let mut handle = 0;
+        // SAFETY: valid GUID/output; no callback or external context, handle is owned until Drop.
+        let status = unsafe { EventRegister(&guid, None, std::ptr::null(), &mut handle) };
+        if status == 0 {
+            Ok(Self(handle))
+        } else {
+            Err(status)
+        }
+    }
+    pub fn emit(&self) -> Result<(), u32> {
+        use windows_sys::Win32::System::Diagnostics::Etw::EventWriteString;
+        let text: Vec<u16> = "Contain consumer readiness"
+            .encode_utf16()
+            .chain(Some(0))
+            .collect();
+        // SAFETY: owned registration and a live nul-terminated string; no user data emitted.
+        let status = unsafe { EventWriteString(self.0, 4, 1, text.as_ptr()) };
+        if status == 0 { Ok(()) } else { Err(status) }
+    }
+}
+impl Drop for TraceProbe {
+    fn drop(&mut self) {
+        // SAFETY: this registration is owned exactly once by TraceProbe.
+        unsafe {
+            windows_sys::Win32::System::Diagnostics::Etw::EventUnregister(self.0);
+        }
+    }
+}
+
 /// ferrisetw enables providers asynchronously. Wait for configuration before launch.
 pub fn synchronize_providers(name: &str, registry: bool) -> Result<(), u32> {
     use windows_sys::Win32::System::Diagnostics::Etw::*;

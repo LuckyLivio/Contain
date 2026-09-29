@@ -9,7 +9,7 @@ use ferrisetw::{EventRecord, SchemaLocator, UserTrace};
 use std::collections::HashMap;
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     mpsc::{self, Receiver, SyncSender},
 };
 use std::thread::{self, JoinHandle};
@@ -100,6 +100,28 @@ impl EtwSource {
             return source;
         }
         let devices = native::device_map();
+        let probe_id = uuid::Uuid::new_v4();
+        let probe = match native::TraceProbe::register(probe_id.as_u128()) {
+            Ok(probe) => probe,
+            Err(code) => {
+                source.report.etw_file = "unavailable".into();
+                source.report.etw_process = "unavailable".into();
+                source.report.etw_registry = "unavailable".into();
+                source.report.warnings.push(format!(
+                    "ETW readiness probe registration failed: Win32 {code}"
+                ));
+                return source;
+            }
+        };
+        let consumer_ready = Arc::new(AtomicBool::new(false));
+        let callback_ready = consumer_ready.clone();
+        let readiness_provider = Provider::by_guid(probe_id.to_string().as_str())
+            .any(1)
+            .level(4)
+            .add_callback(move |_, _| {
+                callback_ready.store(true, Ordering::Release);
+            })
+            .build();
         let roots = roots
             .iter()
             .map(|p| native::normalize_path(p, &devices))
@@ -143,6 +165,7 @@ impl EtwSource {
             .named(name.clone())
             .enable(file)
             .enable(lifecycle)
+            .enable(readiness_provider)
             .set_trace_properties(TraceProperties {
                 buffer_size: 64,
                 min_buffer: 8,
@@ -177,13 +200,31 @@ impl EtwSource {
                     "not_requested"
                 }
                 .into();
-                if let Err(code) = native::synchronize_providers(&name, registry_enabled) {
+                let ready = native::synchronize_providers(&name, registry_enabled).and_then(|()| {
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+                    while !consumer_ready.load(Ordering::Acquire)
+                        && std::time::Instant::now() < deadline
+                    {
+                        probe.emit()?;
+                        native::control_trace(
+                            &name,
+                            windows_sys::Win32::System::Diagnostics::Etw::EVENT_TRACE_CONTROL_FLUSH,
+                        )?;
+                        thread::sleep(std::time::Duration::from_millis(20));
+                    }
+                    if consumer_ready.load(Ordering::Acquire) {
+                        Ok(())
+                    } else {
+                        Err(1460)
+                    }
+                });
+                if let Err(code) = ready {
                     source.stop();
                     source.report.etw_file = "unavailable".into();
                     source.report.etw_process = "unavailable".into();
                     source.report.etw_registry = "unavailable".into();
                     source.report.warnings.push(format!(
-                        "ETW provider readiness failed: Win32 {code}; using snapshots."
+                        "ETW provider/consumer readiness failed: Win32 {code}; using snapshots."
                     ));
                 }
             }
