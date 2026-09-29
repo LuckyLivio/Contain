@@ -357,7 +357,11 @@ impl EtwSource {
             ..Default::default()
         };
         let mut system = System::new();
-        system.refresh_processes(ProcessesToUpdate::All, true);
+        sink(self.drain());
+        crate::profile::measured!(
+            "initial_process_enumeration",
+            system.refresh_processes(ProcessesToUpdate::All, true)
+        );
         stats.enumerated = system.processes().len() as u64;
         for pid in system.processes().keys() {
             sink(self.drain());

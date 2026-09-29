@@ -265,6 +265,7 @@ impl Decoder {
         let pid = record.process_id();
         // Context needs a process generation, not a query of whoever owns the PID now.
         let writer = if self.deferred_registry {
+            let _identity_context = self.metrics.timer(Time::Context);
             self.lifetimes
                 .resolve(pid, time)
                 .map(|p| native::ProcessIdentity {
