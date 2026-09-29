@@ -504,9 +504,11 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         capture.stats.high_confidence_events = 0;
         for f in &mut capture.files {
             f.confidence = Confidence::Unknown;
+            f.reason = "Session continuity unverified; final promotion suppressed".into();
         }
         for r in &mut capture.registry {
             r.confidence = Confidence::Unknown;
+            r.reason = "Session continuity unverified; final promotion suppressed".into();
         }
     }
     db.save(&capture)?;

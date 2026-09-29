@@ -246,6 +246,7 @@ impl Storage {
         if !c.backend.source_intact() {
             // This also covers records persisted before a later failure became known.
             tx.execute("UPDATE observations SET confidence='Unknown',rule=?2,reason='Session continuity unverified; final promotion suppressed' WHERE session_id=?1 AND event_type IN ('file','registry')",params![c.id,serde_json::to_string(&AttributionRule::EventLoss)?])?;
+            tx.execute("UPDATE evidence_edges SET confidence='Unknown',reason='Session continuity unverified; resource association suppressed' WHERE session_id=?1 AND from_node IN (SELECT 'event:'||id FROM observations WHERE session_id=?1 AND event_type IN ('file','registry'))",[&c.id])?;
             tx.execute("UPDATE normalized_operations SET detail_json=json_set(detail_json,'$.confidence','Unknown') WHERE session_id=?1",[&c.id])?;
             tx.execute("UPDATE normalized_operations SET operation='UnresolvedRequest',detail_json=json_set(detail_json,'$.operation','UnresolvedRequest','$.success',NULL,'$.reason','Session continuity unverified; raw request only') WHERE session_id=?1 AND json_array_length(detail_json,'$.raw_events')>0",[&c.id])?;
             tx.execute("UPDATE observations SET success=NULL WHERE session_id=?1 AND event_type IN ('file','completion')",[&c.id])?;
@@ -473,6 +474,13 @@ mod tests {
         e.dimensions.resource = Confidence::High;
         e.dimensions.operation = Confidence::High;
         c.events = vec![e];
+        c.edges.push(EvidenceEdge {
+            from: "event:e1".into(),
+            to: "resource:C:\\fixture\\a".into(),
+            relation: "write_requested".into(),
+            confidence: Confidence::High,
+            reason: "Provisional resource association".into(),
+        });
         db.append_evidence(&c).unwrap();
         assert_eq!(
             db.load(&c.id).unwrap().events[0].confidence,
@@ -486,6 +494,7 @@ mod tests {
         assert_eq!(page[0].confidence, Confidence::Unknown);
         assert!(!full.events[0].raw.resource_resolved);
         assert_eq!(full.events[0].success, None);
+        assert_eq!(full.edges[0].confidence, Confidence::Unknown);
         assert_eq!(
             serde_json::to_string(&full.events[0]).unwrap(),
             serde_json::to_string(&page[0]).unwrap()
