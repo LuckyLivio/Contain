@@ -51,4 +51,4 @@ $report=[ordered]@{
     definition='One row per instrumented syscall. Observed includes matching raw operation in its exact time interval or compatible final state; Correct requires exact PID+birth and application High. Noise remains Unknown. Missing observations are included in Unknown. This is fixture coverage, not global accuracy.'
     rows=$rows
 }
-return $report
+return [pscustomobject]$report

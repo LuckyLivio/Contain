@@ -1,0 +1,29 @@
+name: Attribution stress
+on:
+  workflow_dispatch:
+    inputs:
+      files:
+        description: Synthetic file count (4 to 100000)
+        required: true
+        default: '10000'
+        type: string
+jobs:
+  stress:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Measure ETW workload and independent baseline
+        shell: pwsh
+        env:
+          FIXTURE_FILES: ${{ inputs.files }}
+        run: ./scripts/stress.ps1 -Files ([int]$env:FIXTURE_FILES) -RequireEtw
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: attribution-stress
+          path: target/stress

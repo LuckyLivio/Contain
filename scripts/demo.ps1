@@ -71,6 +71,9 @@ try {
         Write-Output ("RELIABILITY: " + (($score | Select-Object -Property * -ExcludeProperty rows) | ConvertTo-Json -Compress))
         if ($score.incorrect_attribution -ne 0) { throw 'false attribution detected' }
         if ($RequireEtw) {
+            Write-Output ("PROCESSES: " + ($manifest.processes | ConvertTo-Json -Depth 8 -Compress))
+            Write-Output ("SHORT: " + (@($manifest.events | Where-Object { $_.resource -like '*\short.txt' }) | ConvertTo-Json -Depth 8 -Compress))
+            Write-Output ("SCORED: " + ($score.rows | ConvertTo-Json -Depth 8 -Compress))
             foreach ($role in @('short','detached')) {
                 if (@($score.rows | Where-Object { $_.role -eq $role -and $_.outcome -eq 'Correct' }).Count -eq 0) { throw "$role actor was not correctly attributed" }
             }
