@@ -55,7 +55,7 @@ fn synthetic_disk_replay() {
     let mut rows = 0;
     loop {
         let done = db
-            .evidence_group(|db| {
+            .evidence_group(&c.id, |db| {
                 for _ in 0..4 {
                     let page = db.raw_page(&c.id, cursor).unwrap();
                     if page.is_empty() {

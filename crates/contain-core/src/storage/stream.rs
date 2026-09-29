@@ -311,6 +311,7 @@ impl Storage {
     /// individually; SQLite's bounded page cache spills to WAL as necessary.
     pub(crate) fn evidence_group<T>(
         &mut self,
+        session: &str,
         write: impl FnOnce(&mut Self) -> Result<T>,
     ) -> Result<T> {
         anyhow::ensure!(self.connection.is_autocommit(), "Nested evidence group");
@@ -322,8 +323,19 @@ impl Storage {
             )?;
             Ok(value)
         });
-        if result.is_err() && !self.connection.is_autocommit() {
-            self.connection.execute_batch("ROLLBACK")?;
+        if let Err(error) = &result {
+            if !self.connection.is_autocommit() {
+                self.connection.execute_batch("ROLLBACK")?;
+            }
+            // A full/unavailable disk can also prevent reporting the failure. In that
+            // case the previous unfinished state remains visible and never promotes.
+            let _ = self.connection.execute(
+                "UPDATE capture_runs SET state='failed',error=?2 WHERE session_id=?1",
+                params![
+                    session,
+                    format!("derived group persistence failed: {error:#}")
+                ],
+            );
         }
         result
     }
@@ -645,7 +657,7 @@ mod tests {
         let mut page = c.clone();
         page.events = vec![event(1)];
         assert!(
-            db.evidence_group(|db| {
+            db.evidence_group(&c.id, |db| {
                 db.append_evidence(&page)?;
                 db.append_evidence(&page)
             })
@@ -661,7 +673,18 @@ mod tests {
         );
         let loaded = db.load(&c.id).unwrap();
         assert_eq!(loaded.events.len(), 257);
-        assert_eq!(loaded.capture_state.as_deref(), Some("finalizing"));
+        assert_eq!(loaded.capture_state.as_deref(), Some("failed"));
+        assert!(
+            loaded
+                .backend
+                .stream
+                .as_ref()
+                .unwrap()
+                .error
+                .as_ref()
+                .unwrap()
+                .contains("derived group persistence")
+        );
         assert!(
             loaded
                 .events

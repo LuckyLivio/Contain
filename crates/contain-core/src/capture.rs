@@ -291,7 +291,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     let mut raw_stats = CaptureStats::default();
     let mut cursor = (0, 0);
     loop {
-        let done = db.evidence_group(|db| {
+        let done = db.evidence_group(&id, |db| {
             for _ in 0..4 {
                 let mut page = db.raw_page(&id, cursor)?;
                 if page.is_empty() {
