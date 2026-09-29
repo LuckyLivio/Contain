@@ -7,7 +7,7 @@ captures, snapshot fallback, and release stress acceptance.
 
 The local Windows ordinary-token run passed `cargo fmt --all -- --check`,
 `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`
-(44 core tests and 1 fixture test), `cargo build --workspace --release --locked`,
+(46 core tests and 1 fixture test), `cargo build --workspace --release --locked`,
 seven Python scorer tests and the PowerShell scorer rejection checks. The local
 release snapshot fixture also passed readback, JSON schema and dry-run invariance.
 It cannot validate ETW under this token.
@@ -16,7 +16,9 @@ The added storage tests exercise committed pages before finish, byte quota and
 tail balance, rollback on injected write failure, SQLite FULL via max_page_count,
 an actual competing SQLite write lock, reopen after simulated interruption,
 and final loss downgrade parity between full and paged reads. The interruption
-test drops the writer without successful finalization; it is not a machine power
+test drops the writer without successful finalization. A separate actual child
+process exits without running destructors or SQLite close: 256 committed records
+survive and its uncommitted tail does not appear. This is not a machine power
 failure test. Existing v1/v2 migration, newer-schema rejection, equal-timestamp
 ordering, PID/TID lifetime ambiguity and failed-completion tests remain active.
 

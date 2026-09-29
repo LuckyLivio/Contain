@@ -24,6 +24,7 @@ An absent `backend.pipeline` means ETW counters were unavailable/disabled.
 | stream.accepted / persisted / failed / quota_dropped | records submitted to journal / committed / unavailable after write failure / quota-refused |
 | stream.committed_bytes / quota_bytes | UTF-8 JSON payload bytes committed / allowed; not whole database bytes |
 | stream.batches / max_batch_bytes | committed raw transactions / maximum attempted serialized batch size |
+| stream.sqlite_synchronous / wal_autocheckpoint_pages / sqlite_page_size_bytes | queried streaming SQLite configuration: synchronous 1 = NORMAL, checkpoint threshold in pages, page size in bytes; null in older measurements. Finished-state commit uses FULL |
 | etw_events_lost | Windows EventsLost, global enabled-provider **events**, null without successful stop stats |
 | etw_realtime_buffers_lost | Windows RealTimeBuffersLost, **buffers**, null without stop stats |
 | etw_log_buffers_lost | null / not applicable: no ETL file logger |

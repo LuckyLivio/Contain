@@ -105,13 +105,31 @@ is a raw payload quota, not a promise that the complete SQLite file is 256 MiB:
 indexes, JSON/typed evidence copies, graph and WAL consume additional bounded
 storage proportional to retained evidence. No callback executes SQLite.
 
-WAL + synchronous FULL, 256-page autocheckpoint, 250 ms busy timeout. A failed
+WAL + synchronous NORMAL while streaming/finalizing, 4096-page autocheckpoint
+(16 MiB at the measured 4096-byte page size), 250 ms busy timeout. The final
+finished-state transaction switches to FULL and syncs the WAL. A failed
 batch rolls back; earlier commits remain. A write failure stops accepting further
 raw records and counts each unavailable record; errors and unfinished state are
 visible. A crash leaves `capturing` or `finalizing`, never `finished`. Full reads
 and raw pages of unfinished sessions suppress promotion. Finalization applies a
 session-wide downgrade to previously persisted provisional observations when
 continuity is lost. It is not an automatic resume mechanism.
+
+The [corrected-oracle FULL-sync comparison](../examples/comparison-release-v031-corrected.json)
+exposed a regression: candidate 1000-file median 92.303 s versus baseline 8.335 s;
+all three baseline runs passed and all three candidate runs overflowed the queue.
+ETW loss was zero on both sides. Candidate raw persistence took 11.121–18.084 s
+for only 38–43 committed batches, followed by 44.550–71.742 s paged finalization.
+This motivates the bounded WAL policy adjustment; the attribution gate is unchanged.
+[SQLite's synchronous documentation](https://www.sqlite.org/pragma.html#pragma_synchronous)
+distinguishes application-crash durability from power/OS-crash durability. Committed
+NORMAL WAL transactions survive application termination; recent transactions can
+roll back after power loss or an OS crash. This project does not promise interim
+power-loss durability. An actual child-process abrupt-exit test bypasses destructors
+and verifies committed records remain readable and unfinished. No synchronous OFF
+or journal OFF mode is used. The checkpoint threshold is not a hard WAL-file cap:
+transactions and external pinned readers can exceed it; physical DB/WAL peaks are
+measured separately and the raw payload quota remains 256 MiB.
 
 Existing process/thread bounds remain 32768/131072; file objects, IRPs and registry
 contexts remain 16384 each. Snapshot collection explicitly rejects 100000 entries

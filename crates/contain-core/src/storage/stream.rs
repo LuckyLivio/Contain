@@ -35,6 +35,9 @@ pub struct StreamStats {
     pub max_batch_bytes: u64,
     pub persistence_ns: u64,
     pub error: Option<String>,
+    pub sqlite_synchronous: Option<u32>,
+    pub wal_autocheckpoint_pages: Option<u32>,
+    pub sqlite_page_size_bytes: Option<u32>,
 }
 
 pub struct RawBuffer {
@@ -47,11 +50,26 @@ pub struct RawBuffer {
 impl RawBuffer {
     pub fn new(db: &mut Storage, capture: &Capture, quota: u64) -> Result<Self> {
         db.connection.execute_batch(
-            "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA wal_autocheckpoint=256;",
+            "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA wal_autocheckpoint=4096;",
         )?;
         db.save(capture)?;
         let stats = StreamStats {
             quota_bytes: quota,
+            sqlite_synchronous: Some(db.connection.pragma_query_value(
+                None,
+                "synchronous",
+                |r| r.get(0),
+            )?),
+            wal_autocheckpoint_pages: Some(db.connection.pragma_query_value(
+                None,
+                "wal_autocheckpoint",
+                |r| r.get(0),
+            )?),
+            sqlite_page_size_bytes: Some(db.connection.pragma_query_value(
+                None,
+                "page_size",
+                |r| r.get(0),
+            )?),
             ..Default::default()
         };
         db.connection.execute(
@@ -242,6 +260,8 @@ impl Storage {
         ))
     }
     pub(crate) fn mark_finished(&mut self, c: &Capture) -> Result<()> {
+        // Stream commits survive application exit; final completion also syncs the WAL.
+        self.connection.execute_batch("PRAGMA synchronous=FULL;")?;
         let tx = self.connection.transaction()?;
         if !c.backend.source_intact() {
             // This also covers records persisted before a later failure became known.
@@ -546,6 +566,46 @@ mod tests {
             assert_eq!(c.events[0].confidence, Confidence::Unknown);
             assert_eq!(c.capture_state.as_deref(), Some("capturing"));
             assert!(matches!(c.quality.level, QualityLevel::Incomplete));
+        }
+        for suffix in ["", "-wal", "-shm"] {
+            let owned = std::path::PathBuf::from(format!("{}{suffix}", path.display()));
+            if owned.exists() {
+                std::fs::remove_file(owned).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn abrupt_exit_child() {
+        let Some(path) = std::env::var_os("CONTAIN_STREAM_CRASH_TEST") else {
+            return;
+        };
+        let mut db = Storage::open(Path::new(&path)).unwrap();
+        let mut writer = RawBuffer::new(&mut db, &capture(), DEFAULT_QUOTA).unwrap();
+        writer.append(&mut db, (1..=257).map(event).collect());
+        // Deliberately bypass all Rust destructors, SQLite close and final flush.
+        std::process::exit(73);
+    }
+
+    #[test]
+    fn committed_wal_survives_abrupt_process_exit_without_finish() {
+        let path =
+            std::env::temp_dir().join(format!("contain-stream-crash-{}.db", uuid::Uuid::new_v4()));
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "storage::stream::tests::abrupt_exit_child"])
+            .env("CONTAIN_STREAM_CRASH_TEST", &path)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert_eq!(status.code(), Some(73));
+        {
+            let db = Storage::open(&path).unwrap();
+            let c = db.load("stream").unwrap();
+            assert_eq!(c.events.len(), 256);
+            assert_eq!(c.capture_state.as_deref(), Some("capturing"));
+            assert!(c.events.iter().all(|e| e.confidence == Confidence::Unknown));
+            assert_eq!(c.backend.stream.unwrap().sqlite_synchronous, Some(1));
         }
         for suffix in ["", "-wal", "-shm"] {
             let owned = std::path::PathBuf::from(format!("{}{suffix}", path.display()));
