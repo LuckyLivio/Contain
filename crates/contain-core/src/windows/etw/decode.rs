@@ -167,7 +167,6 @@ impl Decoder {
                     self.paths
                         .insert(object, (path.clone(), uuid::Uuid::new_v4().to_string()));
                 } else {
-                    self.dropped.fetch_add(1, Ordering::Relaxed);
                     self.metrics.add(Count::ContextEvictions, 1);
                 }
             }
@@ -231,7 +230,6 @@ impl Decoder {
             } else if self.pending.len() < OBJECT_CAPACITY {
                 self.pending.insert(irp, (e.id.clone(), time));
             } else {
-                self.dropped.fetch_add(1, Ordering::Relaxed);
                 self.metrics.add(Count::ContextEvictions, 1);
             }
         }
@@ -287,10 +285,6 @@ impl Decoder {
                 self.metrics.add(
                     Count::ContextEvictions,
                     self.registry_context.dropped - previous_drops,
-                );
-                self.dropped.fetch_add(
-                    self.registry_context.dropped - previous_drops,
-                    Ordering::Relaxed,
                 );
                 if success != Some(true) {
                     self.registry_context.close(owner, object);

@@ -43,10 +43,7 @@ pub fn finish(c: &mut Capture) {
         .iter()
         .filter(|e| e.confidence == Confidence::High)
         .count() as u64;
-    let loss = c.backend.dropped_events > 0
-        || c.backend.etw_events_lost.unwrap_or(0) > 0
-        || c.backend.etw_buffers_lost.unwrap_or(0) > 0
-        || c.backend.decode_errors > 0;
+    let loss = c.backend.has_loss();
     let gaps = c.stats.snapshot_gaps > 0 || c.stats.notification_gaps > 0;
     let shutdown_failed = c.backend.etw_file == "active"
         && (c.backend.etw_events_lost.is_none() || c.backend.etw_buffers_lost.is_none());
@@ -123,6 +120,18 @@ pub fn finish(c: &mut Capture) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn context_loss_suppresses_continuity_without_inventing_raw_record_drops() {
+        let mut c = Capture::default();
+        c.backend.etw_events_lost = Some(0);
+        c.backend.etw_buffers_lost = Some(0);
+        assert!(c.backend.source_intact());
+        c.backend.context_losses = 1;
+        finish(&mut c);
+        assert!(!c.backend.source_intact());
+        assert_eq!(c.stats.events_dropped, 0);
+        assert!(matches!(c.quality.level, QualityLevel::Incomplete));
+    }
     #[test]
     fn quality_reports_loss_and_keeps_actor_and_resource_independent() {
         let mut c = Capture {

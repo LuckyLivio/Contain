@@ -99,5 +99,5 @@ downgrade provisional observations stored earlier. No automatic resume is promis
 Summary, focused explain and requested pages avoid loading every event; complete
 JSON export explicitly requests full history. See [ADR 0006](adr/0006-capture-pipeline.md)
 and [counter definitions](capture-counters.md) for limits, units and balances.
-The legacy aggregate drop field includes context failures and is a continuity guard,
-not a raw-event accounting identity.
+Historic drop counters mixed context entries and raw records. v0.3.1 separates
+raw record loss from context loss; each independently suppresses promotion.

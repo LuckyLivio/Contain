@@ -263,13 +263,12 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     let lifecycle_complete = backend.etw_process == "active"
         && backend.etw_events_lost == Some(0)
         && backend.etw_buffers_lost == Some(0)
-        && backend.dropped_events == 0
-        && backend.decode_errors == 0
+        && !backend.has_loss()
         && cache.dropped == 0;
     if lifecycle_complete {
         cache.attach((root_pid, root_birth), &id);
     }
-    backend.dropped_events += cache.dropped;
+    backend.context_losses += cache.dropped;
     if let Some(p) = &mut backend.pipeline {
         p.context_evictions += cache.dropped;
     }
@@ -281,10 +280,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
             .cloned()
             .collect();
     }
-    let source_intact = backend.dropped_events == 0
-        && backend.decode_errors == 0
-        && backend.etw_events_lost == Some(0)
-        && backend.etw_buffers_lost == Some(0);
+    let source_intact = backend.source_intact();
     let mut raw_stats = CaptureStats::default();
     let mut cursor = (0, 0);
     loop {
@@ -399,37 +395,41 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     };
     let complete = backend.etw_events_lost == Some(0)
         && backend.etw_buffers_lost == Some(0)
-        && backend.dropped_events == 0
-        && backend.decode_errors == 0;
+        && !backend.has_loss();
     for file in &mut files {
-        match db.resource_events(&id, &file.path) {
-            Ok(mut events) => {
+        match db.resource_events(&id, &file.path)? {
+            Some(mut events) => {
                 attribution::compose_files(std::slice::from_mut(file), &mut events, complete);
             }
-            Err(error) => {
-                backend.dropped_events += 1;
+            None => {
+                backend.context_losses += 1;
                 if let Some(p) = &mut backend.pipeline {
                     p.context_evictions += 1;
                 }
-                warnings.push(error.to_string());
+                warnings.push(
+                    "Per-resource association quota exceeded; session promotion suppressed".into(),
+                );
             }
         }
     }
     if let Some(root) = &nt_root {
         for change in &mut registry {
-            match db.resource_events(&id, &format!("{root}\\{}", change.name)) {
-                Ok(mut events) => attribution::compose_registry(
+            match db.resource_events(&id, &format!("{root}\\{}", change.name))? {
+                Some(mut events) => attribution::compose_registry(
                     std::slice::from_mut(change),
                     &mut events,
                     nt_root.as_deref(),
                     complete && backend.registry_path_gaps == 0,
                 ),
-                Err(error) => {
-                    backend.dropped_events += 1;
+                None => {
+                    backend.context_losses += 1;
                     if let Some(p) = &mut backend.pipeline {
                         p.context_evictions += 1;
                     }
-                    warnings.push(error.to_string());
+                    warnings.push(
+                        "Per-resource association quota exceeded; session promotion suppressed"
+                            .into(),
+                    );
                 }
             }
         }
@@ -461,12 +461,8 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
             "{skipped} unreadable/reparse scan entries excluded from diff."
         ));
     }
-    if backend.dropped_events > 0
-        || backend.etw_events_lost.unwrap_or(0) > 0
-        || backend.etw_buffers_lost.unwrap_or(0) > 0
-        || backend.decode_errors > 0
-    {
-        warnings.push(format!("Capture incomplete: {} application drops, {:?} ETW events lost, {:?} ETW buffers lost, {} decode errors; state attribution remains Unknown.", backend.dropped_events, backend.etw_events_lost, backend.etw_buffers_lost, backend.decode_errors));
+    if backend.has_loss() {
+        warnings.push(format!("Capture incomplete: {} raw record losses, {} context losses, {:?} ETW events lost, {:?} ETW buffers lost, {} decode errors; state attribution remains Unknown.",backend.dropped_events,backend.context_losses,backend.etw_events_lost,backend.etw_buffers_lost,backend.decode_errors));
     }
     let finished_at = native::timestamp(native::now_ticks());
     let name = options.name.unwrap_or_else(|| {
@@ -504,7 +500,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     crate::timeline::complete(&mut capture, exited_at);
     crate::reliability::finish(&mut capture);
     add_stats(&mut capture.stats, &raw_stats);
-    if capture.backend.dropped_events > 0 {
+    if capture.backend.has_loss() {
         capture.stats.high_confidence_events = 0;
         for f in &mut capture.files {
             f.confidence = Confidence::Unknown;

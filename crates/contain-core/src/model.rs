@@ -166,6 +166,8 @@ pub struct SystemEvent {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct BackendReport {
     #[serde(default)]
+    pub context_losses: u64,
+    #[serde(default)]
     pub file_event_id_filter: Option<bool>,
     #[serde(default)]
     pub stream: Option<crate::storage::stream::StreamStats>,
@@ -185,6 +187,19 @@ pub struct BackendReport {
     #[serde(default)]
     pub registry_path_gaps: u64,
     pub warnings: Vec<String>,
+}
+
+impl BackendReport {
+    pub fn has_loss(&self) -> bool {
+        self.dropped_events > 0
+            || self.context_losses > 0
+            || self.decode_errors > 0
+            || self.etw_events_lost.unwrap_or(0) > 0
+            || self.etw_buffers_lost.unwrap_or(0) > 0
+    }
+    pub fn source_intact(&self) -> bool {
+        !self.has_loss() && self.etw_events_lost == Some(0) && self.etw_buffers_lost == Some(0)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

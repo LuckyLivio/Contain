@@ -219,7 +219,7 @@ impl Storage {
         &self,
         session: &str,
         resource: &str,
-    ) -> Result<Vec<SystemEvent>> {
+    ) -> Result<Option<Vec<SystemEvent>>> {
         let mut q = self.connection.prepare_cached(
             "SELECT document FROM event_documents WHERE session_id=?1 AND resource=?2 LIMIT 513",
         )?;
@@ -232,24 +232,27 @@ impl Storage {
                 |r| r.get::<_, String>(0),
             )?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        anyhow::ensure!(rows.len() <= 512, "per-resource association quota exceeded");
-        rows.into_iter()
-            .map(|r| Ok(serde_json::from_str(&r)?))
-            .collect()
+        if rows.len() > 512 {
+            return Ok(None);
+        }
+        Ok(Some(
+            rows.into_iter()
+                .map(|r| Ok(serde_json::from_str(&r)?))
+                .collect::<Result<Vec<_>>>()?,
+        ))
     }
     pub(crate) fn mark_finished(&mut self, c: &Capture) -> Result<()> {
         let tx = self.connection.transaction()?;
-        if c.backend.dropped_events > 0
-            || c.backend.decode_errors > 0
-            || c.backend.etw_events_lost != Some(0)
-            || c.backend.etw_buffers_lost != Some(0)
-        {
+        if !c.backend.source_intact() {
             // This also covers records persisted before a later failure became known.
             tx.execute("UPDATE observations SET confidence='Unknown',rule=?2,reason='Session continuity unverified; final promotion suppressed' WHERE session_id=?1 AND event_type IN ('file','registry')",params![c.id,serde_json::to_string(&AttributionRule::EventLoss)?])?;
             tx.execute("UPDATE normalized_operations SET detail_json=json_set(detail_json,'$.confidence','Unknown') WHERE session_id=?1",[&c.id])?;
+            tx.execute("UPDATE normalized_operations SET operation='UnresolvedRequest',detail_json=json_set(detail_json,'$.operation','UnresolvedRequest','$.success',NULL,'$.reason','Session continuity unverified; raw request only') WHERE session_id=?1 AND json_array_length(detail_json,'$.raw_events')>0",[&c.id])?;
             tx.execute("UPDATE observations SET success=NULL WHERE session_id=?1 AND event_type IN ('file','completion')",[&c.id])?;
             tx.execute("UPDATE observation_details SET raw_json=json_set(raw_json,'$.resource_resolved',json('false')),dimensions_json=json_set(dimensions_json,'$.resource','Unknown') WHERE event_id IN (SELECT id FROM observations WHERE session_id=?1 AND event_type IN ('file','registry'))",[&c.id])?;
-            tx.execute("UPDATE event_documents SET document=json_set(document,'$.confidence','Unknown','$.evidence.rule','EventLoss','$.raw.resource_resolved',json('false')) WHERE session_id=?1 AND json_extract(document,'$.event_type') IN ('file','registry')",[&c.id])?;
+            tx.execute("UPDATE observation_details SET dimensions_json=json_set(dimensions_json,'$.operation','Unknown') WHERE event_id IN (SELECT id FROM observations WHERE session_id=?1 AND event_type IN ('file','completion'))",[&c.id])?;
+            tx.execute("UPDATE event_documents SET document=json_set(document,'$.confidence','Unknown','$.evidence.rule','EventLoss','$.raw.resource_resolved',json('false'),'$.dimensions.resource','Unknown','$.reason','Session continuity unverified; final promotion suppressed') WHERE session_id=?1 AND json_extract(document,'$.event_type') IN ('file','registry')",[&c.id])?;
+            tx.execute("UPDATE event_documents SET document=json_set(document,'$.success',NULL,'$.dimensions.operation','Unknown') WHERE session_id=?1 AND json_extract(document,'$.event_type') IN ('file','completion')",[&c.id])?;
         }
         tx.execute(
             "UPDATE capture_runs SET state='finished' WHERE session_id=?1 AND state='finalizing'",
@@ -467,6 +470,8 @@ mod tests {
         e.confidence = Confidence::High;
         e.raw.resource_resolved = true;
         e.success = Some(true);
+        e.dimensions.resource = Confidence::High;
+        e.dimensions.operation = Confidence::High;
         c.events = vec![e];
         db.append_evidence(&c).unwrap();
         assert_eq!(
@@ -481,6 +486,10 @@ mod tests {
         assert_eq!(page[0].confidence, Confidence::Unknown);
         assert!(!full.events[0].raw.resource_resolved);
         assert_eq!(full.events[0].success, None);
+        assert_eq!(
+            serde_json::to_string(&full.events[0]).unwrap(),
+            serde_json::to_string(&page[0]).unwrap()
+        );
     }
     #[test]
     fn sqlite_full_is_a_failure_not_a_successful_empty_capture() {

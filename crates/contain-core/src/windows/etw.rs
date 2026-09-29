@@ -373,6 +373,7 @@ impl EtwSource {
             sink(page);
         }
         self.report.dropped_events = self.dropped.load(Ordering::Relaxed);
+        self.report.context_losses = self.metrics.get(Count::ContextEvictions);
         self.report.events_received = self.received.load(Ordering::Relaxed);
         self.report.decode_errors = self.errors.load(Ordering::Relaxed);
         self.report.registry_path_gaps = self.registry_path_gaps.load(Ordering::Relaxed);

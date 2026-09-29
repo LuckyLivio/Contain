@@ -41,8 +41,11 @@ dequeued = stream.accepted
 stream.accepted = stream.persisted + stream.failed + stream.quota_dropped
 ```
 
-The legacy `backend.dropped_events` aggregates raw losses **and** context failures;
-it is a continuity guard, not an event-accounting identity. `events_retained` counts
+v0.3.1 `backend.dropped_events` adds only raw record losses (enqueue rejection,
+quota and persistence). `backend.context_losses` is separate, in context entries;
+both independently suppress promotion. Historic v0.3 and early diagnostic revisions
+mixed these units in `dropped_events`, so those fields cannot be retroactively
+interpreted as raw-event accounting. `events_retained` counts
 the final scoped timeline including synthesized state/process observations. Later
 lifecycle scope filtering and synthesis mean it is not received minus dropped.
 Unknown counters count observations, not independent fixture operations.

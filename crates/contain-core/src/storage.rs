@@ -38,7 +38,7 @@ impl Storage {
             "INSERT INTO applications(id,name,installer) VALUES (?1,?2,?3) ON CONFLICT(id) DO UPDATE SET name=excluded.name,installer=excluded.installer",
             params![capture.id, capture.name, capture.installer],
         )?;
-        tx.execute("INSERT INTO installation_sessions(id,application_id,started_at,finished_at,exit_code,watch_roots_json,registry_key,warnings_json) VALUES (?1,?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(id) DO UPDATE SET finished_at=excluded.finished_at,exit_code=excluded.exit_code,warnings_json=excluded.warnings_json",
+        tx.execute("INSERT INTO installation_sessions(id,application_id,started_at,finished_at,exit_code,watch_roots_json,registry_key,warnings_json) VALUES (?1,?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(id) DO UPDATE SET started_at=excluded.started_at,finished_at=excluded.finished_at,exit_code=excluded.exit_code,warnings_json=excluded.warnings_json",
             params![capture.id, capture.started_at, capture.finished_at, capture.exit_code,
                 serde_json::to_string(&capture.watch_roots)?, capture.registry_key, serde_json::to_string(&capture.warnings)?])?;
         for process in &capture.processes {
