@@ -200,3 +200,37 @@ Full [small results](examples/hotpath-combined-1.json) and
 [1000 results](examples/hotpath-combined-1-1000.json); artifact `11043910954`
 on run 36588824929, ZIP SHA256
 `bb22f61aed73cc6db8976d0e7fc880ac569c3131e5dbe8944770500c264da884`.
+
+## Reproduction and safety boundary
+
+Use an authorized elevated Windows/NTFS runner; do not change machine security
+settings. Run the original Rust/scorer checks, then select an explicit variant:
+
+```powershell
+cargo test --workspace --locked
+./scripts/test-score.ps1
+python scripts/test-score.py
+$env:CONTAIN_HOTPATH_VARIANT='D1' # D0, D1, D2, D3
+./scripts/demo.ps1 -Release -RequireEtw -RegistryNoise -OutputDirectory ./target/query-demo
+./scripts/hotpath-small.ps1 -Phase light
+./scripts/hotpath-small.ps1 -Phase final
+./scripts/compare-release.ps1 -BaselineDirectory . -BaselineVariant D0 -CandidateVariant D3 -Files 1000 -Trials 3 -Profile -SingleScale -SkipExtras -OutputDirectory ./target/query-stress
+```
+
+Local `demo`/comparison outputs contain private capture data; only use the
+fixture publication helpers for upload. Profiling is opt-in via
+`CONTAIN_PROFILE_PATH`, bounded, and written after ETW stops. Fixed provider counters
+remain available without per-event diagnostic logs. Detailed stage timers overlap;
+raw persistence overlaps receive time, and stop time is included in descendant
+drain. `capture_elapsed_ms` predates final close and is not end-to-end wall.
+
+The receiver is still the sole database writer. Raw queue 8192, pages 256,
+batch byte limit 1 MiB, default raw payload quota 256 MiB, existing WAL NORMAL /
+final FULL and checkpoint settings are unchanged. Initial identities are bounded
+to 4096 queries; callback process cache 32768, registry paths 16384 and ownership
+watermarks 32768. No new thread or unbounded unresolved-event queue was added.
+Extra owned registry metadata and retained unresolved context increase raw storage.
+Snapshot failures remain visible; they do not prove exclusion or a complete process
+inventory. Snapshot fallback still polls; missing lifecycle exits still reach the
+maximum drain deadline and report incomplete. Raw evidence remains provisional
+until final quality checks; crash/failed-derived/old-schema recovery tests are retained.
