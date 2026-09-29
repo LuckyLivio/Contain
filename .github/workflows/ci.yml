@@ -22,11 +22,22 @@ jobs:
         run: cargo test --workspace
       - name: Build
         run: cargo build --workspace
+      - name: Ground truth scorer rejection cases
+        shell: pwsh
+        run: ./scripts/test-score.ps1
       - name: ETW fixture integration
         env:
           RUST_LOG: contain_core::windows::etw=debug
         shell: pwsh
-        run: ./scripts/demo.ps1 -RequireEtw
+        run: ./scripts/demo.ps1 -RequireEtw -OutputDirectory ./target/demo-etw
+      - name: ETW immediate-launch regression repeat
+        shell: pwsh
+        run: ./scripts/demo.ps1 -RequireEtw -OutputDirectory ./target/demo-etw-repeat
       - name: Snapshot fallback integration
         shell: pwsh
-        run: ./scripts/demo.ps1 -SnapshotOnly
+        run: ./scripts/demo.ps1 -SnapshotOnly -OutputDirectory ./target/demo-fallback
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fixture-evidence
+          path: target/demo-*

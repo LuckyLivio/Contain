@@ -1,0 +1,43 @@
+{
+  "confidence": "High",
+  "dimensions": {
+    "actor": "High",
+    "operation": "High",
+    "resource": "High"
+  },
+  "event_type": "file",
+  "evidence": {
+    "ancestor_pid": 5548,
+    "parent_pid": 5548,
+    "pid": 1056,
+    "process_creation_time": "134351439899381049",
+    "process_image": "d:\\a\\contain\\contain\\target\\debug\\contain-test-installer.exe",
+    "rule": "DescendantProcess",
+    "session_id": "7bb367f4-2b48-4235-aaf3-3e7d8ac9b7a1",
+    "source": "EtwFile"
+  },
+  "id": "83a11e2f-ee84-4301-ab28-a612b5822126",
+  "operation": "write_requested",
+  "raw": {
+    "event_id": 16,
+    "file_key": "ffffb8086deb6710",
+    "file_object": "ffff930f161523c0",
+    "header_pid": 1056,
+    "irp": "ffff930f1136f8a8",
+    "object_generation": "5e288f9c-0f3e-41f8-9805-7187c010f17d",
+    "parent_key": null,
+    "process_key": null,
+    "registry_object": null,
+    "related_event": null,
+    "resource_resolved": true,
+    "status": 0,
+    "thread_id": 9748
+  },
+  "reason": "write_requested from PID 1056 (creation time 134351439899381049) matches a verified descendant process. Operation completion: success.",
+  "resource": "c:\\users\\runneradmin\\appdata\\local\\temp\\contain-demo-75a0d42b55b94f969d2ba23144f29fa1\\short.txt",
+  "sequence": 19,
+  "state_validated": false,
+  "success": true,
+  "timestamp": "2026-09-29T08:26:29.948103400+00:00",
+  "timestamp_ticks": "134351439899481034"
+}

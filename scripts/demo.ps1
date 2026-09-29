@@ -67,12 +67,20 @@ try {
         $noiseRegistry=@($manifest.registry | Where-Object name -eq 'NoiseOnly')
         if ($noiseRegistry.Count -ne 1 -or $noiseRegistry[0].confidence -ne 'Unknown') { throw 'independent registry state was misattributed' }
         $score = & "$PSScriptRoot/score-fixture.ps1" -Capture $manifest -Root $root
+        if ($OutputDirectory) {
+            New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+            $document | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'capture.json') -Encoding utf8
+            $score | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'reliability.json') -Encoding utf8
+            Copy-Item -LiteralPath (Join-Path $root 'ground-truth.json') -Destination $OutputDirectory
+        }
         if ($score.expected -ne 21) { throw "ground truth incomplete: expected 21 instrumented operations" }
         Write-Output ("RELIABILITY: " + (($score | Select-Object -Property * -ExcludeProperty rows) | ConvertTo-Json -Compress))
+        if (@($manifest.events | Where-Object { $_.evidence.pid -eq $unrelated.Id -and $_.confidence -in @('High','Certain') }).Count -gt 0) { throw 'independent source actor received application attribution' }
         if ($score.incorrect_attribution -ne 0) { throw 'false attribution detected' }
         if ($RequireEtw) {
             Write-Output ("PROCESSES: " + ($manifest.processes | ConvertTo-Json -Depth 8 -Compress))
             Write-Output ("SHORT: " + (@($manifest.events | Where-Object { $_.resource -like '*\short.txt' }) | ConvertTo-Json -Depth 8 -Compress))
+            Write-Output ("REGISTRY_EXAMPLE: " + (@($manifest.events | Where-Object { $_.event_type -eq "registry" -and $_.operation -eq "set_value" -and $_.confidence -eq "High" -and $_.raw.resource_resolved } | Select-Object -First 1) | ConvertTo-Json -Depth 8 -Compress))
             Write-Output ("SCORED: " + ($score.rows | ConvertTo-Json -Depth 8 -Compress))
             foreach ($role in @('short','detached')) {
                 if (@($score.rows | Where-Object { $_.role -eq $role -and $_.outcome -eq 'Correct' }).Count -eq 0) { throw "$role actor was not correctly attributed" }
@@ -88,12 +96,6 @@ try {
         $explanation=(& $contain --db $db explain $eventId --json) -join "`n"
         Assert-JsonContract $explanation
         if ($LASTEXITCODE -ne 0) { throw 'explain failed' }
-        if ($OutputDirectory) {
-            New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
-            $document | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'capture.json') -Encoding utf8
-            $score | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'reliability.json') -Encoding utf8
-            Copy-Item -LiteralPath (Join-Path $root 'ground-truth.json') -Destination $OutputDirectory
-        }
         foreach ($command in @('diff','history')) {
             $raw = (& $contain --db $db $command TestFixture --json) -join "`n"
             Assert-JsonContract $raw

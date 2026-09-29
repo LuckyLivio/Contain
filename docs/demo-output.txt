@@ -1,0 +1,15 @@
+Extracted actual summary lines from https://github.com/LuckyLivio/Contain/actions/runs/36542590559
+Revision: a8d58f88767bff3466f4145c66c391f7cd83ab44
+First block: ETW. Second block: explicit snapshot fallback. Timestamps removed; values unchanged.
+
+Capture quality: Degraded
+Received: 5756 | Retained: 5748 | Normalized: 2792 | Dropped: 0
+Known actors: 2884 | Unknown actors: 14 | Unknown resources: 1
+ETW VERIFIED: 2433 High file events; 4 independent writer events remain Unknown.
+RELIABILITY: {"expected":21,"observed":20,"correctly_attributed":17,"unknown":4,"incorrect_attribution":0,"dropped":0,"etw_events_lost":0,"etw_buffers_lost":0,"quality":"Degraded","definition":"One row per instrumented syscall. Observed includes matching raw operation in its exact time interval or compatible final state; Correct requires exact PID+birth and application High. Noise remains Unknown. Missing observations are included in Unknown. This is fixture coverage, not global accuracy."}
+DEMO VERIFIED: 5 processes, 20 file states, 4 registry states, 5748 timeline events; readback, JSON and dry-run passed.
+Capture quality: Degraded
+Received: 0 | Retained: 25 | Normalized: 1 | Dropped: 0
+Known actors: 0 | Unknown actors: 0 | Unknown resources: 0
+RELIABILITY: {"expected":21,"observed":17,"correctly_attributed":0,"unknown":21,"incorrect_attribution":0,"dropped":0,"etw_events_lost":null,"etw_buffers_lost":null,"quality":"Degraded","definition":"One row per instrumented syscall. Observed includes matching raw operation in its exact time interval or compatible final state; Correct requires exact PID+birth and application High. Noise remains Unknown. Missing observations are included in Unknown. This is fixture coverage, not global accuracy."}
+DEMO VERIFIED: 3 processes, 17 file states, 4 registry states, 25 timeline events; readback, JSON and dry-run passed.

@@ -1,23 +1,56 @@
-# CLI JSON contract v2
+# CLI JSON contract v3
 
-`inspect <app> --json`, `diff <app> --json`, `history <app> --json`, `list --json`, and `doctor --json` produce one UTF-8 JSON document on stdout. Logs/errors use stderr. `install --manifest <path>` writes the same envelope as inspect. See [JSON Schema](schema/cli-v2.schema.json).
+`inspect`, `diff`, `history`, `list`, `doctor`, and `explain` support `--json` and
+produce one UTF-8 JSON document on stdout. Logs/errors go to stderr. The install
+`--manifest` option writes an inspect document. [Schema](schema/cli-v3.schema.json).
 
 ```json
-{"schema_version":2,"kind":"history","data":{"app_id":"session UUID","events":[]}}
+{"schema_version":3,"kind":"history","data":{"app_id":"session UUID","events":[]}}
 ```
 
-- `schema_version` on the envelope versions the API. Inspect's `data.schema_version` versions the stored capture: 1 for migrated legacy captures, 2 for new captures.
-- `kind` identifies the command. Clients should allow new fields, event operations and backend states. Breaking changes require a new envelope version.
-- Confidence values are `Certain`, `High`, `Medium`, `Low`, `Unknown`. All claims include a human reason and structured evidence. Arrays are empty when there are no recorded changes; inventory failures are explicit warnings, never fabricated removals.
-- FILETIME fields (`timestamp_ticks`, `creation_time`, `parent_creation_time`, `ended_at`, `process_creation_time`) are **decimal strings**, 100 ns ticks since 1601 UTC. Use BigInt/u64; JavaScript numbers lose precision. `timestamp`, `first_seen`, `last_seen`, `started_at`, `finished_at` use RFC3339. Legacy records may have empty missing fields.
-- `success: null` means no completion status. `state_validated` links a source observation to a separate before/after state difference; it does not turn an operation request into a successful completion.
-- History is sorted by numeric ticks. Snapshot and inventory entries use observation time at session end, never an invented mutation timestamp. Legacy captures have no fabricated history.
-- `backend.etw_file`/`etw_registry`: `active`, `disabled`, `unavailable`, or `not_requested`. Active means provider enabled, not guaranteed delivery. `etw_events_lost: null` means statistics unavailable. Application capacity drops and decode errors are separate counters. Loss blocks promotion of final state attribution.
-- `files`/`registry` are state differences; `events` contains source observations and explicitly labelled state observations. Do not sum these as unique changes.
-- Registry snapshot values are lossless `REG_TYPE:hex-bytes`. Raw ETW registry records store operations and value names, not value data. Task triggers contain XML strings. Inventory target evidence describes a configured executable association, not a known writer.
+## Changes from v2
 
-The SQLite schema is independently versioned by `PRAGMA user_version = 2`. Migration adds typed observation/process-instance/inventory tables in a transaction and preserves v0.1 tables. Newer databases are rejected before schema changes. The old PID-only process table is compatibility data; `process_instances` is authoritative for v2.
+- Envelope version is 3. Stored `data.schema_version` can remain 1 or 2 for migrated
+  history; migration never fabricates evidence from a newer capture.
+- Capture adds `stats`, `quality`, `operations` and `edges`.
+- Events add `sequence`, `raw` and `dimensions` (actor/resource/operation). Existing
+  `confidence` still means application attribution.
+- Raw metadata includes event ID, TID, header PID, FileObject, FileKey, registry
+  object, object generation, IRP, related request ID, NTSTATUS, optional process keys
+  and whether the resource was resolved. Hex object/key values are strings.
+- `EtwProcess` is a new evidence source. History includes retained lifecycle and
+  completion observations alongside explicit state observations.
+- Diff adds normalized operations/quality. Explain returns the event, incoming
+  ancestry, applicable operations, application identity and quality.
+- Backend/doctor add process ETW status; backend adds decoder admission count.
 
-`backend.registry_path_gaps` counts registry provider records without absolute hive/key names, across the enabled provider, because these cannot be safely scoped. Any such gap prevents promotion of registry final-state attribution. These records are not assigned a guessed HKCU path.
+Clients should allow new fields and operation/backend labels. Confidence is Certain,
+High, Medium, Low or Unknown; it is not an accuracy probability. `success:null`
+means no resolved completion. `state_validated` means correlation with a separate
+state diff, not that a request completed successfully.
 
-`backend.etw_buffers_lost` separately reports lost ETW log/realtime buffers. A buffer may contain multiple events, so its count is never added to `etw_events_lost`. Missing statistics are null, not zero.
+FILETIME fields (`timestamp_ticks`, creation/parent creation/process creation and
+`ended_at`) are decimal strings in 100 ns units since 1601 UTC. Use BigInt/u64.
+Readable timestamps are RFC3339. Legacy missing fields may be empty/null. SQLite
+stores ticks as 64-bit integers. History sorts `(ticks,sequence,id)` deterministically
+across readback. Snapshot time is collection time, never an invented mutation time.
+
+`events` and `operations` have different cardinalities. Operations can reference
+several raw events. Snapshot Renamed/Replaced use stable identity but never invent
+actors or intermediate chains. Do not add events and state changes as unique mutations.
+
+Backend statuses include active, disabled, unavailable and not_requested. Active
+means configuration succeeded, not full delivery. ETW event and buffer loss have
+different units; null means unavailable, never zero. Application drops and decode
+errors are separate. Registry path gaps count missing names across the provider,
+not just the watched key. No guessed hive name is inserted.
+
+Quality includes reasons. Current captures are Degraded or Incomplete, never Complete.
+Stats count admitted/retained/normalized observations, drops, actor/resource resolution,
+High application events, elapsed time, snapshot/notification gaps and drain timeout.
+[Architecture](architecture.md) defines the counting domains.
+
+SQLite versioning is independent (`PRAGMA user_version=3`). Real v1 -> v3 and v2 -> v3
+migration tests preserve historical observations. Legacy captures explicitly identify
+missing metadata. Newer databases are rejected before schema mutation. The authoritative
+lifetime table is `process_instances`; PID-only v1 rows are compatibility data.

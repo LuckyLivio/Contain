@@ -39,12 +39,9 @@ try {
                 if ($LASTEXITCODE -ne 0) { throw 'stress database readback failed' }
                 if ($RequireEtw -and $capture.backend.etw_file -ne 'active') { throw 'stress ETW unavailable' }
                 $score=& "$PSScriptRoot/score-fixture.ps1" -Capture $capture -Root $root
-                if ($score.expected -ne ($Files*2+[Math]::Ceiling($Files/4.0/2)*4)) {
-                    # Work is divided over four processes; odd division uses each worker's ceiling.
-                    $expected=0
-                    foreach ($worker in 0..3) { $n=[Math]::Floor($Files/4)+[int]($worker -lt ($Files%4)); $expected+=2*$n+[Math]::Ceiling($n/2) }
-                    if ($score.expected -ne $expected) { throw 'stress ground truth incomplete' }
-                }
+                $expected=0
+                foreach ($worker in 0..3) { $n=[Math]::Floor($Files/4)+[int]($worker -lt ($Files%4)); $expected+=2*$n+[Math]::Ceiling($n/2) }
+                if ($score.expected -ne $expected) { throw 'stress ground truth incomplete' }
                 if ($score.incorrect_attribution -ne 0) { throw 'stress false attribution detected' }
                 $results.capture.sqlite_bytes=(Get-Item -LiteralPath $db).Length
                 $results.capture.stats=$capture.stats; $results.capture.backend=$capture.backend

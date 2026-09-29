@@ -35,6 +35,8 @@ impl LifetimeCache {
                 old.last_seen = process.last_seen;
                 old.ended_at = old.ended_at.or(process.ended_at);
                 old.parent_pid = old.parent_pid.or(process.parent_pid);
+                old.parent_creation_time =
+                    old.parent_creation_time.or(process.parent_creation_time);
             }
             None => {
                 self.processes.insert(key, process);
