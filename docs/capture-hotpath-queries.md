@@ -156,3 +156,47 @@ series** for that correctness patch: ten attempts (five ordinary/five noise), th
 alternating 1000-file pairs, and 10000 only if prior gates pass. Keep the first
 series' full ten-attempt denominator and every outcome separately; do not pool
 successes or replace failures. No further automatic candidate search is planned.
+
+### First combined series — failed small gate, not discarded
+
+`bc77765` completed all ten small attempts: **0/10 passed**. There was no ETW,
+queue, retention, persistence or context loss, no tail and no drain timeout.
+The frozen scorer nevertheless rejected unmatched positive events in every attempt:
+
+| Round / environment | File observed/correct / 13 | Registry observed/correct / 4 | Pre / post confirmed-other / 1000 | Unmatched positives |
+|---|---|---|---|---|
+| 1 ordinary | 12/12 | 0/0 | — | 5 |
+| 1 noise | 12/12 | 0/0 | 2 / 3 | 5 |
+| 2 ordinary | 13/13 | 3/3 | — | 1 |
+| 2 noise | 12/12 | 0/0 | 1 / 2 | 5 |
+| 3 ordinary | 12/12 | 0/0 | — | 5 |
+| 3 noise | 12/12 | 0/0 | 0 / 0 | 5 |
+| 4 ordinary | 12/12 | 0/0 | — | 5 |
+| 4 noise | 12/12 | 4/4 | 129 / 43 | 1 |
+| 5 ordinary | 12/12 | 0/0 | — | 5 |
+| 5 noise | 12/12 | 0/0 | 1 / 1 | 5 |
+
+Original noise in every attempt: 2/3 observed but unresolved, zero confirmed-other.
+Failed delete: unobserved and never promoted. Matched-row wrong-actor count is zero,
+but the **42 unmatched positives remain false positives under the frozen gate**.
+Do not conflate those counts or call the series successful.
+
+In round 1 ordinary, four registry records have matching PID/birth/path but ETW
+timestamps 1.1/1.7/2.1/2.1 microseconds beyond their independent syscall interval;
+the detached write is 185.9 microseconds beyond its interval. Those records remain
+unmatched. This suggests an ETW/fixture timebase-boundary issue; it does not establish
+its cause, invalidate the scorer, or justify changing tolerance. The later PID-context
+correctness patch does not claim to fix this timing issue.
+
+The same runner's three 1000-file pairs all passed (D0 and D3): 2500/2500,
+zero relevant losses/false positives/tails/timeouts. Wall seconds D0/D3 were
+23.261/32.054, 30.096/21.783, 21.888/55.723. D3 paged post-processing alone took
+23.030/13.647/46.806 s; its parent memory was 25.42–25.91 MiB, final DB
+89.90–90.10 MiB and sampled WAL peak 35.45–35.78 MiB. This preserves the file
+intermediate capability in that series, not speed or registry stability.
+10000 was skipped because the small gate failed; the workflow is red.
+
+Full [small results](examples/hotpath-combined-1.json) and
+[1000 results](examples/hotpath-combined-1-1000.json); artifact `11043910954`
+on run 36588824929, ZIP SHA256
+`bb22f61aed73cc6db8976d0e7fc880ac569c3131e5dbe8944770500c264da884`.
