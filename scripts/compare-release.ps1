@@ -73,6 +73,7 @@ function Run-Trial([string]$Mode,[int]$Count,[int]$Trial,[string]$Role='stress',
         $records.Add($record)
         $record | ConvertTo-Json -Depth 30 | Set-Content (Join-Path $dest 'measurement.json') -Encoding utf8
         Write-Output ('TRIAL: '+($record|ConvertTo-Json -Depth 30 -Compress))
+        if(-not $SnapshotOnly -and -not $balances){throw "Pipeline accounting mismatch: $label; measurement preserved"}
         if($Overload -and ($p.retention_dropped -eq 0 -or $capture.stats.high_confidence_events -ne 0 -or $capture.quality.level -ne 'Incomplete')){throw 'intentional overload failed to suppress attribution'}
     } finally {
         $env:CONTAIN_ETW_EVENT_ID_FILTER=$priorFilter
