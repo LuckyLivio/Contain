@@ -1,0 +1,23 @@
+[workspace]
+members = ["crates/contain-core", "crates/contain-cli", "examples/test-installer"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/LuckyLivio/Contain"
+
+[workspace.dependencies]
+anyhow = "1"
+blake3 = "1"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+notify = "8"
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sysinfo = "0.37"
+uuid = { version = "1", features = ["v4"] }
+walkdir = "2"
+winreg = "0.55"

@@ -1,0 +1,17 @@
+[package]
+name = "contain-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "contain"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+clap.workspace = true
+contain-core = { path = "../contain-core" }
+serde_json.workspace = true
