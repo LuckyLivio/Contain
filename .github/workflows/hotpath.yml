@@ -1,0 +1,44 @@
+name: Capture hot-path query experiments
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: Fixed isolated light trials or predeclared final gates
+        type: choice
+        options: [light, final]
+        default: light
+jobs:
+  compare:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Rust and frozen scorer tests
+        shell: pwsh
+        run: |
+          cargo test --workspace --locked
+          if($LASTEXITCODE -ne 0){throw 'Rust tests failed'}
+          ./scripts/test-score.ps1
+          python scripts/test-score.py
+          if($LASTEXITCODE -ne 0){throw 'scorer tests failed'}
+      - name: Fixed small ETW attempts (all failures retained)
+        shell: pwsh
+        env:
+          PHASE: ${{ inputs.phase }}
+        run: ./scripts/hotpath-small.ps1 -Phase $env:PHASE
+      - name: Strict final small gate
+        if: inputs.phase == 'final'
+        shell: pwsh
+        run: |
+          $r=Get-Content -Raw ./target/hotpath-public/final-summary.json | ConvertFrom-Json
+          if($r.trials.Count -ne 10 -or @($r.trials|Where-Object {-not $_.acceptance_pass}).Count){throw 'Fixed ten-attempt small gate failed; no heavy gate authorized by this result'}
+      - name: Upload safe fixture evidence and counters
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-hotpath-safe-fixture
+          path: target/hotpath-public

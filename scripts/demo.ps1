@@ -1,4 +1,4 @@
-param([switch]$Release, [switch]$KeepArtifacts, [switch]$RequireEtw, [switch]$SnapshotOnly, [string]$OutputDirectory)
+param([switch]$Release, [switch]$KeepArtifacts, [switch]$RequireEtw, [switch]$SnapshotOnly, [string]$OutputDirectory, [switch]$RegistryNoise)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($RequireEtw -and $SnapshotOnly) { throw 'Choose RequireEtw or SnapshotOnly, not both.' }
@@ -33,16 +33,33 @@ try {
     New-Item -Path $registryPath -Force | Out-Null
     New-ItemProperty -LiteralPath $registryPath -Name Installed -Value 'baseline' -PropertyType String | Out-Null
     $unrelated = Start-Process -FilePath $fixture -ArgumentList @('--role','unrelated','--root',('"' + $root + '"')) -PassThru -WindowStyle Hidden
+    $registryNoiseProcesses=@()
     try {
+        if($RegistryNoise) {
+            $noiseBin=(Resolve-Path "./target/$profile/contain-registry-noise.exe").Path
+            foreach($phase in @('pre','launcher')) {
+                $registryNoiseProcesses += Start-Process -WindowStyle Hidden -FilePath $noiseBin -ArgumentList @('--root',('"'+$root+'"'),'--phase',$phase) -PassThru
+            }
+            $noiseDeadline=[DateTime]::UtcNow.AddSeconds(10)
+            while(-not ((Test-Path -LiteralPath (Join-Path $root '.registry-pre-ready')) -and (Test-Path -LiteralPath (Join-Path $root '.registry-launcher-ready')))) {
+                if([DateTime]::UtcNow -gt $noiseDeadline){throw 'registry noise readiness failed'}
+                Start-Sleep -Milliseconds 10
+            }
+        }
         $arguments = @('--db',$db,'install',$fixture,'--name','TestFixture','--watch',$root,'--registry-key',$key)
         if ($SnapshotOnly) { $arguments += '--no-etw' }
         $arguments += @('--','--root',$root)
+        $captureClock=[Diagnostics.Stopwatch]::StartNew()
         & $contain @arguments
+        $captureClock.Stop()
         if ($LASTEXITCODE -ne 0) { throw 'capture failed' }
         if (-not $unrelated.WaitForExit(10000)) { throw 'independent fixture timed out' }
         if ($unrelated.ExitCode -ne 0) { throw 'independent fixture failed' }
         $deadline=[DateTime]::UtcNow.AddSeconds(15)
         while (-not (Test-Path -LiteralPath (Join-Path $root ".detached-done"))) { if ([DateTime]::UtcNow -gt $deadline) { throw "detached fixture did not finish" }; Start-Sleep -Milliseconds 50 }
+        foreach($noiseProcess in $registryNoiseProcesses) {
+            if(-not $noiseProcess.WaitForExit(21000) -or $noiseProcess.ExitCode -ne 0){throw 'bounded registry noise failed'}
+        }
         $raw = (& $contain --db $db inspect TestFixture --json) -join "`n"
         Assert-JsonContract $raw
         $document = $raw | ConvertFrom-Json
@@ -54,6 +71,7 @@ try {
         $score = & "$PSScriptRoot/score-fixture.ps1" -Capture $manifest -Root $truthRoot
         if ($OutputDirectory) {
             New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+            [ordered]@{elapsed_seconds=$captureClock.Elapsed.TotalSeconds;sqlite_bytes=(Get-Item -LiteralPath $db).Length;measurement='Contain process wall through DB close; excludes fixture build, oracle export and scoring.'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDirectory 'measurement.json') -Encoding utf8
             $document | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'capture.json') -Encoding utf8
             $score | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'reliability.json') -Encoding utf8
             Copy-Item -LiteralPath (Join-Path $truthRoot 'ground-truth.json') -Destination $OutputDirectory
@@ -82,7 +100,8 @@ try {
         if (@($manifest.operations | Where-Object { $_.operation -eq 'Renamed' -and $_.resource -like '*\renamed.txt' }).Count -ne 1) { throw 'stable file identity rename was not recovered' }
         $noiseRegistry=@($manifest.registry | Where-Object name -eq 'NoiseOnly')
         if ($noiseRegistry.Count -ne 1 -or $noiseRegistry[0].confidence -ne 'Unknown') { throw 'independent registry state was misattributed' }
-        if ($score.expected -ne 21) { throw "ground truth incomplete: expected 21 instrumented operations" }
+        $expected=if($RegistryNoise){2021}else{21}
+        if ($score.expected -ne $expected) { throw "ground truth incomplete: expected $expected instrumented operations" }
         Write-Output ("RELIABILITY: " + (($score | Select-Object -Property * -ExcludeProperty rows) | ConvertTo-Json -Compress))
         if (@($manifest.events | Where-Object { $_.evidence.pid -eq $unrelated.Id -and $_.confidence -in @('High','Certain') }).Count -gt 0) { throw 'independent source actor received application attribution' }
         if ($score.incorrect_attribution -ne 0 -or $score.false_positive_target_events -ne 0) { throw 'false attribution detected' }
@@ -126,6 +145,11 @@ try {
         if ($before -ne $after -or $registryBefore -ne (Get-ItemPropertyValue -LiteralPath $registryPath -Name Installed)) { throw 'dry-run changed fixture data' }
         Write-Output "DEMO VERIFIED: $($manifest.processes.Count) processes, $($manifest.files.Count) file states, $($manifest.registry.Count) registry states, $($manifest.events.Count) timeline events; readback, JSON and dry-run passed."
     } finally {
+        foreach($noiseProcess in $registryNoiseProcesses) {
+            # Bounded fixture exits itself. Do not terminate it to manufacture a passing test.
+            if(-not $noiseProcess.HasExited){$null=$noiseProcess.WaitForExit(21000)}
+            if(-not $noiseProcess.HasExited){throw 'noise did not honor deadline; retain fixture for investigation'}
+        }
         if (-not $unrelated.HasExited) { $unrelated.Kill(); $unrelated.WaitForExit() }
         if (-not $KeepArtifacts) {
             & $fixture --root $root --cleanup

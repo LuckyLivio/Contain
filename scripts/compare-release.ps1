@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$BaselineDirectory,[int]$Files=10000,[int]$Trials=3,[string]$OutputDirectory='./target/release-comparison',[switch]$SnapshotOnly,[switch]$Profile,[switch]$SingleScale,[switch]$SkipExtras,[string]$RegressionDirectory,[string]$LightDirectory)
+param([Parameter(Mandatory)][string]$BaselineDirectory,[int]$Files=10000,[int]$Trials=3,[string]$OutputDirectory='./target/release-comparison',[switch]$SnapshotOnly,[switch]$Profile,[switch]$SingleScale,[switch]$SkipExtras,[string]$RegressionDirectory,[string]$LightDirectory,[string]$BaselineVariant,[string]$CandidateVariant)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 if ($Files -lt 4 -or $Files -gt 10000 -or $Trials -lt 1 -or $Trials -gt 5) {throw 'Bounded comparison requires 4..10000 files and 1..5 trials'}
@@ -29,11 +29,14 @@ function Get-SampledLength([string]$Path) {
 function Run-Trial([string]$Mode,[int]$Count,[int]$Trial,[string]$Role='stress',[switch]$Overload,[switch]$FilterOff) {
     $label="$Mode-$Role-$Count-$Trial";if($Overload){$label+='-overload'}
     if($FilterOff){$label+='-filter-off'}
+    $priorVariant=$env:CONTAIN_HOTPATH_VARIANT
+    if($Mode -eq 'baseline' -and $BaselineVariant){$env:CONTAIN_HOTPATH_VARIANT=$BaselineVariant}
+    elseif($Mode -eq 'candidate' -and $CandidateVariant){$env:CONTAIN_HOTPATH_VARIANT=$CandidateVariant}
     $priorProfile=$env:CONTAIN_PROFILE_PATH
     $priorFilter=$env:CONTAIN_ETW_EVENT_ID_FILTER
     $env:CONTAIN_ETW_EVENT_ID_FILTER=if($FilterOff){'0'}else{'1'}
     $dest=Join-Path $OutputDirectory $label;New-Item -ItemType Directory -Path $dest | Out-Null
-    if($Profile -and $Mode -in @('candidate','light')){$env:CONTAIN_PROFILE_PATH=Join-Path $dest 'profile.json'}else{$env:CONTAIN_PROFILE_PATH=$null}
+    if($Profile -and ($Mode -in @('candidate','light') -or $BaselineVariant)){$env:CONTAIN_PROFILE_PATH=Join-Path $dest 'profile.json'}else{$env:CONTAIN_PROFILE_PATH=$null}
     $name='contain-demo-'+[guid]::NewGuid().ToString('N')
     $root=Join-Path $env:TEMP $name;$truthRoot=Join-Path $env:TEMP ($name+'-truth');$db=Join-Path $env:TEMP ($name+'.db')
     foreach($path in @($root,$truthRoot)){New-Item -ItemType Directory -Path $path | Out-Null;[IO.File]::WriteAllText((Join-Path $path '.contain-demo-marker'),'Contain test fixture')}
@@ -88,6 +91,7 @@ function Run-Trial([string]$Mode,[int]$Count,[int]$Trial,[string]$Role='stress',
         if(-not $SnapshotOnly -and -not $balances){throw "Pipeline accounting mismatch: $label; measurement preserved"}
         if($Overload -and ($p.retention_dropped -eq 0 -or $capture.stats.high_confidence_events -ne 0 -or $capture.quality.level -ne 'Incomplete')){throw 'intentional overload failed to suppress attribution'}
     } finally {
+        $env:CONTAIN_HOTPATH_VARIANT=$priorVariant
         $env:CONTAIN_PROFILE_PATH=$priorProfile
         $env:CONTAIN_ETW_EVENT_ID_FILTER=$priorFilter
         if($noise -and -not $noise.HasExited){$noise.Kill();$noise.WaitForExit()}
@@ -97,7 +101,7 @@ function Run-Trial([string]$Mode,[int]$Count,[int]$Trial,[string]$Role='stress',
     }
 }
 try {
-    $environment=[ordered]@{schema_version=2;candidate_commit=(& git -C $repo rev-parse HEAD);baseline_commit=(& git -C $BaselineDirectory rev-parse HEAD);profile='release --locked';rustc=((& (Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe') -Vv)-join "`n");os=[Environment]::OSVersion.VersionString;elevated=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator);filesystem=(Get-Volume -DriveLetter ([IO.Path]::GetPathRoot($env:TEMP).Substring(0,1))).FileSystem;logical_processors=[Environment]::ProcessorCount;candidate_lock_sha256=(Get-FileHash (Join-Path $repo 'Cargo.lock')).Hash;baseline_lock_sha256=(Get-FileHash (Join-Path $BaselineDirectory 'Cargo.lock')).Hash;fixture_sha256=(Get-FileHash $fixture).Hash;scorer_sha256=(Get-FileHash (Join-Path $PSScriptRoot 'score-fixture.py')).Hash;measurement='Same runner, compiler, release profile and frozen common fixture. Alternating baseline/candidate pairs; independent noise. Parent PeakWorkingSet64 and DB/WAL sampled every20ms, excludes child memory/kernel buffers. Capture wall includes final commit; export/scoring outside timing. Callback timers overlap wall phases; no CPU utilization claim. Background/caches uncontrolled, Defender unchanged.'}
+    $environment=[ordered]@{schema_version=2;baseline_variant=$BaselineVariant;candidate_variant=$CandidateVariant;candidate_commit=(& git -C $repo rev-parse HEAD);baseline_commit=(& git -C $BaselineDirectory rev-parse HEAD);profile='release --locked';rustc=((& (Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe') -Vv)-join "`n");os=[Environment]::OSVersion.VersionString;elevated=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator);filesystem=(Get-Volume -DriveLetter ([IO.Path]::GetPathRoot($env:TEMP).Substring(0,1))).FileSystem;logical_processors=[Environment]::ProcessorCount;candidate_lock_sha256=(Get-FileHash (Join-Path $repo 'Cargo.lock')).Hash;baseline_lock_sha256=(Get-FileHash (Join-Path $BaselineDirectory 'Cargo.lock')).Hash;fixture_sha256=(Get-FileHash $fixture).Hash;scorer_sha256=(Get-FileHash (Join-Path $PSScriptRoot 'score-fixture.py')).Hash;measurement='Same runner, compiler, release profile and frozen common fixture. Alternating baseline/candidate pairs; independent noise. Parent PeakWorkingSet64 and DB/WAL sampled every20ms, excludes child memory/kernel buffers. Capture wall includes final commit; export/scoring outside timing. Callback timers overlap wall phases; no CPU utilization claim. Background/caches uncontrolled, Defender unchanged.'}
     if($RegressionDirectory){$environment.regression_commit=(& git -C $RegressionDirectory rev-parse HEAD)}
     if($LightDirectory){$environment.light_commit=(& git -C $LightDirectory rev-parse HEAD)}
     $environment|ConvertTo-Json -Depth 10|Set-Content (Join-Path $OutputDirectory 'environment.json') -Encoding utf8
