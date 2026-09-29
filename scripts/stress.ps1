@@ -1,4 +1,4 @@
-param([ValidateRange(4,100000)][int]$Files=10000, [switch]$SnapshotOnly, [switch]$RequireEtw, [string]$OutputDirectory='./target/stress')
+param([ValidateRange(4,100000)][int]$Files=10000, [switch]$SnapshotOnly, [switch]$RequireEtw, [string]$OutputDirectory='./target/stress', [switch]$Release)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 if ($SnapshotOnly -and $RequireEtw) { throw 'Choose one backend mode' }
@@ -15,12 +15,14 @@ function Measure-Run([string]$Exe, [string[]]$Arguments, [string]$Label) {
 }
 try {
     $cargo=Join-Path $env:USERPROFILE '.cargo/bin/cargo.exe'
-    & $cargo build --workspace --locked
+    $buildArgs=@('build','--workspace','--locked'); if ($Release) { $buildArgs+='--release' }
+    & $cargo @buildArgs
     if ($LASTEXITCODE -ne 0) { throw 'build failed' }
     New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
     $OutputDirectory=(Resolve-Path -LiteralPath $OutputDirectory).Path
-    $fixture=(Resolve-Path './target/debug/contain-test-installer.exe').Path
-    $contain=(Resolve-Path './target/debug/contain.exe').Path
+    $profile=if($Release){'release'}else{'debug'}
+    $fixture=(Resolve-Path "./target/$profile/contain-test-installer.exe").Path
+    $contain=(Resolve-Path "./target/$profile/contain.exe").Path
     $results=@{}
     foreach ($mode in @('baseline','capture')) {
         $name='contain-demo-'+[guid]::NewGuid().ToString('N')
@@ -56,12 +58,12 @@ try {
             foreach ($suffix in @('','-wal','-shm')) { $target=$db+$suffix; if(Test-Path -LiteralPath $target){ Remove-Item -LiteralPath $target -Force } }
         }
     }
-    $results.schema_version=1; $results.files=$Files; $results.workers=4
+    $results.schema_version=1; $results.files=$Files; $results.workers=4; $results.profile=$profile
     $results.os=[Environment]::OSVersion.VersionString; $results.commit=(& git rev-parse HEAD)
     $results.elevated=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     $results.end_to_end_overhead_seconds=$results.capture.elapsed_seconds-$results.baseline.elapsed_seconds
     $results.end_to_end_overhead_ratio=$results.capture.elapsed_seconds/$results.baseline.elapsed_seconds
-    $results.measurement='Debug build; one sequential baseline/capture pair, four fixture workers; process wall time includes inventory, drain, hashing and SQLite commit. Memory is the monitored parent process PeakWorkingSet sampled every 20ms, excluding descendants and kernel ETW buffers. Throughput is admitted source records per entire capture wall time, not raw system event rate. Scoring is outside the timed region.'
+    $results.measurement="$profile build; one diagnostic sequential baseline/capture pair, four fixture workers; process wall time includes inventory, drain, hashing and SQLite commit. Memory is parent PeakWorkingSet sampled every 20ms, excluding descendants and kernel ETW buffers. Admission rate is per full capture wall time. Not a repeated baseline/candidate comparison. Scoring is outside timing."
     $results | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'benchmark.json') -Encoding utf8
     Write-Output ('BENCHMARK: '+($results | ConvertTo-Json -Depth 15 -Compress))
 } finally { Pop-Location }

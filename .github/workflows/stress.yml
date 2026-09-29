@@ -21,7 +21,7 @@ jobs:
         shell: pwsh
         env:
           FIXTURE_FILES: ${{ inputs.files }}
-        run: ./scripts/stress.ps1 -Files ([int]$env:FIXTURE_FILES) -RequireEtw
+        run: ./scripts/stress.ps1 -Files ([int]$env:FIXTURE_FILES) -RequireEtw -Release
       - uses: actions/upload-artifact@v4
         if: always()
         with:

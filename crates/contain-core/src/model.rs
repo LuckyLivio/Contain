@@ -164,6 +164,8 @@ pub struct SystemEvent {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct BackendReport {
     #[serde(default)]
+    pub pipeline: Option<PipelineStats>,
+    #[serde(default)]
     pub etw_process: String,
     #[serde(default)]
     pub events_received: u64,

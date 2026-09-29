@@ -37,6 +37,8 @@ fn drain(source: &mut impl EventSource, events: &mut Vec<SystemEvent>, dropped: 
 
 pub fn install(options: InstallOptions) -> Result<Capture> {
     let capture_clock = Instant::now();
+    let mut phases = std::collections::BTreeMap::new();
+    let before_clock = Instant::now();
     let installer = options
         .installer
         .canonicalize()
@@ -82,7 +84,17 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         native::current_user_sid()
             .map(|sid| format!("\\registry\\user\\{sid}\\{key}").to_lowercase())
     });
+    phases.insert(
+        "before_snapshot_inventory".into(),
+        before_clock.elapsed().as_millis() as u64,
+    );
+    let ready_clock = Instant::now();
     let mut source = EtwSource::start(&watch_roots, nt_root.clone(), options.etw);
+    phases.insert(
+        "provider_readiness".into(),
+        ready_clock.elapsed().as_millis() as u64,
+    );
+    let installer_clock = Instant::now();
     let started_at = native::timestamp(native::now_ticks());
     let mut child = Command::new(&installer)
         .args(&options.args)
@@ -111,6 +123,10 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         }
         thread::sleep(Duration::from_millis(30));
     };
+    phases.insert(
+        "installer_root".into(),
+        installer_clock.elapsed().as_millis() as u64,
+    );
     let exited_at = native::now_ticks();
     let root_birth = process_observer
         .records()
@@ -166,9 +182,23 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         }
         thread::sleep(Duration::from_millis(30));
     }
-    let mut backend = source.stop();
+    let stop_clock = Instant::now();
+    source.stop();
     drain(&mut source, &mut events, &mut overflow);
+    let mut backend = source.stop();
+    phases.insert(
+        "etw_stop_and_queue_drain".into(),
+        stop_clock.elapsed().as_millis() as u64,
+    );
+    phases.insert(
+        "descendant_quiet_drain".into(),
+        drain_start.elapsed().as_millis() as u64,
+    );
+    if let Some(p) = &mut backend.pipeline {
+        p.retention_dropped = overflow;
+    }
     backend.dropped_events += overflow;
+    let association_clock = Instant::now();
     let mut processes = process_observer.finish();
     if let Some(root) = processes
         .iter_mut()
@@ -197,6 +227,9 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         }
     }
     backend.dropped_events += cache.dropped;
+    if let Some(p) = &mut backend.pipeline {
+        p.context_evictions += cache.dropped;
+    }
     if lifecycle_complete {
         processes = cache
             .processes
@@ -243,7 +276,17 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
             }
         }
     }
+    phases.insert(
+        "lifetime_attribution".into(),
+        association_clock.elapsed().as_millis() as u64,
+    );
+    let after_clock = Instant::now();
     let after_files = filesystem::snapshot(&roots)?;
+    phases.insert(
+        "after_file_snapshot_hash".into(),
+        after_clock.elapsed().as_millis() as u64,
+    );
+    let correlation_clock = Instant::now();
     let operations = crate::correlation::correlate(&mut events, &before_files, &after_files);
     if source_intact {
         for event in &mut events {
@@ -286,8 +329,17 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         nt_root.as_deref(),
         complete && backend.registry_path_gaps == 0,
     );
+    phases.insert(
+        "correlation_attribution".into(),
+        correlation_clock.elapsed().as_millis() as u64,
+    );
+    let inventory_clock = Instant::now();
     let after_inventory = inventory::snapshot();
     let inventory = inventory::diff(&before_inventory, &after_inventory, &processes, &id);
+    phases.insert(
+        "after_inventory".into(),
+        inventory_clock.elapsed().as_millis() as u64,
+    );
     warnings.extend(before_inventory.warnings);
     warnings.extend(after_inventory.warnings);
     warnings.extend(backend.warnings.iter().cloned());
@@ -342,6 +394,7 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         operations,
         ..Default::default()
     };
+    capture.stats.phase_ms = phases;
     capture.stats.capture_elapsed_ms = capture_clock.elapsed().as_millis() as u64;
     capture.stats.drain_timed_out = drain_timed_out;
     capture.stats.snapshot_gaps = skipped as u64;

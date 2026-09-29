@@ -29,6 +29,7 @@ impl Storage {
     }
 
     pub fn save(&mut self, capture: &Capture) -> Result<()> {
+        let persistence_clock = std::time::Instant::now();
         let tx = self.connection.transaction()?;
         tx.execute(
             "INSERT INTO applications(id,name,installer) VALUES (?1,?2,?3)",
@@ -84,6 +85,15 @@ impl Storage {
         evidence::save(&tx, capture)?;
         reliability::save(&tx, capture)?;
         tx.commit()?;
+        let mut stats = capture.stats.clone();
+        stats.phase_ms.insert(
+            "final_persistence_commit".into(),
+            persistence_clock.elapsed().as_millis() as u64,
+        );
+        self.connection.execute(
+            "UPDATE reliability_metadata SET stats_json=?1 WHERE session_id=?2",
+            params![serde_json::to_string(&stats)?, capture.id],
+        )?;
         Ok(())
     }
 

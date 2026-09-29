@@ -2,9 +2,8 @@ use super::*;
 use crate::model::RawEvidence;
 use ferrisetw::parser::Parser;
 
-fn pointer(parser: &Parser<'_, '_>, name: &str) -> Option<String> {
-    parser
-        .try_parse::<u64>(name)
+fn pointer(metrics: &Metrics, parser: &Parser<'_, '_>, name: &str) -> Option<String> {
+    measured!(metrics, Properties, parser.try_parse::<u64>(name))
         .ok()
         .map(|p| format!("{p:016x}"))
 }
@@ -19,8 +18,14 @@ pub fn status_success(status: u32) -> Option<bool> {
 impl Decoder {
     pub(super) fn send(&self, mut event: SystemEvent) {
         event.sequence = self.received.fetch_add(1, Ordering::Relaxed) + 1;
-        if self.tx.try_send(event).is_err() {
+        let _timer = self.metrics.timer(Time::Enqueue);
+        self.metrics.entering();
+        if self.tx.try_send((event, Instant::now())).is_err() {
+            self.metrics.leaving();
+            self.metrics.add(Count::Overflow, 1);
             self.dropped.fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.metrics.add(Count::Enqueued, 1);
         }
     }
     pub(super) fn lifecycle(&mut self, record: &EventRecord, locator: &SchemaLocator) {
@@ -28,26 +33,33 @@ impl Decoder {
         if !matches!(id, 1..=4) {
             return;
         }
-        let Ok(schema) = locator.event_schema(record) else {
+        self.metrics.add(Count::Attempted, 1);
+        let Ok(schema) = measured!(self.metrics, Schema, locator.event_schema(record)) else {
             self.errors.fetch_add(1, Ordering::Relaxed);
             return;
         };
         let p = Parser::create(record, &schema);
-        let Ok(pid) = p.try_parse::<u32>("ProcessID") else {
+        let Ok(pid) = measured!(self.metrics, Properties, p.try_parse::<u32>("ProcessID")) else {
             self.errors.fetch_add(1, Ordering::Relaxed);
             return;
         };
         let time = record.raw_timestamp().max(0) as u64;
-        let birth = p.try_parse::<u64>("CreateTime").ok();
+        let birth = measured!(self.metrics, Properties, p.try_parse::<u64>("CreateTime")).ok();
         let event_time = if id == 2 {
-            p.try_parse::<u64>("ExitTime").unwrap_or(time)
+            measured!(self.metrics, Properties, p.try_parse::<u64>("ExitTime")).unwrap_or(time)
         } else {
             time
         };
-        let image = p
-            .try_parse::<String>("ImageName")
-            .map(|p| native::normalize_path(&p, &self.devices))
+        let image = measured!(self.metrics, Properties, p.try_parse::<String>("ImageName"))
+            .map(|p| {
+                measured!(
+                    self.metrics,
+                    Path,
+                    native::normalize_path(&p, &self.devices)
+                )
+            })
             .unwrap_or_default();
+        let _construct = self.metrics.timer(Time::Construct);
         self.send(SystemEvent {
             id: uuid::Uuid::new_v4().to_string(),
             timestamp: native::timestamp(event_time),
@@ -66,14 +78,19 @@ impl Decoder {
                 pid: Some(pid),
                 process_creation_time: birth,
                 process_image: (!image.is_empty()).then_some(image),
-                parent_pid: p.try_parse::<u32>("ParentProcessID").ok(),
+                parent_pid: measured!(
+                    self.metrics,
+                    Properties,
+                    p.try_parse::<u32>("ParentProcessID")
+                )
+                .ok(),
                 ..Default::default()
             },
             raw: RawEvidence {
                 event_id: Some(id),
-                thread_id: p.try_parse::<u32>("ThreadID").ok(),
-                process_key: pointer(&p, "ProcessSequenceNumber"),
-                parent_key: pointer(&p, "ParentProcessSequenceNumber"),
+                thread_id: measured!(self.metrics, Properties, p.try_parse::<u32>("ThreadID")).ok(),
+                process_key: pointer(&self.metrics, &p, "ProcessSequenceNumber"),
+                parent_key: pointer(&self.metrics, &p, "ParentProcessSequenceNumber"),
                 ..Default::default()
             },
             ..Default::default()
@@ -84,23 +101,24 @@ impl Decoder {
         if !matches!(id, 12 | 14 | 16 | 24 | 26 | 27 | 30) {
             return;
         }
-        let Ok(schema) = locator.event_schema(record) else {
+        self.metrics.add(Count::Attempted, 1);
+        let Ok(schema) = measured!(self.metrics, Schema, locator.event_schema(record)) else {
             self.errors.fetch_add(1, Ordering::Relaxed);
             return;
         };
         let p = Parser::create(record, &schema);
         let time = record.raw_timestamp().max(0) as u64;
-        let irp = pointer(&p, "Irp");
+        let irp = pointer(&self.metrics, &p, "Irp");
         if id == 24 {
             if let Some((request, start)) = irp.as_ref().and_then(|irp| self.pending.remove(irp))
                 && time >= start
                 && time - start < 300_000_000
             {
-                let status = p.try_parse::<u32>("Status").ok();
+                let status = measured!(self.metrics, Properties, p.try_parse::<u32>("Status")).ok();
                 let mut e = make_event(
+                    &self.metrics,
                     time,
-                    "completion",
-                    "operation_end",
+                    ("completion", "operation_end"),
                     String::new(),
                     EvidenceSource::EtwFile,
                     None,
@@ -117,15 +135,21 @@ impl Decoder {
             }
             return;
         }
-        let Ok(object) = p.try_parse::<u64>("FileObject") else {
+        let Ok(object) = measured!(self.metrics, Properties, p.try_parse::<u64>("FileObject"))
+        else {
             self.errors.fetch_add(1, Ordering::Relaxed);
             return;
         };
-        let supplied = p
-            .try_parse::<String>("FileName")
-            .or_else(|_| p.try_parse::<String>("FilePath"))
+        let supplied = measured!(self.metrics, Properties, p.try_parse::<String>("FileName"))
+            .or_else(|_| measured!(self.metrics, Properties, p.try_parse::<String>("FilePath")))
             .ok()
-            .map(|p| native::normalize_path(&p, &self.devices));
+            .map(|p| {
+                measured!(
+                    self.metrics,
+                    Path,
+                    native::normalize_path(&p, &self.devices)
+                )
+            });
         if matches!(id, 12 | 30) {
             self.paths.remove(&object);
             if let Some(path) = supplied
@@ -137,6 +161,7 @@ impl Decoder {
                         .insert(object, (path.clone(), uuid::Uuid::new_v4().to_string()));
                 } else {
                     self.dropped.fetch_add(1, Ordering::Relaxed);
+                    self.metrics.add(Count::ContextEvictions, 1);
                 }
             }
         }
@@ -151,19 +176,28 @@ impl Decoder {
         let Some(path) = path.filter(|p| native::in_scope(p, &self.roots)) else {
             return;
         };
-        let tid = p.try_parse::<u32>("IssuingThreadId").ok();
-        let writer = tid.and_then(|t| native::writer_from_thread(t, time));
+        let tid = measured!(
+            self.metrics,
+            Properties,
+            p.try_parse::<u32>("IssuingThreadId")
+        )
+        .ok();
+        let writer = tid
+            .and_then(|t| measured!(self.metrics, Identity, native::writer_from_thread(t, time)));
         let mut e = make_event(
+            &self.metrics,
             time,
-            "file",
-            match id {
-                12 => "open_requested",
-                14 => "close",
-                16 => "write_requested",
-                26 => "delete_requested",
-                27 => "rename_requested",
-                _ => "create_new_file",
-            },
+            (
+                "file",
+                match id {
+                    12 => "open_requested",
+                    14 => "close",
+                    16 => "write_requested",
+                    26 => "delete_requested",
+                    27 => "rename_requested",
+                    _ => "create_new_file",
+                },
+            ),
             path,
             EvidenceSource::EtwFile,
             writer,
@@ -175,7 +209,7 @@ impl Decoder {
             header_pid: Some(record.process_id()),
             file_object: Some(format!("{object:016x}")),
             object_generation: generation,
-            file_key: pointer(&p, "FileKey"),
+            file_key: pointer(&self.metrics, &p, "FileKey"),
             irp: irp.clone(),
             resource_resolved: true,
             ..Default::default()
@@ -190,6 +224,7 @@ impl Decoder {
                 self.pending.insert(irp, (e.id.clone(), time));
             } else {
                 self.dropped.fetch_add(1, Ordering::Relaxed);
+                self.metrics.add(Count::ContextEvictions, 1);
             }
         }
         self.send(e);
@@ -202,19 +237,21 @@ impl Decoder {
         if !matches!(id, 1 | 2 | 3 | 5 | 6 | 13) {
             return;
         }
-        let Ok(schema) = locator.event_schema(record) else {
+        self.metrics.add(Count::Attempted, 1);
+        let Ok(schema) = measured!(self.metrics, Schema, locator.event_schema(record)) else {
             self.errors.fetch_add(1, Ordering::Relaxed);
             return;
         };
         let p = Parser::create(record, &schema);
         let time = record.raw_timestamp().max(0) as u64;
         let pid = record.process_id();
-        let writer = native::process_identity(pid).filter(|p| p.creation_time <= time);
-        let object = p.try_parse::<u64>("KeyObject").unwrap_or(0);
-        let status = p.try_parse::<u32>("Status").ok();
+        let writer = measured!(self.metrics, Identity, native::process_identity(pid))
+            .filter(|p| p.creation_time <= time);
+        let object =
+            measured!(self.metrics, Properties, p.try_parse::<u64>("KeyObject")).unwrap_or(0);
+        let status = measured!(self.metrics, Properties, p.try_parse::<u32>("Status")).ok();
         let success = status.and_then(status_success);
-        let mut key = p
-            .try_parse::<String>("KeyName")
+        let mut key = measured!(self.metrics, Properties, p.try_parse::<String>("KeyName"))
             .unwrap_or_default()
             .to_lowercase();
         if let Some(w) = &writer {
@@ -226,12 +263,23 @@ impl Decoder {
                     .open(
                         owner,
                         object,
-                        p.try_parse::<u64>("BaseObject").unwrap_or(0),
-                        &p.try_parse::<String>("BaseName").unwrap_or_default(),
-                        &p.try_parse::<String>("RelativeName").unwrap_or_default(),
+                        measured!(self.metrics, Properties, p.try_parse::<u64>("BaseObject"))
+                            .unwrap_or(0),
+                        &measured!(self.metrics, Properties, p.try_parse::<String>("BaseName"))
+                            .unwrap_or_default(),
+                        &measured!(
+                            self.metrics,
+                            Properties,
+                            p.try_parse::<String>("RelativeName")
+                        )
+                        .unwrap_or_default(),
                         time,
                     )
                     .unwrap_or_default();
+                self.metrics.add(
+                    Count::ContextEvictions,
+                    self.registry_context.dropped - previous_drops,
+                );
                 self.dropped.fetch_add(
                     self.registry_context.dropped - previous_drops,
                     Ordering::Relaxed,
@@ -260,18 +308,24 @@ impl Decoder {
         if matches!(id, 2 | 13) {
             return;
         }
-        if resolved && let Ok(value) = p.try_parse::<String>("ValueName") {
+        if resolved
+            && let Ok(value) =
+                measured!(self.metrics, Properties, p.try_parse::<String>("ValueName"))
+        {
             key = format!("{key}\\{value}");
         }
         let mut e = make_event(
+            &self.metrics,
             time,
-            "registry",
-            match id {
-                1 => "create_or_open_key",
-                3 => "delete_key",
-                5 => "set_value",
-                _ => "delete_value",
-            },
+            (
+                "registry",
+                match id {
+                    1 => "create_or_open_key",
+                    3 => "delete_key",
+                    5 => "set_value",
+                    _ => "delete_value",
+                },
+            ),
             key,
             EvidenceSource::EtwRegistry,
             writer,

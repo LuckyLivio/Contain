@@ -3,9 +3,11 @@ use super::native;
 use crate::model::{AttributionEvidence, BackendReport, EvidenceSource, SystemEvent};
 use crate::monitor::EventSource;
 mod decode;
+mod metrics;
 use ferrisetw::provider::{Provider, TraceFlags};
 use ferrisetw::trace::{TraceProperties, TraceTrait};
 use ferrisetw::{EventRecord, SchemaLocator, UserTrace};
+use metrics::{Count, Metrics, Time, measured};
 use std::collections::HashMap;
 use std::sync::{
     Arc, Mutex,
@@ -13,6 +15,7 @@ use std::sync::{
     mpsc::{self, Receiver, SyncSender},
 };
 use std::thread::{self, JoinHandle};
+use std::time::Instant;
 use windows_sys::Win32::System::Diagnostics::Etw::EVENT_TRACE_CONTROL_STOP;
 
 const FILE_PROVIDER: &str = "edd08927-9cc4-4e65-b970-c2560fb5c289";
@@ -27,7 +30,8 @@ struct Decoder {
     roots: Vec<String>,
     registry_root: Option<String>,
     devices: Vec<(String, String)>,
-    tx: SyncSender<SystemEvent>,
+    tx: SyncSender<(SystemEvent, Instant)>,
+    metrics: Arc<Metrics>,
     dropped: Arc<AtomicU64>,
     errors: Arc<AtomicU64>,
     registry_path_gaps: Arc<AtomicU64>,
@@ -35,20 +39,21 @@ struct Decoder {
 }
 
 fn make_event(
+    metrics: &Metrics,
     timestamp_ticks: u64,
-    kind: &str,
-    operation: &str,
+    action: (&str, &str),
     resource: String,
     source: EvidenceSource,
     writer: Option<native::ProcessIdentity>,
     success: Option<bool>,
 ) -> SystemEvent {
+    let _timer = metrics.timer(Time::Construct);
     SystemEvent {
         id: uuid::Uuid::new_v4().to_string(),
         timestamp: native::timestamp(timestamp_ticks),
         timestamp_ticks,
-        event_type: kind.into(),
-        operation: operation.into(),
+        event_type: action.0.into(),
+        operation: action.1.into(),
         resource,
         success,
         evidence: AttributionEvidence {
@@ -66,7 +71,8 @@ pub struct EtwSource {
     trace: Option<UserTrace>,
     consumer: Option<JoinHandle<Result<(), String>>>,
     name: String,
-    rx: Receiver<SystemEvent>,
+    rx: Receiver<(SystemEvent, Instant)>,
+    metrics: Arc<Metrics>,
     dropped: Arc<AtomicU64>,
     errors: Arc<AtomicU64>,
     registry_path_gaps: Arc<AtomicU64>,
@@ -81,12 +87,14 @@ impl EtwSource {
         let errors = Arc::new(AtomicU64::new(0));
         let registry_path_gaps = Arc::new(AtomicU64::new(0));
         let received = Arc::new(AtomicU64::new(0));
+        let metrics = Arc::new(Metrics::default());
         let name = format!("Contain-{}", uuid::Uuid::new_v4());
         let mut source = Self {
             trace: None,
             consumer: None,
             name: name.clone(),
             rx,
+            metrics: metrics.clone(),
             dropped: dropped.clone(),
             errors: errors.clone(),
             registry_path_gaps: registry_path_gaps.clone(),
@@ -135,20 +143,20 @@ impl EtwSource {
             registry_root,
             devices,
             tx,
+            metrics: metrics.clone(),
             dropped,
             errors,
             registry_path_gaps,
             received,
         }));
+        source.report.pipeline = Some(Default::default());
         let file_decoder = decoder.clone();
         let file = Provider::by_guid(FILE_PROVIDER)
             .any(0x1ef0)
             .level(4)
             .trace_flags(TraceFlags::EVENT_ENABLE_PROPERTY_PROCESS_START_KEY)
             .add_callback(move |record, locator| {
-                if let Ok(mut decoder) = file_decoder.lock() {
-                    decoder.file(record, locator);
-                }
+                dispatch(&file_decoder, record, locator, Decoder::file);
             })
             .build();
         let lifecycle_decoder = decoder.clone();
@@ -156,9 +164,7 @@ impl EtwSource {
             .any(0x30)
             .level(5)
             .add_callback(move |record, locator| {
-                if let Ok(mut decoder) = lifecycle_decoder.lock() {
-                    decoder.lifecycle(record, locator);
-                }
+                dispatch(&lifecycle_decoder, record, locator, Decoder::lifecycle);
             })
             .build();
         let mut builder = UserTrace::new()
@@ -178,9 +184,7 @@ impl EtwSource {
                 .level(4)
                 .trace_flags(TraceFlags::EVENT_ENABLE_PROPERTY_PROCESS_START_KEY)
                 .add_callback(move |record, locator| {
-                    if let Ok(mut decoder) = decoder.lock() {
-                        decoder.registry(record, locator);
-                    }
+                    dispatch(&decoder, record, locator, Decoder::registry);
                 })
                 .build();
             builder = builder.enable(registry);
@@ -244,7 +248,13 @@ impl EtwSource {
 
 impl EventSource for EtwSource {
     fn drain(&mut self) -> Vec<SystemEvent> {
-        self.rx.try_iter().collect()
+        self.rx
+            .try_iter()
+            .map(|(event, at)| {
+                self.metrics.dequeued(at);
+                event
+            })
+            .collect()
     }
 
     fn stop(&mut self) -> BackendReport {
@@ -255,6 +265,11 @@ impl EventSource for EtwSource {
                 Ok(lost) => {
                     self.report.etw_events_lost = Some(lost.events);
                     self.report.etw_buffers_lost = Some(lost.buffers);
+                    if let Some(p) = &mut self.report.pipeline {
+                        p.etw_realtime_buffers_lost = Some(lost.realtime_buffers);
+                        p.etw_allocated_buffers = Some(lost.allocated_buffers);
+                        p.etw_buffer_size_kib = Some(lost.buffer_size_kib);
+                    }
                 }
                 Err(code) => {
                     self.report
@@ -281,6 +296,13 @@ impl EventSource for EtwSource {
         self.report.events_received = self.received.load(Ordering::Relaxed);
         self.report.decode_errors = self.errors.load(Ordering::Relaxed);
         self.report.registry_path_gaps = self.registry_path_gaps.load(Ordering::Relaxed);
+        if let Some(old) = self.report.pipeline.take() {
+            let mut p = self.metrics.snapshot();
+            p.etw_realtime_buffers_lost = old.etw_realtime_buffers_lost;
+            p.etw_allocated_buffers = old.etw_allocated_buffers;
+            p.etw_buffer_size_kib = old.etw_buffer_size_kib;
+            self.report.pipeline = Some(p);
+        }
         self.report.clone()
     }
 }
@@ -288,6 +310,41 @@ impl EventSource for EtwSource {
 impl Drop for EtwSource {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+fn dispatch(
+    decoder: &Mutex<Decoder>,
+    record: &EventRecord,
+    locator: &SchemaLocator,
+    decode: fn(&mut Decoder, &EventRecord, &SchemaLocator),
+) {
+    let start = Instant::now();
+    if let Ok(mut d) = decoder.lock() {
+        let metrics = d.metrics.clone();
+        // Include the observed mutex wait in total callback elapsed time.
+        let _callback = metrics.timer(Time::Callback);
+        metrics.record_lock(start.elapsed().as_nanos() as u64);
+        metrics.add(Count::Callback, 1);
+        let errors = d.errors.load(Ordering::Relaxed);
+        let before = d.received.load(Ordering::Relaxed);
+        let attempted = metrics.get(Count::Attempted);
+        decode(&mut d, record, locator);
+        if metrics.get(Count::Attempted) > attempted {
+            metrics.add(
+                if d.errors.load(Ordering::Relaxed) > errors {
+                    Count::Failed
+                } else {
+                    Count::Succeeded
+                },
+                1,
+            );
+        } else {
+            metrics.add(Count::Unsupported, 1);
+        }
+        if d.received.load(Ordering::Relaxed) == before {
+            metrics.add(Count::Filtered, 1);
+        }
     }
 }
 
@@ -306,6 +363,7 @@ mod tests {
             registry_root: None,
             devices: vec![],
             tx,
+            metrics: Arc::new(Metrics::default()),
             dropped: dropped.clone(),
             errors: Arc::new(AtomicU64::new(0)),
             registry_path_gaps: Arc::new(AtomicU64::new(0)),
