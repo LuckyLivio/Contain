@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
+mod reliability;
 mod ticks;
+pub use reliability::*;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Confidence {
@@ -84,6 +86,14 @@ pub struct Capture {
     pub events: Vec<SystemEvent>,
     pub inventory: Vec<InventoryChange>,
     pub backend: BackendReport,
+    #[serde(default)]
+    pub stats: CaptureStats,
+    #[serde(default)]
+    pub quality: CaptureQuality,
+    #[serde(default)]
+    pub operations: Vec<NormalizedOperation>,
+    #[serde(default)]
+    pub edges: Vec<EvidenceEdge>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,6 +101,7 @@ pub enum EvidenceSource {
     ProcessApi,
     EtwFile,
     EtwRegistry,
+    EtwProcess,
     FileNotification,
     ServiceInventory,
     TaskInventory,
@@ -142,10 +153,20 @@ pub struct SystemEvent {
     /// None means the source does not provide an operation completion status.
     pub success: Option<bool>,
     pub state_validated: bool,
+    #[serde(default)]
+    pub sequence: u64,
+    #[serde(default)]
+    pub raw: RawEvidence,
+    #[serde(default)]
+    pub dimensions: ConfidenceDimensions,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct BackendReport {
+    #[serde(default)]
+    pub etw_process: String,
+    #[serde(default)]
+    pub events_received: u64,
     pub etw_file: String,
     pub etw_registry: String,
     pub dropped_events: u64,

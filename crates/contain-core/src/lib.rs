@@ -4,6 +4,7 @@ pub mod cleanup;
 pub mod doctor;
 pub mod filesystem;
 pub mod inventory;
+pub mod lifetime;
 pub mod model;
 pub mod monitor;
 pub mod process;

@@ -93,6 +93,9 @@ impl ProcessObserver {
     pub fn finish(self) -> Vec<ProcessRecord> {
         self.records.into_values().collect()
     }
+    pub fn records(&self) -> Vec<ProcessRecord> {
+        self.records.values().cloned().collect()
+    }
 }
 
 #[cfg(test)]

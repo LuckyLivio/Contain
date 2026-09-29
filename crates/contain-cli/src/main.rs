@@ -39,8 +39,10 @@ enum Commands {
         watch_roots: Vec<PathBuf>,
         #[arg(long)]
         registry_key: Option<String>,
-        #[arg(long, default_value_t = 500)]
+        #[arg(long, default_value_t = 1500)]
         settle_ms: u64,
+        #[arg(long, default_value_t = 10000)]
+        max_drain_ms: u64,
         #[arg(
             long,
             help = "Use directory notifications and snapshots without attempting ETW"
@@ -118,6 +120,7 @@ fn run() -> Result<()> {
             watch_roots,
             registry_key,
             settle_ms,
+            max_drain_ms,
             no_etw,
             manifest,
             args,
@@ -132,6 +135,7 @@ fn run() -> Result<()> {
                 watch_roots,
                 registry_key,
                 settle_ms,
+                max_drain_ms,
                 etw: !no_etw,
             })?;
             Storage::open(&db)?.save(&capture)?;

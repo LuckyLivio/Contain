@@ -125,6 +125,7 @@ pub fn load(connection: &Connection, capture: &mut Capture) -> Result<()> {
             },
             success: row.get(16)?,
             state_validated: row.get(17)?,
+            ..Default::default()
         });
     }
     let mut statement = connection

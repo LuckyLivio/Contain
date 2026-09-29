@@ -1,3 +1,4 @@
+use crate::lifetime::LifetimeCache;
 use crate::{
     attribution, filesystem, inventory,
     model::*,
@@ -22,6 +23,7 @@ pub struct InstallOptions {
     pub registry_key: Option<String>,
     pub settle_ms: u64,
     pub etw: bool,
+    pub max_drain_ms: u64,
 }
 
 const MAX_EVENTS: usize = 100_000;
@@ -34,6 +36,7 @@ fn drain(source: &mut impl EventSource, events: &mut Vec<SystemEvent>, dropped: 
 }
 
 pub fn install(options: InstallOptions) -> Result<Capture> {
+    let capture_clock = Instant::now();
     let installer = options
         .installer
         .canonicalize()
@@ -109,10 +112,54 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         thread::sleep(Duration::from_millis(30));
     };
     let exited_at = native::now_ticks();
-    let until = Instant::now() + Duration::from_millis(options.settle_ms);
-    while Instant::now() < until {
+    let root_birth = process_observer
+        .records()
+        .iter()
+        .find(|p| p.pid == root_pid)
+        .and_then(|p| p.creation_time)
+        .unwrap_or(0);
+    let mut cache = LifetimeCache::default();
+    for p in process_observer.records() {
+        cache.seed(p);
+    }
+    for e in &events {
+        cache.ingest(e);
+    }
+    let mut last_activity = Instant::now();
+    let drain_start = Instant::now();
+    let mut drain_timed_out = false;
+    loop {
         process_observer.poll();
+        for p in process_observer.records() {
+            cache.seed(p);
+        }
+        let count = events.len();
         drain(&mut source, &mut events, &mut overflow);
+        for e in &events[count..] {
+            cache.ingest(e);
+            if e.event_type == "file" || (e.event_type == "registry" && e.raw.resource_resolved) {
+                last_activity = Instant::now();
+            }
+        }
+        cache.attach((root_pid, root_birth), &id);
+        let descendants_live = cache
+            .processes
+            .values()
+            .filter(|p| p.pid != root_pid && p.confidence == Confidence::High)
+            .any(|p| {
+                native::process_identity(p.pid)
+                    .is_some_and(|live| Some(live.creation_time) == p.creation_time)
+            });
+        if drain_start.elapsed() >= Duration::from_millis(options.max_drain_ms) {
+            drain_timed_out = true;
+            break;
+        }
+        if !descendants_live
+            && last_activity.elapsed()
+                >= Duration::from_millis(options.settle_ms.max(if options.etw { 1200 } else { 0 }))
+        {
+            break;
+        }
         thread::sleep(Duration::from_millis(30));
     }
     let mut backend = source.stop();
@@ -125,9 +172,44 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
     {
         root.ended_at = Some(exited_at);
     }
+    events.sort_by_key(|e| (e.timestamp_ticks, e.sequence));
+    let mut cache = LifetimeCache::default();
+    for p in &processes {
+        cache.seed(p.clone());
+    }
+    for e in &events {
+        cache.ingest(e);
+    }
+    let lifecycle_complete = backend.etw_process == "active"
+        && backend.etw_events_lost == Some(0)
+        && backend.etw_buffers_lost == Some(0)
+        && backend.dropped_events == 0
+        && backend.decode_errors == 0
+        && cache.dropped == 0;
+    if lifecycle_complete {
+        cache.attach((root_pid, root_birth), &id);
+        for e in &mut events {
+            cache.resolve_event(e);
+        }
+    }
+    backend.dropped_events += cache.dropped;
+    if lifecycle_complete {
+        processes = cache
+            .processes
+            .values()
+            .filter(|p| matches!(p.confidence, Confidence::Certain | Confidence::High))
+            .cloned()
+            .collect();
+    }
     for event in &mut events {
         attribution::attribute(event, &processes, &id);
     }
+    events.retain(|e| {
+        e.event_type != "lifecycle"
+            && (e.event_type != "registry"
+                || e.raw.resource_resolved
+                || e.confidence == Confidence::High)
+    });
     let after_files = filesystem::snapshot(&roots)?;
     let seen = observer
         .as_ref()
@@ -199,7 +281,7 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
             .into_owned()
     });
     let mut capture = Capture {
-        schema_version: 2,
+        schema_version: 3,
         id,
         name,
         installer: installer.to_string_lossy().into_owned(),
@@ -215,7 +297,10 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         events,
         inventory,
         backend,
+        ..Default::default()
     };
+    capture.stats.capture_elapsed_ms = capture_clock.elapsed().as_millis() as u64;
+    capture.stats.drain_timed_out = drain_timed_out;
     crate::timeline::complete(&mut capture, exited_at);
     tracing::info!(session_id = %capture.id, events = capture.events.len(), files = capture.files.len(),
         dropped = capture.backend.dropped_events, "capture completed");
