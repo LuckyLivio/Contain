@@ -1,0 +1,74 @@
+{
+  "workflow_url": "https://github.com/LuckyLivio/Contain/actions/runs/36555457090",
+  "source_commit": "fabfc168a4ef7497625d91b18e6a06295d011053",
+  "profile": "release --locked",
+  "score": {
+    "schema_version": 2,
+    "expected": 21,
+    "observed": 19,
+    "correctly_attributed": 17,
+    "unknown": 4,
+    "incorrect_attribution": 0,
+    "groups": {
+      "target_success": {
+        "expected": 17,
+        "observed": 17,
+        "correctly_attributed": 17,
+        "unobserved": 0,
+        "unsupported_out_of_scope": 0,
+        "incorrectly_attributed": 0,
+        "observed_but_unresolved": 0,
+        "correctly_not_assigned_to_target_app": 0,
+        "observation_rate": 1,
+        "correct_attribution_rate": 1
+      },
+      "noise_success": {
+        "expected": 3,
+        "observed": 2,
+        "observed_but_unresolved": 2,
+        "unobserved": 1,
+        "unsupported_out_of_scope": 0,
+        "correctly_attributed": 0,
+        "incorrectly_attributed": 0,
+        "correctly_not_assigned_to_target_app": 0,
+        "observation_rate": 0.6666666666666666,
+        "correct_attribution_rate": 0
+      },
+      "failed": {
+        "expected": 1,
+        "unobserved": 1,
+        "observed": 0,
+        "unsupported_out_of_scope": 0,
+        "correctly_attributed": 0,
+        "incorrectly_attributed": 0,
+        "observed_but_unresolved": 0,
+        "correctly_not_assigned_to_target_app": 0,
+        "observation_rate": 0,
+        "correct_attribution_rate": 0
+      },
+      "unsupported": {
+        "expected": 0,
+        "observed": 0,
+        "unobserved": 0,
+        "unsupported_out_of_scope": 0,
+        "correctly_attributed": 0,
+        "incorrectly_attributed": 0,
+        "observed_but_unresolved": 0,
+        "correctly_not_assigned_to_target_app": 0,
+        "observation_rate": null,
+        "correct_attribution_rate": null
+      }
+    },
+    "positive_raw_predictions": 17,
+    "false_positive_target_events": 0,
+    "unexpected_positive_events": [],
+    "supporting_duplicate_raw_events": 0,
+    "excluded_control_positive_events": 3,
+    "precision": 1,
+    "dropped": 0,
+    "etw_events_lost": 0,
+    "etw_buffers_lost": 0,
+    "quality": "Degraded",
+    "definition": "Frozen exact syscall oracle; one raw event per row. Unobserved has null attribution. Final state cannot satisfy syscalls. Audit unmatched supported positive mutations in tested scope. No-positive precision is null. ADR 0006."
+  }
+}

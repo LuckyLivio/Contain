@@ -2,6 +2,13 @@
 
 Status: measurement protocol frozen before optimization (2026-09-29).
 
+Final outcome: 10000-file and 1000-file candidate gates failed in all three final
+trials; 100 files / four workers passed three times. The 1000-file baseline passed,
+so this is a measured regression in useful throughput. See the
+[complete decision and every trial](../performance.md#final-measured-decision-2026-09-29).
+Do not treat passing functional CI as stress acceptance or promote this as a
+medium/large-installer-ready release.
+
 ## Starting point and acceptance contract
 
 The repository and remote start at `f79e4351d3e447a75dd9b7f98b645df01ffd78aa`.

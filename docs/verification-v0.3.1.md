@@ -3,6 +3,30 @@
 Date: 2026-09-29. This record distinguishes code tests, actual Windows ETW
 captures, snapshot fallback, and release stress acceptance.
 
+## Final acceptance result
+
+Measured candidate `fabfc168a4ef7497625d91b18e6a06295d011053` includes the final
+capture implementation; later edits only preserve reports. Its
+[Windows CI](https://github.com/LuckyLivio/Contain/actions/runs/36555456851) passed.
+The [complete release workflow](https://github.com/LuckyLivio/Contain/actions/runs/36555457090)
+also completed, with all 18 paired stress trials, exit burst, filter-off,
+intentional overload, provider inventory and small release ETW integration.
+**Completing the measurement workflow is not passing the workload gate:**
+candidate 100 files passed 3/3; 1000 and 10000 each passed 0/3.
+The 1000-file baseline passed 3/3, so the regression is explicitly retained.
+
+[Full results](examples/comparison-release-v031-final.json),
+[every trial and resource/phase analysis](performance.md#final-measured-decision-2026-09-29),
+[all capture/ground-truth/scorer artifacts](https://github.com/LuckyLivio/Contain/actions/runs/36555457090/artifacts/11027707469).
+All candidate trial counter balances passed and final pending was zero. Overload
+explicitly quota-rejected 16215 records and suppressed all High claims. The
+[small release fixture](examples/verification-v031-release-small.json) attributed
+17/17 target syscalls, with failed/noise denominators kept separate.
+
+The final local release fallback was also rerun after the WAL change: 21 expected
+syscalls, zero raw observation/promotion, precision null; JSON/readback/dry-run
+checks passed. This remains fallback validation, not local ETW evidence.
+
 ## Correctness and compatibility
 
 The local Windows ordinary-token run passed `cargo fmt --all -- --check`,

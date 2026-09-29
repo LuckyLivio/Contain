@@ -73,6 +73,10 @@ unfinished and expose no final attribution. `history <app> --json --limit 256
 --offset 0` reads a page; default inspect reads a summary. See the
 [pipeline ADR](docs/adr/0006-capture-pipeline.md) and [counter definitions](docs/capture-counters.md).
 
+The current release comparison passes 100 files / four workers in three trials.
+1000 and 10000 files fail the useful-attribution gate; 1000 is a regression against
+the baseline. This remains experimental. See the [measured limits](docs/performance.md#final-measured-decision-2026-09-29).
+
 ## What v0.3 records
 
 | Source | Recorded evidence | Attribution boundary |
