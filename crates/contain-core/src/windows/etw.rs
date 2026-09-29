@@ -336,7 +336,10 @@ impl EventSource for EtwSource {
             let mut trace = Some(trace);
             // Stop the producer before closing the consumer so final ETW buffers can drain.
             match native::control_trace(&self.name, EVENT_TRACE_CONTROL_STOP) {
-                Ok(lost) => self.report.etw_events_lost = Some(lost),
+                Ok(lost) => {
+                    self.report.etw_events_lost = Some(lost.events);
+                    self.report.etw_buffers_lost = Some(lost.buffers);
+                }
                 Err(code) => {
                     self.report
                         .warnings

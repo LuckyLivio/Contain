@@ -685,7 +685,8 @@
         "etw_events_lost",
         "decode_errors",
         "warnings",
-        "registry_path_gaps"
+        "registry_path_gaps",
+        "etw_buffers_lost"
       ],
       "properties": {
         "etw_file": {
@@ -722,6 +723,17 @@
         "registry_path_gaps": {
           "minimum": 0,
           "type": "integer"
+        },
+        "etw_buffers_lost": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },

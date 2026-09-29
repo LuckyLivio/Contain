@@ -154,6 +154,7 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         _ => Vec::new(),
     };
     let complete = backend.etw_events_lost == Some(0)
+        && backend.etw_buffers_lost == Some(0)
         && backend.dropped_events == 0
         && backend.decode_errors == 0;
     attribution::compose_files(&mut files, &mut events, complete);
@@ -184,9 +185,10 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
     }
     if backend.dropped_events > 0
         || backend.etw_events_lost.unwrap_or(0) > 0
+        || backend.etw_buffers_lost.unwrap_or(0) > 0
         || backend.decode_errors > 0
     {
-        warnings.push(format!("Capture incomplete: {} application drops, {:?} ETW losses, {} decode errors; state attribution remains Unknown.", backend.dropped_events, backend.etw_events_lost, backend.decode_errors));
+        warnings.push(format!("Capture incomplete: {} application drops, {:?} ETW events lost, {:?} ETW buffers lost, {} decode errors; state attribution remains Unknown.", backend.dropped_events, backend.etw_events_lost, backend.etw_buffers_lost, backend.decode_errors));
     }
     let finished_at = native::timestamp(native::now_ticks());
     let name = options.name.unwrap_or_else(|| {

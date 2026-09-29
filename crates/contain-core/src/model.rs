@@ -150,6 +150,8 @@ pub struct BackendReport {
     pub etw_registry: String,
     pub dropped_events: u64,
     pub etw_events_lost: Option<u64>,
+    #[serde(default)]
+    pub etw_buffers_lost: Option<u64>,
     pub decode_errors: u64,
     #[serde(default)]
     pub registry_path_gaps: u64,

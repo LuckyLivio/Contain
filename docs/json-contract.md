@@ -19,3 +19,5 @@
 The SQLite schema is independently versioned by `PRAGMA user_version = 2`. Migration adds typed observation/process-instance/inventory tables in a transaction and preserves v0.1 tables. Newer databases are rejected before schema changes. The old PID-only process table is compatibility data; `process_instances` is authoritative for v2.
 
 `backend.registry_path_gaps` counts registry provider records without absolute hive/key names, across the enabled provider, because these cannot be safely scoped. Any such gap prevents promotion of registry final-state attribution. These records are not assigned a guessed HKCU path.
+
+`backend.etw_buffers_lost` separately reports lost ETW log/realtime buffers. A buffer may contain multiple events, so its count is never added to `etw_events_lost`. Missing statistics are null, not zero.

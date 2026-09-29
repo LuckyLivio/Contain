@@ -204,7 +204,7 @@ struct TracePropertiesBuffer {
 }
 
 /// Query/flush/stop only the random session name owned by the caller.
-pub fn control_trace(name: &str, control: u32) -> Result<u64, u32> {
+pub fn control_trace(name: &str, control: u32) -> Result<TraceLoss, u32> {
     use windows_sys::Win32::System::Diagnostics::Etw::*;
     // SAFETY: repr(C) storage has the alignment, capacity and offsets expected by ControlTraceW.
     unsafe {
@@ -221,8 +221,15 @@ pub fn control_trace(name: &str, control: u32) -> Result<u64, u32> {
         if status != 0 {
             return Err(status);
         }
-        Ok(u64::from(buffer.properties.EventsLost)
-            + u64::from(buffer.properties.LogBuffersLost)
-            + u64::from(buffer.properties.RealTimeBuffersLost))
+        Ok(TraceLoss {
+            events: u64::from(buffer.properties.EventsLost),
+            buffers: u64::from(buffer.properties.LogBuffersLost)
+                + u64::from(buffer.properties.RealTimeBuffersLost),
+        })
     }
+}
+
+pub struct TraceLoss {
+    pub events: u64,
+    pub buffers: u64,
 }
