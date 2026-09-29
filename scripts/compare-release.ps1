@@ -17,6 +17,11 @@ $fixture=Join-Path $repo 'target/release/contain-test-installer.exe'
 $bins=@{baseline=(Join-Path $BaselineDirectory 'target/release/contain.exe');candidate=(Join-Path $repo 'target/release/contain.exe')}
 $records=[Collections.Generic.List[object]]::new()
 $previousTruth=$env:CONTAIN_FIXTURE_TRUTH
+function Get-SampledLength([string]$Path) {
+    try { return [IO.FileInfo]::new($Path).get_Length() }
+    catch [IO.FileNotFoundException] { return 0L }
+    catch [IO.DirectoryNotFoundException] { return 0L }
+}
 function Run-Trial([string]$Mode,[int]$Count,[int]$Trial,[string]$Role='stress',[switch]$Overload,[switch]$FilterOff) {
     $label="$Mode-$Role-$Count-$Trial";if($Overload){$label+='-overload'}
     if($FilterOff){$label+='-filter-off'}
@@ -42,8 +47,8 @@ function Run-Trial([string]$Mode,[int]$Count,[int]$Trial,[string]$Role='stress',
         $peak=0L;$dbPeak=0L;$walPeak=0L
         while(-not $process.HasExited){
             $process.Refresh();$peak=[Math]::Max($peak,$process.PeakWorkingSet64)
-            if(Test-Path -LiteralPath $db){$dbPeak=[Math]::Max($dbPeak,(Get-Item -LiteralPath $db).Length)}
-            if(Test-Path -LiteralPath ($db+'-wal')){$walPeak=[Math]::Max($walPeak,(Get-Item -LiteralPath ($db+'-wal')).Length)}
+            $dbPeak=[Math]::Max($dbPeak,(Get-SampledLength $db))
+            $walPeak=[Math]::Max($walPeak,(Get-SampledLength ($db+'-wal')))
             Start-Sleep -Milliseconds 20
         }
         $process.WaitForExit();$watch.Stop()
@@ -84,13 +89,17 @@ function Run-Trial([string]$Mode,[int]$Count,[int]$Trial,[string]$Role='stress',
     }
 }
 try {
+    $environment=[ordered]@{schema_version=2;candidate_commit=(& git -C $repo rev-parse HEAD);baseline_commit=(& git -C $BaselineDirectory rev-parse HEAD);profile='release --locked';rustc=((& (Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe') -Vv)-join "`n");os=[Environment]::OSVersion.VersionString;elevated=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator);filesystem=(Get-Volume -DriveLetter ([IO.Path]::GetPathRoot($env:TEMP).Substring(0,1))).FileSystem;logical_processors=[Environment]::ProcessorCount;candidate_lock_sha256=(Get-FileHash (Join-Path $repo 'Cargo.lock')).Hash;baseline_lock_sha256=(Get-FileHash (Join-Path $BaselineDirectory 'Cargo.lock')).Hash;fixture_sha256=(Get-FileHash $fixture).Hash;scorer_sha256=(Get-FileHash (Join-Path $PSScriptRoot 'score-fixture.py')).Hash;measurement='Same runner, compiler, release profile and frozen common fixture. Alternating baseline/candidate pairs; independent noise. Parent PeakWorkingSet64 and DB/WAL sampled every20ms, excludes child memory/kernel buffers. Capture wall includes final commit; export/scoring outside timing. Callback timers overlap wall phases; no CPU utilization claim. Background/caches uncontrolled, Defender unchanged.'}
+    $environment|ConvertTo-Json -Depth 10|Set-Content (Join-Path $OutputDirectory 'environment.json') -Encoding utf8
+    Write-Output ('ENVIRONMENT: '+($environment|ConvertTo-Json -Depth 10 -Compress))
     $counts=@(100,1000,$Files)|Select-Object -Unique
     foreach($count in $counts){foreach($trial in 1..$Trials){$order=if($trial%2 -eq 1){@('baseline','candidate')}else{@('candidate','baseline')};foreach($mode in $order){Run-Trial $mode $count $trial}}}
     Run-Trial candidate 1000 1 burst
     if(-not $SnapshotOnly){Run-Trial candidate 1000 1 stress -FilterOff}
     if(-not $SnapshotOnly){Run-Trial candidate 1000 1 stress -Overload}
     $medians=@(foreach($count in $counts){foreach($mode in @('baseline','candidate')){$r=@($records|Where-Object {$_.mode -eq $mode -and $_.files -eq $count -and $_.role -eq 'stress' -and -not $_.intentional_overload -and -not $_.file_filter_experiment});$sorted=@($r.elapsed_seconds|Sort-Object);[ordered]@{mode=$mode;files=$count;trials=$r.Count;median_seconds=$sorted[[int][Math]::Floor($sorted.Count/2)];passes=@($r|Where-Object acceptance_pass).Count}}})
-    $result=[ordered]@{schema_version=2;candidate_commit=(& git -C $repo rev-parse HEAD);baseline_commit=(& git -C $BaselineDirectory rev-parse HEAD);profile='release --locked';rustc=((& (Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe') -Vv)-join "`n");os=[Environment]::OSVersion.VersionString;elevated=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator);filesystem=(Get-Volume -DriveLetter ([IO.Path]::GetPathRoot($env:TEMP).Substring(0,1))).FileSystem;logical_processors=[Environment]::ProcessorCount;candidate_lock_sha256=(Get-FileHash (Join-Path $repo 'Cargo.lock')).Hash;baseline_lock_sha256=(Get-FileHash (Join-Path $BaselineDirectory 'Cargo.lock')).Hash;fixture_sha256=(Get-FileHash $fixture).Hash;scorer_sha256=(Get-FileHash (Join-Path $PSScriptRoot 'score-fixture.py')).Hash;measurement='Same runner, compiler, release profile and frozen common fixture. Alternating baseline/candidate pairs; independent noise. Parent PeakWorkingSet64 and DB/WAL sampled every20ms, excludes child memory/kernel buffers. Capture wall includes final commit; export/scoring outside timing. Callback timers overlap wall phases; no CPU utilization claim. Background/caches uncontrolled, Defender unchanged.';medians=$medians;trials=$records}
+    $result=$environment
+    $result.medians=$medians;$result.trials=$records
     $result|ConvertTo-Json -Depth 40|Set-Content (Join-Path $OutputDirectory 'comparison.json') -Encoding utf8
     Write-Output ('COMPARISON: '+($result|ConvertTo-Json -Depth 40 -Compress))
 } finally {$env:CONTAIN_FIXTURE_TRUTH=$previousTruth}
