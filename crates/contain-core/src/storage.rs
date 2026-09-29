@@ -88,6 +88,7 @@ impl Storage {
         evidence::save(&tx, capture)?;
         reliability::save(&tx, capture)?;
         stream::save_documents(&tx, capture)?;
+        stream::save_state_validation(&tx, capture)?;
         tx.commit()?;
         let mut stats = capture.stats.clone();
         stats.phase_ms.insert(
@@ -192,6 +193,12 @@ impl Storage {
             .as_deref()
             .is_some_and(|s| s != "finished")
         {
+            let stats: String = self.connection.query_row(
+                "SELECT stats_json FROM capture_runs WHERE session_id=?1",
+                [&capture.id],
+                |r| r.get(0),
+            )?;
+            capture.backend.stream = Some(serde_json::from_str(&stats)?);
             capture.quality.level = crate::model::QualityLevel::Incomplete;
             capture.quality.reasons.push("Unfinished capture; committed raw evidence remains readable. No final attribution.".into());
             if full {

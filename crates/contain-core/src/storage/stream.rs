@@ -15,9 +15,11 @@ pub(super) fn schema(db: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS raw_stream_time ON raw_stream(session_id,ticks,sequence);
         CREATE INDEX IF NOT EXISTS raw_stream_related ON raw_stream(session_id,related);
         CREATE INDEX IF NOT EXISTS raw_stream_header ON raw_stream(session_id,kind,header_pid);
+        CREATE INDEX IF NOT EXISTS raw_stream_id ON raw_stream(json_extract(document,'$.id'));
         CREATE TABLE IF NOT EXISTS event_documents(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, ticks INTEGER NOT NULL, sequence INTEGER NOT NULL, resource TEXT NOT NULL, document TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS event_documents_order ON event_documents(session_id,ticks,sequence,id);
-        CREATE INDEX IF NOT EXISTS event_documents_resource ON event_documents(session_id,resource);")?;
+        CREATE INDEX IF NOT EXISTS event_documents_resource ON event_documents(session_id,resource);
+        CREATE INDEX IF NOT EXISTS observations_resource ON observations(session_id,resource);")?;
     Ok(())
 }
 
@@ -218,9 +220,13 @@ impl Storage {
             "SELECT document FROM event_documents WHERE session_id=?1 AND resource=?2 LIMIT 513",
         )?;
         let rows = q
-            .query_map(params![session, resource.to_lowercase()], |r| {
-                r.get::<_, String>(0)
-            })?
+            .query_map(
+                params![
+                    session,
+                    crate::windows::native::normalize_path(resource, &[])
+                ],
+                |r| r.get::<_, String>(0),
+            )?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         anyhow::ensure!(rows.len() <= 512, "per-resource association quota exceeded");
         rows.into_iter()
@@ -269,6 +275,16 @@ impl Storage {
             )
             .optional()?;
         let Some((session, document)) = found else {
+            let raw:Option<(String,String)>=self.connection.query_row("SELECT session_id,document FROM raw_stream WHERE json_extract(document,'$.id')=?1 LIMIT 1",[id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+            if let Some((session, document)) = raw {
+                let mut c = self.load_summary(&session)?;
+                let mut e: SystemEvent = serde_json::from_str(&document)?;
+                e.confidence = Confidence::Unknown;
+                e.success = None;
+                e.reason="Raw journal evidence without a finalized observation; no attribution promotion".into();
+                c.events.push(e);
+                return Ok(Some(c));
+            }
             return Ok(None);
         };
         let mut c = self.load_summary(&session)?;
@@ -314,6 +330,13 @@ impl Storage {
     pub fn events_page(&self, session: &str, offset: u64, limit: u32) -> Result<Vec<SystemEvent>> {
         anyhow::ensure!((1..=4096).contains(&limit), "page limit must be 1..4096");
         let unfinished = self.stream_state(session)?.is_some_and(|s| s != "finished");
+        if self.stream_state(session)?.is_none() {
+            let missing:bool=self.connection.query_row("SELECT EXISTS(SELECT 1 FROM observations o WHERE session_id=?1 AND NOT EXISTS(SELECT 1 FROM event_documents d WHERE d.id=o.id))",[session],|r|r.get(0))?;
+            anyhow::ensure!(
+                !missing,
+                "Legacy capture has no paged document index; use history without --limit"
+            );
+        }
         let sql = if unfinished {
             "SELECT document FROM raw_stream WHERE session_id=?1 ORDER BY ticks,sequence LIMIT ?2 OFFSET ?3"
         } else {
@@ -342,9 +365,21 @@ pub(super) fn save_documents(tx: &rusqlite::Transaction<'_>, c: &Capture) -> Res
             c.id,
             e.timestamp_ticks,
             e.sequence,
-            e.resource.to_lowercase(),
+            crate::windows::native::normalize_path(&e.resource, &[]),
             serde_json::to_string(e)?
         ])?;
+    }
+    Ok(())
+}
+pub(super) fn save_state_validation(tx: &rusqlite::Transaction<'_>, c: &Capture) -> Result<()> {
+    let resources = c
+        .files
+        .iter()
+        .filter(|f| f.confidence == Confidence::High)
+        .map(|f| crate::windows::native::normalize_path(&f.path, &[]));
+    for resource in resources {
+        tx.prepare_cached("UPDATE observations SET state_validated=1 WHERE session_id=?1 AND resource=?2 AND event_type='file' AND operation NOT IN ('open_requested','close') AND success IS NOT 0")?.execute(params![c.id,resource])?;
+        tx.prepare_cached("UPDATE event_documents SET document=json_set(document,'$.state_validated',json('true')) WHERE session_id=?1 AND resource=?2 AND id IN (SELECT id FROM observations WHERE session_id=?1 AND resource=?2 AND state_validated=1)")?.execute(params![c.id,resource])?;
     }
     Ok(())
 }

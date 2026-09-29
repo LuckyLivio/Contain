@@ -404,7 +404,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     for file in &mut files {
         match db.resource_events(&id, &file.path) {
             Ok(mut events) => {
-                attribution::compose_files(std::slice::from_mut(file), &mut events, complete)
+                attribution::compose_files(std::slice::from_mut(file), &mut events, complete);
             }
             Err(error) => {
                 backend.dropped_events += 1;
