@@ -246,6 +246,8 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
+ "serde_json",
+ "windows-sys 0.61.2",
  "winreg",
 ]
 

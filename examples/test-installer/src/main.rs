@@ -1,3 +1,4 @@
+mod truth;
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use std::{
@@ -10,13 +11,16 @@ use std::{
 };
 use winreg::{RegKey, enums::HKEY_CURRENT_USER};
 
-#[derive(Clone, Copy, ValueEnum)]
+#[derive(Clone, Copy, Debug, ValueEnum)]
 enum Role {
     Parent,
     Child,
     Grandchild,
     Unrelated,
     Detached,
+    Short,
+    Stress,
+    Worker,
 }
 
 #[derive(Parser)]
@@ -27,6 +31,10 @@ struct Args {
     role: Role,
     #[arg(long)]
     cleanup: bool,
+    #[arg(long, default_value_t = 10000)]
+    files: usize,
+    #[arg(long, default_value_t = 0)]
+    worker: usize,
 }
 
 fn main() {
@@ -89,6 +97,8 @@ fn run() -> Result<()> {
         println!("Fixture cleaned: {} and HKCU\\{}", root.display(), key_path);
         return Ok(());
     }
+    let truth = truth::Truth::new(&root, &format!("{:?}", args.role).to_lowercase())?;
+    let (key, _) = RegKey::predef(HKEY_CURRENT_USER).create_subkey(&key_path)?;
     if matches!(args.role, Role::Unrelated) {
         let deadline = Instant::now() + Duration::from_secs(60);
         while !root.join(".fixture-go").is_file() {
@@ -98,31 +108,54 @@ fn run() -> Result<()> {
             thread::sleep(Duration::from_millis(20));
         }
         thread::sleep(Duration::from_millis(200));
-        fs::write(
-            root.join("unrelated.txt"),
+        truth.write(
+            &root.join("unrelated.txt"),
             b"independent process: never attribute to installer",
         )?;
-        fs::write(
-            root.join("shared.txt"),
+        truth.write(
+            &root.join("shared.txt"),
             b"independent process also touched this file",
         )?;
+        truth.set(&key, &key_path, "NoiseOnly", "independent registry writer")?;
         hold_for_observation();
         return Ok(());
     }
-    let (key, _) = RegKey::predef(HKEY_CURRENT_USER).create_subkey(&key_path)?;
     match args.role {
         Role::Parent => {
+            let status = Command::new(std::env::current_exe()?)
+                .args(["--role", "short", "--root"])
+                .arg(&root)
+                .status()?;
+            anyhow::ensure!(status.success(), "short child failed");
+            use std::os::windows::fs::OpenOptionsExt;
+            truth.write(&root.join("locked.txt"), b"must survive failed deletion")?;
+            let lock = fs::OpenOptions::new()
+                .read(true)
+                .share_mode(0)
+                .open(root.join("locked.txt"))?;
+            anyhow::ensure!(
+                !truth.record(
+                    "delete_requested",
+                    &root.join("locked.txt").to_string_lossy(),
+                    None,
+                    || fs::remove_file(root.join("locked.txt"))
+                )?,
+                "locked deletion unexpectedly succeeded"
+            );
+            drop(lock);
+
             fs::write(root.join(".contain-demo-marker"), b"Contain test fixture")?;
-            fs::write(root.join("app.bin"), b"test application payload")?;
-            fs::write(root.join("settings.txt"), b"updated by installer")?;
-            fs::write(root.join("shared.txt"), b"installer first write")?;
+            truth.write(&root.join("app.bin"), b"test application payload")?;
+            truth.write(&root.join("settings.txt"), b"updated by installer")?;
+            truth.write(&root.join("shared.txt"), b"installer first write")?;
             if root.join("rename-me.txt").exists() {
-                fs::rename(root.join("rename-me.txt"), root.join("renamed.txt"))?;
+                truth.rename(&root.join("rename-me.txt"), &root.join("intermediate.txt"))?;
+                truth.rename(&root.join("intermediate.txt"), &root.join("renamed.txt"))?;
             }
             if root.join("delete-me.txt").exists() {
-                fs::remove_file(root.join("delete-me.txt"))?;
+                truth.delete(&root.join("delete-me.txt"))?;
             }
-            key.set_value("Installed", &"initial")?;
+            truth.set(&key, &key_path, "Installed", "initial")?;
             fs::write(root.join(".fixture-go"), b"start independent writer")?;
             let status = Command::new(std::env::current_exe()?)
                 .args(["--role", "child", "--root"])
@@ -132,12 +165,19 @@ fn run() -> Result<()> {
             if !status.success() {
                 anyhow::bail!("child failed: {status}");
             }
+            // Preserve original creation ancestry while this child outlives its launcher.
+            #[allow(clippy::zombie_processes)]
+            let _detached = Command::new(std::env::current_exe()?)
+                .args(["--role", "detached", "--root"])
+                .arg(&root)
+                .spawn()?;
+            return Ok(());
         }
         Role::Child => {
             fs::create_dir_all(root.join("cache"))?;
-            fs::write(root.join("cache/index.bin"), b"child cache payload")?;
-            key.set_value("Installed", &"updated by child")?;
-            key.set_value("ChildObserved", &"yes")?;
+            truth.write(&root.join("cache/index.bin"), b"child cache payload")?;
+            truth.set(&key, &key_path, "Installed", "updated by child")?;
+            truth.set(&key, &key_path, "ChildObserved", "yes")?;
             let status = Command::new(std::env::current_exe()?)
                 .args(["--role", "grandchild", "--root"])
                 .arg(&root)
@@ -149,13 +189,13 @@ fn run() -> Result<()> {
         }
         Role::Grandchild => {
             fs::create_dir_all(root.join("Projects"))?;
-            fs::write(
-                root.join("Projects/user-notes.txt"),
+            truth.write(
+                &root.join("Projects/user-notes.txt"),
                 b"sample user data: preserve",
             )?;
-            fs::write(root.join("transient.txt"), b"transient payload")?;
-            fs::remove_file(root.join("transient.txt"))?;
-            key.set_value("GrandchildObserved", &"yes")?;
+            truth.write(&root.join("transient.txt"), b"transient payload")?;
+            truth.delete(&root.join("transient.txt"))?;
+            truth.set(&key, &key_path, "GrandchildObserved", "yes")?;
             let (temporary_key, _) = key.create_subkey("TransientKey")?;
             temporary_key.set_value("TransientValue", &"present")?;
             temporary_key.delete_value("TransientValue")?;
@@ -163,10 +203,58 @@ fn run() -> Result<()> {
             key.delete_subkey("TransientKey")?;
         }
         Role::Detached => {
-            fs::write(
-                root.join("detached.txt"),
-                b"detached writer has no assumed ancestry",
+            thread::sleep(Duration::from_millis(2500));
+            truth.write(
+                &root.join("detached.txt"),
+                b"child write after installer exit",
             )?;
+            fs::write(root.join(".detached-done"), b"complete")?;
+            return Ok(());
+        }
+        Role::Short => {
+            truth.write(&root.join("short.txt"), b"short-lived writer")?;
+            return Ok(());
+        }
+        Role::Stress => {
+            anyhow::ensure!(
+                (4..=100000).contains(&args.files),
+                "stress count must be 4..100000"
+            );
+            fs::write(root.join(".contain-demo-marker"), b"Contain test fixture")?;
+            let mut children = Vec::new();
+            for worker in 0..4 {
+                let count = args.files / 4 + usize::from(worker < args.files % 4);
+                children.push(
+                    Command::new(std::env::current_exe()?)
+                        .args(["--role", "worker", "--root"])
+                        .arg(&root)
+                        .args([
+                            "--files",
+                            &count.to_string(),
+                            "--worker",
+                            &worker.to_string(),
+                        ])
+                        .spawn()?,
+                );
+            }
+            for mut child in children {
+                anyhow::ensure!(child.wait()?.success(), "stress worker failed");
+            }
+            return Ok(());
+        }
+        Role::Worker => {
+            let dir = root.join(format!("worker-{}", args.worker));
+            fs::create_dir_all(&dir)?;
+            for i in 0..args.files {
+                let original = dir.join(format!("{i}.tmp"));
+                let renamed = dir.join(format!("{i}.dat"));
+                truth.write(&original, b"synthetic payload")?;
+                truth.rename(&original, &renamed)?;
+                if i % 2 == 0 {
+                    truth.delete(&renamed)?;
+                }
+            }
+            return Ok(());
         }
         Role::Unrelated => unreachable!(),
     }

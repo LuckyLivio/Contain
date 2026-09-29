@@ -47,7 +47,10 @@ pub fn finish(c: &mut Capture) {
         || c.backend.etw_events_lost.unwrap_or(0) > 0
         || c.backend.etw_buffers_lost.unwrap_or(0) > 0
         || c.backend.decode_errors > 0;
-    c.quality.level = if loss || c.stats.drain_timed_out {
+    let gaps = c.stats.snapshot_gaps > 0 || c.stats.notification_gaps > 0;
+    let shutdown_failed = c.backend.etw_file == "active"
+        && (c.backend.etw_events_lost.is_none() || c.backend.etw_buffers_lost.is_none());
+    c.quality.level = if loss || gaps || shutdown_failed || c.stats.drain_timed_out {
         QualityLevel::Incomplete
     } else {
         QualityLevel::Degraded
@@ -73,6 +76,17 @@ pub fn finish(c: &mut Capture) {
         c.quality.reasons.push(
             "Session reached its maximum drain duration; later changes may be missing.".into(),
         );
+    }
+    if gaps {
+        c.quality.reasons.push(format!(
+            "{} skipped snapshot entries and {} notification gaps.",
+            c.stats.snapshot_gaps, c.stats.notification_gaps
+        ));
+    }
+    if shutdown_failed {
+        c.quality
+            .reasons
+            .push("ETW shutdown did not return loss statistics.".into());
     }
     c.warnings.extend(c.quality.reasons.clone());
     for p in &c.processes {
@@ -103,5 +117,34 @@ pub fn finish(c: &mut Capture) {
         if e.dimensions.resource == Confidence::High {
             c.edges.push(EvidenceEdge{from:node,to:format!("resource:{}",e.resource),relation:e.operation.clone(),confidence:e.dimensions.resource,reason:"Source path or state observation identifies this resource; does not establish exclusive ownership.".into()});
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn quality_reports_loss_and_keeps_actor_and_resource_independent() {
+        let mut c = Capture {
+            events: vec![SystemEvent {
+                event_type: "registry".into(),
+                evidence: AttributionEvidence {
+                    pid: Some(1),
+                    process_creation_time: Some(10),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        c.backend.dropped_events = 1;
+        finish(&mut c);
+        assert!(matches!(c.quality.level, QualityLevel::Incomplete));
+        assert_eq!(c.stats.known_actor_events, 1);
+        assert_eq!(c.stats.unknown_resource_events, 1);
+        assert_eq!(c.events[0].dimensions.resource, Confidence::Unknown);
+        let mut clean = Capture::default();
+        finish(&mut clean);
+        assert!(matches!(clean.quality.level, QualityLevel::Degraded));
     }
 }

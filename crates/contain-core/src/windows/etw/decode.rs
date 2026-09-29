@@ -220,6 +220,7 @@ impl Decoder {
         if let Some(w) = &writer {
             let owner = (pid, w.creation_time);
             if matches!(id, 1 | 2) {
+                let previous_drops = self.registry_context.dropped;
                 key = self
                     .registry_context
                     .open(
@@ -231,6 +232,10 @@ impl Decoder {
                         time,
                     )
                     .unwrap_or_default();
+                self.dropped.fetch_add(
+                    self.registry_context.dropped - previous_drops,
+                    Ordering::Relaxed,
+                );
                 if success != Some(true) {
                     self.registry_context.close(owner, object);
                 }

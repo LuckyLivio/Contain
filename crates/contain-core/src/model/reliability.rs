@@ -25,7 +25,10 @@ pub struct ConfidenceDimensions {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CaptureStats {
+    pub snapshot_gaps: u64,
+    pub notification_gaps: u64,
     pub events_received: u64,
     pub events_retained: u64,
     pub events_normalized: u64,

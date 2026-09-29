@@ -6,7 +6,7 @@ pub fn attribute(event: &mut SystemEvent, processes: &[ProcessRecord], session_i
     event.confidence = Confidence::Unknown;
     if !matches!(
         event.evidence.source,
-        EvidenceSource::EtwFile | EvidenceSource::EtwRegistry
+        EvidenceSource::EtwFile | EvidenceSource::EtwRegistry | EvidenceSource::EtwProcess
     ) {
         event.evidence.rule = AttributionRule::SnapshotOnly;
         event.reason = "This source does not supply a verified operation writer.".into();

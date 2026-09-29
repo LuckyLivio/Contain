@@ -2,6 +2,7 @@
 use std::collections::HashMap;
 #[derive(Default)]
 pub struct RegistryContext {
+    pub dropped: u64,
     paths: HashMap<(u32, u64, u64), (String, u64)>,
 }
 impl RegistryContext {
@@ -38,6 +39,9 @@ impl RegistryContext {
         {
             self.paths
                 .insert((owner.0, owner.1, object), (path.clone(), at));
+        }
+        if path.is_some() && !self.paths.contains_key(&(owner.0, owner.1, object)) {
+            self.dropped += 1;
         }
         path
     }

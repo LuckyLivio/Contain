@@ -1,4 +1,4 @@
-param([switch]$KeepArtifacts, [switch]$RequireEtw, [switch]$SnapshotOnly)
+param([switch]$KeepArtifacts, [switch]$RequireEtw, [switch]$SnapshotOnly, [string]$OutputDirectory)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($RequireEtw -and $SnapshotOnly) { throw 'Choose RequireEtw or SnapshotOnly, not both.' }
@@ -34,6 +34,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'capture failed' }
         if (-not $unrelated.WaitForExit(10000)) { throw 'independent fixture timed out' }
         if ($unrelated.ExitCode -ne 0) { throw 'independent fixture failed' }
+        $deadline=[DateTime]::UtcNow.AddSeconds(15)
+        while (-not (Test-Path -LiteralPath (Join-Path $root ".detached-done"))) { if ([DateTime]::UtcNow -gt $deadline) { throw "detached fixture did not finish" }; Start-Sleep -Milliseconds 50 }
         $raw = (& $contain --db $db inspect TestFixture --json) -join "`n"
         Assert-JsonContract $raw
         $document = $raw | ConvertFrom-Json
@@ -60,6 +62,35 @@ try {
                 Write-Output ("SOURCE: " + ($event | ConvertTo-Json -Compress -Depth 6))
             }
         } elseif (@($manifest.files | Where-Object confidence -ne 'Unknown').Count -ne 0) { throw 'snapshot fallback overstated attribution' }
+        if (-not (Test-Path -LiteralPath (Join-Path $root 'locked.txt'))) { throw 'failed delete was treated as success' }
+        if (@($manifest.operations | Where-Object { $_.operation -eq 'Renamed' -and $_.resource -like '*\renamed.txt' }).Count -ne 1) { throw 'stable file identity rename was not recovered' }
+        $noiseRegistry=@($manifest.registry | Where-Object name -eq 'NoiseOnly')
+        if ($noiseRegistry.Count -ne 1 -or $noiseRegistry[0].confidence -ne 'Unknown') { throw 'independent registry state was misattributed' }
+        $score = & "$PSScriptRoot/score-fixture.ps1" -Capture $manifest -Root $root
+        if ($score.expected -ne 21) { throw "ground truth incomplete: expected 21 instrumented operations" }
+        Write-Output ("RELIABILITY: " + (($score | Select-Object -Property * -ExcludeProperty rows) | ConvertTo-Json -Compress))
+        if ($score.incorrect_attribution -ne 0) { throw 'false attribution detected' }
+        if ($RequireEtw) {
+            foreach ($role in @('short','detached')) {
+                if (@($score.rows | Where-Object { $_.role -eq $role -and $_.outcome -eq 'Correct' }).Count -eq 0) { throw "$role actor was not correctly attributed" }
+            }
+            $rootExit=@($manifest.events | Where-Object operation -eq 'installer_exited')[0]
+            $detached=@($manifest.events | Where-Object { $_.event_type -eq 'file' -and $_.resource -like '*\detached.txt' -and $_.confidence -eq 'High' })
+            if (@($detached | Where-Object { [uint64]$_.timestamp_ticks -gt [uint64]$rootExit.timestamp_ticks }).Count -eq 0) { throw 'detached write after root exit not captured' }
+        }
+        $firstHistory=(& $contain --db $db history TestFixture --json) -join "`n"
+        $secondHistory=(& $contain --db $db history TestFixture --json) -join "`n"
+        if ($firstHistory -cne $secondHistory) { throw 'history ordering was not stable across readback' }
+        $eventId=$manifest.events[0].id
+        $explanation=(& $contain --db $db explain $eventId --json) -join "`n"
+        Assert-JsonContract $explanation
+        if ($LASTEXITCODE -ne 0) { throw 'explain failed' }
+        if ($OutputDirectory) {
+            New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+            $document | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'capture.json') -Encoding utf8
+            $score | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'reliability.json') -Encoding utf8
+            Copy-Item -LiteralPath (Join-Path $root 'ground-truth.json') -Destination $OutputDirectory
+        }
         foreach ($command in @('diff','history')) {
             $raw = (& $contain --db $db $command TestFixture --json) -join "`n"
             Assert-JsonContract $raw

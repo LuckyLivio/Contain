@@ -150,15 +150,19 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
                 native::process_identity(p.pid)
                     .is_some_and(|live| Some(live.creation_time) == p.creation_time)
             });
-        if drain_start.elapsed() >= Duration::from_millis(options.max_drain_ms) {
-            drain_timed_out = true;
-            break;
-        }
-        if !descendants_live
-            && last_activity.elapsed()
-                >= Duration::from_millis(options.settle_ms.max(if options.etw { 1200 } else { 0 }))
-        {
-            break;
+        match crate::drain::decide(
+            drain_start.elapsed().as_millis() as u64,
+            last_activity.elapsed().as_millis() as u64,
+            descendants_live,
+            options.settle_ms.max(if options.etw { 1200 } else { 0 }),
+            options.max_drain_ms,
+        ) {
+            crate::drain::Decision::Timeout => {
+                drain_timed_out = true;
+                break;
+            }
+            crate::drain::Decision::Quiet => break,
+            crate::drain::Decision::Wait => {}
         }
         thread::sleep(Duration::from_millis(30));
     }
@@ -222,6 +226,7 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         .as_ref()
         .map(|o| o.seen_paths())
         .unwrap_or_default();
+    let notification_gaps = observer.as_ref().map(|o| o.gaps()).unwrap_or(1);
     if let Some(observer) = &observer {
         let gaps = observer.gaps();
         if gaps > 0 {
@@ -311,6 +316,8 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
     };
     capture.stats.capture_elapsed_ms = capture_clock.elapsed().as_millis() as u64;
     capture.stats.drain_timed_out = drain_timed_out;
+    capture.stats.snapshot_gaps = skipped as u64;
+    capture.stats.notification_gaps = notification_gaps;
     crate::timeline::complete(&mut capture, exited_at);
     crate::reliability::finish(&mut capture);
     tracing::info!(session_id = %capture.id, events = capture.events.len(), files = capture.files.len(),
