@@ -258,3 +258,10 @@ but medium/large capture readiness is not established. Formal GUI expansion is
 not the next acceptance milestone: resolve the measured 1000-file regression and
 repeat the unchanged 10000-file gate first. A GUI also needs a genuinely read-only
 SQLite open path, and must display unfinished/loss/Unknown states without promotion.
+
+## 1000-file ingest repair follow-up
+
+[Stage measurements, ablations and all trial results](capture-ingest-regression.md)
+record the repair branch: three passing 1000-file candidate trials with slower
+end-to-end completion; the original 10000-file gate still fails. Historical results
+above remain unchanged. Measured binaries are identified separately from report commits.
