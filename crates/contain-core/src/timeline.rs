@@ -51,6 +51,7 @@ pub fn complete(capture: &mut Capture, exited_at: u64) {
         });
     }
     let timestamp_ticks = native::now_ticks();
+    capture.finished_at = native::timestamp(timestamp_ticks);
     for file in &capture.files {
         capture.events.push(SystemEvent { id: uuid::Uuid::new_v4().to_string(), timestamp: capture.finished_at.clone(), timestamp_ticks,
             event_type: "file_state".into(), operation: file.operation.clone(), resource: file.path.clone(), confidence: Confidence::Unknown,
@@ -77,5 +78,14 @@ pub fn complete(capture: &mut Capture, exited_at: u64) {
             ..Default::default()
         });
     }
-    capture.events.sort_by_key(|event| event.timestamp_ticks);
+    let mut sequence = capture.events.iter().map(|e| e.sequence).max().unwrap_or(0);
+    for event in &mut capture.events {
+        if event.sequence == 0 {
+            sequence += 1;
+            event.sequence = sequence;
+        }
+    }
+    capture.events.sort_by(|a, b| {
+        (a.timestamp_ticks, a.sequence, &a.id).cmp(&(b.timestamp_ticks, b.sequence, &b.id))
+    });
 }

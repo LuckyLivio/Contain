@@ -233,3 +233,25 @@ pub struct TraceLoss {
     pub events: u64,
     pub buffers: u64,
 }
+
+pub fn file_identity(handle: BorrowedHandle<'_>) -> Option<String> {
+    use windows_sys::Win32::Storage::FileSystem::{
+        BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+    };
+    // SAFETY: valid borrowed file handle and correctly sized writable output. No ownership transfer.
+    unsafe {
+        let mut info: BY_HANDLE_FILE_INFORMATION = zeroed();
+        if GetFileInformationByHandle(handle.as_raw_handle(), &mut info) == 0
+            || info.nNumberOfLinks != 1
+        {
+            return None;
+        }
+        Some(format!(
+            "{:08x}:{:08x}{:08x}:{}",
+            info.dwVolumeSerialNumber,
+            info.nFileIndexHigh,
+            info.nFileIndexLow,
+            ticks(info.ftCreationTime)
+        ))
+    }
+}

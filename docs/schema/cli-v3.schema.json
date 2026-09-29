@@ -1,0 +1,1384 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/LuckyLivio/Contain/blob/main/docs/schema/cli-v3.schema.json",
+  "title": "Contain CLI v3 output",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "kind",
+        "data"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 3
+        },
+        "kind": {
+          "const": "inspect"
+        },
+        "data": {
+          "$ref": "#/$defs/capture"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "kind",
+        "data"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 3
+        },
+        "kind": {
+          "const": "diff"
+        },
+        "data": {
+          "$ref": "#/$defs/diff"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "kind",
+        "data"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 3
+        },
+        "kind": {
+          "const": "history"
+        },
+        "data": {
+          "$ref": "#/$defs/history"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "kind",
+        "data"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 3
+        },
+        "kind": {
+          "const": "doctor"
+        },
+        "data": {
+          "$ref": "#/$defs/doctor"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "kind",
+        "data"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 3
+        },
+        "kind": {
+          "const": "list"
+        },
+        "data": {
+          "$ref": "#/$defs/list"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "kind",
+        "data"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 3
+        },
+        "kind": {
+          "const": "explain"
+        },
+        "data": {
+          "$ref": "#/$defs/explain"
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "confidence": {
+      "enum": [
+        "Certain",
+        "High",
+        "Medium",
+        "Low",
+        "Unknown"
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "required": [
+        "source",
+        "pid",
+        "process_creation_time",
+        "process_image",
+        "parent_pid",
+        "ancestor_pid",
+        "session_id",
+        "rule"
+      ],
+      "properties": {
+        "source": {
+          "enum": [
+            "ProcessApi",
+            "EtwFile",
+            "EtwRegistry",
+            "FileNotification",
+            "ServiceInventory",
+            "TaskInventory",
+            "StartupRegistry",
+            "Snapshot",
+            "EtwProcess"
+          ]
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "process_creation_time": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "process_image": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parent_pid": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ancestor_pid": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rule": {
+          "enum": [
+            "InstallerPid",
+            "DescendantProcess",
+            "ExecutablePathMatch",
+            "UnrelatedProcess",
+            "AmbiguousLifetime",
+            "MixedWriters",
+            "EventLoss",
+            "SnapshotOnly",
+            "MissingWriter"
+          ]
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "required": [
+        "id",
+        "timestamp",
+        "timestamp_ticks",
+        "event_type",
+        "operation",
+        "resource",
+        "confidence",
+        "reason",
+        "evidence",
+        "success",
+        "state_validated",
+        "sequence",
+        "raw",
+        "dimensions"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "timestamp_ticks": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "event_type": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "resource": {
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        },
+        "success": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state_validated": {
+          "type": "boolean"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "raw": {
+          "$ref": "#/$defs/raw"
+        },
+        "dimensions": {
+          "$ref": "#/$defs/dimensions"
+        }
+      }
+    },
+    "process": {
+      "type": "object",
+      "required": [
+        "pid",
+        "parent_pid",
+        "image",
+        "first_seen",
+        "confidence",
+        "reason",
+        "creation_time",
+        "parent_creation_time",
+        "last_seen",
+        "ended_at",
+        "evidence"
+      ],
+      "properties": {
+        "pid": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "parent_pid": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "image": {
+          "type": "string"
+        },
+        "first_seen": {
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "creation_time": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parent_creation_time": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_seen": {
+          "type": "string"
+        },
+        "ended_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        }
+      }
+    },
+    "file": {
+      "type": "object",
+      "required": [
+        "path",
+        "operation",
+        "before_hash",
+        "after_hash",
+        "after_size",
+        "notification_seen",
+        "confidence",
+        "reason",
+        "evidence"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "before_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after_size": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "notification_seen": {
+          "type": "boolean"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "registry": {
+      "type": "object",
+      "required": [
+        "key",
+        "name",
+        "operation",
+        "before_value",
+        "after_value",
+        "confidence",
+        "reason",
+        "evidence"
+      ],
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "before_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "required": [
+        "name",
+        "display_name",
+        "binary_path",
+        "startup_type",
+        "account"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "binary_path": {
+          "type": "string"
+        },
+        "startup_type": {
+          "type": "string"
+        },
+        "account": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "task": {
+      "type": "object",
+      "required": [
+        "path",
+        "actions",
+        "triggers",
+        "enabled"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "executable",
+              "arguments"
+            ],
+            "properties": {
+              "executable": {
+                "type": "string"
+              },
+              "arguments": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "startup": {
+      "type": "object",
+      "required": [
+        "source",
+        "name",
+        "command"
+      ],
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        }
+      }
+    },
+    "inventoryState": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "state"
+          ],
+          "properties": {
+            "kind": {
+              "const": "Service"
+            },
+            "state": {
+              "$ref": "#/$defs/service"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "state"
+          ],
+          "properties": {
+            "kind": {
+              "const": "ScheduledTask"
+            },
+            "state": {
+              "$ref": "#/$defs/task"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "state"
+          ],
+          "properties": {
+            "kind": {
+              "const": "Startup"
+            },
+            "state": {
+              "$ref": "#/$defs/startup"
+            }
+          }
+        }
+      ]
+    },
+    "inventory": {
+      "type": "object",
+      "required": [
+        "kind",
+        "name",
+        "operation",
+        "before",
+        "after",
+        "confidence",
+        "reason",
+        "evidence"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "before": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/inventoryState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/inventoryState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        }
+      }
+    },
+    "backend": {
+      "type": "object",
+      "required": [
+        "etw_file",
+        "etw_registry",
+        "dropped_events",
+        "etw_events_lost",
+        "decode_errors",
+        "warnings",
+        "registry_path_gaps",
+        "etw_buffers_lost",
+        "etw_process",
+        "events_received"
+      ],
+      "properties": {
+        "etw_file": {
+          "type": "string"
+        },
+        "etw_registry": {
+          "type": "string"
+        },
+        "dropped_events": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "etw_events_lost": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decode_errors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "registry_path_gaps": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "etw_buffers_lost": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "etw_process": {
+          "type": "string"
+        },
+        "events_received": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "capture": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "id",
+        "name",
+        "installer",
+        "started_at",
+        "finished_at",
+        "exit_code",
+        "watch_roots",
+        "registry_key",
+        "processes",
+        "files",
+        "registry",
+        "warnings",
+        "events",
+        "inventory",
+        "backend",
+        "stats",
+        "quality",
+        "operations",
+        "edges"
+      ],
+      "properties": {
+        "schema_version": {
+          "enum": [
+            1,
+            2,
+            3
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "installer": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "finished_at": {
+          "type": "string"
+        },
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "watch_roots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "registry_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "processes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/process"
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/file"
+          }
+        },
+        "registry": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/registry"
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event"
+          }
+        },
+        "inventory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/inventory"
+          }
+        },
+        "backend": {
+          "$ref": "#/$defs/backend"
+        },
+        "stats": {
+          "$ref": "#/$defs/stats"
+        },
+        "quality": {
+          "$ref": "#/$defs/quality"
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/operation"
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/edge"
+          }
+        }
+      }
+    },
+    "diff": {
+      "type": "object",
+      "required": [
+        "app_id",
+        "files",
+        "registry",
+        "inventory",
+        "warning",
+        "operations",
+        "quality"
+      ],
+      "properties": {
+        "app_id": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/file"
+          }
+        },
+        "registry": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/registry"
+          }
+        },
+        "inventory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/inventory"
+          }
+        },
+        "warning": {
+          "type": "string"
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/operation"
+          }
+        },
+        "quality": {
+          "$ref": "#/$defs/quality"
+        }
+      }
+    },
+    "history": {
+      "type": "object",
+      "required": [
+        "app_id",
+        "events"
+      ],
+      "properties": {
+        "app_id": {
+          "type": "string"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event"
+          }
+        }
+      }
+    },
+    "doctor": {
+      "type": "object",
+      "required": [
+        "platform",
+        "elevated",
+        "process_observation",
+        "etw_file",
+        "etw_registry",
+        "service_count",
+        "scheduled_task_count",
+        "startup_count",
+        "warnings",
+        "etw_process"
+      ],
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "elevated": {
+          "type": "boolean"
+        },
+        "process_observation": {
+          "type": "boolean"
+        },
+        "etw_file": {
+          "type": "string"
+        },
+        "etw_registry": {
+          "type": "string"
+        },
+        "service_count": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scheduled_task_count": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startup_count": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "etw_process": {
+          "type": "string"
+        }
+      }
+    },
+    "list": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "started_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "dimensions": {
+      "type": "object",
+      "required": [
+        "actor",
+        "resource",
+        "operation"
+      ],
+      "properties": {
+        "actor": {
+          "$ref": "#/$defs/confidence"
+        },
+        "resource": {
+          "$ref": "#/$defs/confidence"
+        },
+        "operation": {
+          "$ref": "#/$defs/confidence"
+        }
+      }
+    },
+    "raw": {
+      "type": "object",
+      "required": [
+        "resource_resolved"
+      ],
+      "properties": {
+        "resource_resolved": {
+          "type": "boolean"
+        },
+        "file_object": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "file_key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "irp": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "registry_object": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "process_key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parent_key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "related_event": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "object_generation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "event_id": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "thread_id": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "header_pid": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "status": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "required": [
+        "events_received",
+        "events_retained",
+        "events_normalized",
+        "events_dropped",
+        "known_actor_events",
+        "unknown_actor_events",
+        "known_resource_events",
+        "unknown_resource_events",
+        "high_confidence_events",
+        "capture_elapsed_ms",
+        "drain_timed_out"
+      ],
+      "properties": {
+        "events_received": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "events_retained": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "events_normalized": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "events_dropped": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "known_actor_events": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unknown_actor_events": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "known_resource_events": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unknown_resource_events": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "high_confidence_events": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "capture_elapsed_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "drain_timed_out": {
+          "type": "boolean"
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "required": [
+        "level",
+        "reasons"
+      ],
+      "properties": {
+        "level": {
+          "enum": [
+            "Complete",
+            "Degraded",
+            "Incomplete"
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "operation": {
+      "type": "object",
+      "required": [
+        "id",
+        "operation",
+        "resource",
+        "previous_path",
+        "resource_identity",
+        "raw_events",
+        "success",
+        "confidence",
+        "reason"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "resource": {
+          "type": "string"
+        },
+        "previous_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resource_identity": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "raw_events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "success": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "required": [
+        "from",
+        "to",
+        "relation",
+        "reason",
+        "confidence"
+      ],
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "relation": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        }
+      }
+    },
+    "explain": {
+      "type": "object",
+      "required": [
+        "app_id",
+        "application",
+        "event",
+        "edges",
+        "operations",
+        "quality"
+      ],
+      "properties": {
+        "app_id": {
+          "type": "string"
+        },
+        "application": {
+          "type": "string"
+        },
+        "event": {
+          "$ref": "#/$defs/event"
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/edge"
+          }
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/operation"
+          }
+        },
+        "quality": {
+          "$ref": "#/$defs/quality"
+        }
+      }
+    }
+  }
+}

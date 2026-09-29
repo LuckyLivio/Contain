@@ -133,13 +133,18 @@ impl Decoder {
                 .filter(|p| native::in_scope(p, &self.roots))
             {
                 if self.paths.len() < OBJECT_CAPACITY {
-                    self.paths.insert(object, path.clone());
+                    self.paths
+                        .insert(object, (path.clone(), uuid::Uuid::new_v4().to_string()));
                 } else {
                     self.dropped.fetch_add(1, Ordering::Relaxed);
                 }
             }
         }
-        let path = supplied.or_else(|| self.paths.get(&object).cloned());
+        let generation = self
+            .paths
+            .get(&object)
+            .map(|(_, generation)| generation.clone());
+        let path = supplied.or_else(|| self.paths.get(&object).map(|(path, _)| path.clone()));
         if matches!(id, 14 | 27) {
             self.paths.remove(&object);
         }
@@ -169,6 +174,7 @@ impl Decoder {
             thread_id: tid,
             header_pid: Some(record.process_id()),
             file_object: Some(format!("{object:016x}")),
+            object_generation: generation,
             file_key: pointer(&p, "FileKey"),
             irp: irp.clone(),
             resource_resolved: true,
@@ -270,7 +276,7 @@ impl Decoder {
         e.raw = RawEvidence {
             event_id: Some(id),
             header_pid: Some(pid),
-            file_object: Some(format!("{object:016x}")),
+            registry_object: Some(format!("{object:016x}")),
             status,
             resource_resolved: resolved,
             ..Default::default()

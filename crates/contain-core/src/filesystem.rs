@@ -11,10 +11,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use walkdir::WalkDir;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FileState {
     pub hash: String,
     pub size: u64,
+    pub identity: Option<String>,
 }
 
 #[derive(Default)]
@@ -99,7 +100,16 @@ pub fn snapshot(roots: &[PathBuf]) -> Result<Snapshot> {
                     continue;
                 }
             };
-            snapshot.files.insert(path_string, FileState { hash, size });
+            use std::os::windows::io::AsHandle;
+            let identity = crate::windows::native::file_identity(file.as_handle());
+            snapshot.files.insert(
+                path_string,
+                FileState {
+                    hash,
+                    size,
+                    identity,
+                },
+            );
         }
         snapshot.unreadable.extend(skipped.into_inner());
     }
@@ -220,6 +230,7 @@ mod tests {
                     FileState {
                         hash: "1".into(),
                         size: 1,
+                        identity: None,
                     },
                 ),
                 (
@@ -227,6 +238,7 @@ mod tests {
                     FileState {
                         hash: "1".into(),
                         size: 1,
+                        identity: None,
                     },
                 ),
             ]),
@@ -239,6 +251,7 @@ mod tests {
                     FileState {
                         hash: "2".into(),
                         size: 2,
+                        identity: None,
                     },
                 ),
                 (
@@ -246,6 +259,7 @@ mod tests {
                     FileState {
                         hash: "3".into(),
                         size: 3,
+                        identity: None,
                     },
                 ),
             ]),
@@ -269,6 +283,7 @@ mod tests {
                 FileState {
                     hash: "a".into(),
                     size: 1,
+                    identity: None,
                 },
             )]),
             unreadable: HashSet::new(),

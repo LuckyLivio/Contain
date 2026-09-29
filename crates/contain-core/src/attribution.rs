@@ -82,6 +82,7 @@ pub fn compose_files(files: &mut [FileChange], events: &mut [SystemEvent], compl
             .iter_mut()
             .filter(|event| {
                 event.event_type == "file"
+                    && !matches!(event.operation.as_str(), "open_requested" | "close")
                     && normalize_path(&event.resource, &[]) == path
                     && event.success != Some(false)
             })

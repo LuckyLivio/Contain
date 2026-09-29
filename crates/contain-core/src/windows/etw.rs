@@ -21,7 +21,7 @@ const QUEUE_CAPACITY: usize = 8192;
 const OBJECT_CAPACITY: usize = 16384;
 
 struct Decoder {
-    paths: HashMap<u64, String>,
+    paths: HashMap<u64, (String, String)>,
     pending: HashMap<String, (String, u64)>,
     registry_context: super::registry_context::RegistryContext,
     roots: Vec<String>,

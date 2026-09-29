@@ -5,6 +5,7 @@ use std::fs;
 use std::path::Path;
 mod evidence;
 mod migration;
+mod reliability;
 
 pub struct Storage {
     connection: Connection,
@@ -81,6 +82,7 @@ impl Storage {
             )?;
         }
         evidence::save(&tx, capture)?;
+        reliability::save(&tx, capture)?;
         tx.commit()?;
         Ok(())
     }
@@ -163,7 +165,20 @@ impl Storage {
             ..Default::default()
         };
         evidence::load(&self.connection, &mut capture)?;
+        reliability::load(&self.connection, &mut capture)?;
         Ok(capture)
+    }
+
+    pub fn for_event(&self, id: &str) -> Result<Capture> {
+        let session: String = self
+            .connection
+            .query_row(
+                "SELECT session_id FROM observations WHERE id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .with_context(|| format!("event not found: {id}"))?;
+        self.load(&session)
     }
 }
 
@@ -208,7 +223,7 @@ mod tests {
                 .unwrap(),
             "High"
         );
-        assert_eq!(migration::check_version(&db.connection).unwrap(), 2);
+        assert_eq!(migration::check_version(&db.connection).unwrap(), 3);
         assert!(capture.warnings.iter().any(|w| w.contains("Legacy")));
     }
 
@@ -279,6 +294,98 @@ mod tests {
         capture.id = "duplicate-event".into(); // Event UUID collision must roll back the entire session.
         assert!(db.save(&capture).is_err());
         assert_eq!(db.list().unwrap().len(), 1);
+    }
+    #[test]
+    fn v2_migration_preserves_observations_and_marks_missing_details() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(include_str!("storage/v1.sql"))
+            .unwrap();
+        connection
+            .execute_batch(include_str!("storage/v2.sql"))
+            .unwrap();
+        connection.execute_batch("INSERT INTO applications VALUES ('old','old','setup.exe'); INSERT INTO installation_sessions VALUES ('old','old','start','end',0,'[]',NULL,'[]'); INSERT INTO capture_metadata VALUES ('old',2,'{}'); INSERT INTO observations VALUES ('old-event','old','time',123,'file','write_requested','path','Unknown','legacy','EtwFile',NULL,NULL,NULL,NULL,NULL,NULL,'MissingWriter',NULL,0);").unwrap();
+        connection
+            .execute(
+                "UPDATE capture_metadata SET backend_json=?1",
+                [serde_json::to_string(&crate::model::BackendReport::default()).unwrap()],
+            )
+            .unwrap();
+        connection.pragma_update(None, "user_version", 2).unwrap();
+        connection
+            .execute(
+                "UPDATE observations SET source=?1,rule=?2",
+                params![
+                    serde_json::to_string(&crate::model::EvidenceSource::EtwFile).unwrap(),
+                    serde_json::to_string(&crate::model::AttributionRule::MissingWriter).unwrap()
+                ],
+            )
+            .unwrap();
+        let db = Storage::from_connection(connection).unwrap();
+        let c = db.load("old").unwrap();
+        assert_eq!(migration::check_version(&db.connection).unwrap(), 3);
+        assert_eq!(c.events[0].id, "old-event");
+        assert_eq!(c.events[0].timestamp_ticks, 123);
+        assert!(c.quality.reasons.iter().any(|r| r.contains("Legacy")));
+    }
+    #[test]
+    fn v3_raw_dimensions_graph_and_equal_timestamp_order_survive_readback() {
+        use crate::model::*;
+        let mut db = Storage::open(Path::new(":memory:")).unwrap();
+        let c = Capture {
+            id: "v3".into(),
+            name: "v3".into(),
+            schema_version: 3,
+            events: vec![
+                SystemEvent {
+                    id: "later".into(),
+                    timestamp_ticks: 100,
+                    sequence: 2,
+                    raw: RawEvidence {
+                        irp: Some("abc".into()),
+                        status: Some(0xc0000022),
+                        ..Default::default()
+                    },
+                    dimensions: ConfidenceDimensions {
+                        actor: Confidence::High,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                SystemEvent {
+                    id: "earlier".into(),
+                    timestamp_ticks: 100,
+                    sequence: 1,
+                    ..Default::default()
+                },
+            ],
+            operations: vec![NormalizedOperation {
+                id: "op".into(),
+                raw_events: vec!["later".into()],
+                operation: "Failed".into(),
+                ..Default::default()
+            }],
+            edges: vec![EvidenceEdge {
+                from: "actor".into(),
+                to: "event:later".into(),
+                relation: "write".into(),
+                confidence: Confidence::High,
+                reason: "test evidence".into(),
+            }],
+            ..Default::default()
+        };
+        db.save(&c).unwrap();
+        let a = db.for_event("later").unwrap();
+        let b = db.load("v3").unwrap();
+        assert_eq!(a.events[0].id, "earlier");
+        assert_eq!(a.events[1].raw.status, Some(0xc0000022));
+        assert_eq!(a.events[1].dimensions.actor, Confidence::High);
+        assert_eq!(a.edges[0].reason, "test evidence");
+        assert_eq!(a.operations[0].raw_events, vec!["later"]);
+        assert_eq!(
+            serde_json::to_string(&a.events).unwrap(),
+            serde_json::to_string(&b.events).unwrap()
+        );
     }
     #[test]
     fn round_trip() {

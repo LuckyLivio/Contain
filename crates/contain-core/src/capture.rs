@@ -205,12 +205,19 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         attribution::attribute(event, &processes, &id);
     }
     events.retain(|e| {
-        e.event_type != "lifecycle"
+        (e.event_type != "lifecycle"
+            || processes.iter().any(|p| {
+                Some(p.pid) == e.evidence.pid && p.creation_time == e.evidence.process_creation_time
+            }))
             && (e.event_type != "registry"
                 || e.raw.resource_resolved
                 || e.confidence == Confidence::High)
     });
     let after_files = filesystem::snapshot(&roots)?;
+    let operations = crate::correlation::correlate(&mut events, &before_files, &after_files);
+    for event in &mut events {
+        attribution::attribute(event, &processes, &id);
+    }
     let seen = observer
         .as_ref()
         .map(|o| o.seen_paths())
@@ -252,12 +259,14 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
     warnings.extend(after_inventory.warnings);
     warnings.extend(backend.warnings.iter().cloned());
     if backend.registry_path_gaps > 0 {
-        warnings.push(format!("Registry ETW omitted absolute hive/key names in {} provider records; those records cannot be scoped and were discarded. Registry state attribution uses Unknown snapshot fallback unless complete event evidence exists.", backend.registry_path_gaps));
+        warnings.push(format!("Registry ETW omitted absolute hive/key names in {} provider records; unresolved records are retained only for verified installer actors. Registry state attribution uses Unknown snapshot fallback unless complete event evidence exists.", backend.registry_path_gaps));
     }
     if !registry.is_empty() && !events.iter().any(|e| e.event_type == "registry") {
         warnings.push("No scoped registry source events were delivered; registry changes are snapshot-only Unknown.".into());
     }
-    warnings.push("Process sampling can miss short-lived/detached children. ETW events from dead or unqueryable writer instances remain Unknown.".into());
+    if !lifecycle_complete {
+        warnings.push("Process lifecycle evidence was unavailable or incomplete. Sampling can miss short-lived/detached children; unresolved actors remain Unknown.".into());
+    }
     warnings.push("File ETW operation requests and snapshot state changes are separate evidence; failed operations never validate state changes.".into());
     let skipped = before_files.unreadable.len() + after_files.unreadable.len();
     if skipped > 0 {
@@ -297,11 +306,13 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         events,
         inventory,
         backend,
+        operations,
         ..Default::default()
     };
     capture.stats.capture_elapsed_ms = capture_clock.elapsed().as_millis() as u64;
     capture.stats.drain_timed_out = drain_timed_out;
     crate::timeline::complete(&mut capture, exited_at);
+    crate::reliability::finish(&mut capture);
     tracing::info!(session_id = %capture.id, events = capture.events.len(), files = capture.files.len(),
         dropped = capture.backend.dropped_events, "capture completed");
     Ok(capture)

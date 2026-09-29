@@ -5,6 +5,8 @@ pub struct RawEvidence {
     pub event_id: Option<u16>,
     pub thread_id: Option<u32>,
     pub header_pid: Option<u32>,
+    pub object_generation: Option<String>,
+    pub registry_object: Option<String>,
     pub file_object: Option<String>,
     pub file_key: Option<String>,
     pub irp: Option<String>,

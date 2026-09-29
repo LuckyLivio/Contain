@@ -7,7 +7,7 @@ if (-not (Test-Path -LiteralPath $cargo)) { $cargo = 'cargo' }
 Push-Location (Join-Path $PSScriptRoot '..')
 function Assert-JsonContract([string]$text) {
     if (Get-Command Test-Json -ErrorAction SilentlyContinue) {
-        if (-not (Test-Json -Json $text -SchemaFile './docs/schema/cli-v2.schema.json')) { throw 'JSON schema validation failed' }
+        if (-not (Test-Json -Json $text -SchemaFile './docs/schema/cli-v3.schema.json')) { throw 'JSON schema validation failed' }
     }
 }
 try {
@@ -37,7 +37,7 @@ try {
         $raw = (& $contain --db $db inspect TestFixture --json) -join "`n"
         Assert-JsonContract $raw
         $document = $raw | ConvertFrom-Json
-        if ($LASTEXITCODE -ne 0 -or $document.schema_version -ne 2) { throw 'inspect JSON contract failed' }
+        if ($LASTEXITCODE -ne 0 -or $document.schema_version -ne 3) { throw 'inspect JSON contract failed' }
         $manifest = $document.data
         Write-Output ("BACKEND: " + ($manifest.backend | ConvertTo-Json -Compress))
         if ($manifest.processes.Count -lt 3) { throw 'parent/child/grandchild were not all observed' }
@@ -56,7 +56,7 @@ try {
             if ($highFiles.Count -eq 0) { throw 'no real High-confidence file source event captured' }
             if ($unknownFiles.Count -eq 0) { throw 'independent ETW writer was not observed as Unknown' }
             Write-Output "ETW VERIFIED: $($highFiles.Count) High file events; $($unknownFiles.Count) independent writer events remain Unknown."
-            foreach ($event in @($manifest.events | Where-Object { $_.event_type -in @('file','registry') })) {
+            foreach ($event in @($manifest.events | Where-Object { $_.event_type -in @('file','registry') } | Select-Object -First 6)) {
                 Write-Output ("SOURCE: " + ($event | ConvertTo-Json -Compress -Depth 6))
             }
         } elseif (@($manifest.files | Where-Object confidence -ne 'Unknown').Count -ne 0) { throw 'snapshot fallback overstated attribution' }
@@ -64,7 +64,7 @@ try {
             $raw = (& $contain --db $db $command TestFixture --json) -join "`n"
             Assert-JsonContract $raw
             $json = $raw | ConvertFrom-Json
-            if ($LASTEXITCODE -ne 0 -or $json.schema_version -ne 2 -or $json.kind -ne $command) { throw "$command JSON contract failed" }
+            if ($LASTEXITCODE -ne 0 -or $json.schema_version -ne 3 -or $json.kind -ne $command) { throw "$command JSON contract failed" }
         }
         $raw = (& $contain doctor --json) -join "`n"
         Assert-JsonContract $raw

@@ -60,6 +60,13 @@ enum Commands {
     Inspect {
         app: String,
         #[arg(long)]
+        verbose: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    Explain {
+        event: String,
+        #[arg(long)]
         json: bool,
     },
     Diff {
@@ -99,7 +106,7 @@ fn main() {
 
 fn envelope(kind: &str, value: impl serde::Serialize) -> Result<String> {
     Ok(serde_json::to_string_pretty(
-        &serde_json::json!({"schema_version":2,"kind":kind,"data":value}),
+        &serde_json::json!({"schema_version":3,"kind":kind,"data":value}),
     )?)
 }
 
@@ -166,12 +173,21 @@ fn run() -> Result<()> {
                 }
             }
         }
-        Commands::Inspect { app, json } => {
+        Commands::Inspect { app, json, verbose } => {
             let capture = Storage::open(&db)?.load(&app)?;
             if json {
                 println!("{}", envelope("inspect", &capture)?);
             } else {
-                render::inspect(&capture);
+                render::inspect(&capture, verbose);
+            }
+        }
+        Commands::Explain { event, json } => {
+            let capture = Storage::open(&db)?.for_event(&event)?;
+            let data = render::explanation(&capture, &event)?;
+            if json {
+                println!("{}", envelope("explain", data)?);
+            } else {
+                render::explain(&capture, &event)?;
             }
         }
         Commands::Diff { app, json } => {
@@ -181,7 +197,7 @@ fn run() -> Result<()> {
                     "{}",
                     envelope(
                         "diff",
-                        serde_json::json!({"app_id":capture.id,"files":capture.files,"registry":capture.registry,"inventory":capture.inventory,"warning":"Unattributed changes are not assumed to belong to this app."})
+                        serde_json::json!({"app_id":capture.id,"files":capture.files,"registry":capture.registry,"inventory":capture.inventory,"operations":capture.operations,"quality":capture.quality,"warning":"Unattributed changes are not assumed to belong to this app."})
                     )?
                 );
             } else {
