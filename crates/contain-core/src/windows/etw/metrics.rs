@@ -1,7 +1,7 @@
 //! Cumulative counters shared with the consumer; timers are elapsed nanoseconds,
 //! not CPU utilization. No path or schema labels are allocated per record.
-use crate::model::PipelineStats;
-use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+use crate::model::{PipelineStats, ProviderStats};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed};
 use std::time::Instant;
 
 #[derive(Clone, Copy)]
@@ -20,6 +20,8 @@ pub enum Count {
     ContextEvictions,
     FailedWithoutOutput,
     Disconnected,
+    IdentityQueries,
+    Unresolved,
 }
 #[derive(Clone, Copy)]
 pub enum Time {
@@ -32,10 +34,14 @@ pub enum Time {
     Construct,
     Enqueue,
     QueueDelay,
+    Context,
 }
 pub struct Metrics {
-    counts: [AtomicU64; 14],
-    times: [AtomicU64; 9],
+    counts: [AtomicU64; 16],
+    provider_counts: [[AtomicU64; 16]; 3],
+    provider_times: [[AtomicU64; 10]; 3],
+    provider: AtomicUsize,
+    times: [AtomicU64; 10],
     max_delay: AtomicU64,
     profile_start: Option<Instant>,
     arrivals: AtomicU64,
@@ -47,6 +53,9 @@ impl Default for Metrics {
     fn default() -> Self {
         Self {
             counts: Default::default(),
+            provider_counts: Default::default(),
+            provider_times: Default::default(),
+            provider: AtomicUsize::new(0),
             times: Default::default(),
             max_delay: AtomicU64::new(0),
             profile_start: crate::profile::epoch(),
@@ -58,11 +67,17 @@ impl Default for Metrics {
     }
 }
 impl Metrics {
+    pub fn provider(&self, provider: usize) {
+        self.provider.store(provider, Relaxed);
+    }
     pub fn record_lock(&self, ns: u64) {
         self.times[Time::Lock as usize].fetch_add(ns, Relaxed);
     }
     pub fn add(&self, c: Count, n: u64) {
         let prior = self.counts[c as usize].fetch_add(n, Relaxed);
+        if !matches!(c, Count::Dequeued | Count::Pending | Count::HighWater) {
+            self.provider_counts[self.provider.load(Relaxed)][c as usize].fetch_add(n, Relaxed);
+        }
         if matches!(c, Count::Overflow)
             && let Some(start) = self.profile_start
         {
@@ -77,7 +92,10 @@ impl Metrics {
         self.counts[c as usize].load(Relaxed)
     }
     pub fn timer(&self, t: Time) -> Timer<'_> {
-        Timer(self, t, Instant::now())
+        if matches!(t, Time::Identity) {
+            self.add(Count::IdentityQueries, 1);
+        }
+        Timer(self, t, Instant::now(), self.provider.load(Relaxed))
     }
     pub fn entering(&self) -> u64 {
         if let Some(start) = self.profile_start {
@@ -121,6 +139,43 @@ impl Metrics {
     }
     pub fn snapshot(&self) -> PipelineStats {
         PipelineStats {
+            providers: ["file", "process", "registry"]
+                .into_iter()
+                .enumerate()
+                .map(|(i, name)| {
+                    let c = |c: Count| self.provider_counts[i][c as usize].load(Relaxed);
+                    (
+                        name.into(),
+                        ProviderStats {
+                            callback_records: c(Count::Callback),
+                            identity_queries: c(Count::IdentityQueries),
+                            unresolved: c(Count::Unresolved),
+                            enqueued: c(Count::Enqueued),
+                            filtered: c(Count::Filtered),
+                            overflow: c(Count::Overflow),
+                            disconnected: c(Count::Disconnected),
+                            decode_failed: c(Count::Failed),
+                            context_evictions: c(Count::ContextEvictions),
+                            elapsed_ns: [
+                                "callback",
+                                "lock_wait",
+                                "schema_lookup",
+                                "property_decode",
+                                "identity_query",
+                                "path_normalization",
+                                "event_construction",
+                                "enqueue",
+                                "queue_delay",
+                                "context",
+                            ]
+                            .into_iter()
+                            .enumerate()
+                            .map(|(j, k)| (k.into(), self.provider_times[i][j].load(Relaxed)))
+                            .collect(),
+                        },
+                    )
+                })
+                .collect(),
             overflow_last_ns: self.profile_start.map(|_| self.last_overflow.load(Relaxed)),
             arrival_peak_per_100ms: self.profile_start.map(|_| self.peak_arrivals.load(Relaxed)),
             overflow_first_ns: self
@@ -154,6 +209,7 @@ impl Metrics {
                 "event_construction",
                 "enqueue",
                 "queue_delay",
+                "context",
             ]
             .into_iter()
             .enumerate()
@@ -163,10 +219,14 @@ impl Metrics {
         }
     }
 }
-pub struct Timer<'a>(&'a Metrics, Time, Instant);
+pub struct Timer<'a>(&'a Metrics, Time, Instant, usize);
 impl Drop for Timer<'_> {
     fn drop(&mut self) {
-        self.0.times[self.1 as usize].fetch_add(self.2.elapsed().as_nanos() as u64, Relaxed);
+        let elapsed = self.2.elapsed().as_nanos() as u64;
+        self.0.times[self.1 as usize].fetch_add(elapsed, Relaxed);
+        if !matches!(self.1, Time::QueueDelay) {
+            self.0.provider_times[self.3][self.1 as usize].fetch_add(elapsed, Relaxed);
+        }
     }
 }
 

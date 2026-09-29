@@ -163,7 +163,7 @@ impl EtwSource {
         }
         let file = file
             .add_callback(move |record, locator| {
-                dispatch(&file_decoder, record, locator, Decoder::file);
+                dispatch(&file_decoder, record, locator, 0, Decoder::file);
             })
             .build();
         let lifecycle_decoder = decoder.clone();
@@ -171,7 +171,7 @@ impl EtwSource {
             .any(0x30)
             .level(5)
             .add_callback(move |record, locator| {
-                dispatch(&lifecycle_decoder, record, locator, Decoder::lifecycle);
+                dispatch(&lifecycle_decoder, record, locator, 1, Decoder::lifecycle);
             })
             .build();
         let mut builder = UserTrace::new()
@@ -191,7 +191,7 @@ impl EtwSource {
                 .level(4)
                 .trace_flags(TraceFlags::EVENT_ENABLE_PROPERTY_PROCESS_START_KEY)
                 .add_callback(move |record, locator| {
-                    dispatch(&decoder, record, locator, Decoder::registry);
+                    dispatch(&decoder, record, locator, 2, Decoder::registry);
                 })
                 .build();
             builder = builder.enable(registry);
@@ -284,11 +284,13 @@ fn dispatch(
     decoder: &Mutex<Decoder>,
     record: &EventRecord,
     locator: &SchemaLocator,
+    provider: usize,
     decode: fn(&mut Decoder, &EventRecord, &SchemaLocator),
 ) {
     let start = Instant::now();
     if let Ok(mut d) = decoder.lock() {
         let metrics = d.metrics.clone();
+        metrics.provider(provider);
         // Include the observed mutex wait in total callback elapsed time.
         let _callback = metrics.timer(Time::Callback);
         metrics.record_lock(start.elapsed().as_nanos() as u64);

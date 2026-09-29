@@ -46,6 +46,7 @@ pub struct CaptureStats {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PipelineStats {
+    pub providers: std::collections::BTreeMap<String, ProviderStats>,
     pub arrival_peak_per_100ms: Option<u64>,
     pub overflow_first_ns: Vec<u64>,
     pub overflow_last_ns: Option<u64>,
@@ -108,4 +109,20 @@ pub struct EvidenceEdge {
     pub relation: String,
     pub confidence: Confidence,
     pub reason: String,
+}
+
+/// Fixed provider labels; counters contain no paths or process identifiers.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ProviderStats {
+    pub callback_records: u64,
+    pub identity_queries: u64,
+    pub unresolved: u64,
+    pub enqueued: u64,
+    pub filtered: u64,
+    pub overflow: u64,
+    pub disconnected: u64,
+    pub decode_failed: u64,
+    pub context_evictions: u64,
+    pub elapsed_ns: std::collections::BTreeMap<String, u64>,
 }

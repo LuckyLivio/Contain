@@ -260,6 +260,7 @@ impl Decoder {
         let mut key = measured!(self.metrics, Properties, p.try_parse::<String>("KeyName"))
             .unwrap_or_default()
             .to_lowercase();
+        let context_clock = self.metrics.timer(Time::Context);
         if let Some(w) = &writer {
             let owner = (pid, w.creation_time);
             if matches!(id, 1 | 2) {
@@ -299,11 +300,13 @@ impl Decoder {
                 self.registry_context.close(owner, object);
             }
         }
+        drop(context_clock);
         let resolved = key.starts_with("\\registry\\");
         if resolved && !native::in_scope(&key, &[scope]) {
             return;
         }
         if !resolved {
+            self.metrics.add(Count::Unresolved, 1);
             self.registry_path_gaps.fetch_add(1, Ordering::Relaxed);
             key = "<unresolved registry object>".into();
         }

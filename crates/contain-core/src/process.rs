@@ -41,8 +41,11 @@ impl ProcessObserver {
         let time = native::timestamp(native::now_ticks());
         let mut identities = BTreeMap::new();
         for (&key, record) in &mut self.records {
-            if let Some(identity) =
-                native::process_identity(key.0).filter(|p| p.creation_time == key.1)
+            if let Some(identity) = crate::profile::measured!(
+                "process_poll_identity_query",
+                native::process_identity(key.0)
+            )
+            .filter(|p| p.creation_time == key.1)
             {
                 identities.insert(key.0, identity);
                 record.last_seen = time.clone();
@@ -61,7 +64,10 @@ impl ProcessObserver {
                 if identities.contains_key(&pid.as_u32()) {
                     continue;
                 }
-                let Some(identity) = native::process_identity(pid.as_u32()) else {
+                let Some(identity) = crate::profile::measured!(
+                    "process_poll_identity_query",
+                    native::process_identity(pid.as_u32())
+                ) else {
                     continue;
                 };
                 if identity.creation_time < parent.creation_time {
