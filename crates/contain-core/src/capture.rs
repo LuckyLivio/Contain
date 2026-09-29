@@ -242,6 +242,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         installer_clock.elapsed().as_nanos() as u64,
     );
     let association_clock = Instant::now();
+    db.prepare_raw(&id)?;
     let mut processes = process_observer.finish();
     if let Some(root) = processes
         .iter_mut()

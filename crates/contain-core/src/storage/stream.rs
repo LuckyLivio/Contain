@@ -154,7 +154,7 @@ impl RawBuffer {
             {
                 let _insert_clock = profile::timer("raw_insert");
                 let mut insert =
-                    tx.prepare_cached("INSERT INTO raw_stream VALUES (?1,?2,?3,?4,?5,?6,?7)")?;
+                    tx.prepare_cached("INSERT INTO raw_ingest VALUES (?1,?2,?3,?4,?5,?6,?7)")?;
                 for e in &self.batch {
                     insert.execute(params![
                         self.session,
@@ -218,6 +218,40 @@ impl RawBuffer {
 }
 
 impl Storage {
+    /// Build post-capture indexes through the existing indexed journal. All rows stay
+    /// in the crash-readable staging table until this transaction commits atomically.
+    /// SQLite scans the PK in bounded pages; no Rust full-session event vector.
+    pub(crate) fn prepare_raw(&mut self, session: &str) -> Result<()> {
+        let _timer = profile::timer("post_raw_index_materialization");
+        let result = (|| -> Result<()> {
+            let tx = self.connection.transaction()?;
+            let mut after: i64 = -1;
+            loop {
+                let last: Option<i64> = tx.query_row(
+                    "SELECT MAX(sequence) FROM (SELECT sequence FROM raw_ingest WHERE session_id=?1 AND sequence>?2 ORDER BY sequence LIMIT 256)",
+                    params![session, after], |r| r.get(0))?;
+                let Some(last) = last else {
+                    break;
+                };
+                tx.execute("INSERT INTO raw_stream SELECT * FROM raw_ingest WHERE session_id=?1 AND sequence>?2 AND sequence<=?3 ORDER BY sequence", params![session,after,last])?;
+                after = last;
+            }
+            tx.execute("DELETE FROM raw_ingest WHERE session_id=?1", [session])?;
+            tx.commit()?;
+            Ok(())
+        })();
+        if let Err(error) = &result {
+            // If even this write fails, last committed 'finalizing' is still incomplete.
+            let _ = self.connection.execute(
+                "UPDATE capture_runs SET state='failed',error=?2 WHERE session_id=?1",
+                params![
+                    session,
+                    format!("raw index materialization failed: {error:#}")
+                ],
+            );
+        }
+        result
+    }
     pub fn validate_capture_location(&self, roots: &[String]) -> Result<()> {
         if let Some(path) = self.connection.path().filter(|p| *p != ":memory:") {
             let path = std::fs::canonicalize(path)?;
@@ -235,7 +269,7 @@ impl Storage {
     }
     pub(crate) fn raw_page(&self, session: &str, after: (u64, u64)) -> Result<Vec<SystemEvent>> {
         let _clock = profile::timer("post_raw_read");
-        let mut q=self.connection.prepare_cached("SELECT document FROM raw_stream WHERE session_id=?1 AND (ticks,sequence)>(?2,?3) ORDER BY ticks,sequence LIMIT 256")?;
+        let mut q=self.connection.prepare_cached("SELECT document FROM (SELECT ticks,sequence,document FROM raw_stream WHERE session_id=?1 AND (ticks,sequence)>(?2,?3) UNION ALL SELECT ticks,sequence,document FROM raw_ingest WHERE session_id=?1 AND (ticks,sequence)>(?2,?3)) ORDER BY ticks,sequence LIMIT 256")?;
         q.query_map(params![session, after.0, after.1], |r| {
             r.get::<_, String>(0)
         })?
@@ -297,6 +331,12 @@ impl Storage {
         ))
     }
     pub(crate) fn mark_finished(&mut self, c: &Capture) -> Result<()> {
+        let pending: bool = self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM raw_ingest WHERE session_id=?1)",
+            [&c.id],
+            |r| r.get(0),
+        )?;
+        anyhow::ensure!(!pending, "Raw index materialization is incomplete");
         // Stream commits survive application exit; final completion also syncs the WAL.
         self.connection.execute_batch("PRAGMA synchronous=FULL;")?;
         let tx = self.connection.transaction()?;
@@ -340,7 +380,7 @@ impl Storage {
             )
             .optional()?;
         let Some((session, document)) = found else {
-            let raw:Option<(String,String)>=self.connection.query_row("SELECT session_id,document FROM raw_stream WHERE json_extract(document,'$.id')=?1 LIMIT 1",[id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+            let raw:Option<(String,String)>=self.connection.query_row("SELECT session_id,document FROM raw_stream WHERE json_extract(document,'$.id')=?1 UNION ALL SELECT session_id,document FROM raw_ingest WHERE json_extract(document,'$.id')=?1 LIMIT 1",[id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
             if let Some((session, document)) = raw {
                 let mut c = self.load_summary(&session)?;
                 let mut e: SystemEvent = serde_json::from_str(&document)?;
@@ -403,7 +443,7 @@ impl Storage {
             );
         }
         let sql = if unfinished {
-            "SELECT document FROM raw_stream WHERE session_id=?1 ORDER BY ticks,sequence LIMIT ?2 OFFSET ?3"
+            "SELECT document FROM (SELECT ticks,sequence,document FROM raw_stream WHERE session_id=?1 UNION ALL SELECT ticks,sequence,document FROM raw_ingest WHERE session_id=?1) ORDER BY ticks,sequence LIMIT ?2 OFFSET ?3"
         } else {
             "SELECT document FROM event_documents WHERE session_id=?1 ORDER BY ticks,sequence,id LIMIT ?2 OFFSET ?3"
         };
@@ -506,7 +546,7 @@ mod tests {
         let mut w = RawBuffer::new(&mut db, &c, DEFAULT_QUOTA).unwrap();
         w.append(&mut db, vec![event(1)]);
         w.flush(&mut db);
-        db.connection.execute_batch("CREATE TRIGGER reject_raw BEFORE INSERT ON raw_stream BEGIN SELECT RAISE(ABORT,'injected write failure'); END;").unwrap();
+        db.connection.execute_batch("CREATE TRIGGER reject_raw BEFORE INSERT ON raw_ingest BEGIN SELECT RAISE(ABORT,'injected write failure'); END;").unwrap();
         w.append(&mut db, vec![event(2), event(3)]);
         w.flush(&mut db);
         w.append(&mut db, vec![event(4)]);
@@ -524,6 +564,7 @@ mod tests {
         let mut w = RawBuffer::new(&mut db, &c, DEFAULT_QUOTA).unwrap();
         w.append(&mut db, vec![event(1)]);
         w.finish(&mut db).unwrap();
+        db.prepare_raw(&c.id).unwrap();
         let mut e = event(1);
         e.confidence = Confidence::High;
         e.raw.resource_resolved = true;
@@ -557,6 +598,78 @@ mod tests {
             serde_json::to_string(&page[0]).unwrap()
         );
     }
+    #[test]
+    fn staged_scalars_and_atomic_index_failure_preserve_raw_evidence() {
+        let mut db = Storage::open(Path::new(":memory:")).unwrap();
+        let c = capture();
+        let mut writer = RawBuffer::new(&mut db, &c, DEFAULT_QUOTA).unwrap();
+        let mut rows: Vec<_> = (1..=257).map(event).collect();
+        for e in &mut rows {
+            e.timestamp_ticks += 134_000_000_000_000_000;
+            e.raw.header_pid = Some(42);
+        }
+        rows[256].raw.related_event = Some("e1".into());
+        writer.append(&mut db, rows);
+        writer.finish(&mut db).unwrap();
+        assert!(db.mark_finished(&c).is_err());
+        let ticks: u64 = db
+            .connection
+            .query_row("SELECT ticks FROM raw_ingest WHERE sequence=257", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(ticks, 134_000_000_000_000_257);
+        // The first page was copied inside the transaction before the next insert aborts.
+        db.connection.execute_batch("CREATE TRIGGER interrupt_index BEFORE INSERT ON raw_stream WHEN NEW.sequence=257 BEGIN SELECT RAISE(ABORT,'interrupted index build'); END;").unwrap();
+        assert!(db.prepare_raw(&c.id).is_err());
+        assert_eq!(
+            db.connection
+                .query_row("SELECT COUNT(*) FROM raw_stream", [], |r| r
+                    .get::<_, u64>(0))
+                .unwrap(),
+            0
+        );
+        assert_eq!(db.events_page(&c.id, 0, 4096).unwrap().len(), 257);
+        let loaded = db.load(&c.id).unwrap();
+        assert!(matches!(loaded.quality.level, QualityLevel::Incomplete));
+        assert!(
+            loaded
+                .backend
+                .stream
+                .unwrap()
+                .error
+                .unwrap()
+                .contains("index materialization")
+        );
+        assert_eq!(
+            db.for_event("e257").unwrap().events[0].confidence,
+            Confidence::Unknown
+        );
+        db.connection
+            .execute_batch("DROP TRIGGER interrupt_index")
+            .unwrap();
+        db.prepare_raw(&c.id).unwrap();
+        assert_eq!(db.completion(&c.id, "e1").unwrap().unwrap().sequence, 257);
+        assert!(db.scoped_header(&c.id, 42).unwrap());
+        // Derived data can be partially committed and still must not promote a session.
+        let mut provisional = c.clone();
+        let mut e = event(1);
+        e.confidence = Confidence::High;
+        provisional.events = vec![e];
+        db.append_evidence(&provisional).unwrap();
+        let loaded = db.load(&c.id).unwrap();
+        assert_eq!(loaded.events.len(), 257);
+        assert!(
+            loaded
+                .events
+                .iter()
+                .all(|e| e.confidence == Confidence::Unknown)
+        );
+        assert!(loaded.operations.is_empty() && loaded.edges.is_empty());
+        // Every historical raw index survives; no global index drop was used.
+        assert_eq!(db.connection.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN ('raw_stream_time','raw_stream_related','raw_stream_header','raw_stream_id')",[],|r|r.get::<_,u64>(0)).unwrap(),4);
+    }
+
     #[test]
     fn sqlite_full_is_a_failure_not_a_successful_empty_capture() {
         let mut db = Storage::open(Path::new(":memory:")).unwrap();

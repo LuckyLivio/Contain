@@ -50,6 +50,7 @@ fn synthetic_disk_replay() {
     assert_eq!(stats.failed + stats.quota_dropped, 0);
     let write_ns = write_start.elapsed().as_nanos() as u64;
     let post_start = Instant::now();
+    db.prepare_raw(&c.id).unwrap();
     let mut cursor = (0, 0);
     let mut rows = 0;
     loop {

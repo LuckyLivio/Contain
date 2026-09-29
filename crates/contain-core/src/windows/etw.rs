@@ -418,6 +418,68 @@ mod tests {
     }
 
     #[test]
+    fn short_writer_stall_then_stop_commits_all_pages_and_partial_tail() {
+        use crate::storage::{
+            Storage,
+            stream::{DEFAULT_QUOTA, PAGE, RawBuffer},
+        };
+        let path = std::env::temp_dir().join(format!("contain-stall-{}.db", uuid::Uuid::new_v4()));
+        let mut db = Storage::open(&path).unwrap();
+        let c = crate::model::Capture {
+            id: "stall".into(),
+            schema_version: 3,
+            ..Default::default()
+        };
+        let mut writer = RawBuffer::new(&mut db, &c, DEFAULT_QUOTA).unwrap();
+        let locked = rusqlite::Connection::open(&path).unwrap();
+        locked.execute_batch("BEGIN IMMEDIATE").unwrap();
+        let mut source = EtwSource::start(&[], None, false);
+        let (tx, rx) = mpsc::sync_channel(1024);
+        source.rx = rx;
+        let metrics = source.metrics.clone();
+        let count = PAGE * 3 + 17;
+        let producer = thread::spawn(move || {
+            for n in 1..=count {
+                let pending = metrics.entering();
+                tx.send((
+                    SystemEvent {
+                        id: format!("stall-{n}"),
+                        sequence: n as u64,
+                        timestamp_ticks: n as u64,
+                        ..Default::default()
+                    },
+                    Instant::now(),
+                ))
+                .unwrap();
+                metrics.admitted(pending);
+            }
+            // This sleep injects a storage stall only in a unit test, never in the fixture.
+            thread::sleep(std::time::Duration::from_millis(30));
+            locked.execute_batch("ROLLBACK").unwrap();
+        });
+        while source.metrics.get(Count::Enqueued) < PAGE as u64 {
+            thread::yield_now();
+        }
+        writer.append(&mut db, source.drain());
+        producer.join().unwrap();
+        source.stop_with(|page| writer.append(&mut db, page));
+        let stats = writer.finish(&mut db).unwrap();
+        assert_eq!(stats.persisted, count as u64);
+        assert_eq!(stats.failed + stats.quota_dropped, 0);
+        let p = source.metrics.snapshot();
+        assert_eq!(p.enqueued, p.dequeued);
+        assert_eq!(p.queue_pending + p.queue_overflow, 0);
+        assert_eq!(db.events_page(&c.id, 0, 4096).unwrap().len(), count);
+        drop(db);
+        for suffix in ["", "-wal", "-shm"] {
+            let file = std::path::PathBuf::from(format!("{}{suffix}", path.display()));
+            if file.exists() {
+                std::fs::remove_file(file).unwrap();
+            }
+        }
+    }
+
+    #[test]
     fn final_drain_consumes_multiple_pages_and_balances_queue() {
         let mut source = EtwSource::start(&[], None, false);
         let (tx, rx) = mpsc::sync_channel(1024);

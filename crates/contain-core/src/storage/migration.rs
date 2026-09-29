@@ -4,9 +4,9 @@ use rusqlite::Connection;
 pub fn check_version(connection: &Connection) -> Result<u32> {
     let version =
         connection.pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))?;
-    if version > 3 {
+    if version > 4 {
         bail!(
-            "Database schema {version} is newer than this Contain build (3). Use a newer binary; database was not changed."
+            "Database schema {version} is newer than this Contain build (4). Use a newer binary; database was not changed."
         );
     }
     Ok(version)
@@ -14,7 +14,7 @@ pub fn check_version(connection: &Connection) -> Result<u32> {
 
 pub fn apply(connection: &mut Connection) -> Result<()> {
     let version = check_version(connection)?;
-    if version == 3 {
+    if version == 4 {
         return Ok(());
     }
     let tx = connection.transaction()?;
@@ -22,8 +22,11 @@ pub fn apply(connection: &mut Connection) -> Result<()> {
     if version < 2 {
         tx.execute_batch(include_str!("v2.sql"))?;
     }
-    tx.execute_batch(include_str!("v3.sql"))?;
-    tx.pragma_update(None, "user_version", 3)?;
+    if version < 3 {
+        tx.execute_batch(include_str!("v3.sql"))?;
+    }
+    tx.execute_batch(include_str!("v4.sql"))?;
+    tx.pragma_update(None, "user_version", 4)?;
     tx.commit()?;
     Ok(())
 }

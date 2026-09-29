@@ -193,12 +193,16 @@ impl Storage {
             .as_deref()
             .is_some_and(|s| s != "finished")
         {
-            let stats: String = self.connection.query_row(
-                "SELECT stats_json FROM capture_runs WHERE session_id=?1",
+            let (stats, error): (String, Option<String>) = self.connection.query_row(
+                "SELECT stats_json,error FROM capture_runs WHERE session_id=?1",
                 [&capture.id],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )?;
             capture.backend.stream = Some(serde_json::from_str(&stats)?);
+            if let Some(error) = error {
+                capture.quality.reasons.push(error.clone());
+                capture.backend.stream.as_mut().unwrap().error = Some(error);
+            }
             capture.quality.level = crate::model::QualityLevel::Incomplete;
             capture.stats.high_confidence_events = 0;
             for file in &mut capture.files {
@@ -283,7 +287,7 @@ mod tests {
                 .unwrap(),
             "High"
         );
-        assert_eq!(migration::check_version(&db.connection).unwrap(), 3);
+        assert_eq!(migration::check_version(&db.connection).unwrap(), 4);
         assert!(capture.warnings.iter().any(|w| w.contains("Legacy")));
     }
 
@@ -383,7 +387,7 @@ mod tests {
             .unwrap();
         let db = Storage::from_connection(connection).unwrap();
         let c = db.load("old").unwrap();
-        assert_eq!(migration::check_version(&db.connection).unwrap(), 3);
+        assert_eq!(migration::check_version(&db.connection).unwrap(), 4);
         assert_eq!(c.events[0].id, "old-event");
         assert_eq!(c.events[0].timestamp_ticks, 123);
         assert!(c.quality.reasons.iter().any(|r| r.contains("Legacy")));
