@@ -147,7 +147,8 @@ impl EtwSource {
             .collect();
         let registry_enabled = registry_root.is_some();
         let decoder = Arc::new(Mutex::new(Decoder {
-            deferred_registry: crate::hotpath::Variant::from_env().deferred_registry(),
+            deferred_registry: registry_enabled
+                && crate::hotpath::Variant::from_env().deferred_registry(),
             lifetimes: Default::default(),
             paths: HashMap::new(),
             pending: HashMap::new(),

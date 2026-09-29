@@ -7,6 +7,9 @@ pub struct RegistryContext {
     watermarks: HashMap<(u32, u64), u64>,
 }
 impl RegistryContext {
+    pub fn observe_object(&mut self, owner: (u32, u64), object: u64, at: u64) -> bool {
+        object != 0 && self.observe(owner, at)
+    }
     /// Only the lifecycle-based path calls this. A backwards record invalidates
     /// that lifetime's contexts; it cannot close/revive a newer object generation.
     pub fn observe(&mut self, owner: (u32, u64), at: u64) -> bool {
@@ -89,6 +92,7 @@ mod tests {
     fn late_close_invalidates_context_without_reviving_reused_object() {
         let mut c = RegistryContext::default();
         let owner = (1, 10);
+        assert!(!c.observe_object(owner, 0, 20));
         assert!(c.observe(owner, 20));
         c.open(owner, 2, 0, "\\registry\\user\\sid", "old", 20);
         assert!(c.observe(owner, 30));

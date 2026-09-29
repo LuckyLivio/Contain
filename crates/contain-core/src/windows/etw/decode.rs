@@ -304,7 +304,10 @@ impl Decoder {
         let context_clock = self.metrics.timer(Time::Context);
         let previous_drops = self.registry_context.dropped;
         let context_owner = writer.as_ref().filter(|w| {
-            !self.deferred_registry || self.registry_context.observe((pid, w.creation_time), time)
+            !self.deferred_registry
+                || self
+                    .registry_context
+                    .observe_object((pid, w.creation_time), object, time)
         });
         self.metrics.add(
             Count::ContextEvictions,
@@ -383,8 +386,10 @@ impl Decoder {
                 "registry",
                 match id {
                     1 => "create_or_open_key",
+                    2 => "open_key_context",
                     3 => "delete_key",
                     5 => "set_value",
+                    13 => "close_key_context",
                     _ => "delete_value",
                 },
             ),
