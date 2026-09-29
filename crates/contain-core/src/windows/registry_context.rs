@@ -4,8 +4,35 @@ use std::collections::HashMap;
 pub struct RegistryContext {
     pub dropped: u64,
     paths: HashMap<(u32, u64, u64), (String, u64)>,
+    watermarks: HashMap<(u32, u64), u64>,
 }
 impl RegistryContext {
+    /// Only the lifecycle-based path calls this. A backwards record invalidates
+    /// that lifetime's contexts; it cannot close/revive a newer object generation.
+    pub fn observe(&mut self, owner: (u32, u64), at: u64) -> bool {
+        if let Some(last) = self.watermarks.get(&owner) {
+            if at < *last {
+                self.paths
+                    .retain(|&(pid, birth, _), _| (pid, birth) != owner);
+                return false;
+            }
+        } else if self.watermarks.len() >= 32_768 {
+            self.dropped += 1;
+            return false;
+        }
+        self.watermarks.insert(owner, at);
+        true
+    }
+    pub fn process_exit(&mut self, owner: (u32, u64)) {
+        self.paths
+            .retain(|&(pid, birth, _), _| (pid, birth) != owner);
+        self.watermarks.remove(&owner);
+    }
+    pub fn generation(&self, owner: (u32, u64), object: u64) -> Option<String> {
+        self.paths
+            .get(&(owner.0, owner.1, object))
+            .map(|(_, at)| format!("{}:{}:{object:016x}:{at}", owner.0, owner.1))
+    }
     pub fn open(
         &mut self,
         owner: (u32, u64),
@@ -58,6 +85,22 @@ impl RegistryContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn late_close_invalidates_context_without_reviving_reused_object() {
+        let mut c = RegistryContext::default();
+        let owner = (1, 10);
+        assert!(c.observe(owner, 20));
+        c.open(owner, 2, 0, "\\registry\\user\\sid", "old", 20);
+        assert!(c.observe(owner, 30));
+        c.open(owner, 2, 0, "\\registry\\user\\sid", "new", 30);
+        assert!(!c.observe(owner, 25));
+        assert!(c.get(owner, 2, 40).is_none());
+        assert!(c.observe(owner, 50));
+        c.open(owner, 2, 0, "\\registry\\user\\sid", "later", 50);
+        c.process_exit(owner);
+        assert!(c.get(owner, 2, 60).is_none());
+        assert!(c.get((1, 70), 2, 80).is_none());
+    }
     #[test]
     fn relative_path_needs_proven_base_and_does_not_survive_close_or_reuse() {
         let mut c = RegistryContext::default();

@@ -67,7 +67,7 @@ impl Decoder {
             })
             .unwrap_or_default();
         let _construct = self.metrics.timer(Time::Construct);
-        self.send(SystemEvent {
+        let event = SystemEvent {
             id: uuid::Uuid::new_v4().to_string(),
             timestamp: native::timestamp(event_time),
             timestamp_ticks: event_time,
@@ -101,7 +101,19 @@ impl Decoder {
                 ..Default::default()
             },
             ..Default::default()
-        });
+        };
+        if self.deferred_registry && matches!(id, 1 | 2) {
+            let previous = self.lifetimes.dropped;
+            self.lifetimes.ingest(&event);
+            self.metrics
+                .add(Count::ContextEvictions, self.lifetimes.dropped - previous);
+            if id == 2
+                && let Some(birth) = birth
+            {
+                self.registry_context.process_exit((pid, birth));
+            }
+        }
+        self.send(event);
     }
     pub(super) fn file(&mut self, record: &EventRecord, locator: &SchemaLocator) {
         let id = record.event_id();
@@ -251,8 +263,19 @@ impl Decoder {
         let p = Parser::create(record, &schema);
         let time = record.raw_timestamp().max(0) as u64;
         let pid = record.process_id();
-        let writer = measured!(self.metrics, Identity, native::process_identity(pid))
-            .filter(|p| p.creation_time <= time);
+        // Context needs a process generation, not a query of whoever owns the PID now.
+        let writer = if self.deferred_registry {
+            self.lifetimes
+                .resolve(pid, time)
+                .map(|p| native::ProcessIdentity {
+                    pid,
+                    creation_time: p.creation_time.unwrap(),
+                    image: String::new(),
+                })
+        } else {
+            measured!(self.metrics, Identity, native::process_identity(pid))
+                .filter(|p| p.creation_time <= time)
+        };
         let object =
             measured!(self.metrics, Properties, p.try_parse::<u64>("KeyObject")).unwrap_or(0);
         let status = measured!(self.metrics, Properties, p.try_parse::<u32>("Status")).ok();
@@ -260,8 +283,34 @@ impl Decoder {
         let mut key = measured!(self.metrics, Properties, p.try_parse::<String>("KeyName"))
             .unwrap_or_default()
             .to_lowercase();
+        let fields = self.deferred_registry.then(|| {
+            Box::new(crate::model::RegistryFields {
+                provider: REGISTRY_PROVIDER.into(),
+                version: record.version(),
+                base_object: pointer(&self.metrics, &p, "BaseObject"),
+                key_name: key.clone(),
+                base_name: measured!(self.metrics, Properties, p.try_parse::<String>("BaseName"))
+                    .unwrap_or_default(),
+                relative_name: measured!(
+                    self.metrics,
+                    Properties,
+                    p.try_parse::<String>("RelativeName")
+                )
+                .unwrap_or_default(),
+                value_name: measured!(self.metrics, Properties, p.try_parse::<String>("ValueName"))
+                    .ok(),
+            })
+        });
         let context_clock = self.metrics.timer(Time::Context);
-        if let Some(w) = &writer {
+        let previous_drops = self.registry_context.dropped;
+        let context_owner = writer.as_ref().filter(|w| {
+            !self.deferred_registry || self.registry_context.observe((pid, w.creation_time), time)
+        });
+        self.metrics.add(
+            Count::ContextEvictions,
+            self.registry_context.dropped - previous_drops,
+        );
+        if let Some(w) = context_owner {
             let owner = (pid, w.creation_time);
             if matches!(id, 1 | 2) {
                 let previous_drops = self.registry_context.dropped;
@@ -310,7 +359,7 @@ impl Decoder {
             self.registry_path_gaps.fetch_add(1, Ordering::Relaxed);
             key = "<unresolved registry object>".into();
         }
-        if matches!(id, 2 | 13) {
+        if matches!(id, 2 | 13) && (!self.deferred_registry || context_owner.is_some()) {
             return;
         }
         if resolved
@@ -319,6 +368,14 @@ impl Decoder {
         {
             key = format!("{key}\\{value}");
         }
+        let generation = if self.deferred_registry {
+            writer.as_ref().and_then(|w| {
+                self.registry_context
+                    .generation((pid, w.creation_time), object)
+            })
+        } else {
+            None
+        };
         let mut e = make_event(
             &self.metrics,
             time,
@@ -333,7 +390,7 @@ impl Decoder {
             ),
             key,
             EvidenceSource::EtwRegistry,
-            writer,
+            if self.deferred_registry { None } else { writer },
             success,
         );
         e.evidence.pid = Some(pid);
@@ -341,10 +398,28 @@ impl Decoder {
             event_id: Some(id),
             header_pid: Some(pid),
             registry_object: Some(format!("{object:016x}")),
+            object_generation: generation,
+            registry_fields: fields,
+            process_key: if self.deferred_registry {
+                record
+                    .extended_data()
+                    .iter()
+                    .find_map(|data| match data.to_extended_data_item() {
+                        ferrisetw::native::ExtendedDataItem::ProcessStartKey(key) => {
+                            Some(format!("{key:016x}"))
+                        }
+                        _ => None,
+                    })
+            } else {
+                None
+            },
             status,
             resource_resolved: resolved,
             ..Default::default()
         };
+        if matches!(id, 2 | 13) {
+            e.event_type = "registry_context".into();
+        }
         self.send(e);
     }
 }

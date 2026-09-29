@@ -31,3 +31,36 @@ alternating release --locked trials, four workers and 2500 successful target cal
 Run the original three-trial 10000/25000 gate only if preceding correctness,
 small-test and 1000-file gates have no regression. A green CI alone proves none
 of these reliability claims.
+
+## Implementation boundaries before live trials
+
+`CONTAIN_HOTPATH_VARIANT=D0|D1|D2|D3` selects independent paths in one binary;
+the default remains D0 until evidence warrants changing it. D0 instrumentation
+commit is `3802ca0`; D2 alone is also runnable from `fedc506` with the D2 setting.
+
+D1 removes callback process API calls. The callback uses the existing bounded
+LifetimeCache for registry object ownership; event identity is resolved again in
+the existing post-drain lifetime pass. An initial supplemental snapshot runs after
+ETW readiness, before installer launch: at most 4096 queries, checking a two-second
+budget between calls. Individual OS calls cannot be interrupted; this is a query
+budget, not a hard real-time deadline. Raw pages drain between queries. Queries
+never hold the decoder lock. A snapshot identity is valid only at/after its own
+query completed, and an ambiguous PID interval stays Unknown. Failed/skipped
+queries, elapsed/query time and temporal bounds are reported, without exporting
+the global process list.
+
+The callback owns the lifetime/context caches and copies owned manifest fields.
+The receiving thread remains the sole SQLite owner. No worker, borrowed ETW pointer,
+new writer, enlarged raw queue or metadata channel is introduced. The additional
+callback lifetime cache uses the existing 32768-process bound; registry paths keep
+their 16384 bound and process-order watermarks are bounded at 32768. Unknown-owner
+open/close records retain owned raw metadata instead of being mistaken for unrelated
+events. This necessary evidence retention changes payload size/record counts and
+must be reported separately from query timing. Historical JSON remains readable;
+SQL write/index/transaction policy is unchanged.
+
+D2 uses ETW lifecycle state for descendant drain while active; the owned installer
+handle still supplies the root identity. Missing exits remain pending until the
+existing maximum drain deadline. Snapshot-only/unavailable-ETW modes retain the
+original polling behavior. Polling is removed, not moved to another thread. The
+existing stop/consumer-join/final-queue-drain sequence is unchanged.

@@ -25,6 +25,8 @@ const OBJECT_CAPACITY: usize = 16384;
 pub(crate) const FILE_EVENT_IDS: &[u16] = &[12, 14, 16, 24, 26, 27, 30];
 
 struct Decoder {
+    deferred_registry: bool,
+    lifetimes: crate::lifetime::LifetimeCache,
     paths: HashMap<u64, (String, String)>,
     pending: HashMap<String, (String, u64)>,
     registry_context: super::registry_context::RegistryContext,
@@ -69,6 +71,8 @@ fn make_event(
 }
 
 pub struct EtwSource {
+    decoder: Option<Arc<Mutex<Decoder>>>,
+    initial_records: Vec<(crate::model::ProcessRecord, u64)>,
     trace: Option<UserTrace>,
     consumer: Option<JoinHandle<Result<(), String>>>,
     name: String,
@@ -95,6 +99,8 @@ impl EtwSource {
         let metrics = Arc::new(Metrics::default());
         let name = format!("Contain-{}", uuid::Uuid::new_v4());
         let mut source = Self {
+            decoder: None,
+            initial_records: Vec::new(),
             trace: None,
             consumer: None,
             name: name.clone(),
@@ -141,6 +147,8 @@ impl EtwSource {
             .collect();
         let registry_enabled = registry_root.is_some();
         let decoder = Arc::new(Mutex::new(Decoder {
+            deferred_registry: crate::hotpath::Variant::from_env().deferred_registry(),
+            lifetimes: Default::default(),
             paths: HashMap::new(),
             pending: HashMap::new(),
             registry_context: Default::default(),
@@ -154,6 +162,7 @@ impl EtwSource {
             registry_path_gaps,
             received,
         }));
+        source.decoder = Some(decoder.clone());
         source.report.pipeline = Some(Default::default());
         let file_decoder = decoder.clone();
         let filter_ids = std::env::var_os("CONTAIN_ETW_EVENT_ID_FILTER").is_none_or(|v| v != "0");
@@ -190,6 +199,7 @@ impl EtwSource {
                 ..Default::default()
             });
         if registry_enabled {
+            let decoder = decoder.clone();
             let registry = Provider::by_guid(REGISTRY_PROVIDER)
                 .any(0x7301)
                 .level(4)
@@ -329,6 +339,69 @@ fn dispatch(
 }
 
 impl EtwSource {
+    /// Setup only, before the installer starts. No process query holds the decoder
+    /// lock. Drain committed raw pages between queries; no metadata worker or PID cache.
+    pub fn initialize_identities(&mut self, mut sink: impl FnMut(Vec<SystemEvent>)) {
+        if !crate::hotpath::Variant::from_env().deferred_registry()
+            || self.report.etw_registry != "active"
+        {
+            return;
+        }
+        use crate::model::{InitialIdentitySnapshot, ProcessRecord};
+        use sysinfo::{ProcessesToUpdate, System};
+        let clock = Instant::now();
+        let _timer = crate::profile::timer("initial_identity_snapshot");
+        let mut stats = InitialIdentitySnapshot {
+            started_ticks: native::now_ticks(),
+            ..Default::default()
+        };
+        let mut system = System::new();
+        system.refresh_processes(ProcessesToUpdate::All, true);
+        stats.enumerated = system.processes().len() as u64;
+        for pid in system.processes().keys() {
+            sink(self.drain());
+            // Supplemental snapshot is incomplete when limits expire, never "all processes".
+            if stats.queried >= 4096 || clock.elapsed().as_secs() >= 2 {
+                break;
+            }
+            stats.queried += 1;
+            let query = Instant::now();
+            let identity = native::process_identity(pid.as_u32());
+            stats.query_ns += query.elapsed().as_nanos() as u64;
+            let at = native::now_ticks();
+            if let Some(identity) = identity {
+                stats.resolved += 1;
+                let record = ProcessRecord {
+                    pid: identity.pid, creation_time: Some(identity.creation_time), image: identity.image,
+                    first_seen: native::timestamp(at), last_seen: native::timestamp(at),
+                    evidence: AttributionEvidence { source: EvidenceSource::ProcessApi, ..Default::default() },
+                    reason: "Supplemental identity observed after ETW readiness; usable only at or after this query completed.".into(),
+                    ..Default::default()
+                };
+                if let Some(decoder) = &self.decoder {
+                    decoder
+                        .lock()
+                        .unwrap()
+                        .lifetimes
+                        .seed_snapshot(record.clone(), at);
+                }
+                self.initial_records.push((record, at));
+            } else {
+                stats.failed += 1;
+            }
+        }
+        sink(self.drain());
+        stats.skipped = stats.enumerated - stats.queried;
+        stats.finished_ticks = native::now_ticks();
+        stats.elapsed_ns = clock.elapsed().as_nanos() as u64;
+        self.report.warnings.push(format!("Bounded initial process snapshot: {} queried, {} resolved, {} failed, {} skipped. Per-process query completion bounds validity; not an instantaneous or complete snapshot.", stats.queried, stats.resolved, stats.failed, stats.skipped));
+        self.report.initial_identity_snapshot = Some(stats);
+    }
+
+    pub fn take_initial_identities(&mut self) -> Vec<(crate::model::ProcessRecord, u64)> {
+        std::mem::take(&mut self.initial_records)
+    }
+
     pub fn stop_with(&mut self, mut sink: impl FnMut(Vec<SystemEvent>)) -> BackendReport {
         if let Some(trace) = self.trace.take() {
             let mut trace = Some(trace);
@@ -404,6 +477,8 @@ mod tests {
         let (tx, rx) = mpsc::sync_channel(1);
         let dropped = Arc::new(AtomicU64::new(0));
         let decoder = Decoder {
+            deferred_registry: false,
+            lifetimes: Default::default(),
             paths: HashMap::new(),
             pending: HashMap::new(),
             registry_context: Default::default(),

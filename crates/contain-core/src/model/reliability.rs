@@ -2,6 +2,8 @@ use super::*;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct RawEvidence {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registry_fields: Option<Box<RegistryFields>>,
     pub event_id: Option<u16>,
     pub thread_id: Option<u32>,
     pub header_pid: Option<u32>,
@@ -15,6 +17,31 @@ pub struct RawEvidence {
     pub parent_key: Option<String>,
     pub related_event: Option<String>,
     pub resource_resolved: bool,
+}
+
+/// Owned manifest fields retained without borrowing an EVENT_RECORD payload.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RegistryFields {
+    pub provider: String,
+    pub version: u8,
+    pub base_object: Option<String>,
+    pub key_name: String,
+    pub base_name: String,
+    pub relative_name: String,
+    pub value_name: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct InitialIdentitySnapshot {
+    pub started_ticks: u64,
+    pub finished_ticks: u64,
+    pub enumerated: u64,
+    pub queried: u64,
+    pub resolved: u64,
+    pub failed: u64,
+    pub skipped: u64,
+    pub query_ns: u64,
+    pub elapsed_ns: u64,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

@@ -111,6 +111,8 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         "provider_readiness".into(),
         ready_clock.elapsed().as_millis() as u64,
     );
+    source.initialize_identities(|page| journal.append(db, page));
+    let initial_identities = source.take_initial_identities();
     let lifecycle_receiver =
         crate::hotpath::Variant::from_env().lifecycle_receiver() && source.lifecycle_active();
     let installer_clock = Instant::now();
@@ -258,6 +260,9 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     }
     drop(cache);
     let mut cache = LifetimeCache::default();
+    for (p, at) in initial_identities {
+        cache.seed_snapshot(p, at);
+    }
     for p in &processes {
         cache.seed(p.clone());
     }
@@ -325,6 +330,11 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
                             .pid
                             .is_some_and(|pid| db.scoped_header(&id, pid).unwrap_or(true))
                     {
+                        continue;
+                    }
+                    // Unresolved open/close metadata remains in committed raw evidence;
+                    // it is not a user mutation or a new monitored category.
+                    if e.event_type == "registry_context" {
                         continue;
                     }
                     if e.event_type == "registry"

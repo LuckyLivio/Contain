@@ -165,6 +165,8 @@ pub struct SystemEvent {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct BackendReport {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_identity_snapshot: Option<InitialIdentitySnapshot>,
     #[serde(default)]
     pub context_losses: u64,
     #[serde(default)]

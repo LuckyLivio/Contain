@@ -20,4 +20,7 @@ impl Variant {
     pub fn lifecycle_receiver(self) -> bool {
         matches!(self, Self::D2 | Self::D3)
     }
+    pub fn deferred_registry(self) -> bool {
+        matches!(self, Self::D1 | Self::D3)
+    }
 }

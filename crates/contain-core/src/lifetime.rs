@@ -10,9 +10,24 @@ pub struct LifetimeCache {
     pub processes: BTreeMap<ProcessIdentity, ProcessRecord>,
     threads: BTreeMap<(u32, u64), (u32, Option<u64>)>,
     pub dropped: u64,
+    snapshot_from: BTreeMap<ProcessIdentity, u64>,
 }
 
 impl LifetimeCache {
+    pub fn seed_snapshot(&mut self, process: ProcessRecord, observed_at: u64) {
+        let Some(birth) = process.creation_time else {
+            return;
+        };
+        let key = (process.pid, birth);
+        // A lifecycle start already proves a wider interval than a later snapshot.
+        if self.processes.contains_key(&key) {
+            return;
+        }
+        self.seed(process);
+        if self.processes.contains_key(&key) {
+            self.snapshot_from.insert(key, observed_at);
+        }
+    }
     /// Unknown/missing exit is pending, never evidence that a child is gone.
     /// The caller still applies the monotonic maximum drain deadline.
     pub fn descendants_pending(&self, root_pid: u32) -> bool {
@@ -64,6 +79,7 @@ impl LifetimeCache {
                     return;
                 };
                 if event.operation == "process_start" {
+                    self.snapshot_from.remove(&(pid, birth));
                     self.seed(ProcessRecord {
                         pid,
                         creation_time: Some(birth),
@@ -120,6 +136,10 @@ impl LifetimeCache {
             .filter(|p| {
                 p.creation_time.is_some_and(|birth| birth <= at)
                     && p.ended_at.is_none_or(|end| at <= end)
+                    && self
+                        .snapshot_from
+                        .get(&(pid, p.creation_time.unwrap_or(0)))
+                        .is_none_or(|from| at >= *from)
             });
         let first = candidates.next()?;
         candidates.next().is_none().then_some(first)
@@ -220,6 +240,18 @@ mod tests {
             ..Default::default()
         }
     }
+    #[test]
+    fn snapshot_cannot_resolve_before_query_or_hide_pid_reuse() {
+        let mut c = LifetimeCache::default();
+        c.seed_snapshot(record(5, 100, None), 200);
+        assert!(c.resolve(5, 199).is_none());
+        assert!(c.resolve(5, 200).is_some());
+        c.seed(record(5, 300, None));
+        assert!(c.resolve(5, 350).is_none());
+        c.processes.get_mut(&(5, 100)).unwrap().ended_at = Some(250);
+        assert_eq!(c.resolve(5, 350).unwrap().creation_time, Some(300));
+    }
+
     #[test]
     fn missing_exit_and_reused_pid_keep_descendant_drain_pending() {
         let mut c = LifetimeCache::default();

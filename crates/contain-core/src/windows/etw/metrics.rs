@@ -72,6 +72,8 @@ impl Metrics {
     }
     pub fn record_lock(&self, ns: u64) {
         self.times[Time::Lock as usize].fetch_add(ns, Relaxed);
+        self.provider_times[self.provider.load(Relaxed)][Time::Lock as usize]
+            .fetch_add(ns, Relaxed);
     }
     pub fn add(&self, c: Count, n: u64) {
         let prior = self.counts[c as usize].fetch_add(n, Relaxed);
