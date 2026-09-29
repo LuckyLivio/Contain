@@ -182,3 +182,15 @@ fixture serializes one row to bytes before a single small `write_all`. Both base
 and candidate must be repeated with this same fixture. Business syscalls, supported
 semantics, four workers, independent noise and the 25000-operation denominator do
 not change. This is an oracle correction, not a claimed capture optimization.
+
+The [second preliminary comparison](../examples/comparison-release-v031-preliminary2.json)
+at 4e83759 retained the fragmented oracle and adds bounded page drain and indexed
+state lookup. It also failed every stress trial: candidate 1000-file median
+37.921 s versus baseline 4.888 s; 10000-file median 89.112 s versus 12.428 s.
+The candidate 10000-file queue lost 131567 / 130086 / 129641 records; raw writes
+took 33.340 / 55.115 / 19.788 s and paged finalization 46.617 / 55.218 / 53.169 s.
+This demonstrates a consumer/persistence bottleneck even when ETW event loss is
+small (3820 / 0 / 4375). The separate 1000-write burst again passed (23.358 s,
+1000/1000 observed and correctly attributed, no source or queue loss). These
+results remain diagnostic; they cannot be substituted for the corrected-fixture
+comparison, nor can the burst establish multi-worker rename/delete throughput.
