@@ -5,13 +5,66 @@ use anyhow::{Context, Result, ensure};
 use clap::Parser;
 use std::{
     fs,
-    os::windows::fs::MetadataExt,
+    os::windows::{ffi::OsStrExt, fs::MetadataExt},
     path::{Path, PathBuf},
     process::Command,
-    thread,
     time::{Duration, Instant},
 };
+use windows_sys::Win32::{
+    Foundation::{HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0},
+    Storage::FileSystem::{
+        FILE_NOTIFY_CHANGE_FILE_NAME, FindCloseChangeNotification, FindFirstChangeNotificationW,
+        FindNextChangeNotification,
+    },
+    System::Threading::WaitForSingleObject,
+};
 use winreg::{RegKey, enums::HKEY_CURRENT_USER};
+
+struct StartNotification(HANDLE);
+impl Drop for StartNotification {
+    fn drop(&mut self) {
+        unsafe {
+            FindCloseChangeNotification(self.0);
+        }
+    }
+}
+
+fn wait_for_start(root: &Path, phase: &str, deadline: Instant) -> Result<()> {
+    let wide: Vec<u16> = root.as_os_str().encode_wide().chain(Some(0)).collect();
+    // Subscribe before publishing readiness/checking the persistent signal file.
+    let handle =
+        unsafe { FindFirstChangeNotificationW(wide.as_ptr(), 0, FILE_NOTIFY_CHANGE_FILE_NAME) };
+    ensure!(
+        handle != INVALID_HANDLE_VALUE,
+        "start notification: {}",
+        std::io::Error::last_os_error()
+    );
+    let notification = StartNotification(handle);
+    fs::write(root.join(format!(".registry-{phase}-ready")), b"ready")?;
+    loop {
+        if root.join(".fixture-go").is_file() {
+            return Ok(());
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        ensure!(!remaining.is_zero(), "registry noise start deadline");
+        let status = unsafe {
+            WaitForSingleObject(
+                notification.0,
+                remaining.as_millis().min(u32::MAX as u128) as u32,
+            )
+        };
+        ensure!(
+            status == WAIT_OBJECT_0,
+            "registry noise start wait failed or timed out: {status}"
+        );
+        // Re-arm before checking, so a create during the check is not missed.
+        ensure!(
+            unsafe { FindNextChangeNotification(notification.0) } != 0,
+            "start notification rearm: {}",
+            std::io::Error::last_os_error()
+        );
+    }
+}
 
 #[derive(Parser)]
 struct Args {
@@ -53,14 +106,7 @@ fn run() -> Result<()> {
     let (root, name) = checked_root(&args.root)?;
     let deadline = Instant::now() + Duration::from_secs(20);
     if args.phase != "post" {
-        fs::write(
-            root.join(format!(".registry-{}-ready", args.phase)),
-            b"ready",
-        )?;
-        while !root.join(".fixture-go").is_file() {
-            ensure!(Instant::now() < deadline, "registry noise start deadline");
-            thread::sleep(Duration::from_millis(1)); // Start signal only; no sleeps between operations.
-        }
+        wait_for_start(&root, &args.phase, deadline)?;
     }
     if args.phase == "launcher" {
         // Launcher is independently started by the harness, outside the installer tree.

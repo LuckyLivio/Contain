@@ -191,7 +191,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         journal.append(db, incoming);
         measured!("lifetime_attach", cache.attach((root_pid, root_birth), &id));
         let descendants_live = if lifecycle_receiver {
-            cache.descendants_pending(root_pid)
+            cache.descendants_pending((root_pid, root_birth))
         } else {
             cache
                 .processes

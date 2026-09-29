@@ -64,3 +64,39 @@ handle still supplies the root identity. Missing exits remain pending until the
 existing maximum drain deadline. Snapshot-only/unavailable-ETW modes retain the
 original polling behavior. Polling is removed, not moved to another thread. The
 existing stop/consumer-join/final-queue-drain sequence is unchanged.
+
+## Isolated light trials (before D3)
+
+Actual binary: `1c7e98a836de0773d1fc3430714f99c8b02aa46f`,
+[run 36586622200](https://github.com/LuckyLivio/Contain/actions/runs/36586622200).
+All twelve planned attempts ran. D0: 4/4 target gates; D1: 3/4; D2: 4/4.
+Every attempt had zero ETW event/buffer loss, queue overflow and false attribution.
+D1 registry callback queries fell to zero from D0's 842–3771 per attempt;
+registry callback totals were 5.28–35.93 ms versus 42.58–133.85 ms. This confirms
+the callback cost mechanism, **not** that it caused or fixes the older 9357-event
+loss: that loss did not recur in this isolated sample.
+
+D2 removed both receiver polling and descendant identity queries (no worker).
+D0 small attempts performed 166–171 polls, costing 0.906–1.078 s in total.
+In the single diagnostic 1000-file pair, D0 had a 372.84 ms maximum poll and
+1820 queue losses; D2 had no polls or queue losses and scored 2500/2500, compared
+with D0's 2176 observed/0 correct after loss downgrade. This supports H2 for that
+queue-overflow sample. D2 is not universally faster: total wall was 31.70 versus
+15.29 s, with 16.75 versus 6.72 s in paged post-processing. The maximum no-drain
+gap was still 949.06 ms in D2 versus 557.32 ms D0, consistent with remaining
+storage waits. This single pair is not the three-trial acceptance.
+
+The failed D1/noise/round 2 had 17 target operations observed, all downgraded,
+with one **post-processing resource association cap** loss. The safe raw export
+contains 663 events for `.fixture-go` (existing cap 512); provider cache evictions
+were zero. Supplemental noise startup's 1 ms file polling amplified this control
+resource. Preserve that failed run. Before the fixed final ten attempts, replace
+only this supplemental startup polling with a bounded directory notification
+wait, following [Microsoft's API contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-findfirstchangenotificationw).
+The original fixture/scorer, registry mutation loop (1000 calls per process, no
+inter-operation sleeps), deadlines and all product limits remain unchanged.
+This harness correction is a separate variable; final noise results cannot be
+credited solely to query removal. The ten final attempts have not yet run.
+
+H1 and H2 each have independent mechanism evidence, so D3 is eligible for the
+predeclared combined test. Keep D0 as default pending its results.
