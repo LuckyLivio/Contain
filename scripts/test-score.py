@@ -31,4 +31,11 @@ class OracleTests(unittest.TestCase):
         self.assertEqual(oracle.score(self.c,[self.t,noise])["false_positive_target_events"],0)
     def test_snapshot_cannot_observe_a_transient_syscall(self):
         self.e["event_type"]="file_state";r=oracle.score(self.c,[self.t]);self.assertEqual(r["observed"],0)
+    def test_control_exclusions_are_exact_and_never_override_instrumented_noise(self):
+        self.e["resource"]="C:\\root\\nested\\.fixture-go"
+        self.assertEqual(oracle.score(self.c,[self.t])["false_positive_target_events"],1)
+        self.e["resource"]="C:\\root\\.fixture-go"
+        self.assertEqual(oracle.score(self.c,[self.t])["excluded_control_positive_events"],1)
+        self.t["resource"]=self.e["resource"];self.t["role"]="noise"
+        self.assertEqual(oracle.score(self.c,[self.t])["false_positive_target_events"],1)
 if __name__=="__main__": unittest.main()

@@ -8,7 +8,7 @@ captures, snapshot fallback, and release stress acceptance.
 The local Windows ordinary-token run passed `cargo fmt --all -- --check`,
 `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`
 (44 core tests and 1 fixture test), `cargo build --workspace --release --locked`,
-six Python scorer tests and the PowerShell scorer rejection checks. The local
+seven Python scorer tests and the PowerShell scorer rejection checks. The local
 release snapshot fixture also passed readback, JSON schema and dry-run invariance.
 It cannot validate ETW under this token.
 

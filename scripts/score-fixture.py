@@ -64,12 +64,15 @@ def score(capture, truth, sid=""):
             observed=matched is not None,raw_matches=len(candidates),outcome={"correctly_attributed":"Correct","incorrectly_attributed":"Incorrect"}.get(attribution,"Unknown")))
     tested_roots=[normalize(p,sid).rstrip("\\") for p in capture.get("watch_roots",[])]
     truth_paths={normalize(t["resource"],sid) for t in truth}; positives=set(); excluded_control=[]
+    control_paths={root+"\\"+name for root in tested_roots for name in CONTROL_NAMES}
+    registry_key=capture.get("registry_key")
+    diagnostic_path=normalize("HKCU\\"+registry_key+"\\TransientKey\\TransientValue",sid) if registry_key else None
     for i,e in enumerate(events):
         path=normalize(e["resource"],sid)
         if e["operation"] not in SUPPORTED or e["confidence"] not in {"High","Certain"}: continue
-        if path.rsplit("\\",1)[-1] in CONTROL_NAMES:
+        if path in control_paths and path not in truth_paths:
             excluded_control.append(e.get("id",str(i))); continue
-        if path.endswith("\\transientkey\\transientvalue"): continue  # Exact frozen uninstrumented diagnostic.
+        if path==diagnostic_path and path not in truth_paths: continue
         if any(path==r or path.startswith(r+"\\") for r in tested_roots) or path in truth_paths: positives.add(i)
     false=positives-valid_positives
     for g in groups.values():
