@@ -111,6 +111,8 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         "provider_readiness".into(),
         ready_clock.elapsed().as_millis() as u64,
     );
+    let lifecycle_receiver =
+        crate::hotpath::Variant::from_env().lifecycle_receiver() && source.lifecycle_active();
     let installer_clock = Instant::now();
     let started_at = native::timestamp(native::now_ticks());
     let mut child = Command::new(&installer)
@@ -133,7 +135,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     let mut live_cache = LifetimeCache::default();
     let mut poll_at = Instant::now();
     let exit_code = loop {
-        if Instant::now() >= poll_at {
+        if !lifecycle_receiver && Instant::now() >= poll_at {
             measured!("capture_process_poll", process_observer.poll());
             poll_at = Instant::now() + Duration::from_millis(30);
         }
@@ -169,7 +171,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     let drain_start = Instant::now();
     let mut drain_timed_out = false;
     loop {
-        if Instant::now() >= poll_at {
+        if !lifecycle_receiver && Instant::now() >= poll_at {
             measured!("capture_process_poll", process_observer.poll());
             poll_at = Instant::now() + Duration::from_millis(30);
         }
@@ -186,14 +188,18 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         }
         journal.append(db, incoming);
         measured!("lifetime_attach", cache.attach((root_pid, root_birth), &id));
-        let descendants_live = cache
-            .processes
-            .values()
-            .filter(|p| p.pid != root_pid && p.confidence == Confidence::High)
-            .any(|p| {
-                measured!("capture_descendant_query", native::process_identity(p.pid))
-                    .is_some_and(|live| Some(live.creation_time) == p.creation_time)
-            });
+        let descendants_live = if lifecycle_receiver {
+            cache.descendants_pending(root_pid)
+        } else {
+            cache
+                .processes
+                .values()
+                .filter(|p| p.pid != root_pid && p.confidence == Confidence::High)
+                .any(|p| {
+                    measured!("capture_descendant_query", native::process_identity(p.pid))
+                        .is_some_and(|live| Some(live.creation_time) == p.creation_time)
+                })
+        };
         match crate::drain::decide(
             drain_start.elapsed().as_millis() as u64,
             last_activity.elapsed().as_millis() as u64,

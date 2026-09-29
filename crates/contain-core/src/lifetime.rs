@@ -13,6 +13,13 @@ pub struct LifetimeCache {
 }
 
 impl LifetimeCache {
+    /// Unknown/missing exit is pending, never evidence that a child is gone.
+    /// The caller still applies the monotonic maximum drain deadline.
+    pub fn descendants_pending(&self, root_pid: u32) -> bool {
+        self.processes
+            .values()
+            .any(|p| p.pid != root_pid && p.confidence == Confidence::High && p.ended_at.is_none())
+    }
     pub fn seed(&mut self, process: ProcessRecord) {
         let Some(birth) = process.creation_time else {
             return;
@@ -212,6 +219,18 @@ mod tests {
             image: "helper.exe".into(),
             ..Default::default()
         }
+    }
+    #[test]
+    fn missing_exit_and_reused_pid_keep_descendant_drain_pending() {
+        let mut c = LifetimeCache::default();
+        let mut child = record(2, 100, None);
+        child.confidence = Confidence::High;
+        c.seed(child);
+        assert!(c.descendants_pending(1));
+        c.seed(record(2, 300, Some(400)));
+        assert!(c.descendants_pending(1)); // Another lifetime exiting cannot close it.
+        c.processes.get_mut(&(2, 100)).unwrap().ended_at = Some(200);
+        assert!(!c.descendants_pending(1));
     }
     #[test]
     fn reused_pid_resolves_only_its_interval() {

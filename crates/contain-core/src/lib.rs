@@ -17,4 +17,5 @@ pub mod windows;
 
 mod drain;
 
+pub mod hotpath;
 pub mod profile;

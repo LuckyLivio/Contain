@@ -82,6 +82,10 @@ pub struct EtwSource {
 }
 
 impl EtwSource {
+    pub fn lifecycle_active(&self) -> bool {
+        self.report.etw_process == "active"
+    }
+
     pub fn start(roots: &[String], registry_root: Option<String>, enabled: bool) -> Self {
         let (tx, rx) = mpsc::sync_channel(QUEUE_CAPACITY);
         let dropped = Arc::new(AtomicU64::new(0));
