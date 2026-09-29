@@ -35,12 +35,14 @@ jobs:
         env:
           PHASE: ${{ inputs.phase }}
         run: ./scripts/hotpath-small.ps1 -Phase $env:PHASE
-      - name: Strict final small gate
+      - name: Record fixed small gate for 10000 eligibility
+        id: small_gate
         if: inputs.phase == 'final'
         shell: pwsh
         run: |
           $r=Get-Content -Raw ./target/hotpath-public/final-summary.json | ConvertFrom-Json
-          if($r.trials.Count -ne 10 -or @($r.trials|Where-Object {-not $_.acceptance_pass}).Count){throw 'Fixed ten-attempt small gate failed; no heavy gate authorized by this result'}
+          $passed=$r.trials.Count -eq 10 -and @($r.trials|Where-Object {-not $_.acceptance_pass}).Count -eq 0
+          "passed=$($passed.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
       - name: One isolated D0-D2 file comparison (light diagnostic only)
         if: inputs.phase == 'light'
         shell: pwsh
@@ -49,16 +51,18 @@ jobs:
         if: inputs.phase == 'final'
         shell: pwsh
         run: ./scripts/compare-release.ps1 -BaselineDirectory . -BaselineVariant D0 -CandidateVariant D3 -Files 1000 -Trials 3 -Profile -SingleScale -SkipExtras -OutputDirectory ./target/hotpath-stress
-      - name: Strict 1000-file gate before 10000
+      - name: Record 1000-file gate for 10000 eligibility
+        id: thousand_gate
         if: inputs.phase == 'final'
         shell: pwsh
         run: |
           $file=Get-ChildItem ./target/hotpath-stress/run-*/comparison.json | Select-Object -First 1
           $r=Get-Content -Raw $file.FullName | ConvertFrom-Json
           $candidate=@($r.trials|Where-Object mode -eq 'candidate')
-          if($candidate.Count -ne 3 -or @($candidate|Where-Object {-not $_.acceptance_pass}).Count){throw '1000-file gate failed; retain original 10000 failure without a new run'}
+          $passed=$candidate.Count -eq 3 -and @($candidate|Where-Object {-not $_.acceptance_pass}).Count -eq 0
+          "passed=$($passed.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
       - name: Original three-trial 10000-file gate
-        if: inputs.phase == 'final'
+        if: inputs.phase == 'final' && steps.small_gate.outputs.passed == 'true' && steps.thousand_gate.outputs.passed == 'true'
         shell: pwsh
         run: |
           ./scripts/compare-release.ps1 -BaselineDirectory . -BaselineVariant D0 -CandidateVariant D3 -Files 10000 -Trials 3 -Profile -SingleScale -SkipExtras -OutputDirectory ./target/hotpath-stress
@@ -67,6 +71,14 @@ jobs:
             $candidate=@($r.trials|Where-Object mode -eq 'candidate')
             if($candidate.Count -ne 3 -or @($candidate|Where-Object {-not $_.acceptance_pass}).Count){throw 'Original stress gate failed'}
           }
+      - name: Enforce small and 1000 results without replacing failed attempts
+        if: inputs.phase == 'final'
+        shell: pwsh
+        env:
+          SMALL_PASSED: ${{ steps.small_gate.outputs.passed }}
+          THOUSAND_PASSED: ${{ steps.thousand_gate.outputs.passed }}
+        run: |
+          if($env:SMALL_PASSED -ne 'true' -or $env:THOUSAND_PASSED -ne 'true'){throw 'Predeclared gate failed. 10000 remains unpassed and was not rerun.'}
       - name: Retain stress fixture exports after unmodified scoring
         if: always()
         shell: pwsh
