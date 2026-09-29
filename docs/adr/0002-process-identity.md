@@ -39,6 +39,10 @@ session → process → observation → resource explanation without a graph ser
 
 Provider setup waits for bounded synchronous enablement before launching the
 installer; ferrisetw's default asynchronous enablement otherwise leaves a race.
+A private ephemeral provider emits a fixed readiness marker, and launch additionally
+waits for that marker to arrive at the realtime consumer callback. A bounded flush/ack
+loop proves the consumer is receiving; merely spawning its thread does not. Failure
+stops tracing and falls back. The marker carries no user data and is not persisted.
 See [EnableTraceEx2 timeout semantics](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/nf-evntrace-enabletraceex2).
 
 ## Consequences

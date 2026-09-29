@@ -4,7 +4,7 @@
 
 ```text
 CLI -> baseline snapshots + read-only inventories
-    -> ETW session with confirmed provider readiness
+    -> ETW session with confirmed provider configuration and consumer callback readiness
     -> launch installer through owned handle
     -> process/thread lifetimes and scoped resource operations
     -> root exit -> bounded descendant/quiet drain -> stop/drain ETW
@@ -73,8 +73,9 @@ bounds graph traversal. Source evidence and snapshot operations remain distinct.
 ## Boundaries
 
 Only selected roots and one registry snapshot key are scanned. Unresolved registry
-operations persist only for verified installer actors. Global unrelated lifetimes
-used internally to reject reuse are discarded before storage. Known out-of-scope
+operations persist only for verified installer actors. Lifetimes used only internally to reject reuse are discarded. Raw lifetimes whose
+PIDs occur in scoped file headers are also retained to audit rejected attribution;
+a file header PID alone still never identifies its actual writer. Known out-of-scope
 resources are discarded. The app contains no telemetry/capture-upload code. CI
 uploads synthetic fixture verification artifacts only.
 

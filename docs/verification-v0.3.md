@@ -65,8 +65,14 @@ Actor High/resource Unknown remains a valid explicit result.
 
 An earlier immediate-launch CI failed the short-lived write gate. Inspection found
 the ETW dependency used asynchronous provider enablement. v0.3 now confirms provider
-configuration with a bounded synchronous call before launching the installer. The
-strict gate remains and CI repeats the immediate-launch scenario.
+configuration with a bounded synchronous call. Repeated validation then exposed
+a second readiness gap: file writes and process-stop records arrived while the
+earlier process/primary-thread starts were absent. A private probe callback now
+confirms that the realtime consumer is receiving before installer launch. This is
+an acknowledgement, not a guessed delay. The strict gate remains and CI repeats
+the immediate-launch scenario. Raw scoped actor lifetimes are retained so a rejected
+identity can be audited. The benchmark reference above predates this extra readiness
+handshake; use the scripts to measure the current revision.
 
 The ETW stress run exceeded the raw retention cap and reported 102755 application
 drops, 5912074 ETW events lost and four decode ambiguities/errors. Application
