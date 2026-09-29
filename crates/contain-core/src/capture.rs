@@ -313,8 +313,12 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
                 let mut retained = Vec::with_capacity(page.len());
                 let mut ops = Vec::new();
                 for mut e in page.drain(..) {
+                    let had_registry_path = e.event_type == "registry" && e.raw.resource_resolved;
                     if lifecycle_complete {
                         measured!("post_lifetime_resolve", cache.resolve_event(&mut e));
+                    }
+                    if had_registry_path && !e.raw.resource_resolved {
+                        backend.registry_path_gaps += 1;
                     }
                     measured!(
                         "post_attribution",
@@ -489,7 +493,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     warnings.extend(after_inventory.warnings);
     warnings.extend(backend.warnings.iter().cloned());
     if backend.registry_path_gaps > 0 {
-        warnings.push(format!("Registry ETW omitted absolute hive/key names in {} provider records; unresolved records are retained only for verified installer actors. Registry state attribution uses Unknown snapshot fallback unless complete event evidence exists.", backend.registry_path_gaps));
+        warnings.push(format!("Registry paths could not be safely resolved in {} records (missing names/context or conflicting process generations); unresolved records are retained only for verified installer actors. Registry state attribution uses Unknown snapshot fallback unless complete event evidence exists.", backend.registry_path_gaps));
     }
     if !lifecycle_complete {
         warnings.push("Process lifecycle evidence was unavailable or incomplete. Sampling can miss short-lived/detached children; unresolved actors remain Unknown.".into());

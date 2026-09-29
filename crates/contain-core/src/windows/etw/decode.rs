@@ -314,6 +314,7 @@ impl Decoder {
             Count::ContextEvictions,
             self.registry_context.dropped - previous_drops,
         );
+        let mut generation = None;
         if let Some(w) = context_owner {
             let owner = (pid, w.creation_time);
             if matches!(id, 1 | 2) {
@@ -349,6 +350,9 @@ impl Decoder {
                     .get(owner, object, time)
                     .unwrap_or_default();
             }
+            if self.deferred_registry {
+                generation = self.registry_context.generation(owner, object);
+            }
             if matches!(id, 3 | 13) {
                 self.registry_context.close(owner, object);
             }
@@ -372,14 +376,6 @@ impl Decoder {
         {
             key = format!("{key}\\{value}");
         }
-        let generation = if self.deferred_registry {
-            writer.as_ref().and_then(|w| {
-                self.registry_context
-                    .generation((pid, w.creation_time), object)
-            })
-        } else {
-            None
-        };
         let mut e = make_event(
             &self.metrics,
             time,

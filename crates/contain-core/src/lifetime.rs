@@ -223,6 +223,15 @@ impl LifetimeCache {
             pid
         };
         if let Some(process) = self.resolve(pid, event.timestamp_ticks) {
+            // A callback may precede a delayed stop/start for a reused PID. Its
+            // context path must not be reassigned to a different process lifetime.
+            if event.evidence.source == EvidenceSource::EtwRegistry
+                && let Some(generation) = &event.raw.object_generation
+                && !generation.starts_with(&format!("{pid}:{}:", process.creation_time.unwrap()))
+            {
+                event.raw.resource_resolved = false;
+                return;
+            }
             event.evidence.pid = Some(pid);
             event.evidence.process_creation_time = process.creation_time;
             event.evidence.process_image = Some(process.image.clone());
@@ -252,6 +261,35 @@ mod tests {
         assert!(c.resolve(5, 350).is_none());
         c.processes.get_mut(&(5, 100)).unwrap().ended_at = Some(250);
         assert_eq!(c.resolve(5, 350).unwrap().creation_time, Some(300));
+    }
+
+    #[test]
+    fn delayed_pid_reuse_cannot_reassign_a_registry_context_path() {
+        let mut c = LifetimeCache::default();
+        c.seed(record(5, 100, Some(200)));
+        c.seed(record(5, 300, None));
+        let mut e = SystemEvent {
+            timestamp_ticks: 350,
+            evidence: AttributionEvidence {
+                source: EvidenceSource::EtwRegistry,
+                pid: Some(5),
+                ..Default::default()
+            },
+            raw: RawEvidence {
+                object_generation: Some("5:100:0000000000000011:150".into()),
+                resource_resolved: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        c.resolve_event(&mut e);
+        assert!(e.evidence.process_creation_time.is_none());
+        assert!(!e.raw.resource_resolved);
+        e.raw.object_generation = Some("5:300:0000000000000011:320".into());
+        e.raw.resource_resolved = true;
+        c.resolve_event(&mut e);
+        assert_eq!(e.evidence.process_creation_time, Some(300));
+        assert!(e.raw.resource_resolved);
     }
 
     #[test]

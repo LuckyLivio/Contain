@@ -137,3 +137,22 @@ artifact `11042541664` on the light run above (ZIP SHA256
 Public exports are fixture-only projections made **after unmodified scoring**;
 global machine inventory/registry/process rows are not published. The full raw
 database is therefore not reproducible from that public projection.
+
+## Candidate validation identities
+
+The first combined series uses `bc7776577691d85e1904edcab3800273abe55f76`,
+[run 36588824929](https://github.com/LuckyLivio/Contain/actions/runs/36588824929).
+During this run, code review identified a separate correctness gap: callback
+context ownership could precede a delayed process stop/start, and the later
+lifetime pass could resolve the PID to a different birth. The next patch validates
+the retained registry object generation against the final resolved process birth,
+rejects conflicting associations, counts a registry path gap and retains the raw
+record. It also captures the generation before close/delete invalidation.
+A synthetic delayed-PID-reuse test covers rejection and the valid same-generation
+case. This changes only the new H1 identity handoff, not SQL or attribution policy.
+
+Before reading the combined series results, predeclare **one additional fixed
+series** for that correctness patch: ten attempts (five ordinary/five noise), three
+alternating 1000-file pairs, and 10000 only if prior gates pass. Keep the first
+series' full ten-attempt denominator and every outcome separately; do not pool
+successes or replace failures. No further automatic candidate search is planned.
