@@ -6,6 +6,7 @@ use std::path::Path;
 mod evidence;
 mod migration;
 mod reliability;
+pub mod stream;
 
 pub struct Storage {
     connection: Connection,
@@ -25,6 +26,8 @@ impl Storage {
         migration::check_version(&connection)?;
         connection.execute_batch(include_str!("storage/v1.sql"))?;
         migration::apply(&mut connection)?;
+        connection.busy_timeout(std::time::Duration::from_millis(250))?;
+        stream::schema(&connection)?;
         Ok(Self { connection })
     }
 
@@ -32,10 +35,10 @@ impl Storage {
         let persistence_clock = std::time::Instant::now();
         let tx = self.connection.transaction()?;
         tx.execute(
-            "INSERT INTO applications(id,name,installer) VALUES (?1,?2,?3)",
+            "INSERT INTO applications(id,name,installer) VALUES (?1,?2,?3) ON CONFLICT(id) DO UPDATE SET name=excluded.name,installer=excluded.installer",
             params![capture.id, capture.name, capture.installer],
         )?;
-        tx.execute("INSERT INTO installation_sessions(id,application_id,started_at,finished_at,exit_code,watch_roots_json,registry_key,warnings_json) VALUES (?1,?1,?2,?3,?4,?5,?6,?7)",
+        tx.execute("INSERT INTO installation_sessions(id,application_id,started_at,finished_at,exit_code,watch_roots_json,registry_key,warnings_json) VALUES (?1,?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(id) DO UPDATE SET finished_at=excluded.finished_at,exit_code=excluded.exit_code,warnings_json=excluded.warnings_json",
             params![capture.id, capture.started_at, capture.finished_at, capture.exit_code,
                 serde_json::to_string(&capture.watch_roots)?, capture.registry_key, serde_json::to_string(&capture.warnings)?])?;
         for process in &capture.processes {
@@ -84,6 +87,7 @@ impl Storage {
         }
         evidence::save(&tx, capture)?;
         reliability::save(&tx, capture)?;
+        stream::save_documents(&tx, capture)?;
         tx.commit()?;
         let mut stats = capture.stats.clone();
         stats.phase_ms.insert(
@@ -105,6 +109,12 @@ impl Storage {
     }
 
     pub fn load(&self, identity: &str) -> Result<Capture> {
+        self.load_internal(identity, true)
+    }
+    pub fn load_summary(&self, identity: &str) -> Result<Capture> {
+        self.load_internal(identity, false)
+    }
+    fn load_internal(&self, identity: &str, full: bool) -> Result<Capture> {
         let header = self.connection.query_row(
             "SELECT a.id,a.name,a.installer,s.started_at,s.finished_at,s.exit_code,s.watch_roots_json,s.registry_key,s.warnings_json
              FROM applications a JOIN installation_sessions s ON s.application_id=a.id
@@ -174,8 +184,31 @@ impl Storage {
             registry,
             ..Default::default()
         };
-        evidence::load(&self.connection, &mut capture)?;
-        reliability::load(&self.connection, &mut capture)?;
+        evidence::load(&self.connection, &mut capture, full)?;
+        reliability::load(&self.connection, &mut capture, full)?;
+        capture.capture_state = self.stream_state(&capture.id)?;
+        if capture
+            .capture_state
+            .as_deref()
+            .is_some_and(|s| s != "finished")
+        {
+            capture.quality.level = crate::model::QualityLevel::Incomplete;
+            capture.quality.reasons.push("Unfinished capture; committed raw evidence remains readable. No final attribution.".into());
+            if full {
+                capture.events.clear();
+                capture.operations.clear();
+                capture.edges.clear();
+                let mut offset = 0;
+                loop {
+                    let page = self.events_page(&capture.id, offset, 256)?;
+                    if page.is_empty() {
+                        break;
+                    }
+                    offset += page.len() as u64;
+                    capture.events.extend(page);
+                }
+            }
+        }
         Ok(capture)
     }
 

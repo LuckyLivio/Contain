@@ -16,6 +16,11 @@ try {
     $name = 'contain-demo-' + [guid]::NewGuid().ToString('N')
     $root = Join-Path $env:TEMP $name
     $db = Join-Path $env:TEMP ($name + '.db')
+    $truthRoot=Join-Path $env:TEMP ($name+'-truth')
+    New-Item -ItemType Directory -Path $truthRoot | Out-Null
+    [IO.File]::WriteAllText((Join-Path $truthRoot '.contain-demo-marker'),'Contain test fixture')
+    $previousTruth=$env:CONTAIN_FIXTURE_TRUTH
+    $env:CONTAIN_FIXTURE_TRUTH=$truthRoot
     $key = 'Software\Contain\Demo\' + $name
     $registryPath = 'Registry::HKEY_CURRENT_USER\' + $key
     $contain = (Resolve-Path './target/debug/contain.exe').Path
@@ -66,17 +71,17 @@ try {
         if (@($manifest.operations | Where-Object { $_.operation -eq 'Renamed' -and $_.resource -like '*\renamed.txt' }).Count -ne 1) { throw 'stable file identity rename was not recovered' }
         $noiseRegistry=@($manifest.registry | Where-Object name -eq 'NoiseOnly')
         if ($noiseRegistry.Count -ne 1 -or $noiseRegistry[0].confidence -ne 'Unknown') { throw 'independent registry state was misattributed' }
-        $score = & "$PSScriptRoot/score-fixture.ps1" -Capture $manifest -Root $root
+        $score = & "$PSScriptRoot/score-fixture.ps1" -Capture $manifest -Root $truthRoot
         if ($OutputDirectory) {
             New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
             $document | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'capture.json') -Encoding utf8
             $score | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'reliability.json') -Encoding utf8
-            Copy-Item -LiteralPath (Join-Path $root 'ground-truth.json') -Destination $OutputDirectory
+            Copy-Item -LiteralPath (Join-Path $truthRoot 'ground-truth.json') -Destination $OutputDirectory
         }
         if ($score.expected -ne 21) { throw "ground truth incomplete: expected 21 instrumented operations" }
         Write-Output ("RELIABILITY: " + (($score | Select-Object -Property * -ExcludeProperty rows) | ConvertTo-Json -Compress))
         if (@($manifest.events | Where-Object { $_.evidence.pid -eq $unrelated.Id -and $_.confidence -in @('High','Certain') }).Count -gt 0) { throw 'independent source actor received application attribution' }
-        if ($score.incorrect_attribution -ne 0) { throw 'false attribution detected' }
+        if ($score.incorrect_attribution -ne 0 -or $score.false_positive_target_events -ne 0) { throw 'false attribution detected' }
         if ($RequireEtw) {
             Write-Output ("PROCESSES: " + ($manifest.processes | ConvertTo-Json -Depth 8 -Compress))
             $shortPid=@($score.rows | Where-Object role -eq "short")[0].pid
@@ -121,7 +126,9 @@ try {
         if (-not $KeepArtifacts) {
             & $fixture --root $root --cleanup
             if ($LASTEXITCODE -ne 0 -or (Test-Path -LiteralPath $root) -or (Test-Path -LiteralPath $registryPath)) { throw 'fixture cleanup failed' }
+            & $fixture --root $truthRoot --cleanup
+            if ($LASTEXITCODE -ne 0) { throw 'truth cleanup failed' }
             foreach ($suffix in @('','-wal','-shm')) { $target=$db+$suffix; if(Test-Path -LiteralPath $target){ Remove-Item -LiteralPath $target -Force } }
-        } else { Write-Output "Fixture: $root`nDatabase: $db" }
+        } else { Write-Output "Fixture: $root`nDatabase: $db`nTruth: $truthRoot" }
     }
-} finally { Pop-Location }
+} finally { $env:CONTAIN_FIXTURE_TRUTH=$previousTruth; Pop-Location }

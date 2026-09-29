@@ -21,6 +21,8 @@ enum Role {
     Short,
     Stress,
     Worker,
+    Noise,
+    Burst,
 }
 
 #[derive(Parser)]
@@ -121,6 +123,30 @@ fn run() -> Result<()> {
         return Ok(());
     }
     match args.role {
+        Role::Noise => {
+            fs::write(root.join(".noise-ready"), b"ready")?;
+            let deadline = Instant::now() + Duration::from_secs(120);
+            while !root.join(".fixture-go").exists() {
+                anyhow::ensure!(Instant::now() < deadline, "noise start timeout");
+                thread::sleep(Duration::from_millis(10));
+            }
+            let dir = root.join("noise");
+            fs::create_dir_all(&dir)?;
+            for i in 0..args.files {
+                let a = dir.join(format!("{i}.tmp"));
+                let b = dir.join(format!("{i}.dat"));
+                truth.write(&a, b"independent noise")?;
+                truth.rename(&a, &b)?;
+                truth.delete(&b)?;
+            }
+            return Ok(());
+        }
+        Role::Burst => {
+            for i in 0..args.files {
+                truth.write(&root.join(format!("burst-{i}.dat")), b"exit burst")?;
+            }
+            return Ok(());
+        }
         Role::Parent => {
             let status = Command::new(std::env::current_exe()?)
                 .args(["--role", "short", "--root"])
@@ -221,6 +247,7 @@ fn run() -> Result<()> {
                 "stress count must be 4..100000"
             );
             fs::write(root.join(".contain-demo-marker"), b"Contain test fixture")?;
+            fs::write(root.join(".fixture-go"), b"begin")?;
             let mut children = Vec::new();
             for worker in 0..4 {
                 let count = args.files / 4 + usize::from(worker < args.files % 4);

@@ -70,6 +70,8 @@ pub struct RegistryChange {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Capture {
+    #[serde(default)]
+    pub capture_state: Option<String>,
     pub schema_version: u32,
     pub id: String,
     pub name: String,
@@ -163,6 +165,8 @@ pub struct SystemEvent {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct BackendReport {
+    #[serde(default)]
+    pub stream: Option<crate::storage::stream::StreamStats>,
     #[serde(default)]
     pub pipeline: Option<PipelineStats>,
     #[serde(default)]

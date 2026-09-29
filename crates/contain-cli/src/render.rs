@@ -37,6 +37,9 @@ pub fn summary(capture: &Capture) {
     for reason in &capture.quality.reasons {
         println!("  {reason}");
     }
+    if capture.events.is_empty() {
+        return;
+    }
     println!("\nEvidence quality (source events, including state observations)");
     for confidence in [
         Confidence::Certain,

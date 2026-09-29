@@ -67,6 +67,10 @@ pub fn snapshot(roots: &[PathBuf]) -> Result<Snapshot> {
             })
         {
             let entry = entry.with_context(|| format!("scanning {}", root.display()))?;
+            anyhow::ensure!(
+                snapshot.files.len() + snapshot.unreadable.len() + skipped.borrow().len() < 100_000,
+                "Snapshot entry quota (100000) exceeded; refusing a partial state diff"
+            );
             let path = entry.path();
             let path_string = path.to_string_lossy().into_owned();
             let metadata = match std::fs::symlink_metadata(entry.path()) {

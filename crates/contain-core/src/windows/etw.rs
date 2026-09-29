@@ -258,52 +258,7 @@ impl EventSource for EtwSource {
     }
 
     fn stop(&mut self) -> BackendReport {
-        if let Some(trace) = self.trace.take() {
-            let mut trace = Some(trace);
-            // Stop the producer before closing the consumer so final ETW buffers can drain.
-            match native::control_trace(&self.name, EVENT_TRACE_CONTROL_STOP) {
-                Ok(lost) => {
-                    self.report.etw_events_lost = Some(lost.events);
-                    self.report.etw_buffers_lost = Some(lost.buffers);
-                    if let Some(p) = &mut self.report.pipeline {
-                        p.etw_realtime_buffers_lost = Some(lost.realtime_buffers);
-                        p.etw_allocated_buffers = Some(lost.allocated_buffers);
-                        p.etw_buffer_size_kib = Some(lost.buffer_size_kib);
-                    }
-                }
-                Err(code) => {
-                    self.report
-                        .warnings
-                        .push(format!("ETW stop/statistics failed: Win32 {code}"));
-                    // Closing the consumer handle unblocks ProcessTrace even when stop failed.
-                    drop(trace.take());
-                }
-            }
-            if let Some(consumer) = self.consumer.take() {
-                match consumer.join() {
-                    Ok(Ok(())) => {}
-                    result => {
-                        self.errors.fetch_add(1, Ordering::Relaxed);
-                        self.report
-                            .warnings
-                            .push(format!("ETW consumer ended with {result:?}"));
-                    }
-                }
-            }
-            drop(trace);
-        }
-        self.report.dropped_events = self.dropped.load(Ordering::Relaxed);
-        self.report.events_received = self.received.load(Ordering::Relaxed);
-        self.report.decode_errors = self.errors.load(Ordering::Relaxed);
-        self.report.registry_path_gaps = self.registry_path_gaps.load(Ordering::Relaxed);
-        if let Some(old) = self.report.pipeline.take() {
-            let mut p = self.metrics.snapshot();
-            p.etw_realtime_buffers_lost = old.etw_realtime_buffers_lost;
-            p.etw_allocated_buffers = old.etw_allocated_buffers;
-            p.etw_buffer_size_kib = old.etw_buffer_size_kib;
-            self.report.pipeline = Some(p);
-        }
-        self.report.clone()
+        self.stop_with(|_| {})
     }
 }
 
@@ -345,6 +300,65 @@ fn dispatch(
         if d.received.load(Ordering::Relaxed) == before {
             metrics.add(Count::Filtered, 1);
         }
+    }
+}
+
+impl EtwSource {
+    pub fn stop_with(&mut self, mut sink: impl FnMut(Vec<SystemEvent>)) -> BackendReport {
+        if let Some(trace) = self.trace.take() {
+            let mut trace = Some(trace);
+            let name = self.name.clone();
+            // ControlTrace STOP may itself wait while final buffers are delivered.
+            let stop =
+                thread::spawn(move || native::control_trace(&name, EVENT_TRACE_CONTROL_STOP));
+            while !stop.is_finished() {
+                sink(self.drain());
+                thread::sleep(std::time::Duration::from_millis(1));
+            }
+            match stop.join() {
+                Ok(Ok(lost)) => {
+                    self.report.etw_events_lost = Some(lost.events);
+                    self.report.etw_buffers_lost = Some(lost.buffers);
+                    if let Some(p) = &mut self.report.pipeline {
+                        p.etw_realtime_buffers_lost = Some(lost.realtime_buffers);
+                        p.etw_allocated_buffers = Some(lost.allocated_buffers);
+                        p.etw_buffer_size_kib = Some(lost.buffer_size_kib);
+                    }
+                }
+                other => {
+                    self.report
+                        .warnings
+                        .push(format!("ETW stop/statistics failed: {other:?}"));
+                    drop(trace.take());
+                }
+            }
+            if let Some(consumer) = self.consumer.take() {
+                while !consumer.is_finished() {
+                    sink(self.drain());
+                    thread::sleep(std::time::Duration::from_millis(1));
+                }
+                if !matches!(consumer.join(), Ok(Ok(()))) {
+                    self.errors.fetch_add(1, Ordering::Relaxed);
+                    self.report
+                        .warnings
+                        .push("ETW consumer failed during drain".into());
+                }
+            }
+            sink(self.drain());
+            drop(trace);
+        }
+        self.report.dropped_events = self.dropped.load(Ordering::Relaxed);
+        self.report.events_received = self.received.load(Ordering::Relaxed);
+        self.report.decode_errors = self.errors.load(Ordering::Relaxed);
+        self.report.registry_path_gaps = self.registry_path_gaps.load(Ordering::Relaxed);
+        if let Some(old) = self.report.pipeline.take() {
+            let mut p = self.metrics.snapshot();
+            p.etw_realtime_buffers_lost = old.etw_realtime_buffers_lost;
+            p.etw_allocated_buffers = old.etw_allocated_buffers;
+            p.etw_buffer_size_kib = old.etw_buffer_size_kib;
+            self.report.pipeline = Some(p);
+        }
+        self.report.clone()
     }
 }
 

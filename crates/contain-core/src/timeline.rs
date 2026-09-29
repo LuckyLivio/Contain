@@ -78,7 +78,13 @@ pub fn complete(capture: &mut Capture, exited_at: u64) {
             ..Default::default()
         });
     }
-    let mut sequence = capture.events.iter().map(|e| e.sequence).max().unwrap_or(0);
+    let mut sequence = capture
+        .events
+        .iter()
+        .map(|e| e.sequence)
+        .max()
+        .unwrap_or(0)
+        .max(capture.backend.events_received);
     for event in &mut capture.events {
         if event.sequence == 0 {
             sequence += 1;

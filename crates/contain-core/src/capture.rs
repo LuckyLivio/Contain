@@ -1,4 +1,5 @@
 use crate::lifetime::LifetimeCache;
+use crate::storage::{Storage, stream::RawBuffer};
 use crate::{
     attribution, filesystem, inventory,
     model::*,
@@ -24,18 +25,10 @@ pub struct InstallOptions {
     pub settle_ms: u64,
     pub etw: bool,
     pub max_drain_ms: u64,
+    pub evidence_quota_bytes: u64,
 }
 
-const MAX_EVENTS: usize = 100_000;
-
-fn drain(source: &mut impl EventSource, events: &mut Vec<SystemEvent>, dropped: &mut u64) {
-    let incoming = source.drain();
-    let remaining = MAX_EVENTS.saturating_sub(events.len());
-    *dropped += incoming.len().saturating_sub(remaining) as u64;
-    events.extend(incoming.into_iter().take(remaining));
-}
-
-pub fn install(options: InstallOptions) -> Result<Capture> {
+pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     let capture_clock = Instant::now();
     let mut phases = std::collections::BTreeMap::new();
     let before_clock = Instant::now();
@@ -63,6 +56,7 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         .iter()
         .map(|p| p.to_string_lossy().into_owned())
         .collect();
+    db.validate_capture_location(&watch_roots)?;
     let mut warnings = Vec::new();
     let before_inventory = inventory::snapshot();
     let before_files = filesystem::snapshot(&roots)?;
@@ -89,6 +83,27 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         before_clock.elapsed().as_millis() as u64,
     );
     let ready_clock = Instant::now();
+    let initial = Capture {
+        schema_version: 3,
+        id: id.clone(),
+        name: options.name.clone().unwrap_or_else(|| {
+            installer
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned()
+        }),
+        installer: installer.to_string_lossy().into_owned(),
+        started_at: native::timestamp(native::now_ticks()),
+        watch_roots: watch_roots.clone(),
+        registry_key: options.registry_key.clone(),
+        quality: CaptureQuality {
+            level: QualityLevel::Incomplete,
+            reasons: vec!["Capture in progress; committed raw evidence is provisional".into()],
+        },
+        ..Default::default()
+    };
+    let mut journal = RawBuffer::new(db, &initial, options.evidence_quota_bytes)?;
     let mut source = EtwSource::start(&watch_roots, nt_root.clone(), options.etw);
     phases.insert(
         "provider_readiness".into(),
@@ -113,11 +128,14 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         });
     let root_pid = identity.pid;
     let mut process_observer = ProcessObserver::new(identity, &id);
-    let mut events = Vec::new();
-    let mut overflow = 0;
+    let mut live_cache = LifetimeCache::default();
     let exit_code = loop {
         process_observer.poll();
-        drain(&mut source, &mut events, &mut overflow);
+        let incoming = source.drain();
+        for e in &incoming {
+            live_cache.ingest(e);
+        }
+        journal.append(db, incoming);
         if let Some(status) = child.try_wait()? {
             break status.code();
         }
@@ -134,12 +152,9 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         .find(|p| p.pid == root_pid)
         .and_then(|p| p.creation_time)
         .unwrap_or(0);
-    let mut cache = LifetimeCache::default();
+    let mut cache = live_cache;
     for p in process_observer.records() {
         cache.seed(p);
-    }
-    for e in &events {
-        cache.ingest(e);
     }
     let mut last_activity = Instant::now();
     let drain_start = Instant::now();
@@ -149,14 +164,14 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         for p in process_observer.records() {
             cache.seed(p);
         }
-        let count = events.len();
-        drain(&mut source, &mut events, &mut overflow);
-        for e in &events[count..] {
+        let incoming = source.drain();
+        for e in &incoming {
             cache.ingest(e);
             if e.event_type == "file" || (e.event_type == "registry" && e.raw.resource_resolved) {
                 last_activity = Instant::now();
             }
         }
+        journal.append(db, incoming);
         cache.attach((root_pid, root_birth), &id);
         let descendants_live = cache
             .processes
@@ -183,9 +198,22 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         thread::sleep(Duration::from_millis(30));
     }
     let stop_clock = Instant::now();
-    source.stop();
-    drain(&mut source, &mut events, &mut overflow);
-    let mut backend = source.stop();
+    let mut backend = source.stop_with(|incoming| journal.append(db, incoming));
+    let stream = journal.finish(db)?;
+    phases.insert(
+        "raw_persistence_overlapping".into(),
+        stream.persistence_ns / 1_000_000,
+    );
+    backend.dropped_events += stream.quota_dropped + stream.failed;
+    if let Some(p) = &mut backend.pipeline {
+        p.retention_dropped = stream.quota_dropped;
+        p.persistence_succeeded = stream.persisted;
+        p.persistence_failed = stream.failed;
+    }
+    if let Some(error) = &stream.error {
+        backend.warnings.push(error.clone());
+    }
+    backend.stream = Some(stream);
     phases.insert(
         "etw_stop_and_queue_drain".into(),
         stop_clock.elapsed().as_millis() as u64,
@@ -194,10 +222,6 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         "descendant_quiet_drain".into(),
         drain_start.elapsed().as_millis() as u64,
     );
-    if let Some(p) = &mut backend.pipeline {
-        p.retention_dropped = overflow;
-    }
-    backend.dropped_events += overflow;
     let association_clock = Instant::now();
     let mut processes = process_observer.finish();
     if let Some(root) = processes
@@ -206,13 +230,21 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
     {
         root.ended_at = Some(exited_at);
     }
-    events.sort_by_key(|e| (e.timestamp_ticks, e.sequence));
     let mut cache = LifetimeCache::default();
     for p in &processes {
         cache.seed(p.clone());
     }
-    for e in &events {
-        cache.ingest(e);
+    let mut cursor = (0, 0);
+    loop {
+        let page = db.raw_page(&id, cursor)?;
+        if page.is_empty() {
+            break;
+        }
+        for e in &page {
+            cache.ingest(e);
+        }
+        let last = page.last().unwrap();
+        cursor = (last.timestamp_ticks, last.sequence);
     }
     let lifecycle_complete = backend.etw_process == "active"
         && backend.etw_events_lost == Some(0)
@@ -222,9 +254,6 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         && cache.dropped == 0;
     if lifecycle_complete {
         cache.attach((root_pid, root_birth), &id);
-        for e in &mut events {
-            cache.resolve_event(e);
-        }
     }
     backend.dropped_events += cache.dropped;
     if let Some(p) = &mut backend.pipeline {
@@ -238,48 +267,88 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
             .cloned()
             .collect();
     }
-    for event in &mut events {
-        attribution::attribute(event, &processes, &id);
-    }
-    // Retain raw lifecycle evidence for scoped file header actors as well as the family.
-    // Header PID alone never attributes a file; keeping its lifetime makes rejection auditable.
-    let scoped_pids: std::collections::BTreeSet<u32> = events
-        .iter()
-        .filter(|e| e.event_type == "file")
-        .filter_map(|e| e.raw.header_pid)
-        .filter(|p| *p > 4)
-        .collect();
-    events.retain(|e| {
-        (e.event_type != "lifecycle"
-            || e.evidence.pid.is_some_and(|pid| scoped_pids.contains(&pid))
-            || processes.iter().any(|p| {
-                Some(p.pid) == e.evidence.pid && p.creation_time == e.evidence.process_creation_time
-            }))
-            && (e.event_type != "registry"
-                || e.raw.resource_resolved
-                || e.confidence == Confidence::High)
-    });
     let source_intact = backend.dropped_events == 0
         && backend.decode_errors == 0
         && backend.etw_events_lost == Some(0)
         && backend.etw_buffers_lost == Some(0);
-    if !source_intact {
-        for e in &mut events {
-            if e.event_type == "completion" {
-                e.success = None;
-            }
-            if matches!(e.event_type.as_str(), "file" | "registry") {
-                e.confidence = Confidence::Unknown;
-                e.evidence.rule = AttributionRule::EventLoss;
-                e.raw.resource_resolved = false;
-                e.reason="Source continuity is unverified; actor identity is retained but resource/operation correlation and application attribution are not promoted.".into();
-            }
+    let mut raw_stats = CaptureStats::default();
+    let mut cursor = (0, 0);
+    loop {
+        let mut page = db.raw_page(&id, cursor)?;
+        if page.is_empty() {
+            break;
         }
+        let last = page.last().unwrap();
+        cursor = (last.timestamp_ticks, last.sequence);
+        let mut retained = Vec::with_capacity(page.len());
+        let mut ops = Vec::new();
+        for mut e in page.drain(..) {
+            if lifecycle_complete {
+                cache.resolve_event(&mut e);
+            }
+            attribution::attribute(&mut e, &processes, &id);
+            if e.event_type == "lifecycle"
+                && !processes.iter().any(|p| {
+                    Some(p.pid) == e.evidence.pid
+                        && p.creation_time == e.evidence.process_creation_time
+                })
+                && !e
+                    .evidence
+                    .pid
+                    .is_some_and(|pid| db.scoped_header(&id, pid).unwrap_or(true))
+            {
+                continue;
+            }
+            if e.event_type == "registry"
+                && !e.raw.resource_resolved
+                && e.confidence != Confidence::High
+            {
+                continue;
+            }
+            if !source_intact {
+                suppress(&mut e);
+            }
+            if e.event_type == "file" && !matches!(e.operation.as_str(), "open_requested" | "close")
+            {
+                let mut pair = vec![e];
+                if let Some(mut completion) = db.completion(&id, &pair[0].id)? {
+                    if !source_intact {
+                        completion.success = None;
+                    }
+                    pair.push(completion);
+                }
+                let mut normalized = crate::correlation::correlate(
+                    &mut pair,
+                    &Default::default(),
+                    &Default::default(),
+                );
+                e = pair.remove(0);
+                if source_intact {
+                    attribution::attribute(&mut e, &processes, &id);
+                }
+                for o in &mut normalized {
+                    o.confidence = e.confidence;
+                }
+                ops.extend(normalized);
+            }
+            retained.push(e);
+        }
+        let mut batch = Capture {
+            id: id.clone(),
+            events: retained,
+            operations: ops,
+            backend: backend.clone(),
+            ..Default::default()
+        };
+        crate::reliability::finish(&mut batch);
+        add_stats(&mut raw_stats, &batch.stats);
+        db.append_evidence(&batch)?;
     }
     phases.insert(
-        "lifetime_attribution".into(),
+        "lifetime_attribution_and_paged_persistence".into(),
         association_clock.elapsed().as_millis() as u64,
     );
+    drop(cache);
     let after_clock = Instant::now();
     let after_files = filesystem::snapshot(&roots)?;
     phases.insert(
@@ -287,12 +356,8 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         after_clock.elapsed().as_millis() as u64,
     );
     let correlation_clock = Instant::now();
-    let operations = crate::correlation::correlate(&mut events, &before_files, &after_files);
-    if source_intact {
-        for event in &mut events {
-            attribution::attribute(event, &processes, &id);
-        }
-    }
+    let operations = crate::correlation::correlate(&mut [], &before_files, &after_files);
+
     let seen = observer
         .as_ref()
         .map(|o| o.seen_paths())
@@ -322,13 +387,39 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         && backend.etw_buffers_lost == Some(0)
         && backend.dropped_events == 0
         && backend.decode_errors == 0;
-    attribution::compose_files(&mut files, &mut events, complete);
-    attribution::compose_registry(
-        &mut registry,
-        &mut events,
-        nt_root.as_deref(),
-        complete && backend.registry_path_gaps == 0,
-    );
+    for file in &mut files {
+        match db.resource_events(&id, &file.path) {
+            Ok(mut events) => {
+                attribution::compose_files(std::slice::from_mut(file), &mut events, complete)
+            }
+            Err(error) => {
+                backend.dropped_events += 1;
+                if let Some(p) = &mut backend.pipeline {
+                    p.context_evictions += 1;
+                }
+                warnings.push(error.to_string());
+            }
+        }
+    }
+    if let Some(root) = &nt_root {
+        for change in &mut registry {
+            match db.resource_events(&id, &format!("{root}\\{}", change.name)) {
+                Ok(mut events) => attribution::compose_registry(
+                    std::slice::from_mut(change),
+                    &mut events,
+                    nt_root.as_deref(),
+                    complete && backend.registry_path_gaps == 0,
+                ),
+                Err(error) => {
+                    backend.dropped_events += 1;
+                    if let Some(p) = &mut backend.pipeline {
+                        p.context_evictions += 1;
+                    }
+                    warnings.push(error.to_string());
+                }
+            }
+        }
+    }
     phases.insert(
         "correlation_attribution".into(),
         correlation_clock.elapsed().as_millis() as u64,
@@ -345,9 +436,6 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
     warnings.extend(backend.warnings.iter().cloned());
     if backend.registry_path_gaps > 0 {
         warnings.push(format!("Registry ETW omitted absolute hive/key names in {} provider records; unresolved records are retained only for verified installer actors. Registry state attribution uses Unknown snapshot fallback unless complete event evidence exists.", backend.registry_path_gaps));
-    }
-    if !registry.is_empty() && !events.iter().any(|e| e.event_type == "registry") {
-        warnings.push("No scoped registry source events were delivered; registry changes are snapshot-only Unknown.".into());
     }
     if !lifecycle_complete {
         warnings.push("Process lifecycle evidence was unavailable or incomplete. Sampling can miss short-lived/detached children; unresolved actors remain Unknown.".into());
@@ -388,7 +476,7 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         files,
         registry,
         warnings,
-        events,
+        events: Vec::new(),
         inventory,
         backend,
         operations,
@@ -401,7 +489,42 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
     capture.stats.notification_gaps = notification_gaps;
     crate::timeline::complete(&mut capture, exited_at);
     crate::reliability::finish(&mut capture);
+    add_stats(&mut capture.stats, &raw_stats);
+    if capture.backend.dropped_events > 0 {
+        capture.stats.high_confidence_events = 0;
+        for f in &mut capture.files {
+            f.confidence = Confidence::Unknown;
+        }
+        for r in &mut capture.registry {
+            r.confidence = Confidence::Unknown;
+        }
+    }
+    db.save(&capture)?;
+    db.mark_finished(&capture)?;
+    // Summary returns no full raw-event vector. Full/paged history remains in Storage.
+    capture = db.load_summary(&capture.id)?;
     tracing::info!(session_id = %capture.id, events = capture.events.len(), files = capture.files.len(),
         dropped = capture.backend.dropped_events, "capture completed");
     Ok(capture)
+}
+
+fn suppress(e: &mut SystemEvent) {
+    if e.event_type == "completion" {
+        e.success = None;
+    }
+    if matches!(e.event_type.as_str(), "file" | "registry") {
+        e.confidence = Confidence::Unknown;
+        e.evidence.rule = AttributionRule::EventLoss;
+        e.raw.resource_resolved = false;
+        e.reason = "Source continuity unverified; no application promotion".into();
+    }
+}
+fn add_stats(to: &mut CaptureStats, from: &CaptureStats) {
+    to.events_retained += from.events_retained;
+    to.events_normalized += from.events_normalized;
+    to.known_actor_events += from.known_actor_events;
+    to.unknown_actor_events += from.unknown_actor_events;
+    to.known_resource_events += from.known_resource_events;
+    to.unknown_resource_events += from.unknown_resource_events;
+    to.high_confidence_events += from.high_confidence_events;
 }

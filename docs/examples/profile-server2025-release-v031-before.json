@@ -1,0 +1,114 @@
+{
+  "baseline": {
+    "sampled_peak_working_set_bytes": 5320704,
+    "elapsed_seconds": 1.1614695
+  },
+  "files": 1000,
+  "end_to_end_overhead_ratio": 14.820289297308282,
+  "schema_version": 1,
+  "commit": "f8037e90658cdf46aab93d397508036ebc7c22ee",
+  "elevated": true,
+  "reliability": {
+    "expected": 2500,
+    "observed": 874,
+    "correctly_attributed": 0,
+    "unknown": 2500,
+    "incorrect_attribution": 0,
+    "dropped": 52417,
+    "etw_events_lost": 442524,
+    "etw_buffers_lost": 0,
+    "quality": "Incomplete",
+    "definition": "One row per instrumented syscall. Observed includes matching raw operation in its exact time interval or compatible final state; Correct requires exact PID+birth and application High. Noise remains Unknown. Missing observations are included in Unknown. This is fixture coverage, not global accuracy."
+  },
+  "os": "Microsoft Windows NT 10.0.26100.0",
+  "capture": {
+    "admitted_events_per_second": 8854.599410665489,
+    "quality": {
+      "level": "Incomplete",
+      "reasons": [
+        "Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.",
+        "Source loss, decode failure or bounded cache/channel overflow was reported."
+      ]
+    },
+    "stats": {
+      "capture_elapsed_ms": 9983,
+      "drain_timed_out": false,
+      "events_dropped": 52417,
+      "events_normalized": 48955,
+      "events_received": 152417,
+      "events_retained": 100509,
+      "high_confidence_events": 0,
+      "known_actor_events": 3681,
+      "known_resource_events": 0,
+      "notification_gaps": 0,
+      "phase_ms": {
+        "after_file_snapshot_hash": 51,
+        "after_inventory": 1110,
+        "before_snapshot_inventory": 4961,
+        "correlation_attribution": 154,
+        "descendant_quiet_drain": 2422,
+        "etw_stop_and_queue_drain": 1,
+        "final_persistence_commit": 6979,
+        "installer_root": 1230,
+        "lifetime_attribution": 28,
+        "provider_readiness": 23
+      },
+      "snapshot_gaps": 0,
+      "unknown_actor_events": 47544,
+      "unknown_resource_events": 51225
+    },
+    "sqlite_bytes": 154116096,
+    "elapsed_seconds": 17.213314,
+    "backend": {
+      "decode_errors": 0,
+      "dropped_events": 52417,
+      "etw_buffers_lost": 0,
+      "etw_events_lost": 442524,
+      "etw_file": "active",
+      "etw_process": "active",
+      "etw_registry": "not_requested",
+      "events_received": 152417,
+      "pipeline": {
+        "callback_records": 177894,
+        "context_evictions": 0,
+        "decode_attempted": 166979,
+        "decode_failed": 0,
+        "decode_succeeded": 166979,
+        "deliberately_filtered": 25477,
+        "dequeued": 116541,
+        "elapsed_ns": {
+          "callback": 1706562500,
+          "enqueue": 34043000,
+          "event_construction": 151388000,
+          "identity_query": 1002145200,
+          "lock_wait": 19214000,
+          "path_normalization": 5383800,
+          "property_decode": 231585300,
+          "queue_delay": 3807955687100,
+          "schema_lookup": 35641300
+        },
+        "enqueued": 116541,
+        "etw_allocated_buffers": 24,
+        "etw_buffer_size_kib": 64,
+        "etw_log_buffers_lost": null,
+        "etw_realtime_buffers_lost": 0,
+        "persistence_failed": 0,
+        "persistence_succeeded": 0,
+        "queue_high_water": 8193,
+        "queue_max_delay_ns": 232577000,
+        "queue_overflow": 35876,
+        "queue_pending": 0,
+        "retention_dropped": 16541,
+        "unsupported_records": 10915
+      },
+      "registry_path_gaps": 0,
+      "warnings": []
+    },
+    "sampled_peak_working_set_bytes": 167763968
+  },
+  "workers": 4,
+  "end_to_end_overhead_seconds": 16.0518445,
+  "measurement": "release build; one diagnostic sequential baseline/capture pair, four fixture workers; process wall time includes inventory, drain, hashing and SQLite commit. Memory is parent PeakWorkingSet sampled every 20ms, excluding descendants and kernel ETW buffers. Admission rate is per full capture wall time. Not a repeated baseline/candidate comparison. Scoring is outside timing.",
+  "profile": "release",
+  "workflow_url": "https://github.com/LuckyLivio/Contain/actions/runs/36547686685"
+}

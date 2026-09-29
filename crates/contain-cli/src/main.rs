@@ -43,6 +43,8 @@ enum Commands {
         settle_ms: u64,
         #[arg(long, default_value_t = 10000)]
         max_drain_ms: u64,
+        #[arg(long, default_value_t = 256)]
+        evidence_quota_mib: u64,
         #[arg(
             long,
             help = "Use directory notifications and snapshots without attempting ETW"
@@ -128,6 +130,7 @@ fn run() -> Result<()> {
             registry_key,
             settle_ms,
             max_drain_ms,
+            evidence_quota_mib,
             no_etw,
             manifest,
             args,
@@ -135,19 +138,25 @@ fn run() -> Result<()> {
             println!(
                 "Contain\n────────────────────────────────\nCollecting baseline and watching installation..."
             );
-            let capture = install(InstallOptions {
-                name,
-                installer,
-                args,
-                watch_roots,
-                registry_key,
-                settle_ms,
-                max_drain_ms,
-                etw: !no_etw,
-            })?;
-            Storage::open(&db)?.save(&capture)?;
+            let mut storage = Storage::open(&db)?;
+            let capture = install(
+                InstallOptions {
+                    name,
+                    installer,
+                    args,
+                    watch_roots,
+                    registry_key,
+                    settle_ms,
+                    max_drain_ms,
+                    etw: !no_etw,
+                    evidence_quota_bytes: evidence_quota_mib
+                        .checked_mul(1024 * 1024)
+                        .context("evidence quota overflow")?,
+                },
+                &mut storage,
+            )?;
             if let Some(path) = manifest {
-                std::fs::write(&path, envelope("inspect", &capture)?)
+                std::fs::write(&path, envelope("inspect", storage.load(&capture.id)?)?)
                     .with_context(|| format!("writing manifest {}", path.display()))?;
             }
             render::summary(&capture);
@@ -174,7 +183,12 @@ fn run() -> Result<()> {
             }
         }
         Commands::Inspect { app, json, verbose } => {
-            let capture = Storage::open(&db)?.load(&app)?;
+            let storage = Storage::open(&db)?;
+            let capture = if json || verbose {
+                storage.load(&app)?
+            } else {
+                storage.load_summary(&app)?
+            };
             if json {
                 println!("{}", envelope("inspect", &capture)?);
             } else {

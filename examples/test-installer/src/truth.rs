@@ -3,9 +3,10 @@
 use anyhow::Result;
 use serde_json::json;
 use std::{
-    fs::OpenOptions,
+    cell::RefCell,
+    fs::{File, OpenOptions},
     io::Write,
-    path::{Path, PathBuf},
+    path::Path,
     time::{SystemTime, UNIX_EPOCH},
 };
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
@@ -19,7 +20,7 @@ pub fn ticks() -> u64 {
         + 116_444_736_000_000_000
 }
 pub struct Truth {
-    root: PathBuf,
+    journal: RefCell<File>,
     role: String,
     birth: u64,
 }
@@ -36,8 +37,26 @@ impl Truth {
             }
             (u64::from(c.dwHighDateTime) << 32) | u64::from(c.dwLowDateTime)
         };
+        let journal_root = if let Some(path) = std::env::var_os("CONTAIN_FIXTURE_TRUTH") {
+            let (path, _) = crate::checked_root(Path::new(&path))?;
+            anyhow::ensure!(
+                std::fs::read(path.join(".contain-demo-marker"))? == b"Contain test fixture",
+                "truth root marker mismatch"
+            );
+            anyhow::ensure!(
+                path != root,
+                "truth journal must be outside the watched root"
+            );
+            path
+        } else {
+            root.to_path_buf()
+        };
+        let journal = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(journal_root.join(format!("ground-truth-{}.jsonl", std::process::id())))?;
         Ok(Self {
-            root: root.into(),
+            journal: RefCell::new(journal),
             role: role.into(),
             birth,
         })
@@ -53,11 +72,7 @@ impl Truth {
         let result = run();
         let end = ticks();
         let entry = json!({"role":self.role,"pid":std::process::id(),"creation_time":self.birth.to_string(),"operation":operation,"resource":resource,"destination":destination.map(|p|p.to_string_lossy()),"start_ticks":start.to_string(),"end_ticks":end.to_string(),"success":result.is_ok(),"error":result.as_ref().err().and_then(|e|e.raw_os_error())});
-        let mut f = OpenOptions::new().create(true).append(true).open(
-            self.root
-                .join(format!("ground-truth-{}.jsonl", std::process::id())),
-        )?;
-        writeln!(f, "{entry}")?;
+        writeln!(self.journal.borrow_mut(), "{entry}")?;
         Ok(result.is_ok())
     }
     pub fn write(&self, path: &Path, bytes: &[u8]) -> Result<()> {

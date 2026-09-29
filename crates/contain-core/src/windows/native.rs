@@ -232,6 +232,7 @@ pub fn control_trace(name: &str, control: u32) -> Result<TraceLoss, u32> {
     }
 }
 
+#[derive(Debug)]
 pub struct TraceLoss {
     pub realtime_buffers: u64,
     pub allocated_buffers: u64,

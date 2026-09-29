@@ -182,8 +182,9 @@ impl Decoder {
             p.try_parse::<u32>("IssuingThreadId")
         )
         .ok();
-        let writer = tid
-            .and_then(|t| measured!(self.metrics, Identity, native::writer_from_thread(t, time)));
+        // Resolve issuing TID using retained event-time lifetimes after drain.
+        // No borrowed payload or PID-only identity cache survives the callback.
+        let writer = None;
         let mut e = make_event(
             &self.metrics,
             time,
