@@ -5,6 +5,11 @@ if ($RequireEtw -and $SnapshotOnly) { throw 'Choose RequireEtw or SnapshotOnly, 
 $cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
 if (-not (Test-Path -LiteralPath $cargo)) { $cargo = 'cargo' }
 Push-Location (Join-Path $PSScriptRoot '..')
+function Assert-JsonContract([string]$text) {
+    if (Get-Command Test-Json -ErrorAction SilentlyContinue) {
+        if (-not (Test-Json -Json $text -SchemaFile './docs/schema/cli-v2.schema.json')) { throw 'JSON schema validation failed' }
+    }
+}
 try {
     & $cargo build --workspace --locked
     if ($LASTEXITCODE -ne 0) { throw 'cargo build failed' }
@@ -29,7 +34,9 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'capture failed' }
         if (-not $unrelated.WaitForExit(10000)) { throw 'independent fixture timed out' }
         if ($unrelated.ExitCode -ne 0) { throw 'independent fixture failed' }
-        $document = (& $contain --db $db inspect TestFixture --json | ConvertFrom-Json)
+        $raw = (& $contain --db $db inspect TestFixture --json) -join "`n"
+        Assert-JsonContract $raw
+        $document = $raw | ConvertFrom-Json
         if ($LASTEXITCODE -ne 0 -or $document.schema_version -ne 2) { throw 'inspect JSON contract failed' }
         $manifest = $document.data
         Write-Output ("BACKEND: " + ($manifest.backend | ConvertTo-Json -Compress))
@@ -54,9 +61,15 @@ try {
             }
         } elseif (@($manifest.files | Where-Object confidence -ne 'Unknown').Count -ne 0) { throw 'snapshot fallback overstated attribution' }
         foreach ($command in @('diff','history')) {
-            $json = (& $contain --db $db $command TestFixture --json | ConvertFrom-Json)
+            $raw = (& $contain --db $db $command TestFixture --json) -join "`n"
+            Assert-JsonContract $raw
+            $json = $raw | ConvertFrom-Json
             if ($LASTEXITCODE -ne 0 -or $json.schema_version -ne 2 -or $json.kind -ne $command) { throw "$command JSON contract failed" }
         }
+        $raw = (& $contain doctor --json) -join "`n"
+        Assert-JsonContract $raw
+        $doctor = $raw | ConvertFrom-Json
+        if ($LASTEXITCODE -ne 0 -or $doctor.kind -ne 'doctor' -or -not $doctor.data.process_observation) { throw 'doctor probe failed' }
         $before = (Get-ChildItem -LiteralPath $root -File -Recurse | Get-FileHash | Sort-Object Path | ConvertTo-Json -Compress)
         $registryBefore = Get-ItemPropertyValue -LiteralPath $registryPath -Name Installed
         & $contain --db $db remove TestFixture --dry-run

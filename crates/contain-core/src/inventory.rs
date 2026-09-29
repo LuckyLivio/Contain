@@ -29,17 +29,11 @@ fn powershell<T: DeserializeOwned>(script: &str) -> Result<T> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
-    let mut stdout = child.stdout.take().context("no inventory output pipe")?;
-    let mut stderr = child.stderr.take().context("no inventory error pipe")?;
+    let stdout = child.stdout.take().context("no inventory output pipe")?;
+    let stderr = child.stderr.take().context("no inventory error pipe")?;
     // Drain both pipes while waiting; inventory size cannot deadlock a full stdout pipe.
-    let out = thread::spawn(move || {
-        let mut bytes = Vec::new();
-        stdout.read_to_end(&mut bytes).map(|_| bytes)
-    });
-    let err = thread::spawn(move || {
-        let mut bytes = Vec::new();
-        stderr.read_to_end(&mut bytes).map(|_| bytes)
-    });
+    let out = thread::spawn(move || read_bounded(stdout, 16 * 1024 * 1024));
+    let err = thread::spawn(move || read_bounded(stderr, 64 * 1024));
     let deadline = Instant::now() + Duration::from_secs(20);
     let status = loop {
         if let Some(status) = child.try_wait()? {
@@ -66,6 +60,21 @@ fn powershell<T: DeserializeOwned>(script: &str) -> Result<T> {
         );
     }
     serde_json::from_slice(&stdout).context("invalid inventory JSON")
+}
+
+fn read_bounded(mut input: impl Read, limit: usize) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    input
+        .by_ref()
+        .take(limit as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > limit {
+        std::io::copy(&mut input, &mut std::io::sink())?;
+        return Err(std::io::Error::other(
+            "inventory output exceeded capture limit",
+        ));
+    }
+    Ok(bytes)
 }
 
 pub fn startup() -> Result<Vec<StartupEntry>> {
@@ -274,5 +283,49 @@ mod tests {
             ..Default::default()
         };
         assert!(diff(&before, &after, &[], "s").is_empty());
+    }
+    #[test]
+    fn task_change_and_startup_removal_preserve_states_and_target_only_medium() {
+        let task = ScheduledTaskState {
+            path: "\\Demo".into(),
+            actions: vec![TaskAction {
+                executable: "C:\\app.exe".into(),
+                arguments: "--task".into(),
+            }],
+            triggers: vec!["<LogonTrigger/>".into()],
+            enabled: true,
+        };
+        let entry = StartupEntry {
+            source: "HKCU Run".into(),
+            name: "Demo".into(),
+            command: "\"C:\\app.exe\" --startup".into(),
+        };
+        let before = InventorySnapshot {
+            tasks: Some(vec![task.clone()]),
+            startup: Some(vec![entry]),
+            ..Default::default()
+        };
+        let after = InventorySnapshot {
+            tasks: Some(vec![ScheduledTaskState {
+                enabled: false,
+                ..task
+            }]),
+            startup: Some(vec![]),
+            ..Default::default()
+        };
+        let processes = [ProcessRecord {
+            pid: 1,
+            creation_time: Some(100),
+            image: "C:\\app.exe".into(),
+            confidence: Confidence::Certain,
+            ..Default::default()
+        }];
+        let changes = diff(&before, &after, &processes, "s");
+        assert_eq!(changes.len(), 2);
+        assert_eq!(changes[0].operation, "changed");
+        assert!(changes[0].before.is_some() && changes[0].after.is_some());
+        assert_eq!(changes[1].operation, "removed");
+        assert!(changes[1].after.is_none());
+        assert!(changes.iter().all(|c| c.confidence == Confidence::Medium));
     }
 }

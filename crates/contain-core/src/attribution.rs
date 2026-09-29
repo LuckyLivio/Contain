@@ -4,6 +4,14 @@ use crate::windows::native::normalize_path;
 
 pub fn attribute(event: &mut SystemEvent, processes: &[ProcessRecord], session_id: &str) {
     event.confidence = Confidence::Unknown;
+    if !matches!(
+        event.evidence.source,
+        EvidenceSource::EtwFile | EvidenceSource::EtwRegistry
+    ) {
+        event.evidence.rule = AttributionRule::SnapshotOnly;
+        event.reason = "This source does not supply a verified operation writer.".into();
+        return;
+    }
     let (Some(pid), Some(created)) = (event.evidence.pid, event.evidence.process_creation_time)
     else {
         event.evidence.rule = AttributionRule::MissingWriter;
@@ -242,6 +250,38 @@ mod tests {
         }
         compose_files(&mut files, &mut events, true);
         assert_eq!(files[0].confidence, Confidence::Unknown);
+    }
+    #[test]
+    fn loss_and_snapshot_sources_never_gain_high_state_attribution() {
+        let mut e = event(Some(2), Some(100));
+        attribute(&mut e, &[process(2, 100, Confidence::High)], "s");
+        let mut files = vec![FileChange {
+            path: e.resource.clone(),
+            ..Default::default()
+        }];
+        compose_files(&mut files, &mut [e.clone()], false);
+        assert_eq!(files[0].confidence, Confidence::Unknown);
+        e.evidence.source = EvidenceSource::Snapshot;
+        attribute(&mut e, &[process(2, 100, Confidence::High)], "s");
+        assert_eq!(e.confidence, Confidence::Unknown);
+    }
+    #[test]
+    fn registry_unknown_completion_prevents_promoting_final_value() {
+        let mut e = event(Some(2), Some(100));
+        e.event_type = "registry".into();
+        e.resource = "root\\value".into();
+        e.confidence = Confidence::High;
+        e.success = Some(true);
+        let mut unresolved = e.clone();
+        unresolved.success = None;
+        unresolved.confidence = Confidence::Unknown;
+        let mut changes = vec![RegistryChange {
+            name: "value".into(),
+            ..Default::default()
+        }];
+        compose_registry(&mut changes, &mut [e, unresolved], Some("root"), true);
+        assert_eq!(changes[0].confidence, Confidence::Unknown);
+        assert_eq!(changes[0].evidence.len(), 2);
     }
     #[test]
     fn exact_inventory_target_is_medium_not_high() {

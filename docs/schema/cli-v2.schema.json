@@ -1,0 +1,984 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/LuckyLivio/Contain/blob/main/docs/schema/cli-v2.schema.json",
+  "title": "Contain CLI v2 output",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "kind",
+        "data"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 2
+        },
+        "kind": {
+          "const": "inspect"
+        },
+        "data": {
+          "$ref": "#/$defs/capture"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "kind",
+        "data"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 2
+        },
+        "kind": {
+          "const": "diff"
+        },
+        "data": {
+          "$ref": "#/$defs/diff"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "kind",
+        "data"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 2
+        },
+        "kind": {
+          "const": "history"
+        },
+        "data": {
+          "$ref": "#/$defs/history"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "kind",
+        "data"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 2
+        },
+        "kind": {
+          "const": "doctor"
+        },
+        "data": {
+          "$ref": "#/$defs/doctor"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "kind",
+        "data"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 2
+        },
+        "kind": {
+          "const": "list"
+        },
+        "data": {
+          "$ref": "#/$defs/list"
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "confidence": {
+      "enum": [
+        "Certain",
+        "High",
+        "Medium",
+        "Low",
+        "Unknown"
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "required": [
+        "source",
+        "pid",
+        "process_creation_time",
+        "process_image",
+        "parent_pid",
+        "ancestor_pid",
+        "session_id",
+        "rule"
+      ],
+      "properties": {
+        "source": {
+          "enum": [
+            "ProcessApi",
+            "EtwFile",
+            "EtwRegistry",
+            "FileNotification",
+            "ServiceInventory",
+            "TaskInventory",
+            "StartupRegistry",
+            "Snapshot"
+          ]
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "process_creation_time": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "process_image": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parent_pid": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ancestor_pid": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rule": {
+          "enum": [
+            "InstallerPid",
+            "DescendantProcess",
+            "ExecutablePathMatch",
+            "UnrelatedProcess",
+            "AmbiguousLifetime",
+            "MixedWriters",
+            "EventLoss",
+            "SnapshotOnly",
+            "MissingWriter"
+          ]
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "required": [
+        "id",
+        "timestamp",
+        "timestamp_ticks",
+        "event_type",
+        "operation",
+        "resource",
+        "confidence",
+        "reason",
+        "evidence",
+        "success",
+        "state_validated"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "timestamp_ticks": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "event_type": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "resource": {
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        },
+        "success": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state_validated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "process": {
+      "type": "object",
+      "required": [
+        "pid",
+        "parent_pid",
+        "image",
+        "first_seen",
+        "confidence",
+        "reason",
+        "creation_time",
+        "parent_creation_time",
+        "last_seen",
+        "ended_at",
+        "evidence"
+      ],
+      "properties": {
+        "pid": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "parent_pid": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "image": {
+          "type": "string"
+        },
+        "first_seen": {
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "creation_time": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parent_creation_time": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_seen": {
+          "type": "string"
+        },
+        "ended_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        }
+      }
+    },
+    "file": {
+      "type": "object",
+      "required": [
+        "path",
+        "operation",
+        "before_hash",
+        "after_hash",
+        "after_size",
+        "notification_seen",
+        "confidence",
+        "reason",
+        "evidence"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "before_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after_size": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "notification_seen": {
+          "type": "boolean"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "registry": {
+      "type": "object",
+      "required": [
+        "key",
+        "name",
+        "operation",
+        "before_value",
+        "after_value",
+        "confidence",
+        "reason",
+        "evidence"
+      ],
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "before_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "required": [
+        "name",
+        "display_name",
+        "binary_path",
+        "startup_type",
+        "account"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "binary_path": {
+          "type": "string"
+        },
+        "startup_type": {
+          "type": "string"
+        },
+        "account": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "task": {
+      "type": "object",
+      "required": [
+        "path",
+        "actions",
+        "triggers",
+        "enabled"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "executable",
+              "arguments"
+            ],
+            "properties": {
+              "executable": {
+                "type": "string"
+              },
+              "arguments": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "startup": {
+      "type": "object",
+      "required": [
+        "source",
+        "name",
+        "command"
+      ],
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        }
+      }
+    },
+    "inventoryState": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "state"
+          ],
+          "properties": {
+            "kind": {
+              "const": "Service"
+            },
+            "state": {
+              "$ref": "#/$defs/service"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "state"
+          ],
+          "properties": {
+            "kind": {
+              "const": "ScheduledTask"
+            },
+            "state": {
+              "$ref": "#/$defs/task"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "state"
+          ],
+          "properties": {
+            "kind": {
+              "const": "Startup"
+            },
+            "state": {
+              "$ref": "#/$defs/startup"
+            }
+          }
+        }
+      ]
+    },
+    "inventory": {
+      "type": "object",
+      "required": [
+        "kind",
+        "name",
+        "operation",
+        "before",
+        "after",
+        "confidence",
+        "reason",
+        "evidence"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "before": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/inventoryState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/inventoryState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        }
+      }
+    },
+    "backend": {
+      "type": "object",
+      "required": [
+        "etw_file",
+        "etw_registry",
+        "dropped_events",
+        "etw_events_lost",
+        "decode_errors",
+        "warnings",
+        "registry_path_gaps"
+      ],
+      "properties": {
+        "etw_file": {
+          "type": "string"
+        },
+        "etw_registry": {
+          "type": "string"
+        },
+        "dropped_events": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "etw_events_lost": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decode_errors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "registry_path_gaps": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      }
+    },
+    "capture": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "id",
+        "name",
+        "installer",
+        "started_at",
+        "finished_at",
+        "exit_code",
+        "watch_roots",
+        "registry_key",
+        "processes",
+        "files",
+        "registry",
+        "warnings",
+        "events",
+        "inventory",
+        "backend"
+      ],
+      "properties": {
+        "schema_version": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "installer": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "finished_at": {
+          "type": "string"
+        },
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "watch_roots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "registry_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "processes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/process"
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/file"
+          }
+        },
+        "registry": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/registry"
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event"
+          }
+        },
+        "inventory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/inventory"
+          }
+        },
+        "backend": {
+          "$ref": "#/$defs/backend"
+        }
+      }
+    },
+    "diff": {
+      "type": "object",
+      "required": [
+        "app_id",
+        "files",
+        "registry",
+        "inventory",
+        "warning"
+      ],
+      "properties": {
+        "app_id": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/file"
+          }
+        },
+        "registry": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/registry"
+          }
+        },
+        "inventory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/inventory"
+          }
+        },
+        "warning": {
+          "type": "string"
+        }
+      }
+    },
+    "history": {
+      "type": "object",
+      "required": [
+        "app_id",
+        "events"
+      ],
+      "properties": {
+        "app_id": {
+          "type": "string"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event"
+          }
+        }
+      }
+    },
+    "doctor": {
+      "type": "object",
+      "required": [
+        "platform",
+        "elevated",
+        "process_observation",
+        "etw_file",
+        "etw_registry",
+        "service_count",
+        "scheduled_task_count",
+        "startup_count",
+        "warnings"
+      ],
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "elevated": {
+          "type": "boolean"
+        },
+        "process_observation": {
+          "type": "boolean"
+        },
+        "etw_file": {
+          "type": "string"
+        },
+        "etw_registry": {
+          "type": "string"
+        },
+        "service_count": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scheduled_task_count": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startup_count": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "list": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "started_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -151,6 +151,8 @@ pub struct BackendReport {
     pub dropped_events: u64,
     pub etw_events_lost: Option<u64>,
     pub decode_errors: u64,
+    #[serde(default)]
+    pub registry_path_gaps: u64,
     pub warnings: Vec<String>,
 }
 

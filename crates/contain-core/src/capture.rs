@@ -157,12 +157,23 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         && backend.dropped_events == 0
         && backend.decode_errors == 0;
     attribution::compose_files(&mut files, &mut events, complete);
-    attribution::compose_registry(&mut registry, &mut events, nt_root.as_deref(), complete);
+    attribution::compose_registry(
+        &mut registry,
+        &mut events,
+        nt_root.as_deref(),
+        complete && backend.registry_path_gaps == 0,
+    );
     let after_inventory = inventory::snapshot();
     let inventory = inventory::diff(&before_inventory, &after_inventory, &processes, &id);
     warnings.extend(before_inventory.warnings);
     warnings.extend(after_inventory.warnings);
     warnings.extend(backend.warnings.iter().cloned());
+    if backend.registry_path_gaps > 0 {
+        warnings.push(format!("Registry ETW omitted absolute hive/key names in {} provider records; those records cannot be scoped and were discarded. Registry state attribution uses Unknown snapshot fallback unless complete event evidence exists.", backend.registry_path_gaps));
+    }
+    if !registry.is_empty() && !events.iter().any(|e| e.event_type == "registry") {
+        warnings.push("No scoped registry source events were delivered; registry changes are snapshot-only Unknown.".into());
+    }
     warnings.push("Process sampling can miss short-lived/detached children. ETW events from dead or unqueryable writer instances remain Unknown.".into());
     warnings.push("File ETW operation requests and snapshot state changes are separate evidence; failed operations never validate state changes.".into());
     let skipped = before_files.unreadable.len() + after_files.unreadable.len();

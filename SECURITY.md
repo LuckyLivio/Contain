@@ -4,7 +4,7 @@ Contain observes local system state and may eventually help remove application r
 
 ## Supported version
 
-Security fixes target the latest published `main` branch during v0.1 development.
+Security fixes target the latest published `main` branch during v0.2 development.
 
 ## Reporting
 
@@ -12,10 +12,12 @@ Use GitHub's private vulnerability reporting for this repository when available.
 
 ## Current safety boundary
 
-- No elevated privileges, kernel driver, or background service.
+- No automatic elevation, kernel driver, or background service. ETW only uses the caller's existing rights; denied access degrades to snapshots.
 - No destructive `remove` implementation. `--dry-run` is read only.
-- File and registry observations have `Unknown` application ownership without writer PID evidence.
+- File and registry observations remain `Unknown` without verified writer process-instance evidence. High is a session attribution claim, never proof of exclusive ownership or permission to delete.
 - Watch roots are canonicalized. The scanner does not follow links; cleanup planning never deletes.
 - The demo fixture only touches its own direct child under `%TEMP%` and a matching HKCU test key.
+- Service/task/Run inventories are read-only. ETW receives system-wide provider activity and discards out-of-scope paths; database and JSON exports remain local. Paths, commands, registry values and debug diagnostics can be sensitive.
+- Loss, decode failures, ambiguous process lifetime, absent registry hive paths and mixed writers must be visible. Missing data must not become a positive ownership claim.
 
 Please report any path traversal, junction/reparse handling, privilege escalation, unintended deletion, data leak, or misleading attribution.

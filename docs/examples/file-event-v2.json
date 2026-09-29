@@ -1,0 +1,22 @@
+{
+  "confidence": "High",
+  "event_type": "file",
+  "evidence": {
+    "ancestor_pid": 1720,
+    "parent_pid": 1720,
+    "pid": 4276,
+    "process_creation_time": "134351410641704877",
+    "process_image": "D:\\a\\Contain\\Contain\\target\\debug\\contain-test-installer.exe",
+    "rule": "DescendantProcess",
+    "session_id": "0f890dfa-7ec9-45b1-8d1b-0a7f153838bb",
+    "source": "EtwFile"
+  },
+  "id": "0b1251c4-7f3b-43ba-a343-89fbb78a3366",
+  "operation": "write_requested",
+  "reason": "write_requested from PID 4276 (creation time 134351410641704877) matches a verified descendant process. Operation completion: not supplied.",
+  "resource": "c:\\users\\runneradmin\\appdata\\local\\temp\\contain-demo-b23888d2eb834154a89e13afb3834f0f\\cache\\index.bin",
+  "state_validated": false,
+  "success": null,
+  "timestamp": "2026-09-29T07:37:44.177418100+00:00",
+  "timestamp_ticks": "134351410641774181"
+}

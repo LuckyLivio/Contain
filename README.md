@@ -2,106 +2,92 @@
 
 **Install anything. Leave nothing behind.**
 
-> Give every Windows app an identity, a boundary, and a clean way out.
+## Which app changed this?
 
-Contain currently focuses on observing and attributing application changes. Full filesystem/registry virtualization is a long-term goal and is not part of v0.1. The tagline describes the direction of the project, not a current zero-leftover guarantee.
+Contain v0.2 observes Windows installation sessions, links real events to verified process instances, and explains the evidence. **Contain distinguishes observed changes from attributed changes.**
 
-## Why Contain?
+The tagline is the long-term direction. Today Contain records evidence and offers a cleanup **dry run**. It does not guarantee zero leftovers or isolate an installer.
 
-Traditional installers can change files, registry values, startup settings, services, and scheduled tasks across Windows. Their uninstallers often leave data behind. Contain starts with an evidence record: what changed during a specific installation session, which processes can be linked to the installer, and how strong that link is. It does **not** equate a before/after difference with ownership.
+## Try it
 
-## Demo
-
-Requirements: Windows 10/11, [Rust stable](https://rust-lang.org/tools/install/), and Visual Studio C++ build tools. From a PowerShell terminal in the repository:
+Requirements: Windows x64, [Rust stable](https://rust-lang.org/tools/install/), Visual Studio C++ build tools, and PowerShell. From the repository:
 
 ```powershell
 ./scripts/demo.ps1
 ```
 
-The script builds the CLI and a safe test installer, makes a uniquely named directory directly under `%TEMP%`, watches it, launches the installer, checks the captured process tree, file changes, HKCU test values, SQLite readback, `diff`, and `remove --dry-run`, then cleans the fixture. `-KeepArtifacts` retains the fixture and database for inspection. The fixture creates a **simulated** startup artifact within the test directory; it does not register an actual Windows autostart entry.
-
-Run the CLI yourself:
+This builds the CLI, runs a safe parent → child → grandchild installer alongside an **independent process writing the same directory**, checks attribution, JSON/SQLite readback and unchanged data after dry-run, then removes only the marked fixture. Files stay within `%TEMP%\contain-demo-*`; registry mutations stay within its matching `HKCU\Software\Contain\Demo\*` key. It creates no real services, tasks, or startup registrations.
 
 ```powershell
-cargo build --workspace
-$root = Join-Path $env:TEMP 'contain-demo-manual'
-New-Item -ItemType Directory -Force $root | Out-Null
-$key = 'Software\Contain\Demo\contain-demo-manual'
-./target/debug/contain.exe install ./target/debug/contain-test-installer.exe --name TestFixture --watch $root --registry-key $key -- --root $root
-./target/debug/contain.exe list
-./target/debug/contain.exe inspect TestFixture
-./target/debug/contain.exe diff TestFixture
-./target/debug/contain.exe remove TestFixture --dry-run
-./target/debug/contain-test-installer.exe --root $root --cleanup
+./scripts/demo.ps1 -SnapshotOnly  # explicit fallback
+./scripts/demo.ps1 -RequireEtw    # fails unless real PID-aware events are captured
+./scripts/demo.ps1 -KeepArtifacts # prints database and fixture paths for exploration
 ```
 
-For a real installer:
+ETW needs suitable Windows trace/provider permissions. Contain never opens UAC. With insufficient rights it continues with process observation and snapshots, and file/registry attribution remains `Unknown`. `-RequireEtw` is a test assertion, not an elevation request.
+
+## Real verification
+
+The initial v0.2 [Windows CI run](https://github.com/LuckyLivio/Contain/actions/runs/36536794866) captured **9 High file events**, while **3 independent writer events remained Unknown**. Both ETW and snapshot fallback integration steps passed on Windows Server 2025. This verifies the bounded fixture, not arbitrary installers. See [verification notes](docs/verification-v0.2.md) for current evidence and limitations.
+
+One real event from the [second run](https://github.com/LuckyLivio/Contain/actions/runs/36537468528), with its temporary root abbreviated for display:
+
+```text
+File:       %TEMP%\contain-demo-b238...\cache\index.bin
+Operation:  write_requested (completion status not supplied)
+Written by: contain-test-installer.exe, PID 4276
+Belongs to: TestFixture
+Confidence: High
+Evidence:   child PID 4276 → installer PID 1720
+Identity:   process creation FILETIME 134351410641704877
+```
+
+The [original event JSON](docs/examples/file-event-v2.json) preserves the actual evidence. The final file state stayed Unknown because an additional write had no queryable writer. Attribution of this one event does not imply exclusive ownership of the file.
+
+## Use the CLI
 
 ```powershell
-contain install .\SomeAppSetup.exe --watch "$env:LOCALAPPDATA\SomeApp"
+cargo build --workspace --locked
+./target/debug/contain.exe doctor
+./target/debug/contain.exe install .\SomeAppSetup.exe --name SomeApp --watch "$env:LOCALAPPDATA\SomeApp" --registry-key Software\Vendor\SomeApp
+./target/debug/contain.exe inspect SomeApp
+./target/debug/contain.exe diff SomeApp
+./target/debug/contain.exe history SomeApp --json
+./target/debug/contain.exe remove SomeApp --dry-run
 ```
 
-The watch directory must already exist. Repeat `--watch` for more directories. If omitted, Contain watches the directory containing the installer, which is usually insufficient for a real installation. Use `--registry-key Software\Vendor\App` to compare values in one HKCU key. Pass installer arguments after `--`.
+Watch directories must already exist. Repeat `--watch` for each scope. Without it only the installer's directory is watched. `--registry-key` selects one HKCU Software key: values are compared at that key; ETW may also observe operations beneath it. Installer arguments follow `--`. Use `--no-etw` to disable tracing and `--settle-ms` to adjust the observation window after the root exits.
 
-## Features
+`--db <path>` selects a database; default is `%LOCALAPPDATA%\Contain\contain.db`. `list --json`, `inspect --json`, `diff --json`, `history --json`, and `doctor --json` use a [versioned JSON contract](docs/json-contract.md). `install --manifest <path>` exports an inspect document. FILETIME identity fields use decimal strings to preserve full precision.
 
-- Starts an installer and stores an installation session with time, exit code, and watch scopes.
-- Polls Windows processes and records a descendant only when a sampled parent chain is still verifiable. The launched installer is `Certain`; observed descendants are `High`.
-- Watches selected directories for real filesystem notifications and compares BLAKE3 file state before and after. Creates, modifications, and deletions survive in a structured SQLite event record.
-- Optionally compares values in one explicitly selected `HKCU\Software` key.
-- Shows `list`, `inspect`, `diff`, `history`, and `doctor` output. `inspect --json` exports the same evidence for scripts.
-- `remove <app> --dry-run` reviews still present tracked files and preserves user data. It never removes anything.
-- Saves data locally by default at `%LOCALAPPDATA%\Contain\contain.db`; `--db` can select another path.
+## What v0.2 records
 
-## How it works
+| Source | Recorded evidence | Attribution boundary |
+| --- | --- | --- |
+| Owned process handle and process polling | PID, creation time, executable, verified parent chain | Installer Certain; observed descendants High |
+| ETW Kernel-File | Scoped create/write/rename/delete observations, timestamp, issuing thread → live process identity when queryable | High only for a matching installer-family instance |
+| ETW Kernel-Registry | Scoped key/value operations, completion status when available, writer identity when queryable | Unknown unless the same lifetime/ancestry checks pass |
+| File hash and HKCU snapshots | Before/after state, including modified/deleted entries | Unknown alone; correlated event evidence is separate |
+| Service, scheduled task, startup inventories | Created/changed/removed configuration with before/after fields | Exact verified executable target can be Medium; timing alone stays Unknown |
 
-```mermaid
-flowchart LR
-  Installer --> Session
-  Session --> ProcessPoller
-  Session --> DirectoryWatcher
-  Session --> RegistryScope
-  ProcessPoller --> Evidence
-  DirectoryWatcher --> Evidence
-  RegistryScope --> Evidence
-  Evidence --> SQLite
-  SQLite --> CLI
-```
+Inspect shows evidence quality, reasons, writer identity and source details. Diff groups attributed and unattributed changes. History distinguishes source event times from end-of-session state observations. A successful operation, an attributed process, and a surviving state change are separate facts.
 
-Directory notifications and registry comparisons do **not** include the writing process ID in this implementation. Those changes are displayed with `Unknown` application attribution and an explicit reason, even when they occur during a known installer session. See [architecture and evidence model](docs/architecture.md).
+## Safety and privacy
 
-## Architecture
+- `remove` requires `--dry-run`; there is no deletion executor, uninstaller execution, or rollback.
+- User data stays `USER_DATA`. A High-attributed cache may be `REVIEW`; unknown or changed files remain `UNKNOWN`. Nothing is marked `SAFE` for deletion.
+- No automatic elevation, driver, service installation, Defender changes, AI classification, or GUI.
+- No account, telemetry, or uploads in the application. Databases/manifests contain local paths and possibly registry/configuration data; review them before sharing.
+- ETW providers produce system-wide activity; scoped records are retained, other paths are discarded. The scanner skips reparse points. Contain does not sandbox the installer you launch.
 
-The workspace has a `contain-core` library for session capture, monitors, evidence models, SQLite, and cleanup planning; a `contain` CLI; and a small fixture installer. SQLite has separate application, session, process, event, file-change, and registry-change tables. BLAKE3 provides fast file content identity and drift detection; it is not used as an authentication mechanism.
+## Limitations
 
-## Safety model
-
-No privilege escalation, Defender change, service installation, or kernel driver is used. The scanner does not follow symlinks. The cleanup planner checks current file type and hash, and treats changed files as `UNKNOWN`. User data is `USER_DATA`; cache paths are `REVIEW`; other paths are `UNKNOWN`. There is currently no `SAFE` decision and no deletion executor. Running `remove` without `--dry-run` returns an error.
-
-The demo cleanup is limited to a marked, specially named direct child of the system temp directory and its matching HKCU test key. Do not run real installers merely to evaluate Contain on a machine you cannot restore; Contain itself does not undo the installer.
-
-## Privacy
-
-**Your computer history stays on your computer.** Contain has no account, telemetry, analytics, or upload code. The local database and optional JSON manifests can contain personal paths and registry values; review and redact them before sharing.
-
-## Current limitations
-
-- No ETW backend or process keyed file/registry events. File and registry **ownership remains unknown**.
-- Process sampling can miss fast or detached children. PID reuse is guarded by sampled start times but cannot recover missed ancestry.
-- Only selected directories and one optional HKCU key are observed. Registry subkeys, services, scheduled tasks, real startup entries, shell integrations, and the rest of the system are not inventoried.
-- Some file notifications may be lost; surviving state changes inside watch roots can still be found by before/after comparison. Files inaccessible to the current user and reparse points are excluded. Entirely transient files are not retained in the manifest.
-- No official uninstaller discovery, automatic cleanup, rollback, virtualization, driver, or GUI.
-- No claim of zero leftovers or compatibility with every Windows installer.
-
-## Roadmap
-
-- **v0.1 Observe:** strengthen process and scoped file/registry observation, tests, and manifest export.
-- **v0.2 Explain:** ETW-backed process keyed evidence where feasible, service/task/startup inventories, timeline, and richer attribution.
-- **v0.3 Clean:** official uninstaller integration, post-uninstall rescan, reviewed cleanup plans, explicit safe executor.
-- **v0.4 Contain:** investigate filesystem and registry redirection and temporary installations.
-- **Future:** stronger isolation and an optional driver only if user-mode evidence shows a justified gap.
-
-No dates or completeness guarantees are implied.
+- Process polling and delayed ETW delivery can miss short-lived or detached writers. Missing creation time, path, or ancestry stays Unknown. Identical executable names do not establish ownership.
+- File events describe operation requests; v0.2 does not correlate IRP completion or both rename endpoints. Snapshot rename appears as deleted/created paths. Unsupported provider schemas and unresolvable paths reduce coverage.
+- On the tested runner, registry ETW omitted absolute hive/key paths. Those records are counted and discarded; scoped HKCU snapshots remain Unknown. Provider activation alone is not a claim of working registry attribution.
+- Services, tasks and Run entries are read-only snapshots. Their writer and exact mutation time are unknown. Protected inventories can be unavailable; this produces warnings, not removals.
+- No whole-machine footprint guarantee. Only selected file roots and one HKCU key are state-scanned; HKCU/HKLM Run (32/64-bit views) are inventoried. No startup folders, arbitrary registry hive scan, or virtualization.
+- Capture has bounded buffers and records drops/ETW losses/decode errors. No-loss counters do not prove complete provider coverage or exclusive ownership. System-wide overhead has not been benchmarked on large installs.
 
 ## Development
 
@@ -109,15 +95,13 @@ No dates or completeness guarantees are implied.
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-cargo build --workspace
+cargo build --workspace --locked
 ./scripts/demo.ps1
 ```
 
-CI runs these on a Windows runner without requesting elevation. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Windows CI requires both real ETW evidence and fallback integration. Read the [architecture](docs/architecture.md), [backend ADR](docs/adr/0001-event-attribution-backend.md), [contribution guide](CONTRIBUTING.md), [security policy](SECURITY.md), and [code of conduct](CODE_OF_CONDUCT.md).
 
-## Contributing
-
-Please file a scoped issue or pull request and describe what evidence supports any new attribution claim. Security reports should follow [SECURITY.md](SECURITY.md). Contributors are expected to follow the [code of conduct](CODE_OF_CONDUCT.md).
+Next: reliable short-lived process lifetimes, stronger operation completion/path correlation, broader Windows validation, then reviewed uninstaller/cleanup planning. No release date or completeness guarantee is implied.
 
 ## License
 

@@ -28,6 +28,7 @@ struct Decoder {
     tx: SyncSender<SystemEvent>,
     dropped: Arc<AtomicU64>,
     errors: Arc<AtomicU64>,
+    registry_path_gaps: Arc<AtomicU64>,
 }
 
 impl Decoder {
@@ -146,12 +147,9 @@ impl Decoder {
             }
         };
         let key = key.to_lowercase();
-        if scope
-            .rsplit('\\')
-            .next()
-            .is_some_and(|leaf| !leaf.is_empty() && key.contains(leaf))
-        {
-            tracing::debug!(event_id = id, key = %key, scope = %scope, "registry candidate within requested key name");
+        if !key.starts_with("\\registry\\") {
+            self.registry_path_gaps.fetch_add(1, Ordering::Relaxed);
+            return; // A relative name cannot establish hive/SID. Never prepend a guessed HKCU root.
         }
         if !native::in_scope(&key, std::slice::from_ref(scope)) {
             return;
@@ -168,7 +166,11 @@ impl Decoder {
             .ok()
             .map(|status| status == 0);
         let operation = match id {
-            1 => "create_key",
+            1 => match parser.try_parse::<u32>("Disposition").ok() {
+                Some(1) => "create_key",
+                Some(2) => "open_key",
+                _ => "create_or_open_key",
+            },
             3 => "delete_key",
             5 => "set_value",
             6 => "delete_value",
@@ -221,6 +223,7 @@ pub struct EtwSource {
     rx: Receiver<SystemEvent>,
     dropped: Arc<AtomicU64>,
     errors: Arc<AtomicU64>,
+    registry_path_gaps: Arc<AtomicU64>,
     report: BackendReport,
 }
 
@@ -229,6 +232,7 @@ impl EtwSource {
         let (tx, rx) = mpsc::sync_channel(QUEUE_CAPACITY);
         let dropped = Arc::new(AtomicU64::new(0));
         let errors = Arc::new(AtomicU64::new(0));
+        let registry_path_gaps = Arc::new(AtomicU64::new(0));
         let name = format!("Contain-{}", uuid::Uuid::new_v4());
         let mut source = Self {
             trace: None,
@@ -237,6 +241,7 @@ impl EtwSource {
             rx,
             dropped: dropped.clone(),
             errors: errors.clone(),
+            registry_path_gaps: registry_path_gaps.clone(),
             report: BackendReport::default(),
         };
         if !enabled {
@@ -258,6 +263,7 @@ impl EtwSource {
             tx,
             dropped,
             errors,
+            registry_path_gaps,
         }));
         let file_decoder = decoder.clone();
         let file = Provider::by_guid(FILE_PROVIDER)
@@ -327,27 +333,34 @@ impl EventSource for EtwSource {
 
     fn stop(&mut self) -> BackendReport {
         if let Some(trace) = self.trace.take() {
+            let mut trace = Some(trace);
             // Stop the producer before closing the consumer so final ETW buffers can drain.
             match native::control_trace(&self.name, EVENT_TRACE_CONTROL_STOP) {
                 Ok(lost) => self.report.etw_events_lost = Some(lost),
-                Err(code) => self
-                    .report
-                    .warnings
-                    .push(format!("ETW stop/statistics failed: Win32 {code}")),
+                Err(code) => {
+                    self.report
+                        .warnings
+                        .push(format!("ETW stop/statistics failed: Win32 {code}"));
+                    // Closing the consumer handle unblocks ProcessTrace even when stop failed.
+                    drop(trace.take());
+                }
             }
             if let Some(consumer) = self.consumer.take() {
                 match consumer.join() {
                     Ok(Ok(())) => {}
-                    result => self
-                        .report
-                        .warnings
-                        .push(format!("ETW consumer ended with {result:?}")),
+                    result => {
+                        self.errors.fetch_add(1, Ordering::Relaxed);
+                        self.report
+                            .warnings
+                            .push(format!("ETW consumer ended with {result:?}"));
+                    }
                 }
             }
             drop(trace);
         }
         self.report.dropped_events = self.dropped.load(Ordering::Relaxed);
         self.report.decode_errors = self.errors.load(Ordering::Relaxed);
+        self.report.registry_path_gaps = self.registry_path_gaps.load(Ordering::Relaxed);
         self.report.clone()
     }
 }
@@ -355,5 +368,29 @@ impl EventSource for EtwSource {
 impl Drop for EtwSource {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn full_channel_drops_without_blocking_and_counts_loss() {
+        let (tx, rx) = mpsc::sync_channel(1);
+        let dropped = Arc::new(AtomicU64::new(0));
+        let decoder = Decoder {
+            paths: HashMap::new(),
+            roots: vec![],
+            registry_root: None,
+            devices: vec![],
+            tx,
+            dropped: dropped.clone(),
+            errors: Arc::new(AtomicU64::new(0)),
+            registry_path_gaps: Arc::new(AtomicU64::new(0)),
+        };
+        decoder.send(SystemEvent::default());
+        decoder.send(SystemEvent::default());
+        assert_eq!(dropped.load(Ordering::Relaxed), 1);
+        assert_eq!(rx.try_iter().count(), 1);
     }
 }

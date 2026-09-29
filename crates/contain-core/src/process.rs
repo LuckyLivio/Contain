@@ -94,3 +94,24 @@ impl ProcessObserver {
         self.records.into_values().collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn direct_owned_identity_is_certain_and_missing_birth_stays_missing() {
+        let identity = native::process_identity(std::process::id()).expect("current process query");
+        let records = ProcessObserver::new(identity.clone(), "session").finish();
+        assert_eq!(records[0].confidence, Confidence::Certain);
+        assert_eq!(records[0].creation_time, Some(identity.creation_time));
+        let records = ProcessObserver::new(
+            ProcessIdentity {
+                creation_time: 0,
+                ..identity
+            },
+            "session",
+        )
+        .finish();
+        assert!(records[0].evidence.process_creation_time.is_none());
+    }
+}
