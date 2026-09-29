@@ -36,6 +36,45 @@ jobs:
         run: |
           $r=Get-Content -Raw ./target/hotpath-public/final-summary.json | ConvertFrom-Json
           if($r.trials.Count -ne 10 -or @($r.trials|Where-Object {-not $_.acceptance_pass}).Count){throw 'Fixed ten-attempt small gate failed; no heavy gate authorized by this result'}
+      - name: One isolated D0-D2 file comparison (light diagnostic only)
+        if: inputs.phase == 'light'
+        shell: pwsh
+        run: ./scripts/compare-release.ps1 -BaselineDirectory . -BaselineVariant D0 -CandidateVariant D2 -Files 1000 -Trials 1 -Profile -SingleScale -SkipExtras -OutputDirectory ./target/hotpath-stress
+      - name: Three alternating D0-D3 1000-file trials
+        if: inputs.phase == 'final'
+        shell: pwsh
+        run: ./scripts/compare-release.ps1 -BaselineDirectory . -BaselineVariant D0 -CandidateVariant D3 -Files 1000 -Trials 3 -Profile -SingleScale -SkipExtras -OutputDirectory ./target/hotpath-stress
+      - name: Strict 1000-file gate before 10000
+        if: inputs.phase == 'final'
+        shell: pwsh
+        run: |
+          $file=Get-ChildItem ./target/hotpath-stress/run-*/comparison.json | Select-Object -First 1
+          $r=Get-Content -Raw $file.FullName | ConvertFrom-Json
+          $candidate=@($r.trials|Where-Object mode -eq 'candidate')
+          if($candidate.Count -ne 3 -or @($candidate|Where-Object {-not $_.acceptance_pass}).Count){throw '1000-file gate failed; retain original 10000 failure without a new run'}
+      - name: Original three-trial 10000-file gate
+        if: inputs.phase == 'final'
+        shell: pwsh
+        run: |
+          ./scripts/compare-release.ps1 -BaselineDirectory . -BaselineVariant D0 -CandidateVariant D3 -Files 10000 -Trials 3 -Profile -SingleScale -SkipExtras -OutputDirectory ./target/hotpath-stress
+          foreach($file in Get-ChildItem ./target/hotpath-stress/run-*/comparison.json) {
+            $r=Get-Content -Raw $file.FullName | ConvertFrom-Json
+            $candidate=@($r.trials|Where-Object mode -eq 'candidate')
+            if($candidate.Count -ne 3 -or @($candidate|Where-Object {-not $_.acceptance_pass}).Count){throw 'Original stress gate failed'}
+          }
+      - name: Retain stress fixture exports after unmodified scoring
+        if: always()
+        shell: pwsh
+        run: |
+          python scripts/hotpath-stress-artifact.py ./target/hotpath-stress ./target/hotpath-public
+          if($LASTEXITCODE -ne 0){throw 'Safe artifact collection failed'}
+      - name: Isolated candidate small gates remain strict
+        if: inputs.phase == 'light'
+        shell: pwsh
+        run: |
+          $r=Get-Content -Raw ./target/hotpath-public/light-summary.json | ConvertFrom-Json
+          $candidate=@($r.trials|Where-Object variant -ne 'D0')
+          if($r.trials.Count -ne 12 -or @($candidate|Where-Object {-not $_.acceptance_pass}).Count){throw 'Isolated small candidate gate failed; all planned attempts retained'}
       - name: Upload safe fixture evidence and counters
         if: always()
         uses: actions/upload-artifact@v4

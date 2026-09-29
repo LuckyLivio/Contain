@@ -14,7 +14,7 @@ def write_trial(source, destination, variant, error):
     else:
         envelope = json.loads(capture_path.read_text(encoding="utf-8-sig"))
         c = envelope["data"]
-        score = json.loads((source / "reliability.json").read_text(encoding="utf-8-sig"))
+        score = json.loads(((source / "reliability.json") if (source / "reliability.json").exists() else (source / "score.json")).read_text(encoding="utf-8-sig"))
         truth = json.loads((source / "ground-truth.json").read_text(encoding="utf-8-sig"))
         pids = {t["pid"] for t in truth}
         result.update(stats=c["stats"], backend=c["backend"], quality=c["quality"],
@@ -47,7 +47,7 @@ def write_trial(source, destination, variant, error):
         def scoped(e):
             value = e["resource"].lower().replace("\\\\?\\", "")
             return any(value.startswith(r.lower().replace("\\\\?\\", "")) for r in c["watch_roots"]) or (
-                c.get("registry_key", "").lower() in value and "\\contain\\demo\\contain-demo-" in value)
+                (c.get("registry_key") or "").lower() in value and "\\contain\\demo\\contain-demo-" in value)
         safe_events = []
         for e in c["events"]:
             if scoped(e) or (e["event_type"] == "lifecycle" and e["evidence"].get("pid") in pids):

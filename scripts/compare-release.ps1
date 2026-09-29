@@ -76,11 +76,11 @@ function Run-Trial([string]$Mode,[int]$Count,[int]$Trial,[string]$Role='stress',
         if($Role -eq 'stress' -and $score.groups.noise_success.expected -ne 300){throw 'independent noise denominator incomplete'}
         $p=$capture.backend.pipeline
         $balances=($null -ne $p -and $p.callback_records -eq $p.decode_attempted+$p.unsupported_records -and $p.decode_attempted -eq $p.decode_succeeded+$p.decode_failed -and $p.enqueued -eq $p.dequeued+$p.queue_pending -and $p.queue_pending -eq 0)
-        if($Mode -ne 'baseline' -and $null -ne $p) {
+        if(($Mode -ne 'baseline' -or $BaselineVariant) -and $null -ne $p) {
             $s=$capture.backend.stream
             $balances=$balances -and $p.callback_records -eq $p.deliberately_filtered+$capture.backend.events_received+$p.failed_without_output -and $capture.backend.events_received -eq $p.enqueued+$p.queue_overflow+$p.enqueue_disconnected -and $p.dequeued -eq $s.accepted -and $s.accepted -eq $s.persisted+$s.failed+$s.quota_dropped
         }
-        if($Mode -eq 'baseline' -and $null -ne $p){$p.persistence_succeeded=$null;$p.persistence_failed=$null}
+        if($Mode -eq 'baseline' -and -not $BaselineVariant -and $null -ne $p){$p.persistence_succeeded=$null;$p.persistence_failed=$null}
         $pass=($balances -and -not $capture.stats.drain_timed_out -and $p.context_evictions -eq 0 -and $capture.backend.dropped_events -eq 0 -and $capture.backend.decode_errors -eq 0 -and $capture.backend.etw_events_lost -eq 0 -and $capture.backend.etw_buffers_lost -eq 0 -and $score.groups.target_success.observation_rate -ge 0.95 -and $score.groups.target_success.correct_attribution_rate -ge 0.95 -and $score.false_positive_target_events -eq 0 -and $score.incorrect_attribution -eq 0)
         if($Count -eq 1000 -and $Role -eq 'stress'){$pass=$pass -and $score.groups.target_success.observed -eq $expected -and $score.groups.target_success.correctly_attributed -eq $expected}
         $record=[ordered]@{mode=$Mode;files=$Count;workers=$(if($Role -eq 'stress'){4}else{1});trial=$Trial;role=$Role;intentional_overload=[bool]$Overload;elapsed_seconds=$watch.Elapsed.TotalSeconds;parent_peak_working_set_bytes=$peak;sqlite_bytes=(Get-Item $db).Length;sampled_db_peak_bytes=$dbPeak;sampled_wal_peak_bytes=$walPeak;stats=$capture.stats;backend=$capture.backend;quality=$capture.quality;score=($score|Select-Object * -ExcludeProperty rows);counter_balances=$balances;acceptance_pass=$pass}
