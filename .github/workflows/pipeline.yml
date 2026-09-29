@@ -36,6 +36,10 @@ jobs:
         with:
           ref: fbaeb543d9408db589a34b285c042b96cb0584cf
           path: replay-bind
+      - uses: actions/checkout@v4
+        with:
+          ref: e04b91d3f4bed4d552c5b62f53c84e0e50ff270e
+          path: replay-light
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -45,6 +49,7 @@ jobs:
             regression -> target
             replay-a -> target
             replay-bind -> target
+            replay-light -> target
       - name: Comparable release trials (failed quality gates retained as data)
         working-directory: candidate
         shell: pwsh
@@ -52,13 +57,13 @@ jobs:
           FILES: ${{ inputs.files }}
           TRIALS: ${{ inputs.trials }}
         run: |
-          ./scripts/compare-release.ps1 -BaselineDirectory ../baseline -Files 1000 -Trials ([int]$env:TRIALS) -SingleScale -Profile -RegressionDirectory ../regression
+          ./scripts/compare-release.ps1 -BaselineDirectory ../baseline -Files 1000 -Trials ([int]$env:TRIALS) -SingleScale -Profile -RegressionDirectory ../regression -LightDirectory ../replay-light
           $file=Get-ChildItem ./target/release-comparison/run-*/comparison.json | Sort-Object LastWriteTime | Select-Object -Last 1
           $result=Get-Content -Raw $file.FullName | ConvertFrom-Json
           $normal=@($result.trials | Where-Object {$_.mode -eq 'candidate' -and $_.role -eq 'stress' -and -not $_.intentional_overload -and -not $_.file_filter_experiment})
           $passed=($normal.Count -ge 3 -and @($normal | Where-Object {-not $_.acceptance_pass}).Count -eq 0)
           if([int]$env:FILES -eq 10000 -and $passed){
-            ./scripts/compare-release.ps1 -BaselineDirectory ../baseline -Files 10000 -Trials ([int]$env:TRIALS) -SingleScale -SkipExtras -Profile -RegressionDirectory ../regression
+            ./scripts/compare-release.ps1 -BaselineDirectory ../baseline -Files 10000 -Trials ([int]$env:TRIALS) -SingleScale -SkipExtras -Profile -RegressionDirectory ../regression -LightDirectory ../replay-light
           }else{Write-Output "10000 gate not run: requested=$env:FILES, 1000 three-trial pass=$passed"}
       - name: Synthetic disk replays (same runner, never an ETW gate)
         working-directory: candidate
@@ -66,7 +71,7 @@ jobs:
         run: |
           $output=(Resolve-Path ./target/release-comparison).Path
           foreach($trial in 1..3){
-            $order=if($trial%2){@('replay-a','replay-bind','candidate')}else{@('candidate','replay-bind','replay-a')}
+            $order=if($trial%2){@('replay-a','replay-bind','replay-light','candidate')}else{@('candidate','replay-light','replay-bind','replay-a')}
             foreach($mode in $order){
               Push-Location (Join-Path .. $mode)
               try{

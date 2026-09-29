@@ -161,7 +161,7 @@ pub fn load(connection: &Connection, capture: &mut Capture, full: bool) -> Resul
     Ok(())
 }
 
-pub(super) fn save_events(tx: &Transaction<'_>, capture: &Capture) -> Result<()> {
+pub(super) fn save_events(tx: &Connection, capture: &Capture) -> Result<()> {
     for event in &capture.events {
         let evidence = &event.evidence;
         tx.prepare_cached("INSERT INTO observations VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)")?.execute(params![event.id,capture.id,event.timestamp,event.timestamp_ticks,event.event_type,event.operation,event.resource,event.confidence.as_str(),event.reason,serde_json::to_string(&evidence.source)?,evidence.pid,evidence.process_creation_time,evidence.process_image,evidence.parent_pid,evidence.ancestor_pid,evidence.session_id,serde_json::to_string(&evidence.rule)?,event.success,event.state_validated])?;

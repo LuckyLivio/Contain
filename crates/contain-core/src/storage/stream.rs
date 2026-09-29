@@ -307,13 +307,33 @@ impl Storage {
             Ok(None)
         }
     }
+    /// At most four decoded pages per caller group. Pages are processed and released
+    /// individually; SQLite's bounded page cache spills to WAL as necessary.
+    pub(crate) fn evidence_group<T>(
+        &mut self,
+        write: impl FnOnce(&mut Self) -> Result<T>,
+    ) -> Result<T> {
+        anyhow::ensure!(self.connection.is_autocommit(), "Nested evidence group");
+        self.connection.execute_batch("BEGIN IMMEDIATE")?;
+        let result = write(self).and_then(|value| {
+            measured!(
+                "post_derived_group_commit",
+                self.connection.execute_batch("COMMIT")
+            )?;
+            Ok(value)
+        });
+        if result.is_err() && !self.connection.is_autocommit() {
+            self.connection.execute_batch("ROLLBACK")?;
+        }
+        result
+    }
     pub(crate) fn append_evidence(&mut self, c: &Capture) -> Result<()> {
         let _clock = profile::timer("post_derived_write");
-        let tx = self.connection.transaction()?;
+        let tx = self.connection.savepoint()?;
         measured!("post_observations", evidence::save_events(&tx, c))?;
         measured!("post_details_edges", reliability::save_details(&tx, c))?;
         measured!("post_documents", save_documents(&tx, c))?;
-        measured!("post_derived_commit", tx.commit())?;
+        measured!("post_derived_page_release", tx.commit())?;
         Ok(())
     }
     pub(crate) fn resource_events(
@@ -478,7 +498,7 @@ impl Storage {
         Ok(rows)
     }
 }
-pub(super) fn save_documents(tx: &rusqlite::Transaction<'_>, c: &Capture) -> Result<()> {
+pub(super) fn save_documents(tx: &Connection, c: &Capture) -> Result<()> {
     let mut q = tx.prepare_cached("INSERT INTO event_documents VALUES (?1,?2,?3,?4,?5,?6)")?;
     for e in &c.events {
         q.execute(params![
@@ -614,6 +634,42 @@ mod tests {
             serde_json::to_string(&page[0]).unwrap()
         );
     }
+    #[test]
+    fn interrupted_derived_group_rolls_back_without_losing_committed_raw() {
+        let mut db = Storage::open(Path::new(":memory:")).unwrap();
+        let c = capture();
+        let mut w = RawBuffer::new(&mut db, &c, DEFAULT_QUOTA).unwrap();
+        w.append(&mut db, (1..=257).map(event).collect());
+        w.finish(&mut db).unwrap();
+        db.prepare_raw(&c.id).unwrap();
+        let mut page = c.clone();
+        page.events = vec![event(1)];
+        assert!(
+            db.evidence_group(|db| {
+                db.append_evidence(&page)?;
+                db.append_evidence(&page)
+            })
+            .is_err()
+        );
+        assert!(db.connection.is_autocommit());
+        assert_eq!(
+            db.connection
+                .query_row("SELECT COUNT(*) FROM observations", [], |r| r
+                    .get::<_, u64>(0))
+                .unwrap(),
+            0
+        );
+        let loaded = db.load(&c.id).unwrap();
+        assert_eq!(loaded.events.len(), 257);
+        assert_eq!(loaded.capture_state.as_deref(), Some("finalizing"));
+        assert!(
+            loaded
+                .events
+                .iter()
+                .all(|e| e.confidence == Confidence::Unknown)
+        );
+    }
+
     #[test]
     fn v3_raw_history_migrates_without_losing_indexes_or_paged_order() {
         let mut db = Storage::open(Path::new(":memory:")).unwrap();

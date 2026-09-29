@@ -54,20 +54,30 @@ fn synthetic_disk_replay() {
     let mut cursor = (0, 0);
     let mut rows = 0;
     loop {
-        let page = db.raw_page(&c.id, cursor).unwrap();
-        if page.is_empty() {
+        let done = db
+            .evidence_group(|db| {
+                for _ in 0..4 {
+                    let page = db.raw_page(&c.id, cursor).unwrap();
+                    if page.is_empty() {
+                        return Ok(true);
+                    }
+                    let last = page.last().unwrap();
+                    cursor = (last.timestamp_ticks, last.sequence);
+                    rows += page.len();
+                    let mut batch = Capture {
+                        id: c.id.clone(),
+                        events: page,
+                        ..Default::default()
+                    };
+                    crate::reliability::finish(&mut batch);
+                    db.append_evidence(&batch).unwrap();
+                }
+                Ok(false)
+            })
+            .unwrap();
+        if done {
             break;
         }
-        let last = page.last().unwrap();
-        cursor = (last.timestamp_ticks, last.sequence);
-        rows += page.len();
-        let mut batch = Capture {
-            id: c.id.clone(),
-            events: page,
-            ..Default::default()
-        };
-        crate::reliability::finish(&mut batch);
-        db.append_evidence(&batch).unwrap();
     }
     assert_eq!(rows, 16384);
     db.mark_finished(&c).unwrap();

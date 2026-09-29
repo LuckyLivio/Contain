@@ -291,81 +291,90 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     let mut raw_stats = CaptureStats::default();
     let mut cursor = (0, 0);
     loop {
-        let mut page = db.raw_page(&id, cursor)?;
-        if page.is_empty() {
-            break;
-        }
-        let last = page.last().unwrap();
-        cursor = (last.timestamp_ticks, last.sequence);
-        let mut retained = Vec::with_capacity(page.len());
-        let mut ops = Vec::new();
-        for mut e in page.drain(..) {
-            if lifecycle_complete {
-                measured!("post_lifetime_resolve", cache.resolve_event(&mut e));
-            }
-            measured!(
-                "post_attribution",
-                attribution::attribute(&mut e, &processes, &id)
-            );
-            if e.event_type == "lifecycle"
-                && !processes.iter().any(|p| {
-                    Some(p.pid) == e.evidence.pid
-                        && p.creation_time == e.evidence.process_creation_time
-                })
-                && !e
-                    .evidence
-                    .pid
-                    .is_some_and(|pid| db.scoped_header(&id, pid).unwrap_or(true))
-            {
-                continue;
-            }
-            if e.event_type == "registry"
-                && !e.raw.resource_resolved
-                && e.confidence != Confidence::High
-            {
-                continue;
-            }
-            if !source_intact {
-                suppress(&mut e);
-            }
-            if e.event_type == "file" && !matches!(e.operation.as_str(), "open_requested" | "close")
-            {
-                let mut pair = vec![e];
-                if let Some(mut completion) = db.completion(&id, &pair[0].id)? {
-                    if !source_intact {
-                        completion.success = None;
-                    }
-                    pair.push(completion);
+        let done = db.evidence_group(|db| {
+            for _ in 0..4 {
+                let mut page = db.raw_page(&id, cursor)?;
+                if page.is_empty() {
+                    return Ok(true);
                 }
-                let mut normalized = crate::correlation::correlate(
-                    &mut pair,
-                    &Default::default(),
-                    &Default::default(),
-                );
-                e = pair.remove(0);
-                if source_intact {
+                let last = page.last().unwrap();
+                cursor = (last.timestamp_ticks, last.sequence);
+                let mut retained = Vec::with_capacity(page.len());
+                let mut ops = Vec::new();
+                for mut e in page.drain(..) {
+                    if lifecycle_complete {
+                        measured!("post_lifetime_resolve", cache.resolve_event(&mut e));
+                    }
                     measured!(
                         "post_attribution",
                         attribution::attribute(&mut e, &processes, &id)
                     );
+                    if e.event_type == "lifecycle"
+                        && !processes.iter().any(|p| {
+                            Some(p.pid) == e.evidence.pid
+                                && p.creation_time == e.evidence.process_creation_time
+                        })
+                        && !e
+                            .evidence
+                            .pid
+                            .is_some_and(|pid| db.scoped_header(&id, pid).unwrap_or(true))
+                    {
+                        continue;
+                    }
+                    if e.event_type == "registry"
+                        && !e.raw.resource_resolved
+                        && e.confidence != Confidence::High
+                    {
+                        continue;
+                    }
+                    if !source_intact {
+                        suppress(&mut e);
+                    }
+                    if e.event_type == "file"
+                        && !matches!(e.operation.as_str(), "open_requested" | "close")
+                    {
+                        let mut pair = vec![e];
+                        if let Some(mut completion) = db.completion(&id, &pair[0].id)? {
+                            if !source_intact {
+                                completion.success = None;
+                            }
+                            pair.push(completion);
+                        }
+                        let mut normalized = crate::correlation::correlate(
+                            &mut pair,
+                            &Default::default(),
+                            &Default::default(),
+                        );
+                        e = pair.remove(0);
+                        if source_intact {
+                            measured!(
+                                "post_attribution",
+                                attribution::attribute(&mut e, &processes, &id)
+                            );
+                        }
+                        for o in &mut normalized {
+                            o.confidence = e.confidence;
+                        }
+                        ops.extend(normalized);
+                    }
+                    retained.push(e);
                 }
-                for o in &mut normalized {
-                    o.confidence = e.confidence;
-                }
-                ops.extend(normalized);
+                let mut batch = Capture {
+                    id: id.clone(),
+                    events: retained,
+                    operations: ops,
+                    backend: backend.clone(),
+                    ..Default::default()
+                };
+                measured!("post_quality_graph", crate::reliability::finish(&mut batch));
+                add_stats(&mut raw_stats, &batch.stats);
+                db.append_evidence(&batch)?;
             }
-            retained.push(e);
+            Ok(false)
+        })?;
+        if done {
+            break;
         }
-        let mut batch = Capture {
-            id: id.clone(),
-            events: retained,
-            operations: ops,
-            backend: backend.clone(),
-            ..Default::default()
-        };
-        measured!("post_quality_graph", crate::reliability::finish(&mut batch));
-        add_stats(&mut raw_stats, &batch.stats);
-        db.append_evidence(&batch)?;
     }
     phases.insert(
         "lifetime_attribution_and_paged_persistence".into(),

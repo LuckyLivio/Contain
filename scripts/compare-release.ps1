@@ -1,12 +1,13 @@
-param([Parameter(Mandatory)][string]$BaselineDirectory,[int]$Files=10000,[int]$Trials=3,[string]$OutputDirectory='./target/release-comparison',[switch]$SnapshotOnly,[switch]$Profile,[switch]$SingleScale,[switch]$SkipExtras,[string]$RegressionDirectory)
+param([Parameter(Mandatory)][string]$BaselineDirectory,[int]$Files=10000,[int]$Trials=3,[string]$OutputDirectory='./target/release-comparison',[switch]$SnapshotOnly,[switch]$Profile,[switch]$SingleScale,[switch]$SkipExtras,[string]$RegressionDirectory,[string]$LightDirectory)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 if ($Files -lt 4 -or $Files -gt 10000 -or $Trials -lt 1 -or $Trials -gt 5) {throw 'Bounded comparison requires 4..10000 files and 1..5 trials'}
 $repo=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $BaselineDirectory=(Resolve-Path -LiteralPath $BaselineDirectory).Path
 if($RegressionDirectory){$RegressionDirectory=(Resolve-Path -LiteralPath $RegressionDirectory).Path}
+if($LightDirectory){$LightDirectory=(Resolve-Path -LiteralPath $LightDirectory).Path}
 $cargo=Join-Path $env:USERPROFILE '.cargo/bin/cargo.exe'
-foreach($directory in @($BaselineDirectory,$repo,$RegressionDirectory)|Where-Object {$_}) {
+foreach($directory in @($BaselineDirectory,$repo,$RegressionDirectory,$LightDirectory)|Where-Object {$_}) {
     Push-Location $directory
     try { & $cargo build --release --workspace --locked; if($LASTEXITCODE -ne 0){throw 'release build failed'} } finally {Pop-Location}
 }
@@ -17,6 +18,7 @@ New-Item -ItemType Directory -Path $OutputDirectory | Out-Null
 $fixture=Join-Path $repo 'target/release/contain-test-installer.exe'
 $bins=@{baseline=(Join-Path $BaselineDirectory 'target/release/contain.exe');candidate=(Join-Path $repo 'target/release/contain.exe')}
 if($RegressionDirectory){$bins.regression=Join-Path $RegressionDirectory 'target/release/contain.exe'}
+if($LightDirectory){$bins.light=Join-Path $LightDirectory 'target/release/contain.exe'}
 $records=[Collections.Generic.List[object]]::new()
 $previousTruth=$env:CONTAIN_FIXTURE_TRUTH
 function Get-SampledLength([string]$Path) {
@@ -31,7 +33,7 @@ function Run-Trial([string]$Mode,[int]$Count,[int]$Trial,[string]$Role='stress',
     $priorFilter=$env:CONTAIN_ETW_EVENT_ID_FILTER
     $env:CONTAIN_ETW_EVENT_ID_FILTER=if($FilterOff){'0'}else{'1'}
     $dest=Join-Path $OutputDirectory $label;New-Item -ItemType Directory -Path $dest | Out-Null
-    if($Profile -and $Mode -eq 'candidate'){$env:CONTAIN_PROFILE_PATH=Join-Path $dest 'profile.json'}else{$env:CONTAIN_PROFILE_PATH=$null}
+    if($Profile -and $Mode -in @('candidate','light')){$env:CONTAIN_PROFILE_PATH=Join-Path $dest 'profile.json'}else{$env:CONTAIN_PROFILE_PATH=$null}
     $name='contain-demo-'+[guid]::NewGuid().ToString('N')
     $root=Join-Path $env:TEMP $name;$truthRoot=Join-Path $env:TEMP ($name+'-truth');$db=Join-Path $env:TEMP ($name+'.db')
     foreach($path in @($root,$truthRoot)){New-Item -ItemType Directory -Path $path | Out-Null;[IO.File]::WriteAllText((Join-Path $path '.contain-demo-marker'),'Contain test fixture')}
@@ -97,10 +99,11 @@ function Run-Trial([string]$Mode,[int]$Count,[int]$Trial,[string]$Role='stress',
 try {
     $environment=[ordered]@{schema_version=2;candidate_commit=(& git -C $repo rev-parse HEAD);baseline_commit=(& git -C $BaselineDirectory rev-parse HEAD);profile='release --locked';rustc=((& (Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe') -Vv)-join "`n");os=[Environment]::OSVersion.VersionString;elevated=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator);filesystem=(Get-Volume -DriveLetter ([IO.Path]::GetPathRoot($env:TEMP).Substring(0,1))).FileSystem;logical_processors=[Environment]::ProcessorCount;candidate_lock_sha256=(Get-FileHash (Join-Path $repo 'Cargo.lock')).Hash;baseline_lock_sha256=(Get-FileHash (Join-Path $BaselineDirectory 'Cargo.lock')).Hash;fixture_sha256=(Get-FileHash $fixture).Hash;scorer_sha256=(Get-FileHash (Join-Path $PSScriptRoot 'score-fixture.py')).Hash;measurement='Same runner, compiler, release profile and frozen common fixture. Alternating baseline/candidate pairs; independent noise. Parent PeakWorkingSet64 and DB/WAL sampled every20ms, excludes child memory/kernel buffers. Capture wall includes final commit; export/scoring outside timing. Callback timers overlap wall phases; no CPU utilization claim. Background/caches uncontrolled, Defender unchanged.'}
     if($RegressionDirectory){$environment.regression_commit=(& git -C $RegressionDirectory rev-parse HEAD)}
+    if($LightDirectory){$environment.light_commit=(& git -C $LightDirectory rev-parse HEAD)}
     $environment|ConvertTo-Json -Depth 10|Set-Content (Join-Path $OutputDirectory 'environment.json') -Encoding utf8
     Write-Output ('ENVIRONMENT: '+($environment|ConvertTo-Json -Depth 10 -Compress))
     $counts=if($SingleScale){@($Files)}else{@(100,1000,$Files)|Select-Object -Unique}
-    foreach($count in $counts){foreach($trial in 1..$Trials){$order=if($RegressionDirectory){if($trial%2 -eq 1){@('baseline','regression','candidate')}else{@('candidate','regression','baseline')}}elseif($trial%2 -eq 1){@('baseline','candidate')}else{@('candidate','baseline')};foreach($mode in $order){Run-Trial $mode $count $trial}}}
+    foreach($count in $counts){foreach($trial in 1..$Trials){$order=@('baseline');if($RegressionDirectory){$order+='regression'};if($LightDirectory){$order+='light'};$order+='candidate';if($trial%2 -eq 0){[array]::Reverse($order)};foreach($mode in $order){Run-Trial $mode $count $trial}}}
     if(-not $SkipExtras){
     Run-Trial candidate 1000 1 burst
     if(-not $SnapshotOnly){Run-Trial candidate 1000 1 stress -FilterOff}
