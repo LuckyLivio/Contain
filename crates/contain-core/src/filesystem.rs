@@ -7,6 +7,7 @@ use std::fs::File;
 use std::fs::Metadata;
 use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use walkdir::WalkDir;
 
@@ -108,18 +109,33 @@ pub fn snapshot(roots: &[PathBuf]) -> Result<Snapshot> {
 pub struct FileObserver {
     _watcher: RecommendedWatcher,
     seen: Arc<Mutex<HashSet<PathBuf>>>,
+    gaps: Arc<AtomicU64>,
 }
 
 impl FileObserver {
     pub fn start(roots: &[PathBuf]) -> Result<Self> {
         let seen = Arc::new(Mutex::new(HashSet::new()));
         let callback_seen = Arc::clone(&seen);
+        let gaps = Arc::new(AtomicU64::new(0));
+        let callback_gaps = gaps.clone();
         let mut watcher =
             notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
-                if let Ok(event) = event
-                    && let Ok(mut paths) = callback_seen.lock()
-                {
-                    paths.extend(event.paths);
+                match (event, callback_seen.lock()) {
+                    (Ok(event), Ok(mut paths)) => {
+                        if event.need_rescan() {
+                            callback_gaps.fetch_add(1, Ordering::Relaxed);
+                        }
+                        for path in event.paths {
+                            if paths.len() < 100_000 || paths.contains(&path) {
+                                paths.insert(path);
+                            } else {
+                                callback_gaps.fetch_add(1, Ordering::Relaxed);
+                            }
+                        }
+                    }
+                    _ => {
+                        callback_gaps.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
             })?;
         for root in roots {
@@ -128,7 +144,12 @@ impl FileObserver {
         Ok(Self {
             _watcher: watcher,
             seen,
+            gaps,
         })
+    }
+
+    pub fn gaps(&self) -> u64 {
+        self.gaps.load(Ordering::Relaxed)
     }
 
     pub fn seen_paths(&self) -> HashSet<PathBuf> {

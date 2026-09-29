@@ -15,38 +15,14 @@ impl Storage {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let mut connection = Connection::open(path)
+        let connection = Connection::open(path)
             .with_context(|| format!("opening database {}", path.display()))?;
+        Self::from_connection(connection)
+    }
+
+    fn from_connection(mut connection: Connection) -> Result<Self> {
         migration::check_version(&connection)?;
-        connection.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;
-            CREATE TABLE IF NOT EXISTS applications (
-                id TEXT PRIMARY KEY, name TEXT NOT NULL, installer TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS installation_sessions (
-                id TEXT PRIMARY KEY, application_id TEXT NOT NULL REFERENCES applications(id),
-                started_at TEXT NOT NULL, finished_at TEXT NOT NULL, exit_code INTEGER,
-                watch_roots_json TEXT NOT NULL, registry_key TEXT, warnings_json TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS processes (
-                session_id TEXT NOT NULL REFERENCES installation_sessions(id), pid INTEGER NOT NULL,
-                parent_pid INTEGER, image TEXT NOT NULL, first_seen TEXT NOT NULL,
-                confidence TEXT NOT NULL, reason TEXT NOT NULL,
-                PRIMARY KEY(session_id, pid)
-            );
-            CREATE TABLE IF NOT EXISTS system_events (
-                id INTEGER PRIMARY KEY, session_id TEXT NOT NULL REFERENCES installation_sessions(id),
-                event_type TEXT NOT NULL, resource TEXT NOT NULL, operation TEXT NOT NULL,
-                observed_at TEXT NOT NULL, process_id INTEGER, confidence TEXT NOT NULL,
-                reason TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS file_changes (
-                event_id INTEGER PRIMARY KEY REFERENCES system_events(id), before_hash TEXT,
-                after_hash TEXT, after_size INTEGER, notification_seen INTEGER NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS registry_changes (
-                event_id INTEGER PRIMARY KEY REFERENCES system_events(id), registry_key TEXT NOT NULL,
-                value_name TEXT NOT NULL, before_value TEXT, after_value TEXT
-            );")?;
+        connection.execute_batch(include_str!("storage/v1.sql"))?;
         migration::apply(&mut connection)?;
         Ok(Self { connection })
     }
@@ -204,6 +180,106 @@ fn parse_confidence(value: &str) -> Confidence {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn migrates_real_v1_tables_without_rewriting_history() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(include_str!("storage/v1.sql"))
+            .unwrap();
+        connection.execute_batch("INSERT INTO applications VALUES ('old','Legacy','setup.exe');
+            INSERT INTO installation_sessions VALUES ('old','old','start','end',0,'[]',NULL,'[]');
+            INSERT INTO processes VALUES ('old',7,1,'child.exe','start','High','sampled');
+            INSERT INTO system_events VALUES (1,'old','file','C:\\legacy.txt','created','end',NULL,'Unknown','snapshot');
+            INSERT INTO file_changes VALUES (1,NULL,'original-hash',7,1);").unwrap();
+        let db = Storage::from_connection(connection).unwrap();
+        let capture = db.load("old").unwrap();
+        assert_eq!(capture.schema_version, 1);
+        assert_eq!(
+            capture.files[0].after_hash.as_deref(),
+            Some("original-hash")
+        );
+        assert_eq!(capture.processes[0].confidence, Confidence::Unknown);
+        assert!(capture.processes[0].creation_time.is_none());
+        assert!(capture.events.is_empty());
+        assert_eq!(
+            db.connection
+                .query_row("SELECT confidence FROM processes", [], |r| r
+                    .get::<_, String>(0))
+                .unwrap(),
+            "High"
+        );
+        assert_eq!(migration::check_version(&db.connection).unwrap(), 2);
+        assert!(capture.warnings.iter().any(|w| w.contains("Legacy")));
+    }
+
+    #[test]
+    fn newer_schema_is_rejected_before_any_tables_are_created() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.pragma_update(None, "user_version", 99).unwrap();
+        assert!(
+            migration::check_version(&connection)
+                .unwrap_err()
+                .to_string()
+                .contains("newer")
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| r
+                    .get::<_, u32>(0))
+                .unwrap(),
+            0
+        );
+        assert!(Storage::from_connection(connection).is_err());
+    }
+
+    #[test]
+    fn v2_preserves_multiple_instances_of_reused_pid_and_atomic_event_save() {
+        use crate::model::*;
+        let mut db = Storage::open(Path::new(":memory:")).unwrap();
+        let evidence = AttributionEvidence {
+            pid: Some(42),
+            process_creation_time: Some(134_350_000_000_000_017),
+            source: EvidenceSource::EtwFile,
+            rule: AttributionRule::DescendantProcess,
+            ..Default::default()
+        };
+        let mut capture = Capture {
+            id: "v2".into(),
+            name: "v2".into(),
+            schema_version: 2,
+            processes: vec![
+                ProcessRecord {
+                    pid: 42,
+                    creation_time: Some(100),
+                    ..Default::default()
+                },
+                ProcessRecord {
+                    pid: 42,
+                    creation_time: evidence.process_creation_time,
+                    evidence: evidence.clone(),
+                    ..Default::default()
+                },
+            ],
+            events: vec![SystemEvent {
+                id: "event".into(),
+                timestamp_ticks: 134_350_000_000_000_018,
+                evidence: evidence.clone(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        db.save(&capture).unwrap();
+        let restored = db.load("v2").unwrap();
+        assert_eq!(restored.processes.len(), 2);
+        assert_eq!(restored.events[0].evidence, evidence);
+        assert_eq!(
+            restored.events[0].timestamp_ticks,
+            capture.events[0].timestamp_ticks
+        );
+        capture.id = "duplicate-event".into(); // Event UUID collision must roll back the entire session.
+        assert!(db.save(&capture).is_err());
+        assert_eq!(db.list().unwrap().len(), 1);
+    }
     #[test]
     fn round_trip() {
         let mut db = Storage::open(Path::new(":memory:")).unwrap();

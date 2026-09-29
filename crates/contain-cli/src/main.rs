@@ -103,9 +103,14 @@ fn envelope(kind: &str, value: impl serde::Serialize) -> Result<String> {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    let db = cli.db.unwrap_or_else(|| {
-        PathBuf::from(env::var_os("LOCALAPPDATA").unwrap_or_default()).join("Contain/contain.db")
-    });
+    let db = match cli.db {
+        Some(path) => path,
+        None => PathBuf::from(
+            env::var_os("LOCALAPPDATA")
+                .context("LOCALAPPDATA is missing; supply --db explicitly")?,
+        )
+        .join("Contain/contain.db"),
+    };
     match cli.command {
         Commands::Install {
             installer,

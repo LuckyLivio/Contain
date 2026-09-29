@@ -146,6 +146,13 @@ impl Decoder {
             }
         };
         let key = key.to_lowercase();
+        if scope
+            .rsplit('\\')
+            .next()
+            .is_some_and(|leaf| !leaf.is_empty() && key.contains(leaf))
+        {
+            tracing::debug!(event_id = id, key = %key, scope = %scope, "registry candidate within requested key name");
+        }
         if !native::in_scope(&key, std::slice::from_ref(scope)) {
             return;
         }
@@ -287,6 +294,7 @@ impl EtwSource {
         }
         match builder.start() {
             Ok((trace, handle)) => {
+                tracing::info!(session = %name, registry = registry_enabled, "ETW session started");
                 source.trace = Some(trace);
                 source.consumer = Some(thread::spawn(move || {
                     UserTrace::process_from_handle(handle).map_err(|e| format!("{e:?}"))
@@ -300,6 +308,7 @@ impl EtwSource {
                 .into();
             }
             Err(error) => {
+                tracing::warn!(session = %name, error = ?error, "ETW unavailable; using snapshot fallback");
                 // ferrisetw can fail after StartTrace during provider enablement; clean only our UUID session.
                 let _ = native::control_trace(&name, EVENT_TRACE_CONTROL_STOP);
                 source.report.etw_file = "unavailable".into();

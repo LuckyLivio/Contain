@@ -32,7 +32,10 @@ try {
         $document = (& $contain --db $db inspect TestFixture --json | ConvertFrom-Json)
         if ($LASTEXITCODE -ne 0 -or $document.schema_version -ne 2) { throw 'inspect JSON contract failed' }
         $manifest = $document.data
+        Write-Output ("BACKEND: " + ($manifest.backend | ConvertTo-Json -Compress))
         if ($manifest.processes.Count -lt 3) { throw 'parent/child/grandchild were not all observed' }
+        if (@($manifest.processes | Where-Object confidence -eq 'Certain').Count -ne 1) { throw 'installer must be Certain' }
+        if (@($manifest.processes | Where-Object confidence -eq 'High').Count -lt 2) { throw 'child and grandchild must have verified ancestry' }
         if (@($manifest.processes | Where-Object pid -eq $unrelated.Id).Count -ne 0) { throw 'independent process was attached to installer' }
         if (@($manifest.files | Where-Object operation -eq 'modified').Count -lt 1) { throw 'file modification not captured' }
         if (@($manifest.files | Where-Object operation -eq 'deleted').Count -lt 1) { throw 'file deletion not captured' }
@@ -46,6 +49,9 @@ try {
             if ($highFiles.Count -eq 0) { throw 'no real High-confidence file source event captured' }
             if ($unknownFiles.Count -eq 0) { throw 'independent ETW writer was not observed as Unknown' }
             Write-Output "ETW VERIFIED: $($highFiles.Count) High file events; $($unknownFiles.Count) independent writer events remain Unknown."
+            foreach ($event in @($manifest.events | Where-Object { $_.event_type -in @('file','registry') })) {
+                Write-Output ("SOURCE: " + ($event | ConvertTo-Json -Compress -Depth 6))
+            }
         } elseif (@($manifest.files | Where-Object confidence -ne 'Unknown').Count -ne 0) { throw 'snapshot fallback overstated attribution' }
         foreach ($command in @('diff','history')) {
             $json = (& $contain --db $db $command TestFixture --json | ConvertFrom-Json)

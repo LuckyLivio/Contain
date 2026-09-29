@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+mod ticks;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Confidence {
@@ -30,9 +31,12 @@ pub struct ProcessRecord {
     pub first_seen: String,
     pub confidence: Confidence,
     pub reason: String,
+    #[serde(default, with = "ticks::optional")]
     pub creation_time: Option<u64>,
+    #[serde(default, with = "ticks::optional")]
     pub parent_creation_time: Option<u64>,
     pub last_seen: String,
+    #[serde(default, with = "ticks::optional")]
     pub ended_at: Option<u64>,
     pub evidence: AttributionEvidence,
 }
@@ -114,6 +118,7 @@ pub struct AttributionEvidence {
     pub source: EvidenceSource,
     pub pid: Option<u32>,
     /// Windows FILETIME ticks (100 ns since 1601), serialized without losing precision.
+    #[serde(default, with = "ticks::optional")]
     pub process_creation_time: Option<u64>,
     pub process_image: Option<String>,
     pub parent_pid: Option<u32>,
@@ -126,6 +131,7 @@ pub struct AttributionEvidence {
 pub struct SystemEvent {
     pub id: String,
     pub timestamp: String,
+    #[serde(with = "ticks")]
     pub timestamp_ticks: u64,
     pub event_type: String,
     pub operation: String,

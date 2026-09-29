@@ -42,6 +42,7 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         anyhow::bail!("installer is not a file: {}", installer.display());
     }
     let id = Uuid::new_v4().to_string();
+    tracing::info!(session_id = %id, etw_requested = options.etw, "capture starting");
     let roots = if options.watch_roots.is_empty() {
         vec![
             installer
@@ -132,6 +133,12 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         .as_ref()
         .map(|o| o.seen_paths())
         .unwrap_or_default();
+    if let Some(observer) = &observer {
+        let gaps = observer.gaps();
+        if gaps > 0 {
+            warnings.push(format!("Directory notifications reported {gaps} errors, rescan requests or capacity drops. Snapshot evidence remains separate."));
+        }
+    }
     let mut files = filesystem::diff(&before_files, &after_files, &seen);
     let after_registry = options
         .registry_key
@@ -197,5 +204,7 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
         backend,
     };
     crate::timeline::complete(&mut capture, exited_at);
+    tracing::info!(session_id = %capture.id, events = capture.events.len(), files = capture.files.len(),
+        dropped = capture.backend.dropped_events, "capture completed");
     Ok(capture)
 }

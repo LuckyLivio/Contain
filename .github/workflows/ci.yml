@@ -23,6 +23,8 @@ jobs:
       - name: Build
         run: cargo build --workspace
       - name: ETW fixture integration
+        env:
+          RUST_LOG: contain_core::windows::etw=debug
         shell: pwsh
         run: ./scripts/demo.ps1 -RequireEtw
       - name: Snapshot fallback integration
