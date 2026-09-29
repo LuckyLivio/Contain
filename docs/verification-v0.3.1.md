@@ -68,7 +68,7 @@ overload-protection errors remain visible; measured recall/loss gate failures ar
 explicit fields in the resulting data.
 
 The [812b94a CI repeat](https://github.com/LuckyLivio/Contain/actions/runs/36553895153)
-failed a required short/detached writer assertion after observing 16/17 target
+failed the required detached-writer assertion after observing 16/17 target
 syscalls. It reported zero queue/ETW loss, but the FULL-sync raw writer spent
 17.188 s persisting 9222 records under substantial registry-provider traffic.
 Zero reported loss alone therefore does not prove complete syscall coverage.
@@ -90,3 +90,12 @@ small and burst fixtures. A single filter-off run does not establish a speed rat
 No third-party installer was executed. These results cover the isolated synthetic
 fixture on the recorded Windows environments. Defender settings were not changed.
 No formal release is published.
+
+The [first NORMAL-WAL run](https://github.com/LuckyLivio/Contain/actions/runs/36554395769)
+completed all 18 paired stress trials, burst and filter-off, then failed in the
+intentional-overload size sampler when SQLite removed its WAL between Test-Path
+and Get-Item. [Every completed trial](examples/comparison-release-v031-wal-partial.json)
+is preserved. Its 1000/10000 quality failures are real and not caused by that later
+sampling error. The sampler now handles only FileNotFound/DirectoryNotFound as
+an absent size sample; other errors still fail. Environment metadata is saved
+before trials so a later failure cannot hide compiler/fixture/lock identities.
