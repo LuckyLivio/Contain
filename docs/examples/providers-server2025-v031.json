@@ -1,0 +1,1063 @@
+{
+  "os": "Microsoft Windows NT 10.0.26100.0",
+  "providers": [
+    {
+      "name": "Microsoft-Windows-Kernel-Registry",
+      "guid": "70eb4f03-c1de-4f73-a051-33d13d5413bd",
+      "keywords": [
+        {
+          "Name": "CloseKey",
+          "Value": 1
+        },
+        {
+          "Name": "QuerySecurityKey",
+          "Value": 2
+        },
+        {
+          "Name": "SetSecurityKey",
+          "Value": 4
+        },
+        {
+          "Name": "EnumerateValueKey",
+          "Value": 16
+        },
+        {
+          "Name": "QueryMultipleValueKey",
+          "Value": 32
+        },
+        {
+          "Name": "SetInformationKey",
+          "Value": 64
+        },
+        {
+          "Name": "FlushKey",
+          "Value": 128
+        },
+        {
+          "Name": "SetValueKey",
+          "Value": 256
+        },
+        {
+          "Name": "DeleteValueKey",
+          "Value": 512
+        },
+        {
+          "Name": "QueryValueKey",
+          "Value": 1024
+        },
+        {
+          "Name": "EnumerateKey",
+          "Value": 2048
+        },
+        {
+          "Name": "CreateKey",
+          "Value": 4096
+        },
+        {
+          "Name": "OpenKey",
+          "Value": 8192
+        },
+        {
+          "Name": "DeleteKey",
+          "Value": 16384
+        },
+        {
+          "Name": "QueryKey",
+          "Value": 32768
+        }
+      ],
+      "selected_events": [
+        {
+          "Id": 1,
+          "Version": 0,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": null,
+            "Value": 0,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "CreateKey",
+              "Value": 4096,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"BaseObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"KeyObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"Status\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"Disposition\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"BaseName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n  <data name=\"RelativeName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 2,
+          "Version": 0,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": null,
+            "Value": 0,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "OpenKey",
+              "Value": 8192,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"BaseObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"KeyObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"Status\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"Disposition\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"BaseName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n  <data name=\"RelativeName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 3,
+          "Version": 0,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": null,
+            "Value": 0,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "DeleteKey",
+              "Value": 16384,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"KeyObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"Status\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"KeyName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 5,
+          "Version": 0,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": null,
+            "Value": 0,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "SetValueKey",
+              "Value": 256,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"KeyObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"Status\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"Type\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"DataSize\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"KeyName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n  <data name=\"ValueName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n  <data name=\"CapturedDataSize\" inType=\"win:UInt16\" outType=\"xs:unsignedShort\"/>\r\n  <data name=\"CapturedData\" inType=\"win:Binary\" outType=\"xs:hexBinary\" length=\"CapturedDataSize\"/>\r\n  <data name=\"PreviousDataType\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"PreviousDataSize\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"PreviousDataCapturedSize\" inType=\"win:UInt16\" outType=\"xs:unsignedShort\"/>\r\n  <data name=\"PreviousData\" inType=\"win:Binary\" outType=\"xs:hexBinary\" length=\"PreviousDataCapturedSize\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 6,
+          "Version": 0,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": null,
+            "Value": 0,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "DeleteValueKey",
+              "Value": 512,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"KeyObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"Status\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"KeyName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n  <data name=\"ValueName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 13,
+          "Version": 0,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": null,
+            "Value": 0,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "CloseKey",
+              "Value": 1,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"KeyObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"Status\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"KeyName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        }
+      ]
+    },
+    {
+      "name": "Microsoft-Windows-Kernel-Process",
+      "guid": "22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716",
+      "keywords": [
+        {
+          "Name": "WINEVENT_KEYWORD_PROCESS",
+          "Value": 16
+        },
+        {
+          "Name": "WINEVENT_KEYWORD_THREAD",
+          "Value": 32
+        },
+        {
+          "Name": "WINEVENT_KEYWORD_IMAGE",
+          "Value": 64
+        },
+        {
+          "Name": "WINEVENT_KEYWORD_CPU_PRIORITY",
+          "Value": 128
+        },
+        {
+          "Name": "WINEVENT_KEYWORD_OTHER_PRIORITY",
+          "Value": 256
+        },
+        {
+          "Name": "WINEVENT_KEYWORD_PROCESS_FREEZE",
+          "Value": 512
+        },
+        {
+          "Name": "WINEVENT_KEYWORD_JOB",
+          "Value": 1024
+        },
+        {
+          "Name": "WINEVENT_KEYWORD_ENABLE_PROCESS_TRACING_CALLBACKS",
+          "Value": 2048
+        },
+        {
+          "Name": "WINEVENT_KEYWORD_JOB_IO",
+          "Value": 4096
+        },
+        {
+          "Name": "WINEVENT_KEYWORD_WORK_ON_BEHALF",
+          "Value": 8192
+        },
+        {
+          "Name": "WINEVENT_KEYWORD_JOB_SILO",
+          "Value": 16384
+        }
+      ],
+      "selected_events": [
+        {
+          "Id": 1,
+          "Version": 0,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "ProcessStart",
+            "Value": 1,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "WINEVENT_KEYWORD_PROCESS",
+              "Value": 16,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"ProcessID\" inType=\"win:UInt32\" outType=\"win:PID\"/>\r\n  <data name=\"CreateTime\" inType=\"win:FILETIME\" outType=\"xs:dateTime\"/>\r\n  <data name=\"ParentProcessID\" inType=\"win:UInt32\" outType=\"win:PID\"/>\r\n  <data name=\"SessionID\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"ImageName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 1,
+          "Version": 1,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "ProcessStart",
+            "Value": 1,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "WINEVENT_KEYWORD_PROCESS",
+              "Value": 16,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"ProcessID\" inType=\"win:UInt32\" outType=\"win:PID\"/>\r\n  <data name=\"CreateTime\" inType=\"win:FILETIME\" outType=\"xs:dateTime\"/>\r\n  <data name=\"ParentProcessID\" inType=\"win:UInt32\" outType=\"win:PID\"/>\r\n  <data name=\"SessionID\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"Flags\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"ImageName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 1,
+          "Version": 2,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "ProcessStart",
+            "Value": 1,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "WINEVENT_KEYWORD_PROCESS",
+              "Value": 16,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"ProcessID\" inType=\"win:UInt32\" outType=\"win:PID\"/>\r\n  <data name=\"CreateTime\" inType=\"win:FILETIME\" outType=\"xs:dateTime\"/>\r\n  <data name=\"ParentProcessID\" inType=\"win:UInt32\" outType=\"win:PID\"/>\r\n  <data name=\"SessionID\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"Flags\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"ImageName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n  <data name=\"ImageChecksum\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"TimeDateStamp\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"PackageFullName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n  <data name=\"PackageRelativeAppId\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 1,
+          "Version": 3,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "ProcessStart",
+            "Value": 1,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "WINEVENT_KEYWORD_PROCESS",
+              "Value": 16,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"ProcessID\" inType=\"win:UInt32\" outType=\"win:PID\"/>\r\n  <data name=\"ProcessSequenceNumber\" inType=\"win:UInt64\" outType=\"xs:unsignedLong\"/>\r\n  <data name=\"CreateTime\" inType=\"win:FILETIME\" outType=\"xs:dateTime\"/>\r\n  <data name=\"ParentProcessID\" inType=\"win:UInt32\" outType=\"win:PID\"/>\r\n  <data name=\"ParentProcessSequenceNumber\" inType=\"win:UInt64\" outType=\"xs:unsignedLong\"/>\r\n  <data name=\"SessionID\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"Flags\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"ProcessTokenElevationType\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"ProcessTokenIsElevated\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"MandatoryLabel\" inType=\"win:SID\" outType=\"xs:string\"/>\r\n  <data name=\"ImageName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n  <data name=\"ImageChecksum\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"TimeDateStamp\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"PackageFullName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n  <data name=\"PackageRelativeAppId\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 1,
+          "Version": 4,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "ProcessStart",
+            "Value": 1,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "WINEVENT_KEYWORD_PROCESS",
+              "Value": 16,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"ProcessID\" inType=\"win:UInt32\" outType=\"win:PID\"/>\r\n  <data name=\"ProcessSequenceNumber\" inType=\"win:UInt64\" outType=\"xs:unsignedLong\"/>\r\n  <data name=\"CreateTime\" inType=\"win:FILETIME\" outType=\"xs:dateTime\"/>\r\n  <data name=\"ParentProcessID\" inType=\"win:UInt32\" outType=\"win:PID\"/>\r\n  <data name=\"ParentProcessSequenceNumber\" inType=\"win:UInt64\" outType=\"xs:unsignedLong\"/>\r\n  <data name=\"SessionID\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"Flags\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"ProcessTokenElevationType\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"ProcessTokenIsElevated\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"MandatoryLabel\" inType=\"win:SID\" outType=\"xs:string\"/>\r\n  <data name=\"ImageName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n  <data name=\"ImageChecksum\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"TimeDateStamp\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"PackageFullName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n  <data name=\"PackageRelativeAppId\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n  <data name=\"SecurityMitigations\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 2,
+          "Version": 0,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "ProcessStop",
+            "Value": 2,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "WINEVENT_KEYWORD_PROCESS",
+              "Value": 16,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"ProcessID\" inType=\"win:UInt32\" outType=\"win:PID\"/>\r\n  <data name=\"CreateTime\" inType=\"win:FILETIME\" outType=\"xs:dateTime\"/>\r\n  <data name=\"ExitTime\" inType=\"win:FILETIME\" outType=\"xs:dateTime\"/>\r\n  <data name=\"ExitCode\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"TokenElevationType\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"HandleCount\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"CommitCharge\" inType=\"win:UInt64\" outType=\"xs:unsignedLong\"/>\r\n  <data name=\"CommitPeak\" inType=\"win:UInt64\" outType=\"xs:unsignedLong\"/>\r\n  <data name=\"ImageName\" inType=\"win:AnsiString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 2,
+          "Version": 1,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "ProcessStop",
+            "Value": 2,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "WINEVENT_KEYWORD_PROCESS",
+              "Value": 16,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"ProcessID\" inType=\"win:UInt32\" outType=\"win:PID\"/>\r\n  <data name=\"CreateTime\" inType=\"win:FILETIME\" outType=\"xs:dateTime\"/>\r\n  <data name=\"ExitTime\" inType=\"win:FILETIME\" outType=\"xs:dateTime\"/>\r\n  <data name=\"ExitCode\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"TokenElevationType\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"HandleCount\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"CommitCharge\" inType=\"win:UInt64\" outType=\"xs:unsignedLong\"/>\r\n  <data name=\"CommitPeak\" inType=\"win:UInt64\" outType=\"xs:unsignedLong\"/>\r\n  <data name=\"CPUCycleCount\" inType=\"win:UInt64\" outType=\"xs:unsignedLong\"/>\r\n  <data name=\"ReadOperationCount\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"WriteOperationCount\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"ReadTransferKiloBytes\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"WriteTransferKiloBytes\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"HardFaultCount\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"ImageName\" inType=\"win:AnsiString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 2,
+          "Version": 2,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "ProcessStop",
+            "Value": 2,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "WINEVENT_KEYWORD_PROCESS",
+              "Value": 16,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"ProcessID\" inType=\"win:UInt32\" outType=\"win:PID\"/>\r\n  <data name=\"ProcessSequenceNumber\" inType=\"win:UInt64\" outType=\"xs:unsignedLong\"/>\r\n  <data name=\"CreateTime\" inType=\"win:FILETIME\" outType=\"xs:dateTime\"/>\r\n  <data name=\"ExitTime\" inType=\"win:FILETIME\" outType=\"xs:dateTime\"/>\r\n  <data name=\"ExitCode\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"TokenElevationType\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"HandleCount\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"CommitCharge\" inType=\"win:UInt64\" outType=\"xs:unsignedLong\"/>\r\n  <data name=\"CommitPeak\" inType=\"win:UInt64\" outType=\"xs:unsignedLong\"/>\r\n  <data name=\"CPUCycleCount\" inType=\"win:UInt64\" outType=\"xs:unsignedLong\"/>\r\n  <data name=\"ReadOperationCount\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"WriteOperationCount\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"ReadTransferKiloBytes\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"WriteTransferKiloBytes\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"HardFaultCount\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"ImageName\" inType=\"win:AnsiString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 3,
+          "Version": 0,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "ThreadStart",
+            "Value": 3,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "WINEVENT_KEYWORD_THREAD",
+              "Value": 32,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"ProcessID\" inType=\"win:UInt32\" outType=\"win:PID\"/>\r\n  <data name=\"ThreadID\" inType=\"win:UInt32\" outType=\"win:TID\"/>\r\n  <data name=\"StackBase\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"StackLimit\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"UserStackBase\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"UserStackLimit\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"StartAddr\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"Win32StartAddr\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"TebBase\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 3,
+          "Version": 1,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "ThreadStart",
+            "Value": 3,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "WINEVENT_KEYWORD_THREAD",
+              "Value": 32,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"ProcessID\" inType=\"win:UInt32\" outType=\"win:PID\"/>\r\n  <data name=\"ThreadID\" inType=\"win:UInt32\" outType=\"win:TID\"/>\r\n  <data name=\"StackBase\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"StackLimit\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"UserStackBase\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"UserStackLimit\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"StartAddr\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"Win32StartAddr\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"TebBase\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"SubProcessTag\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 4,
+          "Version": 0,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "ThreadStop",
+            "Value": 4,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "WINEVENT_KEYWORD_THREAD",
+              "Value": 32,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"ProcessID\" inType=\"win:UInt32\" outType=\"win:PID\"/>\r\n  <data name=\"ThreadID\" inType=\"win:UInt32\" outType=\"win:TID\"/>\r\n  <data name=\"StackBase\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"StackLimit\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"UserStackBase\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"UserStackLimit\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"StartAddr\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"Win32StartAddr\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"TebBase\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 4,
+          "Version": 1,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "ThreadStop",
+            "Value": 4,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "WINEVENT_KEYWORD_THREAD",
+              "Value": 32,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"ProcessID\" inType=\"win:UInt32\" outType=\"win:PID\"/>\r\n  <data name=\"ThreadID\" inType=\"win:UInt32\" outType=\"win:TID\"/>\r\n  <data name=\"StackBase\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"StackLimit\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"UserStackBase\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"UserStackLimit\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"StartAddr\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"Win32StartAddr\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"TebBase\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"SubProcessTag\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"CycleTime\" inType=\"win:UInt64\" outType=\"win:HexInt64\"/>\r\n</template>\r\n"
+        }
+      ]
+    },
+    {
+      "name": "Microsoft-Windows-Kernel-File",
+      "guid": "edd08927-9cc4-4e65-b970-c2560fb5c289",
+      "keywords": [
+        {
+          "Name": "KERNEL_FILE_KEYWORD_FILENAME",
+          "Value": 16
+        },
+        {
+          "Name": "KERNEL_FILE_KEYWORD_FILEIO",
+          "Value": 32
+        },
+        {
+          "Name": "KERNEL_FILE_KEYWORD_OP_END",
+          "Value": 64
+        },
+        {
+          "Name": "KERNEL_FILE_KEYWORD_CREATE",
+          "Value": 128
+        },
+        {
+          "Name": "KERNEL_FILE_KEYWORD_READ",
+          "Value": 256
+        },
+        {
+          "Name": "KERNEL_FILE_KEYWORD_WRITE",
+          "Value": 512
+        },
+        {
+          "Name": "KERNEL_FILE_KEYWORD_DELETE_PATH",
+          "Value": 1024
+        },
+        {
+          "Name": "KERNEL_FILE_KEYWORD_RENAME_SETLINK_PATH",
+          "Value": 2048
+        },
+        {
+          "Name": "KERNEL_FILE_KEYWORD_CREATE_NEW_FILE",
+          "Value": 4096
+        }
+      ],
+      "selected_events": [
+        {
+          "Id": 12,
+          "Version": 0,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "Create",
+            "Value": 12,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "KERNEL_FILE_KEYWORD_CREATE",
+              "Value": 128,
+              "DisplayName": null
+            },
+            {
+              "Name": "KERNEL_FILE_KEYWORD_FILEIO",
+              "Value": 32,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"Irp\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"ThreadId\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"CreateOptions\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"CreateAttributes\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"ShareAccess\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"FileName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 12,
+          "Version": 1,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "Create",
+            "Value": 12,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "KERNEL_FILE_KEYWORD_CREATE",
+              "Value": 128,
+              "DisplayName": null
+            },
+            {
+              "Name": "KERNEL_FILE_KEYWORD_FILEIO",
+              "Value": 32,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"Irp\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"IssuingThreadId\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"CreateOptions\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"CreateAttributes\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"ShareAccess\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"FileName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 14,
+          "Version": 0,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "Close",
+            "Value": 14,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "KERNEL_FILE_KEYWORD_FILEIO",
+              "Value": 32,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"Irp\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"ThreadId\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileKey\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 14,
+          "Version": 1,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "Close",
+            "Value": 14,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "KERNEL_FILE_KEYWORD_FILEIO",
+              "Value": 32,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"Irp\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileKey\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"IssuingThreadId\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 16,
+          "Version": 0,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "Write",
+            "Value": 16,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "KERNEL_FILE_KEYWORD_WRITE",
+              "Value": 512,
+              "DisplayName": null
+            },
+            {
+              "Name": "KERNEL_FILE_KEYWORD_FILEIO",
+              "Value": 32,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"ByteOffset\" inType=\"win:UInt64\" outType=\"win:HexInt64\"/>\r\n  <data name=\"Irp\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"ThreadId\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileKey\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"IOSize\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"IOFlags\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 16,
+          "Version": 1,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "Write",
+            "Value": 16,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "KERNEL_FILE_KEYWORD_WRITE",
+              "Value": 512,
+              "DisplayName": null
+            },
+            {
+              "Name": "KERNEL_FILE_KEYWORD_FILEIO",
+              "Value": 32,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"ByteOffset\" inType=\"win:UInt64\" outType=\"win:HexInt64\"/>\r\n  <data name=\"Irp\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileKey\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"IssuingThreadId\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"IOSize\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"IOFlags\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"ExtraFlags\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 24,
+          "Version": 0,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "OperationEnd",
+            "Value": 24,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "KERNEL_FILE_KEYWORD_OP_END",
+              "Value": 64,
+              "DisplayName": null
+            },
+            {
+              "Name": "KERNEL_FILE_KEYWORD_FILEIO",
+              "Value": 32,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"Irp\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"ExtraInformation\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"Status\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 26,
+          "Version": 0,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "DeletePath",
+            "Value": 26,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "KERNEL_FILE_KEYWORD_DELETE_PATH",
+              "Value": 1024,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"Irp\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"ThreadId\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileKey\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"ExtraInformation\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"InfoClass\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"FilePath\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 26,
+          "Version": 1,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "DeletePath",
+            "Value": 26,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "KERNEL_FILE_KEYWORD_DELETE_PATH",
+              "Value": 1024,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"Irp\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileKey\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"ExtraInformation\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"IssuingThreadId\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"InfoClass\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"FilePath\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 27,
+          "Version": 0,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "RenamePath",
+            "Value": 27,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "KERNEL_FILE_KEYWORD_RENAME_SETLINK_PATH",
+              "Value": 2048,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"Irp\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"ThreadId\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileKey\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"ExtraInformation\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"InfoClass\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"FilePath\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 27,
+          "Version": 1,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "RenamePath",
+            "Value": 27,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "KERNEL_FILE_KEYWORD_RENAME_SETLINK_PATH",
+              "Value": 2048,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"Irp\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileKey\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"ExtraInformation\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"IssuingThreadId\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"InfoClass\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"FilePath\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 30,
+          "Version": 0,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "CreateNewFile",
+            "Value": 30,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "KERNEL_FILE_KEYWORD_CREATE_NEW_FILE",
+              "Value": 4096,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"Irp\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"ThreadId\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"CreateOptions\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"CreateAttributes\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"ShareAccess\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"FileName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        },
+        {
+          "Id": 30,
+          "Version": 1,
+          "Level": {
+            "Name": "win:Informational",
+            "Value": 4,
+            "DisplayName": "Information\u0000"
+          },
+          "Task": {
+            "Name": "CreateNewFile",
+            "Value": 30,
+            "DisplayName": null,
+            "EventGuid": "00000000-0000-0000-0000-000000000000"
+          },
+          "Keywords": [
+            {
+              "Name": null,
+              "Value": -9223372036854775808,
+              "DisplayName": null
+            },
+            {
+              "Name": "KERNEL_FILE_KEYWORD_CREATE_NEW_FILE",
+              "Value": 4096,
+              "DisplayName": null
+            }
+          ],
+          "Template": "<template xmlns=\"http://schemas.microsoft.com/win/2004/08/events\">\r\n  <data name=\"Irp\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"FileObject\" inType=\"win:Pointer\" outType=\"win:HexInt64\"/>\r\n  <data name=\"IssuingThreadId\" inType=\"win:UInt32\" outType=\"xs:unsignedInt\"/>\r\n  <data name=\"CreateOptions\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"CreateAttributes\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"ShareAccess\" inType=\"win:UInt32\" outType=\"win:HexInt32\"/>\r\n  <data name=\"FileName\" inType=\"win:UnicodeString\" outType=\"xs:string\"/>\r\n</template>\r\n"
+        }
+      ]
+    }
+  ],
+  "note": "Read-only manifest metadata; actual filter efficacy is measured with filter-on/off captures. File Close only has FILEIO keyword, so clearing that keyword would discard required context."
+}

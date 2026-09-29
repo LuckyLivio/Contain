@@ -1,0 +1,71 @@
+{
+  "source_run": "https://github.com/LuckyLivio/Contain/actions/runs/36551832145",
+  "scorer_commit": "812b94a2ded774bb0d8c0d1bcbb72562a485e53d",
+  "all_scores_unchanged": true,
+  "cases": [
+    {
+      "case": "run-bc29b07129604cd0a7f35072255fcaa6/baseline-stress-1000-1/",
+      "same_scoring": true
+    },
+    {
+      "case": "run-bc29b07129604cd0a7f35072255fcaa6/baseline-stress-1000-2/",
+      "same_scoring": true
+    },
+    {
+      "case": "run-bc29b07129604cd0a7f35072255fcaa6/baseline-stress-1000-3/",
+      "same_scoring": true
+    },
+    {
+      "case": "run-bc29b07129604cd0a7f35072255fcaa6/baseline-stress-10000-1/",
+      "same_scoring": true
+    },
+    {
+      "case": "run-bc29b07129604cd0a7f35072255fcaa6/baseline-stress-10000-2/",
+      "same_scoring": true
+    },
+    {
+      "case": "run-bc29b07129604cd0a7f35072255fcaa6/baseline-stress-10000-3/",
+      "same_scoring": true
+    },
+    {
+      "case": "run-bc29b07129604cd0a7f35072255fcaa6/candidate-burst-1000-1/",
+      "same_scoring": true
+    },
+    {
+      "case": "run-bc29b07129604cd0a7f35072255fcaa6/candidate-stress-1000-1/",
+      "same_scoring": true
+    },
+    {
+      "case": "run-bc29b07129604cd0a7f35072255fcaa6/candidate-stress-1000-1-filter-off/",
+      "same_scoring": true
+    },
+    {
+      "case": "run-bc29b07129604cd0a7f35072255fcaa6/candidate-stress-1000-1-overload/",
+      "same_scoring": true
+    },
+    {
+      "case": "run-bc29b07129604cd0a7f35072255fcaa6/candidate-stress-1000-2/",
+      "same_scoring": true
+    },
+    {
+      "case": "run-bc29b07129604cd0a7f35072255fcaa6/candidate-stress-1000-3/",
+      "same_scoring": true
+    },
+    {
+      "case": "run-bc29b07129604cd0a7f35072255fcaa6/candidate-stress-10000-1/",
+      "same_scoring": true
+    },
+    {
+      "case": "run-bc29b07129604cd0a7f35072255fcaa6/candidate-stress-10000-2/",
+      "same_scoring": true
+    },
+    {
+      "case": "run-bc29b07129604cd0a7f35072255fcaa6/candidate-stress-10000-3/",
+      "same_scoring": true
+    },
+    {
+      "case": "small-release/",
+      "same_scoring": true
+    }
+  ]
+}

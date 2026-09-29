@@ -67,6 +67,26 @@ continue-on-error around benchmarks: infrastructure, denominator, balance and
 overload-protection errors remain visible; measured recall/loss gate failures are
 explicit fields in the resulting data.
 
+The [812b94a CI repeat](https://github.com/LuckyLivio/Contain/actions/runs/36553895153)
+failed a required short/detached writer assertion after observing 16/17 target
+syscalls. It reported zero queue/ETW loss, but the FULL-sync raw writer spent
+17.188 s persisting 9222 records under substantial registry-provider traffic.
+Zero reported loss alone therefore does not prove complete syscall coverage.
+The gate was not weakened. The later WAL policy is tested again through the same CI.
+
+The FULL-sync [lower-scale comparison](examples/comparison-release-v031-boundary-full.json)
+passed three 100-file/4-worker trials (252 successful target syscalls each) while
+failing all three 1000-file trials. This is historical boundary evidence, not the
+final WAL-policy acceptance result. The exact-path scorer hardening was rerun over
+all 16 archived corrected-comparison/small captures and produced identical scores:
+[recheck record](examples/rescore-v031-corrected.json).
+
+[Server 2025 provider inventory](examples/providers-server2025-v031.json) records
+the target runner's actual selected event metadata. With ID filtering enabled,
+unsupported callbacks were zero; the filter-off 1000-file trial delivered 45919
+unsupported callbacks. Both modes retained source event classes needed by the
+small and burst fixtures. A single filter-off run does not establish a speed ratio.
+
 No third-party installer was executed. These results cover the isolated synthetic
 fixture on the recorded Windows environments. Defender settings were not changed.
 No formal release is published.
