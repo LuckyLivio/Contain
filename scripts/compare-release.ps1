@@ -84,7 +84,7 @@ function Run-Trial([string]$Mode,[int]$Count,[int]$Trial,[string]$Role='stress',
     }
 }
 try {
-    $counts=@(1000,$Files)|Select-Object -Unique
+    $counts=@(100,1000,$Files)|Select-Object -Unique
     foreach($count in $counts){foreach($trial in 1..$Trials){$order=if($trial%2 -eq 1){@('baseline','candidate')}else{@('candidate','baseline')};foreach($mode in $order){Run-Trial $mode $count $trial}}}
     Run-Trial candidate 1000 1 burst
     if(-not $SnapshotOnly){Run-Trial candidate 1000 1 stress -FilterOff}

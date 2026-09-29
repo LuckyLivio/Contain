@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       files:
-        description: Main scale (4 to 10000); 1000 is also tested
+        description: Main scale (4 to 10000); 100 and 1000 are also tested
         default: '10000'
         type: string
       trials:
