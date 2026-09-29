@@ -1,0 +1,466 @@
+{
+  "note": "Diagnostic only. Exact identity/path/operation outside the frozen time interval receives no observation or attribution credit. Original scorer output unchanged; no time tolerance added.",
+  "trials": {
+    "final-D3-1-noise": {
+      "frozen_target_observed": 12,
+      "frozen_false_positives": 5,
+      "diagnostic_counts": {
+        "target_unobserved": 5,
+        "target_exact_identity_path_operation_outside_interval": 5,
+        "noise_unobserved": 1996,
+        "noise_exact_identity_path_operation_outside_interval": 1995,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": [
+        {
+          "role": "parent",
+          "operation": "set_value",
+          "start_ticks": "134351688011975174",
+          "end_ticks": "134351688011975753",
+          "event_ticks": "134351688011975773",
+          "outside_interval_ticks": 20
+        },
+        {
+          "role": "child",
+          "operation": "set_value",
+          "start_ticks": "134351688012076645",
+          "end_ticks": "134351688012077110",
+          "event_ticks": "134351688012077126",
+          "outside_interval_ticks": 16
+        },
+        {
+          "role": "child",
+          "operation": "set_value",
+          "start_ticks": "134351688012091223",
+          "end_ticks": "134351688012091625",
+          "event_ticks": "134351688012091645",
+          "outside_interval_ticks": 20
+        },
+        {
+          "role": "grandchild",
+          "operation": "set_value",
+          "start_ticks": "134351688012287003",
+          "end_ticks": "134351688012287272",
+          "event_ticks": "134351688012287305",
+          "outside_interval_ticks": 33
+        },
+        {
+          "role": "detached",
+          "operation": "write_requested",
+          "start_ticks": "134351688073421336",
+          "end_ticks": "134351688073428880",
+          "event_ticks": "134351688073429069",
+          "outside_interval_ticks": 189
+        }
+      ]
+    },
+    "final-D3-1-ordinary": {
+      "frozen_target_observed": 12,
+      "frozen_false_positives": 5,
+      "diagnostic_counts": {
+        "target_unobserved": 5,
+        "target_exact_identity_path_operation_outside_interval": 5,
+        "noise_unobserved": 1,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": [
+        {
+          "role": "parent",
+          "operation": "set_value",
+          "start_ticks": "134351687875760276",
+          "end_ticks": "134351687875760794",
+          "event_ticks": "134351687875760805",
+          "outside_interval_ticks": 11
+        },
+        {
+          "role": "child",
+          "operation": "set_value",
+          "start_ticks": "134351687875831590",
+          "end_ticks": "134351687875832170",
+          "event_ticks": "134351687875832187",
+          "outside_interval_ticks": 17
+        },
+        {
+          "role": "child",
+          "operation": "set_value",
+          "start_ticks": "134351687875846965",
+          "end_ticks": "134351687875847212",
+          "event_ticks": "134351687875847233",
+          "outside_interval_ticks": 21
+        },
+        {
+          "role": "grandchild",
+          "operation": "set_value",
+          "start_ticks": "134351687875934796",
+          "end_ticks": "134351687875935195",
+          "event_ticks": "134351687875935216",
+          "outside_interval_ticks": 21
+        },
+        {
+          "role": "detached",
+          "operation": "write_requested",
+          "start_ticks": "134351687937071973",
+          "end_ticks": "134351687937078821",
+          "event_ticks": "134351687937080680",
+          "outside_interval_ticks": 1859
+        }
+      ]
+    },
+    "final-D3-2-noise": {
+      "frozen_target_observed": 12,
+      "frozen_false_positives": 5,
+      "diagnostic_counts": {
+        "target_unobserved": 5,
+        "target_exact_identity_path_operation_outside_interval": 5,
+        "noise_unobserved": 1998,
+        "noise_exact_identity_path_operation_outside_interval": 1997,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": [
+        {
+          "role": "parent",
+          "operation": "set_value",
+          "start_ticks": "134351688291673093",
+          "end_ticks": "134351688291674145",
+          "event_ticks": "134351688291674176",
+          "outside_interval_ticks": 31
+        },
+        {
+          "role": "child",
+          "operation": "set_value",
+          "start_ticks": "134351688291778856",
+          "end_ticks": "134351688291779486",
+          "event_ticks": "134351688291779529",
+          "outside_interval_ticks": 43
+        },
+        {
+          "role": "child",
+          "operation": "set_value",
+          "start_ticks": "134351688291792751",
+          "end_ticks": "134351688291793087",
+          "event_ticks": "134351688291793130",
+          "outside_interval_ticks": 43
+        },
+        {
+          "role": "grandchild",
+          "operation": "set_value",
+          "start_ticks": "134351688292015093",
+          "end_ticks": "134351688292015509",
+          "event_ticks": "134351688292015572",
+          "outside_interval_ticks": 63
+        },
+        {
+          "role": "detached",
+          "operation": "write_requested",
+          "start_ticks": "134351688353140177",
+          "end_ticks": "134351688353148699",
+          "event_ticks": "134351688353149892",
+          "outside_interval_ticks": 1193
+        }
+      ]
+    },
+    "final-D3-2-ordinary": {
+      "frozen_target_observed": 16,
+      "frozen_false_positives": 1,
+      "diagnostic_counts": {
+        "target_unobserved": 1,
+        "target_exact_identity_path_operation_outside_interval": 1,
+        "noise_unobserved": 1,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": [
+        {
+          "role": "child",
+          "operation": "set_value",
+          "start_ticks": "134351688169135166",
+          "end_ticks": "134351688169135654",
+          "event_ticks": "134351688169135655",
+          "outside_interval_ticks": 1
+        }
+      ]
+    },
+    "final-D3-3-noise": {
+      "frozen_target_observed": 12,
+      "frozen_false_positives": 5,
+      "diagnostic_counts": {
+        "target_unobserved": 5,
+        "target_exact_identity_path_operation_outside_interval": 5,
+        "noise_unobserved": 2001,
+        "noise_exact_identity_path_operation_outside_interval": 2000,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": [
+        {
+          "role": "parent",
+          "operation": "set_value",
+          "start_ticks": "134351688563647160",
+          "end_ticks": "134351688563647720",
+          "event_ticks": "134351688563647753",
+          "outside_interval_ticks": 33
+        },
+        {
+          "role": "child",
+          "operation": "set_value",
+          "start_ticks": "134351688563778106",
+          "end_ticks": "134351688563778329",
+          "event_ticks": "134351688563778376",
+          "outside_interval_ticks": 47
+        },
+        {
+          "role": "child",
+          "operation": "set_value",
+          "start_ticks": "134351688563860772",
+          "end_ticks": "134351688563860994",
+          "event_ticks": "134351688563861047",
+          "outside_interval_ticks": 53
+        },
+        {
+          "role": "grandchild",
+          "operation": "set_value",
+          "start_ticks": "134351688564145952",
+          "end_ticks": "134351688564146239",
+          "event_ticks": "134351688564146309",
+          "outside_interval_ticks": 70
+        },
+        {
+          "role": "detached",
+          "operation": "write_requested",
+          "start_ticks": "134351688625284345",
+          "end_ticks": "134351688625290582",
+          "event_ticks": "134351688625293285",
+          "outside_interval_ticks": 2703
+        }
+      ]
+    },
+    "final-D3-3-ordinary": {
+      "frozen_target_observed": 12,
+      "frozen_false_positives": 5,
+      "diagnostic_counts": {
+        "target_unobserved": 5,
+        "target_exact_identity_path_operation_outside_interval": 5,
+        "noise_unobserved": 1,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": [
+        {
+          "role": "parent",
+          "operation": "set_value",
+          "start_ticks": "134351688447537224",
+          "end_ticks": "134351688447537701",
+          "event_ticks": "134351688447537732",
+          "outside_interval_ticks": 31
+        },
+        {
+          "role": "child",
+          "operation": "set_value",
+          "start_ticks": "134351688447608271",
+          "end_ticks": "134351688447608780",
+          "event_ticks": "134351688447608815",
+          "outside_interval_ticks": 35
+        },
+        {
+          "role": "child",
+          "operation": "set_value",
+          "start_ticks": "134351688447625602",
+          "end_ticks": "134351688447625877",
+          "event_ticks": "134351688447625914",
+          "outside_interval_ticks": 37
+        },
+        {
+          "role": "grandchild",
+          "operation": "set_value",
+          "start_ticks": "134351688447715424",
+          "end_ticks": "134351688447715830",
+          "event_ticks": "134351688447715871",
+          "outside_interval_ticks": 41
+        },
+        {
+          "role": "detached",
+          "operation": "write_requested",
+          "start_ticks": "134351688508840019",
+          "end_ticks": "134351688508847396",
+          "event_ticks": "134351688508849198",
+          "outside_interval_ticks": 1802
+        }
+      ]
+    },
+    "final-D3-4-noise": {
+      "frozen_target_observed": 16,
+      "frozen_false_positives": 1,
+      "diagnostic_counts": {
+        "noise_unobserved": 1829,
+        "noise_exact_identity_path_operation_outside_interval": 1828,
+        "noise_no_exact_identity_path_operation_record": 1,
+        "target_unobserved": 1,
+        "target_exact_identity_path_operation_outside_interval": 1
+      },
+      "target_offsets": [
+        {
+          "role": "detached",
+          "operation": "write_requested",
+          "start_ticks": "134351688898426193",
+          "end_ticks": "134351688898433745",
+          "event_ticks": "134351688898434281",
+          "outside_interval_ticks": 536
+        }
+      ]
+    },
+    "final-D3-4-ordinary": {
+      "frozen_target_observed": 12,
+      "frozen_false_positives": 5,
+      "diagnostic_counts": {
+        "target_unobserved": 5,
+        "target_exact_identity_path_operation_outside_interval": 5,
+        "noise_unobserved": 1,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": [
+        {
+          "role": "parent",
+          "operation": "set_value",
+          "start_ticks": "134351688728310789",
+          "end_ticks": "134351688728311383",
+          "event_ticks": "134351688728311384",
+          "outside_interval_ticks": 1
+        },
+        {
+          "role": "child",
+          "operation": "set_value",
+          "start_ticks": "134351688728383247",
+          "end_ticks": "134351688728383740",
+          "event_ticks": "134351688728383747",
+          "outside_interval_ticks": 7
+        },
+        {
+          "role": "child",
+          "operation": "set_value",
+          "start_ticks": "134351688728397189",
+          "end_ticks": "134351688728397395",
+          "event_ticks": "134351688728397404",
+          "outside_interval_ticks": 9
+        },
+        {
+          "role": "grandchild",
+          "operation": "set_value",
+          "start_ticks": "134351688728484372",
+          "end_ticks": "134351688728484788",
+          "event_ticks": "134351688728484797",
+          "outside_interval_ticks": 9
+        },
+        {
+          "role": "detached",
+          "operation": "write_requested",
+          "start_ticks": "134351688789611380",
+          "end_ticks": "134351688789618297",
+          "event_ticks": "134351688789618458",
+          "outside_interval_ticks": 161
+        }
+      ]
+    },
+    "final-D3-5-noise": {
+      "frozen_target_observed": 12,
+      "frozen_false_positives": 5,
+      "diagnostic_counts": {
+        "target_unobserved": 5,
+        "target_exact_identity_path_operation_outside_interval": 5,
+        "noise_unobserved": 1999,
+        "noise_exact_identity_path_operation_outside_interval": 1998,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": [
+        {
+          "role": "parent",
+          "operation": "set_value",
+          "start_ticks": "134351689218399417",
+          "end_ticks": "134351689218399939",
+          "event_ticks": "134351689218399969",
+          "outside_interval_ticks": 30
+        },
+        {
+          "role": "child",
+          "operation": "set_value",
+          "start_ticks": "134351689218516516",
+          "end_ticks": "134351689218517065",
+          "event_ticks": "134351689218517103",
+          "outside_interval_ticks": 38
+        },
+        {
+          "role": "child",
+          "operation": "set_value",
+          "start_ticks": "134351689218541423",
+          "end_ticks": "134351689218541642",
+          "event_ticks": "134351689218541686",
+          "outside_interval_ticks": 44
+        },
+        {
+          "role": "grandchild",
+          "operation": "set_value",
+          "start_ticks": "134351689218715426",
+          "end_ticks": "134351689218715739",
+          "event_ticks": "134351689218715790",
+          "outside_interval_ticks": 51
+        },
+        {
+          "role": "detached",
+          "operation": "write_requested",
+          "start_ticks": "134351689279858805",
+          "end_ticks": "134351689279864076",
+          "event_ticks": "134351689279866532",
+          "outside_interval_ticks": 2456
+        }
+      ]
+    },
+    "final-D3-5-ordinary": {
+      "frozen_target_observed": 12,
+      "frozen_false_positives": 5,
+      "diagnostic_counts": {
+        "target_unobserved": 5,
+        "target_exact_identity_path_operation_outside_interval": 5,
+        "noise_unobserved": 1,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": [
+        {
+          "role": "parent",
+          "operation": "set_value",
+          "start_ticks": "134351688995368728",
+          "end_ticks": "134351688995369229",
+          "event_ticks": "134351688995369247",
+          "outside_interval_ticks": 18
+        },
+        {
+          "role": "child",
+          "operation": "set_value",
+          "start_ticks": "134351688995439416",
+          "end_ticks": "134351688995439921",
+          "event_ticks": "134351688995439941",
+          "outside_interval_ticks": 20
+        },
+        {
+          "role": "child",
+          "operation": "set_value",
+          "start_ticks": "134351688995453507",
+          "end_ticks": "134351688995453888",
+          "event_ticks": "134351688995453909",
+          "outside_interval_ticks": 21
+        },
+        {
+          "role": "grandchild",
+          "operation": "set_value",
+          "start_ticks": "134351688995540937",
+          "end_ticks": "134351688995541390",
+          "event_ticks": "134351688995541415",
+          "outside_interval_ticks": 25
+        },
+        {
+          "role": "detached",
+          "operation": "write_requested",
+          "start_ticks": "134351689056802657",
+          "end_ticks": "134351689056808898",
+          "event_ticks": "134351689056810965",
+          "outside_interval_ticks": 2067
+        }
+      ]
+    }
+  }
+}

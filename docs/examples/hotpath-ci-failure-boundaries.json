@@ -1,0 +1,42 @@
+{
+  "note": "Diagnostic only. Exact identity/path/operation outside the frozen time interval receives no observation or attribution credit. Original scorer output unchanged; no time tolerance added.",
+  "trials": {
+    "demo-etw": {
+      "frozen_target_observed": 17,
+      "frozen_false_positives": 0,
+      "diagnostic_counts": {
+        "noise_unobserved": 1,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": []
+    },
+    "demo-etw-repeat": {
+      "frozen_target_observed": 15,
+      "frozen_false_positives": 2,
+      "diagnostic_counts": {
+        "target_unobserved": 2,
+        "target_exact_identity_path_operation_outside_interval": 2,
+        "noise_unobserved": 1,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": [
+        {
+          "role": "child",
+          "operation": "set_value",
+          "start_ticks": "134351698371954806",
+          "end_ticks": "134351698371955299",
+          "event_ticks": "134351698371955300",
+          "outside_interval_ticks": 1
+        },
+        {
+          "role": "child",
+          "operation": "set_value",
+          "start_ticks": "134351698371975719",
+          "end_ticks": "134351698371976094",
+          "event_ticks": "134351698371976095",
+          "outside_interval_ticks": 1
+        }
+      ]
+    }
+  }
+}

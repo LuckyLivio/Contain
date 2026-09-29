@@ -1,4 +1,3395 @@
 {
+  "final": {
+    "final-D3-1-noise": {
+      "capture_between_drains": {
+        "count": 5681,
+        "total_ns": 8731825400,
+        "max_ns": 145000100
+      },
+      "capture_lifetime_ingest": {
+        "count": 2586,
+        "total_ns": 161700,
+        "max_ns": 4500
+      },
+      "capture_queue_take": {
+        "count": 5682,
+        "total_ns": 4060600,
+        "max_ns": 865900
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 8711833000,
+        "max_ns": 8711833000
+      },
+      "initial_identity_snapshot": {
+        "count": 1,
+        "total_ns": 20103200,
+        "max_ns": 20103200
+      },
+      "initial_process_enumeration": {
+        "count": 1,
+        "total_ns": 12463100,
+        "max_ns": 12463100
+      },
+      "lifetime_attach": {
+        "count": 3270,
+        "total_ns": 1048200,
+        "max_ns": 9200
+      },
+      "lifetime_ingest": {
+        "count": 2906,
+        "total_ns": 172800,
+        "max_ns": 4200
+      },
+      "post_attribution": {
+        "count": 2794,
+        "total_ns": 500600,
+        "max_ns": 10500
+      },
+      "post_completion_query": {
+        "count": 41,
+        "total_ns": 237100,
+        "max_ns": 35500
+      },
+      "post_derived_group_commit": {
+        "count": 3,
+        "total_ns": 748461500,
+        "max_ns": 731260600
+      },
+      "post_derived_page_release": {
+        "count": 11,
+        "total_ns": 92400,
+        "max_ns": 11200
+      },
+      "post_derived_write": {
+        "count": 11,
+        "total_ns": 113224100,
+        "max_ns": 17997400
+      },
+      "post_details_edges": {
+        "count": 11,
+        "total_ns": 57714400,
+        "max_ns": 11920500
+      },
+      "post_documents": {
+        "count": 11,
+        "total_ns": 35429300,
+        "max_ns": 6230700
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 160792300,
+        "max_ns": 160792300
+      },
+      "post_header_query": {
+        "count": 76,
+        "total_ns": 534800,
+        "max_ns": 43500
+      },
+      "post_lifetime_resolve": {
+        "count": 2753,
+        "total_ns": 1002300,
+        "max_ns": 7400
+      },
+      "post_observations": {
+        "count": 11,
+        "total_ns": 19861600,
+        "max_ns": 2971800
+      },
+      "post_quality_graph": {
+        "count": 11,
+        "total_ns": 2113200,
+        "max_ns": 310700
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 56410500,
+        "max_ns": 56410500
+      },
+      "post_raw_read": {
+        "count": 24,
+        "total_ns": 27715700,
+        "max_ns": 1803600
+      },
+      "post_resource_read": {
+        "count": 18,
+        "total_ns": 596100,
+        "max_ns": 172800
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 804300,
+        "max_ns": 804300
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 650200,
+        "max_ns": 650200
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 2707500,
+        "max_ns": 2707500
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 2123061200,
+        "max_ns": 2123061200
+      },
+      "raw_batch_flush": {
+        "count": 22,
+        "total_ns": 180239900,
+        "max_ns": 143350500
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 22,
+        "total_ns": 165137000,
+        "max_ns": 143193800
+      },
+      "raw_insert": {
+        "count": 22,
+        "total_ns": 13852000,
+        "max_ns": 2282100
+      },
+      "raw_serialize": {
+        "count": 2753,
+        "total_ns": 9793400,
+        "max_ns": 153700
+      }
+    },
+    "final-D3-1-ordinary": {
+      "capture_between_drains": {
+        "count": 5811,
+        "total_ns": 8762434100,
+        "max_ns": 7741400
+      },
+      "capture_lifetime_ingest": {
+        "count": 875,
+        "total_ns": 119500,
+        "max_ns": 8800
+      },
+      "capture_queue_take": {
+        "count": 5812,
+        "total_ns": 2262700,
+        "max_ns": 126200
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 8747602700,
+        "max_ns": 8747602700
+      },
+      "initial_identity_snapshot": {
+        "count": 1,
+        "total_ns": 14981900,
+        "max_ns": 14981900
+      },
+      "initial_process_enumeration": {
+        "count": 1,
+        "total_ns": 7645000,
+        "max_ns": 7645000
+      },
+      "lifetime_attach": {
+        "count": 3302,
+        "total_ns": 1424800,
+        "max_ns": 20800
+      },
+      "lifetime_ingest": {
+        "count": 1035,
+        "total_ns": 91000,
+        "max_ns": 3700
+      },
+      "post_attribution": {
+        "count": 1004,
+        "total_ns": 300600,
+        "max_ns": 5600
+      },
+      "post_completion_query": {
+        "count": 41,
+        "total_ns": 202100,
+        "max_ns": 50700
+      },
+      "post_derived_group_commit": {
+        "count": 2,
+        "total_ns": 2280400,
+        "max_ns": 2276800
+      },
+      "post_derived_page_release": {
+        "count": 4,
+        "total_ns": 26200,
+        "max_ns": 15200
+      },
+      "post_derived_write": {
+        "count": 4,
+        "total_ns": 4753900,
+        "max_ns": 2594500
+      },
+      "post_details_edges": {
+        "count": 4,
+        "total_ns": 1758900,
+        "max_ns": 1110000
+      },
+      "post_documents": {
+        "count": 4,
+        "total_ns": 1870600,
+        "max_ns": 848400
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 25730900,
+        "max_ns": 25730900
+      },
+      "post_header_query": {
+        "count": 67,
+        "total_ns": 416400,
+        "max_ns": 31300
+      },
+      "post_lifetime_resolve": {
+        "count": 963,
+        "total_ns": 145600,
+        "max_ns": 1400
+      },
+      "post_observations": {
+        "count": 4,
+        "total_ns": 1082300,
+        "max_ns": 626200
+      },
+      "post_quality_graph": {
+        "count": 4,
+        "total_ns": 120400,
+        "max_ns": 71600
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 15589500,
+        "max_ns": 15589500
+      },
+      "post_raw_read": {
+        "count": 10,
+        "total_ns": 8072300,
+        "max_ns": 1386000
+      },
+      "post_resource_read": {
+        "count": 18,
+        "total_ns": 432900,
+        "max_ns": 97900
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 616400,
+        "max_ns": 616400
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 656400,
+        "max_ns": 656400
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 2530400,
+        "max_ns": 2530400
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 1118493100,
+        "max_ns": 1118493100
+      },
+      "raw_batch_flush": {
+        "count": 15,
+        "total_ns": 12068800,
+        "max_ns": 2347500
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 15,
+        "total_ns": 6632500,
+        "max_ns": 1292700
+      },
+      "raw_insert": {
+        "count": 15,
+        "total_ns": 4528300,
+        "max_ns": 1088200
+      },
+      "raw_serialize": {
+        "count": 963,
+        "total_ns": 3005700,
+        "max_ns": 58200
+      }
+    },
+    "final-D3-2-noise": {
+      "capture_between_drains": {
+        "count": 5984,
+        "total_ns": 9158452800,
+        "max_ns": 56865500
+      },
+      "capture_lifetime_ingest": {
+        "count": 2595,
+        "total_ns": 163500,
+        "max_ns": 5100
+      },
+      "capture_queue_take": {
+        "count": 5985,
+        "total_ns": 5113200,
+        "max_ns": 198300
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 9143885900,
+        "max_ns": 9143885900
+      },
+      "initial_identity_snapshot": {
+        "count": 1,
+        "total_ns": 15833600,
+        "max_ns": 15833600
+      },
+      "initial_process_enumeration": {
+        "count": 1,
+        "total_ns": 8114300,
+        "max_ns": 8114300
+      },
+      "lifetime_attach": {
+        "count": 3480,
+        "total_ns": 1584700,
+        "max_ns": 29600
+      },
+      "lifetime_ingest": {
+        "count": 9142,
+        "total_ns": 488800,
+        "max_ns": 29200
+      },
+      "post_attribution": {
+        "count": 5917,
+        "total_ns": 769100,
+        "max_ns": 43000
+      },
+      "post_completion_query": {
+        "count": 41,
+        "total_ns": 261500,
+        "max_ns": 27800
+      },
+      "post_derived_group_commit": {
+        "count": 6,
+        "total_ns": 23935700,
+        "max_ns": 9438500
+      },
+      "post_derived_page_release": {
+        "count": 23,
+        "total_ns": 153200,
+        "max_ns": 32500
+      },
+      "post_derived_write": {
+        "count": 23,
+        "total_ns": 102195000,
+        "max_ns": 16263300
+      },
+      "post_details_edges": {
+        "count": 23,
+        "total_ns": 54912400,
+        "max_ns": 10917100
+      },
+      "post_documents": {
+        "count": 23,
+        "total_ns": 28223400,
+        "max_ns": 4008500
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 293259800,
+        "max_ns": 293259800
+      },
+      "post_header_query": {
+        "count": 72,
+        "total_ns": 714600,
+        "max_ns": 82300
+      },
+      "post_lifetime_resolve": {
+        "count": 5876,
+        "total_ns": 1353300,
+        "max_ns": 6100
+      },
+      "post_observations": {
+        "count": 23,
+        "total_ns": 18771000,
+        "max_ns": 2235200
+      },
+      "post_quality_graph": {
+        "count": 23,
+        "total_ns": 1996000,
+        "max_ns": 243000
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 7095448500,
+        "max_ns": 7095448500
+      },
+      "post_raw_read": {
+        "count": 48,
+        "total_ns": 56571000,
+        "max_ns": 1604200
+      },
+      "post_resource_read": {
+        "count": 18,
+        "total_ns": 724900,
+        "max_ns": 190700
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 926400,
+        "max_ns": 926400
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 677900,
+        "max_ns": 677900
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 3044400,
+        "max_ns": 3044400
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 8657170500,
+        "max_ns": 8657170500
+      },
+      "raw_batch_flush": {
+        "count": 47,
+        "total_ns": 130897700,
+        "max_ns": 55666600
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 47,
+        "total_ns": 104942700,
+        "max_ns": 54882200
+      },
+      "raw_insert": {
+        "count": 47,
+        "total_ns": 23142500,
+        "max_ns": 1470100
+      },
+      "raw_serialize": {
+        "count": 5876,
+        "total_ns": 18667600,
+        "max_ns": 81300
+      }
+    },
+    "final-D3-2-ordinary": {
+      "capture_between_drains": {
+        "count": 5959,
+        "total_ns": 9002074100,
+        "max_ns": 9862000
+      },
+      "capture_lifetime_ingest": {
+        "count": 472,
+        "total_ns": 63000,
+        "max_ns": 6300
+      },
+      "capture_queue_take": {
+        "count": 5960,
+        "total_ns": 1763100,
+        "max_ns": 131100
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 8987568300,
+        "max_ns": 8987568300
+      },
+      "initial_identity_snapshot": {
+        "count": 1,
+        "total_ns": 14603300,
+        "max_ns": 14603300
+      },
+      "initial_process_enumeration": {
+        "count": 1,
+        "total_ns": 7516700,
+        "max_ns": 7516700
+      },
+      "lifetime_attach": {
+        "count": 3451,
+        "total_ns": 607300,
+        "max_ns": 26500
+      },
+      "lifetime_ingest": {
+        "count": 725,
+        "total_ns": 84600,
+        "max_ns": 8200
+      },
+      "post_attribution": {
+        "count": 648,
+        "total_ns": 258200,
+        "max_ns": 7700
+      },
+      "post_completion_query": {
+        "count": 41,
+        "total_ns": 199100,
+        "max_ns": 46900
+      },
+      "post_derived_group_commit": {
+        "count": 1,
+        "total_ns": 2034900,
+        "max_ns": 2034900
+      },
+      "post_derived_page_release": {
+        "count": 3,
+        "total_ns": 21100,
+        "max_ns": 11200
+      },
+      "post_derived_write": {
+        "count": 3,
+        "total_ns": 4535100,
+        "max_ns": 2533700
+      },
+      "post_details_edges": {
+        "count": 3,
+        "total_ns": 1741600,
+        "max_ns": 1107000
+      },
+      "post_documents": {
+        "count": 3,
+        "total_ns": 1773200,
+        "max_ns": 780500
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 18258600,
+        "max_ns": 18258600
+      },
+      "post_header_query": {
+        "count": 52,
+        "total_ns": 360700,
+        "max_ns": 29300
+      },
+      "post_lifetime_resolve": {
+        "count": 607,
+        "total_ns": 102100,
+        "max_ns": 2200
+      },
+      "post_observations": {
+        "count": 3,
+        "total_ns": 986500,
+        "max_ns": 635900
+      },
+      "post_quality_graph": {
+        "count": 3,
+        "total_ns": 123500,
+        "max_ns": 79000
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 9214200,
+        "max_ns": 9214200
+      },
+      "post_raw_read": {
+        "count": 8,
+        "total_ns": 4677600,
+        "max_ns": 1228900
+      },
+      "post_resource_read": {
+        "count": 18,
+        "total_ns": 441800,
+        "max_ns": 99700
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 632700,
+        "max_ns": 632700
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 874700,
+        "max_ns": 874700
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 2415600,
+        "max_ns": 2415600
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 1069373800,
+        "max_ns": 1069373800
+      },
+      "raw_batch_flush": {
+        "count": 15,
+        "total_ns": 17066500,
+        "max_ns": 8590400
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 15,
+        "total_ns": 12581500,
+        "max_ns": 8243600
+      },
+      "raw_insert": {
+        "count": 15,
+        "total_ns": 3561600,
+        "max_ns": 1233300
+      },
+      "raw_serialize": {
+        "count": 607,
+        "total_ns": 1576200,
+        "max_ns": 38200
+      }
+    },
+    "final-D3-3-noise": {
+      "capture_between_drains": {
+        "count": 5916,
+        "total_ns": 8945488300,
+        "max_ns": 8226100
+      },
+      "capture_lifetime_ingest": {
+        "count": 2946,
+        "total_ns": 200300,
+        "max_ns": 4600
+      },
+      "capture_queue_take": {
+        "count": 5917,
+        "total_ns": 3335500,
+        "max_ns": 159200
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 8931219900,
+        "max_ns": 8931219900
+      },
+      "initial_identity_snapshot": {
+        "count": 1,
+        "total_ns": 14369300,
+        "max_ns": 14369300
+      },
+      "initial_process_enumeration": {
+        "count": 1,
+        "total_ns": 8131500,
+        "max_ns": 8131500
+      },
+      "lifetime_attach": {
+        "count": 3417,
+        "total_ns": 1501000,
+        "max_ns": 22800
+      },
+      "lifetime_ingest": {
+        "count": 3155,
+        "total_ns": 188000,
+        "max_ns": 5300
+      },
+      "post_attribution": {
+        "count": 3101,
+        "total_ns": 522700,
+        "max_ns": 10800
+      },
+      "post_completion_query": {
+        "count": 41,
+        "total_ns": 367900,
+        "max_ns": 96200
+      },
+      "post_derived_group_commit": {
+        "count": 4,
+        "total_ns": 682470000,
+        "max_ns": 666451200
+      },
+      "post_derived_page_release": {
+        "count": 12,
+        "total_ns": 111000,
+        "max_ns": 12100
+      },
+      "post_derived_write": {
+        "count": 12,
+        "total_ns": 103861300,
+        "max_ns": 13737100
+      },
+      "post_details_edges": {
+        "count": 12,
+        "total_ns": 48505100,
+        "max_ns": 7569800
+      },
+      "post_documents": {
+        "count": 12,
+        "total_ns": 36370000,
+        "max_ns": 7400900
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 156731800,
+        "max_ns": 156731800
+      },
+      "post_header_query": {
+        "count": 82,
+        "total_ns": 604700,
+        "max_ns": 65900
+      },
+      "post_lifetime_resolve": {
+        "count": 3060,
+        "total_ns": 1023900,
+        "max_ns": 10200
+      },
+      "post_observations": {
+        "count": 12,
+        "total_ns": 18782300,
+        "max_ns": 2328400
+      },
+      "post_quality_graph": {
+        "count": 12,
+        "total_ns": 2041700,
+        "max_ns": 280300
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 63764400,
+        "max_ns": 63764400
+      },
+      "post_raw_read": {
+        "count": 26,
+        "total_ns": 31507000,
+        "max_ns": 1777200
+      },
+      "post_resource_read": {
+        "count": 18,
+        "total_ns": 771600,
+        "max_ns": 303200
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 969400,
+        "max_ns": 969400
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 668100,
+        "max_ns": 668100
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 2859900,
+        "max_ns": 2859900
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 2149952900,
+        "max_ns": 2149952900
+      },
+      "raw_batch_flush": {
+        "count": 23,
+        "total_ns": 34755000,
+        "max_ns": 2955700
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 23,
+        "total_ns": 19153300,
+        "max_ns": 1725500
+      },
+      "raw_insert": {
+        "count": 23,
+        "total_ns": 14273000,
+        "max_ns": 1423800
+      },
+      "raw_serialize": {
+        "count": 3060,
+        "total_ns": 10335000,
+        "max_ns": 52600
+      }
+    },
+    "final-D3-3-ordinary": {
+      "capture_between_drains": {
+        "count": 6494,
+        "total_ns": 9892729400,
+        "max_ns": 33205500
+      },
+      "capture_lifetime_ingest": {
+        "count": 1190,
+        "total_ns": 134500,
+        "max_ns": 19700
+      },
+      "capture_queue_take": {
+        "count": 6495,
+        "total_ns": 4693500,
+        "max_ns": 290400
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 9874834500,
+        "max_ns": 9874834500
+      },
+      "initial_identity_snapshot": {
+        "count": 1,
+        "total_ns": 18013400,
+        "max_ns": 18013400
+      },
+      "initial_process_enumeration": {
+        "count": 1,
+        "total_ns": 8872700,
+        "max_ns": 8872700
+      },
+      "lifetime_attach": {
+        "count": 4015,
+        "total_ns": 709900,
+        "max_ns": 31600
+      },
+      "lifetime_ingest": {
+        "count": 6265,
+        "total_ns": 294800,
+        "max_ns": 5100
+      },
+      "post_attribution": {
+        "count": 3849,
+        "total_ns": 505400,
+        "max_ns": 29400
+      },
+      "post_completion_query": {
+        "count": 41,
+        "total_ns": 187500,
+        "max_ns": 38600
+      },
+      "post_derived_group_commit": {
+        "count": 4,
+        "total_ns": 7517700,
+        "max_ns": 6455800
+      },
+      "post_derived_page_release": {
+        "count": 15,
+        "total_ns": 47600,
+        "max_ns": 11000
+      },
+      "post_derived_write": {
+        "count": 15,
+        "total_ns": 6632600,
+        "max_ns": 2306000
+      },
+      "post_details_edges": {
+        "count": 15,
+        "total_ns": 3157200,
+        "max_ns": 1031000
+      },
+      "post_documents": {
+        "count": 15,
+        "total_ns": 2121200,
+        "max_ns": 747200
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 115878100,
+        "max_ns": 115878100
+      },
+      "post_header_query": {
+        "count": 36,
+        "total_ns": 330000,
+        "max_ns": 41300
+      },
+      "post_lifetime_resolve": {
+        "count": 3808,
+        "total_ns": 497900,
+        "max_ns": 2000
+      },
+      "post_observations": {
+        "count": 15,
+        "total_ns": 1235300,
+        "max_ns": 572300
+      },
+      "post_quality_graph": {
+        "count": 15,
+        "total_ns": 151700,
+        "max_ns": 78900
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 724785500,
+        "max_ns": 724785500
+      },
+      "post_raw_read": {
+        "count": 32,
+        "total_ns": 34715500,
+        "max_ns": 1465500
+      },
+      "post_resource_read": {
+        "count": 18,
+        "total_ns": 525600,
+        "max_ns": 94900
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 714300,
+        "max_ns": 714300
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 636800,
+        "max_ns": 636800
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 2010100,
+        "max_ns": 2010100
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 1954328900,
+        "max_ns": 1954328900
+      },
+      "raw_batch_flush": {
+        "count": 44,
+        "total_ns": 88226000,
+        "max_ns": 32113400
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 44,
+        "total_ns": 71543000,
+        "max_ns": 31750600
+      },
+      "raw_insert": {
+        "count": 44,
+        "total_ns": 14020300,
+        "max_ns": 994100
+      },
+      "raw_serialize": {
+        "count": 3808,
+        "total_ns": 9756700,
+        "max_ns": 79100
+      }
+    },
+    "final-D3-4-noise": {
+      "capture_between_drains": {
+        "count": 5822,
+        "total_ns": 8844449300,
+        "max_ns": 8324000
+      },
+      "capture_lifetime_ingest": {
+        "count": 7103,
+        "total_ns": 401000,
+        "max_ns": 38200
+      },
+      "capture_queue_take": {
+        "count": 5823,
+        "total_ns": 6220500,
+        "max_ns": 243900
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 8829292600,
+        "max_ns": 8829292600
+      },
+      "initial_identity_snapshot": {
+        "count": 1,
+        "total_ns": 15267600,
+        "max_ns": 15267600
+      },
+      "initial_process_enumeration": {
+        "count": 1,
+        "total_ns": 8245200,
+        "max_ns": 8245200
+      },
+      "lifetime_attach": {
+        "count": 3354,
+        "total_ns": 1136100,
+        "max_ns": 11700
+      },
+      "lifetime_ingest": {
+        "count": 7292,
+        "total_ns": 336700,
+        "max_ns": 5000
+      },
+      "post_attribution": {
+        "count": 7247,
+        "total_ns": 816900,
+        "max_ns": 34900
+      },
+      "post_completion_query": {
+        "count": 41,
+        "total_ns": 259600,
+        "max_ns": 41500
+      },
+      "post_derived_group_commit": {
+        "count": 8,
+        "total_ns": 24670700,
+        "max_ns": 9334100
+      },
+      "post_derived_page_release": {
+        "count": 29,
+        "total_ns": 127700,
+        "max_ns": 11200
+      },
+      "post_derived_write": {
+        "count": 29,
+        "total_ns": 97474900,
+        "max_ns": 12424300
+      },
+      "post_details_edges": {
+        "count": 29,
+        "total_ns": 50861200,
+        "max_ns": 7741100
+      },
+      "post_documents": {
+        "count": 29,
+        "total_ns": 27445100,
+        "max_ns": 3703700
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 33687100,
+        "max_ns": 33687100
+      },
+      "post_header_query": {
+        "count": 43,
+        "total_ns": 403300,
+        "max_ns": 44000
+      },
+      "post_lifetime_resolve": {
+        "count": 7206,
+        "total_ns": 1756300,
+        "max_ns": 28800
+      },
+      "post_observations": {
+        "count": 29,
+        "total_ns": 18896900,
+        "max_ns": 2253100
+      },
+      "post_quality_graph": {
+        "count": 29,
+        "total_ns": 1839900,
+        "max_ns": 261200
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 1133494100,
+        "max_ns": 1133494100
+      },
+      "post_raw_read": {
+        "count": 60,
+        "total_ns": 65882900,
+        "max_ns": 1617700
+      },
+      "post_resource_read": {
+        "count": 18,
+        "total_ns": 678300,
+        "max_ns": 194500
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 877600,
+        "max_ns": 877600
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 630100,
+        "max_ns": 630100
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 2904900,
+        "max_ns": 2904900
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 2432938500,
+        "max_ns": 2432938500
+      },
+      "raw_batch_flush": {
+        "count": 38,
+        "total_ns": 75316000,
+        "max_ns": 3398000
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 38,
+        "total_ns": 44257400,
+        "max_ns": 2157300
+      },
+      "raw_insert": {
+        "count": 38,
+        "total_ns": 29201600,
+        "max_ns": 1463300
+      },
+      "raw_serialize": {
+        "count": 7206,
+        "total_ns": 23723000,
+        "max_ns": 71400
+      }
+    },
+    "final-D3-4-ordinary": {
+      "capture_between_drains": {
+        "count": 5123,
+        "total_ns": 7791614500,
+        "max_ns": 59446700
+      },
+      "capture_lifetime_ingest": {
+        "count": 1978,
+        "total_ns": 135100,
+        "max_ns": 25500
+      },
+      "capture_queue_take": {
+        "count": 5124,
+        "total_ns": 4777400,
+        "max_ns": 222300
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 7776657300,
+        "max_ns": 7776657300
+      },
+      "initial_identity_snapshot": {
+        "count": 1,
+        "total_ns": 15050800,
+        "max_ns": 15050800
+      },
+      "initial_process_enumeration": {
+        "count": 1,
+        "total_ns": 7951200,
+        "max_ns": 7951200
+      },
+      "lifetime_attach": {
+        "count": 2620,
+        "total_ns": 1400900,
+        "max_ns": 35400
+      },
+      "lifetime_ingest": {
+        "count": 6144,
+        "total_ns": 330000,
+        "max_ns": 5500
+      },
+      "post_attribution": {
+        "count": 4109,
+        "total_ns": 513000,
+        "max_ns": 6100
+      },
+      "post_completion_query": {
+        "count": 41,
+        "total_ns": 206700,
+        "max_ns": 55300
+      },
+      "post_derived_group_commit": {
+        "count": 5,
+        "total_ns": 19364900,
+        "max_ns": 17926200
+      },
+      "post_derived_page_release": {
+        "count": 16,
+        "total_ns": 50900,
+        "max_ns": 11000
+      },
+      "post_derived_write": {
+        "count": 16,
+        "total_ns": 6992400,
+        "max_ns": 2538300
+      },
+      "post_details_edges": {
+        "count": 16,
+        "total_ns": 3650600,
+        "max_ns": 1049100
+      },
+      "post_documents": {
+        "count": 16,
+        "total_ns": 2102900,
+        "max_ns": 809800
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 71157100,
+        "max_ns": 71157100
+      },
+      "post_header_query": {
+        "count": 40,
+        "total_ns": 411200,
+        "max_ns": 46000
+      },
+      "post_lifetime_resolve": {
+        "count": 4068,
+        "total_ns": 517200,
+        "max_ns": 3100
+      },
+      "post_observations": {
+        "count": 16,
+        "total_ns": 1124800,
+        "max_ns": 668900
+      },
+      "post_quality_graph": {
+        "count": 16,
+        "total_ns": 158800,
+        "max_ns": 70100
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 6463648900,
+        "max_ns": 6463648900
+      },
+      "post_raw_read": {
+        "count": 34,
+        "total_ns": 39102800,
+        "max_ns": 1612200
+      },
+      "post_resource_read": {
+        "count": 18,
+        "total_ns": 573000,
+        "max_ns": 91200
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 761100,
+        "max_ns": 761100
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 691000,
+        "max_ns": 691000
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 1903900,
+        "max_ns": 1903900
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 7654835500,
+        "max_ns": 7654835500
+      },
+      "raw_batch_flush": {
+        "count": 34,
+        "total_ns": 99229500,
+        "max_ns": 57732100
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 34,
+        "total_ns": 82476600,
+        "max_ns": 57273100
+      },
+      "raw_insert": {
+        "count": 34,
+        "total_ns": 14679400,
+        "max_ns": 1327300
+      },
+      "raw_serialize": {
+        "count": 4068,
+        "total_ns": 13438800,
+        "max_ns": 120700
+      }
+    },
+    "final-D3-5-noise": {
+      "capture_between_drains": {
+        "count": 5465,
+        "total_ns": 8359603500,
+        "max_ns": 52245700
+      },
+      "capture_lifetime_ingest": {
+        "count": 4127,
+        "total_ns": 264700,
+        "max_ns": 13300
+      },
+      "capture_queue_take": {
+        "count": 5466,
+        "total_ns": 4593100,
+        "max_ns": 302200
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 8344007500,
+        "max_ns": 8344007500
+      },
+      "initial_identity_snapshot": {
+        "count": 1,
+        "total_ns": 15837900,
+        "max_ns": 15837900
+      },
+      "initial_process_enumeration": {
+        "count": 1,
+        "total_ns": 8260800,
+        "max_ns": 8260800
+      },
+      "lifetime_attach": {
+        "count": 2957,
+        "total_ns": 1460800,
+        "max_ns": 61700
+      },
+      "lifetime_ingest": {
+        "count": 5387,
+        "total_ns": 301700,
+        "max_ns": 5300
+      },
+      "post_attribution": {
+        "count": 4814,
+        "total_ns": 800600,
+        "max_ns": 166100
+      },
+      "post_completion_query": {
+        "count": 41,
+        "total_ns": 241200,
+        "max_ns": 31700
+      },
+      "post_derived_group_commit": {
+        "count": 5,
+        "total_ns": 24862200,
+        "max_ns": 9549900
+      },
+      "post_derived_page_release": {
+        "count": 19,
+        "total_ns": 132300,
+        "max_ns": 12800
+      },
+      "post_derived_write": {
+        "count": 19,
+        "total_ns": 116854000,
+        "max_ns": 20066100
+      },
+      "post_details_edges": {
+        "count": 19,
+        "total_ns": 67154400,
+        "max_ns": 13981600
+      },
+      "post_documents": {
+        "count": 19,
+        "total_ns": 29853900,
+        "max_ns": 4690100
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 196635200,
+        "max_ns": 196635200
+      },
+      "post_header_query": {
+        "count": 93,
+        "total_ns": 857300,
+        "max_ns": 103000
+      },
+      "post_lifetime_resolve": {
+        "count": 4773,
+        "total_ns": 1268700,
+        "max_ns": 23600
+      },
+      "post_observations": {
+        "count": 19,
+        "total_ns": 19587500,
+        "max_ns": 2483400
+      },
+      "post_quality_graph": {
+        "count": 19,
+        "total_ns": 2379200,
+        "max_ns": 412200
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 1314316900,
+        "max_ns": 1314316900
+      },
+      "post_raw_read": {
+        "count": 40,
+        "total_ns": 46618700,
+        "max_ns": 1595400
+      },
+      "post_resource_read": {
+        "count": 18,
+        "total_ns": 657300,
+        "max_ns": 200000
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 858600,
+        "max_ns": 858600
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 643700,
+        "max_ns": 643700
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 2863400,
+        "max_ns": 2863400
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 2878837300,
+        "max_ns": 2878837300
+      },
+      "raw_batch_flush": {
+        "count": 46,
+        "total_ns": 106399100,
+        "max_ns": 51149100
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 46,
+        "total_ns": 81758900,
+        "max_ns": 50860600
+      },
+      "raw_insert": {
+        "count": 46,
+        "total_ns": 21801300,
+        "max_ns": 2208600
+      },
+      "raw_serialize": {
+        "count": 4773,
+        "total_ns": 15616700,
+        "max_ns": 156300
+      }
+    },
+    "final-D3-5-ordinary": {
+      "capture_between_drains": {
+        "count": 5078,
+        "total_ns": 7708672900,
+        "max_ns": 37528600
+      },
+      "capture_lifetime_ingest": {
+        "count": 892,
+        "total_ns": 119700,
+        "max_ns": 15100
+      },
+      "capture_queue_take": {
+        "count": 5079,
+        "total_ns": 3600100,
+        "max_ns": 98400
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 7694561500,
+        "max_ns": 7694561500
+      },
+      "initial_identity_snapshot": {
+        "count": 1,
+        "total_ns": 14350500,
+        "max_ns": 14350500
+      },
+      "initial_process_enumeration": {
+        "count": 1,
+        "total_ns": 8070800,
+        "max_ns": 8070800
+      },
+      "lifetime_attach": {
+        "count": 2569,
+        "total_ns": 1327800,
+        "max_ns": 15300
+      },
+      "lifetime_ingest": {
+        "count": 7152,
+        "total_ns": 400000,
+        "max_ns": 30000
+      },
+      "post_attribution": {
+        "count": 4070,
+        "total_ns": 517400,
+        "max_ns": 6700
+      },
+      "post_completion_query": {
+        "count": 41,
+        "total_ns": 227400,
+        "max_ns": 69400
+      },
+      "post_derived_group_commit": {
+        "count": 5,
+        "total_ns": 16264900,
+        "max_ns": 14888900
+      },
+      "post_derived_page_release": {
+        "count": 16,
+        "total_ns": 53500,
+        "max_ns": 7200
+      },
+      "post_derived_write": {
+        "count": 16,
+        "total_ns": 7674300,
+        "max_ns": 3146100
+      },
+      "post_details_edges": {
+        "count": 16,
+        "total_ns": 2944600,
+        "max_ns": 1166100
+      },
+      "post_documents": {
+        "count": 16,
+        "total_ns": 2828100,
+        "max_ns": 1414000
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 102285700,
+        "max_ns": 102285700
+      },
+      "post_header_query": {
+        "count": 58,
+        "total_ns": 559500,
+        "max_ns": 88100
+      },
+      "post_lifetime_resolve": {
+        "count": 4029,
+        "total_ns": 517400,
+        "max_ns": 2500
+      },
+      "post_observations": {
+        "count": 16,
+        "total_ns": 1779500,
+        "max_ns": 598300
+      },
+      "post_quality_graph": {
+        "count": 16,
+        "total_ns": 181400,
+        "max_ns": 110100
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 6789118400,
+        "max_ns": 6789118400
+      },
+      "post_raw_read": {
+        "count": 34,
+        "total_ns": 40109800,
+        "max_ns": 1621500
+      },
+      "post_resource_read": {
+        "count": 18,
+        "total_ns": 525900,
+        "max_ns": 89700
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 703700,
+        "max_ns": 703700
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 642400,
+        "max_ns": 642400
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 2113400,
+        "max_ns": 2113400
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 8052333700,
+        "max_ns": 8052333700
+      },
+      "raw_batch_flush": {
+        "count": 38,
+        "total_ns": 78630300,
+        "max_ns": 36407200
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 38,
+        "total_ns": 60974800,
+        "max_ns": 35754600
+      },
+      "raw_insert": {
+        "count": 38,
+        "total_ns": 15280400,
+        "max_ns": 1143000
+      },
+      "raw_serialize": {
+        "count": 4029,
+        "total_ns": 12535900,
+        "max_ns": 277000
+      }
+    },
+    "baseline-stress-10000-1": {
+      "capture_between_drains": {
+        "count": 1028,
+        "total_ns": 8582006800,
+        "max_ns": 2071799600
+      },
+      "capture_descendant_query": {
+        "count": 3520,
+        "total_ns": 1697800,
+        "max_ns": 26200
+      },
+      "capture_lifetime_ingest": {
+        "count": 28275,
+        "total_ns": 1284400,
+        "max_ns": 43700
+      },
+      "capture_process_poll": {
+        "count": 65,
+        "total_ns": 1747537700,
+        "max_ns": 558819500
+      },
+      "capture_queue_take": {
+        "count": 1029,
+        "total_ns": 16777100,
+        "max_ns": 1940200
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 8595770700,
+        "max_ns": 8595770700
+      },
+      "lifetime_attach": {
+        "count": 880,
+        "total_ns": 173100,
+        "max_ns": 6000
+      },
+      "lifetime_ingest": {
+        "count": 57466,
+        "total_ns": 2222100,
+        "max_ns": 19300
+      },
+      "post_attribution": {
+        "count": 42871,
+        "total_ns": 3930600,
+        "max_ns": 30600
+      },
+      "post_completion_query": {
+        "count": 11583,
+        "total_ns": 129203800,
+        "max_ns": 585500
+      },
+      "post_derived_group_commit": {
+        "count": 43,
+        "total_ns": 44736427000,
+        "max_ns": 4626976500
+      },
+      "post_derived_page_release": {
+        "count": 168,
+        "total_ns": 2345400,
+        "max_ns": 57400
+      },
+      "post_derived_write": {
+        "count": 168,
+        "total_ns": 3223633100,
+        "max_ns": 388355700
+      },
+      "post_details_edges": {
+        "count": 168,
+        "total_ns": 962403300,
+        "max_ns": 45959100
+      },
+      "post_documents": {
+        "count": 168,
+        "total_ns": 1300799000,
+        "max_ns": 377251600
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 17518313400,
+        "max_ns": 17518313400
+      },
+      "post_header_query": {
+        "count": 33,
+        "total_ns": 659600,
+        "max_ns": 56600
+      },
+      "post_observations": {
+        "count": 168,
+        "total_ns": 956212500,
+        "max_ns": 16963600
+      },
+      "post_quality_graph": {
+        "count": 168,
+        "total_ns": 7732100,
+        "max_ns": 181000
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 13465131300,
+        "max_ns": 13465131300
+      },
+      "post_raw_read": {
+        "count": 338,
+        "total_ns": 368906300,
+        "max_ns": 3980900
+      },
+      "post_resource_read": {
+        "count": 5001,
+        "total_ns": 37433900,
+        "max_ns": 287700
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 52791600,
+        "max_ns": 52791600
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 56937300,
+        "max_ns": 56937300
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 7168435100,
+        "max_ns": 7168435100
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 88249033400,
+        "max_ns": 88249033400
+      },
+      "process_poll_identity_query": {
+        "count": 324,
+        "total_ns": 11520300,
+        "max_ns": 2434400
+      },
+      "raw_batch_flush": {
+        "count": 170,
+        "total_ns": 5363388400,
+        "max_ns": 2032789600
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 170,
+        "total_ns": 5119802300,
+        "max_ns": 2031940300
+      },
+      "raw_insert": {
+        "count": 170,
+        "total_ns": 231119800,
+        "max_ns": 21847400
+      },
+      "raw_serialize": {
+        "count": 42871,
+        "total_ns": 107978300,
+        "max_ns": 2868500
+      }
+    },
+    "baseline-stress-10000-2": {
+      "capture_between_drains": {
+        "count": 1043,
+        "total_ns": 8185334200,
+        "max_ns": 2380018300
+      },
+      "capture_descendant_query": {
+        "count": 3616,
+        "total_ns": 1985000,
+        "max_ns": 31600
+      },
+      "capture_lifetime_ingest": {
+        "count": 27666,
+        "total_ns": 1371300,
+        "max_ns": 52700
+      },
+      "capture_process_poll": {
+        "count": 66,
+        "total_ns": 1139865500,
+        "max_ns": 169150100
+      },
+      "capture_queue_take": {
+        "count": 1044,
+        "total_ns": 19617000,
+        "max_ns": 2969300
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 8199285200,
+        "max_ns": 8199285200
+      },
+      "lifetime_attach": {
+        "count": 904,
+        "total_ns": 219300,
+        "max_ns": 24800
+      },
+      "lifetime_ingest": {
+        "count": 59423,
+        "total_ns": 2385500,
+        "max_ns": 35900
+      },
+      "post_attribution": {
+        "count": 43545,
+        "total_ns": 3413000,
+        "max_ns": 24700
+      },
+      "post_completion_query": {
+        "count": 11717,
+        "total_ns": 118999500,
+        "max_ns": 190800
+      },
+      "post_derived_group_commit": {
+        "count": 43,
+        "total_ns": 45941134700,
+        "max_ns": 4517560100
+      },
+      "post_derived_page_release": {
+        "count": 171,
+        "total_ns": 2045000,
+        "max_ns": 24000
+      },
+      "post_derived_write": {
+        "count": 171,
+        "total_ns": 2946258600,
+        "max_ns": 286984700
+      },
+      "post_details_edges": {
+        "count": 171,
+        "total_ns": 871751600,
+        "max_ns": 12856200
+      },
+      "post_documents": {
+        "count": 171,
+        "total_ns": 896548900,
+        "max_ns": 11469100
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 18170428800,
+        "max_ns": 18170428800
+      },
+      "post_header_query": {
+        "count": 47,
+        "total_ns": 1261100,
+        "max_ns": 73400
+      },
+      "post_observations": {
+        "count": 171,
+        "total_ns": 1174137700,
+        "max_ns": 278226800
+      },
+      "post_quality_graph": {
+        "count": 171,
+        "total_ns": 7184700,
+        "max_ns": 95300
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 13755973700,
+        "max_ns": 13755973700
+      },
+      "post_raw_read": {
+        "count": 344,
+        "total_ns": 361403500,
+        "max_ns": 1736200
+      },
+      "post_resource_read": {
+        "count": 5001,
+        "total_ns": 37920300,
+        "max_ns": 309400
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 53493500,
+        "max_ns": 53493500
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 57237600,
+        "max_ns": 57237600
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 6924056600,
+        "max_ns": 6924056600
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 89798294400,
+        "max_ns": 89798294400
+      },
+      "process_poll_identity_query": {
+        "count": 328,
+        "total_ns": 11814900,
+        "max_ns": 2508700
+      },
+      "raw_batch_flush": {
+        "count": 173,
+        "total_ns": 5538042200,
+        "max_ns": 2340344000
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 173,
+        "total_ns": 5264280100,
+        "max_ns": 2339650500
+      },
+      "raw_insert": {
+        "count": 173,
+        "total_ns": 261993900,
+        "max_ns": 30432700
+      },
+      "raw_serialize": {
+        "count": 43545,
+        "total_ns": 111302800,
+        "max_ns": 2261300
+      }
+    },
+    "baseline-stress-10000-3": {
+      "capture_between_drains": {
+        "count": 1049,
+        "total_ns": 8650151400,
+        "max_ns": 2171952700
+      },
+      "capture_descendant_query": {
+        "count": 3624,
+        "total_ns": 1921700,
+        "max_ns": 19600
+      },
+      "capture_lifetime_ingest": {
+        "count": 27071,
+        "total_ns": 1511100,
+        "max_ns": 164500
+      },
+      "capture_process_poll": {
+        "count": 66,
+        "total_ns": 1532211500,
+        "max_ns": 258622600
+      },
+      "capture_queue_take": {
+        "count": 1050,
+        "total_ns": 20951400,
+        "max_ns": 2191700
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 8664682000,
+        "max_ns": 8664682000
+      },
+      "lifetime_attach": {
+        "count": 906,
+        "total_ns": 190100,
+        "max_ns": 1300
+      },
+      "lifetime_ingest": {
+        "count": 57696,
+        "total_ns": 2225500,
+        "max_ns": 5200
+      },
+      "post_attribution": {
+        "count": 42384,
+        "total_ns": 3360900,
+        "max_ns": 41300
+      },
+      "post_completion_query": {
+        "count": 11456,
+        "total_ns": 116256000,
+        "max_ns": 165900
+      },
+      "post_derived_group_commit": {
+        "count": 42,
+        "total_ns": 42684017900,
+        "max_ns": 4818027700
+      },
+      "post_derived_page_release": {
+        "count": 166,
+        "total_ns": 2017000,
+        "max_ns": 18100
+      },
+      "post_derived_write": {
+        "count": 166,
+        "total_ns": 2574465700,
+        "max_ns": 32112800
+      },
+      "post_details_edges": {
+        "count": 166,
+        "total_ns": 850240600,
+        "max_ns": 16864600
+      },
+      "post_documents": {
+        "count": 166,
+        "total_ns": 857103600,
+        "max_ns": 13018900
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 18948477700,
+        "max_ns": 18948477700
+      },
+      "post_header_query": {
+        "count": 56,
+        "total_ns": 1099900,
+        "max_ns": 73400
+      },
+      "post_observations": {
+        "count": 166,
+        "total_ns": 863294100,
+        "max_ns": 7876900
+      },
+      "post_quality_graph": {
+        "count": 166,
+        "total_ns": 7066900,
+        "max_ns": 171000
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 14509725400,
+        "max_ns": 14509725400
+      },
+      "post_raw_read": {
+        "count": 334,
+        "total_ns": 350990000,
+        "max_ns": 1683900
+      },
+      "post_resource_read": {
+        "count": 5001,
+        "total_ns": 40965500,
+        "max_ns": 470600
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 57537600,
+        "max_ns": 57537600
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 56720100,
+        "max_ns": 56720100
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 6984740300,
+        "max_ns": 6984740300
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 87770771200,
+        "max_ns": 87770771200
+      },
+      "process_poll_identity_query": {
+        "count": 327,
+        "total_ns": 22060200,
+        "max_ns": 2475700
+      },
+      "raw_batch_flush": {
+        "count": 168,
+        "total_ns": 5558940200,
+        "max_ns": 2165631900
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 168,
+        "total_ns": 5301011700,
+        "max_ns": 2164932000
+      },
+      "raw_insert": {
+        "count": 168,
+        "total_ns": 250702300,
+        "max_ns": 29746000
+      },
+      "raw_serialize": {
+        "count": 42384,
+        "total_ns": 148445800,
+        "max_ns": 2000800
+      }
+    },
+    "candidate-stress-10000-1": {
+      "capture_between_drains": {
+        "count": 6438,
+        "total_ns": 15889991900,
+        "max_ns": 2201963300
+      },
+      "capture_lifetime_ingest": {
+        "count": 23703,
+        "total_ns": 1872400,
+        "max_ns": 215200
+      },
+      "capture_queue_take": {
+        "count": 6439,
+        "total_ns": 38696300,
+        "max_ns": 3543900
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 15892355300,
+        "max_ns": 15892355300
+      },
+      "lifetime_attach": {
+        "count": 6157,
+        "total_ns": 6877200,
+        "max_ns": 2929800
+      },
+      "lifetime_ingest": {
+        "count": 41518,
+        "total_ns": 1691000,
+        "max_ns": 11700
+      },
+      "post_attribution": {
+        "count": 32611,
+        "total_ns": 2610900,
+        "max_ns": 15300
+      },
+      "post_completion_query": {
+        "count": 8780,
+        "total_ns": 85207200,
+        "max_ns": 138000
+      },
+      "post_derived_group_commit": {
+        "count": 33,
+        "total_ns": 22276872200,
+        "max_ns": 3530703400
+      },
+      "post_derived_page_release": {
+        "count": 128,
+        "total_ns": 1600000,
+        "max_ns": 33800
+      },
+      "post_derived_write": {
+        "count": 128,
+        "total_ns": 1815482800,
+        "max_ns": 28965000
+      },
+      "post_details_edges": {
+        "count": 128,
+        "total_ns": 584525600,
+        "max_ns": 15117500
+      },
+      "post_documents": {
+        "count": 128,
+        "total_ns": 616801500,
+        "max_ns": 9865700
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 12744159000,
+        "max_ns": 12744159000
+      },
+      "post_header_query": {
+        "count": 119,
+        "total_ns": 1285400,
+        "max_ns": 61800
+      },
+      "post_observations": {
+        "count": 128,
+        "total_ns": 611277000,
+        "max_ns": 11356400
+      },
+      "post_quality_graph": {
+        "count": 128,
+        "total_ns": 5425900,
+        "max_ns": 105100
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 9582466900,
+        "max_ns": 9582466900
+      },
+      "post_raw_read": {
+        "count": 258,
+        "total_ns": 275999200,
+        "max_ns": 1802000
+      },
+      "post_resource_read": {
+        "count": 5001,
+        "total_ns": 32992500,
+        "max_ns": 275500
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 47955300,
+        "max_ns": 47955300
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 60752600,
+        "max_ns": 60752600
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 5673932200,
+        "max_ns": 5673932200
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 54029064900,
+        "max_ns": 54029064900
+      },
+      "raw_batch_flush": {
+        "count": 157,
+        "total_ns": 5610756500,
+        "max_ns": 2201150000
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 157,
+        "total_ns": 5002291400,
+        "max_ns": 2199957200
+      },
+      "raw_insert": {
+        "count": 157,
+        "total_ns": 582906600,
+        "max_ns": 57742700
+      },
+      "raw_serialize": {
+        "count": 32611,
+        "total_ns": 239327300,
+        "max_ns": 8198800
+      }
+    },
+    "candidate-stress-10000-2": {
+      "capture_between_drains": {
+        "count": 6350,
+        "total_ns": 16167116800,
+        "max_ns": 2126225800
+      },
+      "capture_lifetime_ingest": {
+        "count": 33065,
+        "total_ns": 3871900,
+        "max_ns": 1075200
+      },
+      "capture_queue_take": {
+        "count": 6351,
+        "total_ns": 38974800,
+        "max_ns": 4042900
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 16169546600,
+        "max_ns": 16169546600
+      },
+      "lifetime_attach": {
+        "count": 5780,
+        "total_ns": 1135700,
+        "max_ns": 37600
+      },
+      "lifetime_ingest": {
+        "count": 54114,
+        "total_ns": 2075700,
+        "max_ns": 4300
+      },
+      "post_attribution": {
+        "count": 43590,
+        "total_ns": 3737500,
+        "max_ns": 172500
+      },
+      "post_completion_query": {
+        "count": 11709,
+        "total_ns": 121114700,
+        "max_ns": 211100
+      },
+      "post_derived_group_commit": {
+        "count": 43,
+        "total_ns": 47296510400,
+        "max_ns": 4592269600
+      },
+      "post_derived_page_release": {
+        "count": 171,
+        "total_ns": 2201300,
+        "max_ns": 51600
+      },
+      "post_derived_write": {
+        "count": 171,
+        "total_ns": 3190246400,
+        "max_ns": 279596900
+      },
+      "post_details_edges": {
+        "count": 171,
+        "total_ns": 875257300,
+        "max_ns": 13098200
+      },
+      "post_documents": {
+        "count": 171,
+        "total_ns": 1404022300,
+        "max_ns": 267997800
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 19716571700,
+        "max_ns": 19716571700
+      },
+      "post_header_query": {
+        "count": 63,
+        "total_ns": 749300,
+        "max_ns": 53300
+      },
+      "post_observations": {
+        "count": 171,
+        "total_ns": 907021300,
+        "max_ns": 9301400
+      },
+      "post_quality_graph": {
+        "count": 171,
+        "total_ns": 7438300,
+        "max_ns": 166100
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 14083807700,
+        "max_ns": 14083807700
+      },
+      "post_raw_read": {
+        "count": 344,
+        "total_ns": 363636900,
+        "max_ns": 1791200
+      },
+      "post_resource_read": {
+        "count": 5001,
+        "total_ns": 39262500,
+        "max_ns": 532700
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 55786100,
+        "max_ns": 55786100
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 56643500,
+        "max_ns": 56643500
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 6981659300,
+        "max_ns": 6981659300
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 93360505000,
+        "max_ns": 93360505000
+      },
+      "raw_batch_flush": {
+        "count": 182,
+        "total_ns": 6225605400,
+        "max_ns": 2125272100
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 182,
+        "total_ns": 5687777300,
+        "max_ns": 2124537400
+      },
+      "raw_insert": {
+        "count": 182,
+        "total_ns": 516692900,
+        "max_ns": 40844200
+      },
+      "raw_serialize": {
+        "count": 43590,
+        "total_ns": 236848400,
+        "max_ns": 4520200
+      }
+    },
+    "candidate-stress-10000-3": {
+      "capture_between_drains": {
+        "count": 6350,
+        "total_ns": 15827841600,
+        "max_ns": 2065450400
+      },
+      "capture_lifetime_ingest": {
+        "count": 32917,
+        "total_ns": 2217900,
+        "max_ns": 118600
+      },
+      "capture_queue_take": {
+        "count": 6351,
+        "total_ns": 36477700,
+        "max_ns": 5387500
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 15830060000,
+        "max_ns": 15830060000
+      },
+      "lifetime_attach": {
+        "count": 5814,
+        "total_ns": 1722600,
+        "max_ns": 35200
+      },
+      "lifetime_ingest": {
+        "count": 54054,
+        "total_ns": 2177400,
+        "max_ns": 35900
+      },
+      "post_attribution": {
+        "count": 43486,
+        "total_ns": 3266000,
+        "max_ns": 4700
+      },
+      "post_completion_query": {
+        "count": 11671,
+        "total_ns": 119082900,
+        "max_ns": 177000
+      },
+      "post_derived_group_commit": {
+        "count": 43,
+        "total_ns": 41873281400,
+        "max_ns": 4416759600
+      },
+      "post_derived_page_release": {
+        "count": 170,
+        "total_ns": 1906300,
+        "max_ns": 19500
+      },
+      "post_derived_write": {
+        "count": 170,
+        "total_ns": 2976679100,
+        "max_ns": 385140400
+      },
+      "post_details_edges": {
+        "count": 170,
+        "total_ns": 866765600,
+        "max_ns": 17873800
+      },
+      "post_documents": {
+        "count": 170,
+        "total_ns": 1229920000,
+        "max_ns": 372930500
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 18203987300,
+        "max_ns": 18203987300
+      },
+      "post_header_query": {
+        "count": 110,
+        "total_ns": 1296200,
+        "max_ns": 80600
+      },
+      "post_observations": {
+        "count": 170,
+        "total_ns": 876461300,
+        "max_ns": 8119700
+      },
+      "post_quality_graph": {
+        "count": 170,
+        "total_ns": 6918000,
+        "max_ns": 82900
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 17540232000,
+        "max_ns": 17540232000
+      },
+      "post_raw_read": {
+        "count": 342,
+        "total_ns": 358913500,
+        "max_ns": 1637800
+      },
+      "post_resource_read": {
+        "count": 5001,
+        "total_ns": 37130100,
+        "max_ns": 331100
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 53102400,
+        "max_ns": 53102400
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 57633100,
+        "max_ns": 57633100
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 7000018800,
+        "max_ns": 7000018800
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 89675695900,
+        "max_ns": 89675695900
+      },
+      "raw_batch_flush": {
+        "count": 187,
+        "total_ns": 5927332900,
+        "max_ns": 2063627600
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 187,
+        "total_ns": 5460197000,
+        "max_ns": 2062369000
+      },
+      "raw_insert": {
+        "count": 187,
+        "total_ns": 445149400,
+        "max_ns": 29168400
+      },
+      "raw_serialize": {
+        "count": 43486,
+        "total_ns": 216941900,
+        "max_ns": 4282800
+      }
+    },
+    "baseline-stress-1000-1": {
+      "capture_between_drains": {
+        "count": 1439,
+        "total_ns": 3717991700,
+        "max_ns": 437604200
+      },
+      "capture_descendant_query": {
+        "count": 5136,
+        "total_ns": 2596000,
+        "max_ns": 51100
+      },
+      "capture_lifetime_ingest": {
+        "count": 10569,
+        "total_ns": 474800,
+        "max_ns": 15900
+      },
+      "capture_process_poll": {
+        "count": 76,
+        "total_ns": 939156700,
+        "max_ns": 298707500
+      },
+      "capture_queue_take": {
+        "count": 1440,
+        "total_ns": 5003500,
+        "max_ns": 354600
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 3739403200,
+        "max_ns": 3739403200
+      },
+      "lifetime_attach": {
+        "count": 1284,
+        "total_ns": 279100,
+        "max_ns": 23100
+      },
+      "lifetime_ingest": {
+        "count": 10976,
+        "total_ns": 439000,
+        "max_ns": 3700
+      },
+      "post_attribution": {
+        "count": 10773,
+        "total_ns": 830900,
+        "max_ns": 4600
+      },
+      "post_completion_query": {
+        "count": 2905,
+        "total_ns": 21774600,
+        "max_ns": 111200
+      },
+      "post_derived_group_commit": {
+        "count": 11,
+        "total_ns": 2827628200,
+        "max_ns": 1832688400
+      },
+      "post_derived_page_release": {
+        "count": 43,
+        "total_ns": 383800,
+        "max_ns": 14400
+      },
+      "post_derived_write": {
+        "count": 43,
+        "total_ns": 353767500,
+        "max_ns": 16676600
+      },
+      "post_details_edges": {
+        "count": 43,
+        "total_ns": 93766500,
+        "max_ns": 6649700
+      },
+      "post_documents": {
+        "count": 43,
+        "total_ns": 150028700,
+        "max_ns": 10331500
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 3873822600,
+        "max_ns": 3873822600
+      },
+      "post_header_query": {
+        "count": 48,
+        "total_ns": 907100,
+        "max_ns": 45800
+      },
+      "post_observations": {
+        "count": 43,
+        "total_ns": 109249900,
+        "max_ns": 4073800
+      },
+      "post_quality_graph": {
+        "count": 43,
+        "total_ns": 2092700,
+        "max_ns": 169300
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 1228874100,
+        "max_ns": 1228874100
+      },
+      "post_raw_read": {
+        "count": 88,
+        "total_ns": 88675300,
+        "max_ns": 1343700
+      },
+      "post_resource_read": {
+        "count": 501,
+        "total_ns": 5928900,
+        "max_ns": 218800
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 7528500,
+        "max_ns": 7528500
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 2449100,
+        "max_ns": 2449100
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 26041400,
+        "max_ns": 26041400
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 9517077900,
+        "max_ns": 9517077900
+      },
+      "process_poll_identity_query": {
+        "count": 380,
+        "total_ns": 4171200,
+        "max_ns": 140300
+      },
+      "raw_batch_flush": {
+        "count": 48,
+        "total_ns": 616332500,
+        "max_ns": 426749100
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 48,
+        "total_ns": 535907200,
+        "max_ns": 426272300
+      },
+      "raw_insert": {
+        "count": 48,
+        "total_ns": 78507600,
+        "max_ns": 49680900
+      },
+      "raw_serialize": {
+        "count": 10773,
+        "total_ns": 20659800,
+        "max_ns": 874500
+      }
+    },
+    "baseline-stress-1000-2": {
+      "capture_between_drains": {
+        "count": 944,
+        "total_ns": 3320421600,
+        "max_ns": 1200867100
+      },
+      "capture_descendant_query": {
+        "count": 3612,
+        "total_ns": 2142100,
+        "max_ns": 47200
+      },
+      "capture_lifetime_ingest": {
+        "count": 865,
+        "total_ns": 87800,
+        "max_ns": 8200
+      },
+      "capture_process_poll": {
+        "count": 51,
+        "total_ns": 579249400,
+        "max_ns": 218600000
+      },
+      "capture_queue_take": {
+        "count": 945,
+        "total_ns": 5921400,
+        "max_ns": 392400
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 3333617400,
+        "max_ns": 3333617400
+      },
+      "lifetime_attach": {
+        "count": 904,
+        "total_ns": 217200,
+        "max_ns": 14500
+      },
+      "lifetime_ingest": {
+        "count": 31544,
+        "total_ns": 1235200,
+        "max_ns": 4400
+      },
+      "post_attribution": {
+        "count": 20614,
+        "total_ns": 12619900,
+        "max_ns": 44200
+      },
+      "post_completion_query": {
+        "count": 4409,
+        "total_ns": 39448400,
+        "max_ns": 236700
+      },
+      "post_derived_group_commit": {
+        "count": 17,
+        "total_ns": 20588797100,
+        "max_ns": 5452971300
+      },
+      "post_derived_page_release": {
+        "count": 64,
+        "total_ns": 830200,
+        "max_ns": 18000
+      },
+      "post_derived_write": {
+        "count": 64,
+        "total_ns": 1418405900,
+        "max_ns": 72054600
+      },
+      "post_details_edges": {
+        "count": 64,
+        "total_ns": 867478900,
+        "max_ns": 60173600
+      },
+      "post_documents": {
+        "count": 64,
+        "total_ns": 278924400,
+        "max_ns": 11807000
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 8965800,
+        "max_ns": 8965800
+      },
+      "post_header_query": {
+        "count": 17,
+        "total_ns": 376500,
+        "max_ns": 53500
+      },
+      "post_lifetime_resolve": {
+        "count": 16205,
+        "total_ns": 2751100,
+        "max_ns": 30800
+      },
+      "post_observations": {
+        "count": 64,
+        "total_ns": 270423400,
+        "max_ns": 8374200
+      },
+      "post_quality_graph": {
+        "count": 64,
+        "total_ns": 13258500,
+        "max_ns": 331000
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 7008792900,
+        "max_ns": 7008792900
+      },
+      "post_raw_read": {
+        "count": 130,
+        "total_ns": 144490000,
+        "max_ns": 1837900
+      },
+      "post_resource_read": {
+        "count": 501,
+        "total_ns": 8121100,
+        "max_ns": 265600
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 9951900,
+        "max_ns": 9951900
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 3199800,
+        "max_ns": 3199800
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 6363310000,
+        "max_ns": 6363310000
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 36734909700,
+        "max_ns": 36734909700
+      },
+      "process_poll_identity_query": {
+        "count": 251,
+        "total_ns": 4899600,
+        "max_ns": 1104200
+      },
+      "raw_batch_flush": {
+        "count": 67,
+        "total_ns": 1341068300,
+        "max_ns": 1195853200
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 67,
+        "total_ns": 1288244300,
+        "max_ns": 1195199600
+      },
+      "raw_insert": {
+        "count": 67,
+        "total_ns": 50215300,
+        "max_ns": 5937100
+      },
+      "raw_serialize": {
+        "count": 16205,
+        "total_ns": 33542000,
+        "max_ns": 1633600
+      }
+    },
+    "baseline-stress-1000-3": {
+      "capture_between_drains": {
+        "count": 944,
+        "total_ns": 3001582800,
+        "max_ns": 907111500
+      },
+      "capture_descendant_query": {
+        "count": 3624,
+        "total_ns": 1965200,
+        "max_ns": 19000
+      },
+      "capture_lifetime_ingest": {
+        "count": 912,
+        "total_ns": 85800,
+        "max_ns": 8700
+      },
+      "capture_process_poll": {
+        "count": 51,
+        "total_ns": 568809600,
+        "max_ns": 232288600
+      },
+      "capture_queue_take": {
+        "count": 945,
+        "total_ns": 13271300,
+        "max_ns": 6486800
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 3015262000,
+        "max_ns": 3015262000
+      },
+      "lifetime_attach": {
+        "count": 907,
+        "total_ns": 181000,
+        "max_ns": 2800
+      },
+      "lifetime_ingest": {
+        "count": 31529,
+        "total_ns": 1313500,
+        "max_ns": 34900
+      },
+      "post_attribution": {
+        "count": 20631,
+        "total_ns": 12727300,
+        "max_ns": 39400
+      },
+      "post_completion_query": {
+        "count": 4409,
+        "total_ns": 40341400,
+        "max_ns": 121000
+      },
+      "post_derived_group_commit": {
+        "count": 17,
+        "total_ns": 17361595400,
+        "max_ns": 5191905800
+      },
+      "post_derived_page_release": {
+        "count": 64,
+        "total_ns": 831400,
+        "max_ns": 49400
+      },
+      "post_derived_write": {
+        "count": 64,
+        "total_ns": 1574900700,
+        "max_ns": 247387700
+      },
+      "post_details_edges": {
+        "count": 64,
+        "total_ns": 956567400,
+        "max_ns": 162934900
+      },
+      "post_documents": {
+        "count": 64,
+        "total_ns": 349398600,
+        "max_ns": 79131700
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 11294100,
+        "max_ns": 11294100
+      },
+      "post_header_query": {
+        "count": 34,
+        "total_ns": 769100,
+        "max_ns": 58900
+      },
+      "post_lifetime_resolve": {
+        "count": 16222,
+        "total_ns": 2737700,
+        "max_ns": 41700
+      },
+      "post_observations": {
+        "count": 64,
+        "total_ns": 267423000,
+        "max_ns": 7658500
+      },
+      "post_quality_graph": {
+        "count": 64,
+        "total_ns": 13521600,
+        "max_ns": 342700
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 4957299400,
+        "max_ns": 4957299400
+      },
+      "post_raw_read": {
+        "count": 130,
+        "total_ns": 140570400,
+        "max_ns": 1759600
+      },
+      "post_resource_read": {
+        "count": 501,
+        "total_ns": 8184700,
+        "max_ns": 294700
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 9847400,
+        "max_ns": 9847400
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 3178300,
+        "max_ns": 3178300
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 6358683100,
+        "max_ns": 6358683100
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 31598330400,
+        "max_ns": 31598330400
+      },
+      "process_poll_identity_query": {
+        "count": 251,
+        "total_ns": 8520600,
+        "max_ns": 2007400
+      },
+      "raw_batch_flush": {
+        "count": 71,
+        "total_ns": 1028895600,
+        "max_ns": 902028000
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 71,
+        "total_ns": 965195200,
+        "max_ns": 901326700
+      },
+      "raw_insert": {
+        "count": 71,
+        "total_ns": 61224400,
+        "max_ns": 19142600
+      },
+      "raw_serialize": {
+        "count": 16222,
+        "total_ns": 33231300,
+        "max_ns": 902000
+      }
+    },
+    "candidate-stress-1000-1": {
+      "capture_between_drains": {
+        "count": 1249,
+        "total_ns": 3483634200,
+        "max_ns": 1365069700
+      },
+      "capture_lifetime_ingest": {
+        "count": 3761,
+        "total_ns": 256800,
+        "max_ns": 32900
+      },
+      "capture_queue_take": {
+        "count": 1250,
+        "total_ns": 7432200,
+        "max_ns": 212100
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 3485855200,
+        "max_ns": 3485855200
+      },
+      "lifetime_attach": {
+        "count": 980,
+        "total_ns": 248500,
+        "max_ns": 8800
+      },
+      "lifetime_ingest": {
+        "count": 28710,
+        "total_ns": 1152600,
+        "max_ns": 4500
+      },
+      "post_attribution": {
+        "count": 20645,
+        "total_ns": 12929700,
+        "max_ns": 76700
+      },
+      "post_completion_query": {
+        "count": 4409,
+        "total_ns": 40421600,
+        "max_ns": 117900
+      },
+      "post_derived_group_commit": {
+        "count": 17,
+        "total_ns": 19031147200,
+        "max_ns": 5532380300
+      },
+      "post_derived_page_release": {
+        "count": 64,
+        "total_ns": 823500,
+        "max_ns": 34200
+      },
+      "post_derived_write": {
+        "count": 64,
+        "total_ns": 1418347100,
+        "max_ns": 86071600
+      },
+      "post_details_edges": {
+        "count": 64,
+        "total_ns": 873631600,
+        "max_ns": 73806200
+      },
+      "post_documents": {
+        "count": 64,
+        "total_ns": 272401100,
+        "max_ns": 10800600
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 8811500,
+        "max_ns": 8811500
+      },
+      "post_header_query": {
+        "count": 43,
+        "total_ns": 513000,
+        "max_ns": 55200
+      },
+      "post_lifetime_resolve": {
+        "count": 16236,
+        "total_ns": 2704500,
+        "max_ns": 33900
+      },
+      "post_observations": {
+        "count": 64,
+        "total_ns": 270800800,
+        "max_ns": 7652300
+      },
+      "post_quality_graph": {
+        "count": 64,
+        "total_ns": 13687800,
+        "max_ns": 368900
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 4641722800,
+        "max_ns": 4641722800
+      },
+      "post_raw_read": {
+        "count": 130,
+        "total_ns": 140911500,
+        "max_ns": 1693200
+      },
+      "post_resource_read": {
+        "count": 501,
+        "total_ns": 7965200,
+        "max_ns": 282800
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 9745100,
+        "max_ns": 9745100
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 3200900,
+        "max_ns": 3200900
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 27445058900,
+        "max_ns": 27445058900
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 53973102000,
+        "max_ns": 53973102000
+      },
+      "raw_batch_flush": {
+        "count": 68,
+        "total_ns": 1584063800,
+        "max_ns": 1364452300
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 68,
+        "total_ns": 1528958400,
+        "max_ns": 1363716400
+      },
+      "raw_insert": {
+        "count": 68,
+        "total_ns": 52285200,
+        "max_ns": 1445400
+      },
+      "raw_serialize": {
+        "count": 16236,
+        "total_ns": 34083400,
+        "max_ns": 276400
+      }
+    },
+    "candidate-stress-1000-2": {
+      "capture_between_drains": {
+        "count": 1798,
+        "total_ns": 8668246400,
+        "max_ns": 5502588400
+      },
+      "capture_lifetime_ingest": {
+        "count": 11900,
+        "total_ns": 720600,
+        "max_ns": 50600
+      },
+      "capture_queue_take": {
+        "count": 1799,
+        "total_ns": 18807700,
+        "max_ns": 5340000
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 8670599400,
+        "max_ns": 8670599400
+      },
+      "lifetime_attach": {
+        "count": 992,
+        "total_ns": 296100,
+        "max_ns": 13200
+      },
+      "lifetime_ingest": {
+        "count": 20599,
+        "total_ns": 842000,
+        "max_ns": 4600
+      },
+      "post_attribution": {
+        "count": 20660,
+        "total_ns": 12590000,
+        "max_ns": 47700
+      },
+      "post_completion_query": {
+        "count": 4410,
+        "total_ns": 38890900,
+        "max_ns": 124600
+      },
+      "post_derived_group_commit": {
+        "count": 17,
+        "total_ns": 19629129600,
+        "max_ns": 5060804600
+      },
+      "post_derived_page_release": {
+        "count": 64,
+        "total_ns": 832200,
+        "max_ns": 18500
+      },
+      "post_derived_write": {
+        "count": 64,
+        "total_ns": 1734318400,
+        "max_ns": 491127200
+      },
+      "post_details_edges": {
+        "count": 64,
+        "total_ns": 743894800,
+        "max_ns": 24362400
+      },
+      "post_documents": {
+        "count": 64,
+        "total_ns": 269085000,
+        "max_ns": 7564200
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 9493700,
+        "max_ns": 9493700
+      },
+      "post_header_query": {
+        "count": 54,
+        "total_ns": 878300,
+        "max_ns": 71200
+      },
+      "post_lifetime_resolve": {
+        "count": 16250,
+        "total_ns": 2516500,
+        "max_ns": 60500
+      },
+      "post_observations": {
+        "count": 64,
+        "total_ns": 719833300,
+        "max_ns": 475076500
+      },
+      "post_quality_graph": {
+        "count": 64,
+        "total_ns": 13154400,
+        "max_ns": 381500
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 5611846500,
+        "max_ns": 5611846500
+      },
+      "post_raw_read": {
+        "count": 130,
+        "total_ns": 136988600,
+        "max_ns": 1807700
+      },
+      "post_resource_read": {
+        "count": 501,
+        "total_ns": 8336700,
+        "max_ns": 280700
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 10134600,
+        "max_ns": 10134600
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 3118300,
+        "max_ns": 3118300
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 7264015200,
+        "max_ns": 7264015200
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 35551994700,
+        "max_ns": 35551994700
+      },
+      "raw_batch_flush": {
+        "count": 70,
+        "total_ns": 5842571500,
+        "max_ns": 5502278400
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 70,
+        "total_ns": 5755207200,
+        "max_ns": 5501292200
+      },
+      "raw_insert": {
+        "count": 70,
+        "total_ns": 80932900,
+        "max_ns": 5689300
+      },
+      "raw_serialize": {
+        "count": 16250,
+        "total_ns": 51376900,
+        "max_ns": 1182000
+      }
+    },
+    "candidate-stress-1000-3": {
+      "capture_between_drains": {
+        "count": 1500,
+        "total_ns": 3629459400,
+        "max_ns": 1126313200
+      },
+      "capture_lifetime_ingest": {
+        "count": 5147,
+        "total_ns": 361800,
+        "max_ns": 32100
+      },
+      "capture_queue_take": {
+        "count": 1501,
+        "total_ns": 32791200,
+        "max_ns": 14827000
+      },
+      "capture_receive_wall": {
+        "count": 1,
+        "total_ns": 3631948400,
+        "max_ns": 3631948400
+      },
+      "lifetime_attach": {
+        "count": 1020,
+        "total_ns": 335800,
+        "max_ns": 33600
+      },
+      "lifetime_ingest": {
+        "count": 27266,
+        "total_ns": 1248200,
+        "max_ns": 103800
+      },
+      "post_attribution": {
+        "count": 20616,
+        "total_ns": 13442600,
+        "max_ns": 41500
+      },
+      "post_completion_query": {
+        "count": 4409,
+        "total_ns": 42737000,
+        "max_ns": 118100
+      },
+      "post_derived_group_commit": {
+        "count": 17,
+        "total_ns": 26359962600,
+        "max_ns": 7779821200
+      },
+      "post_derived_page_release": {
+        "count": 64,
+        "total_ns": 854400,
+        "max_ns": 17700
+      },
+      "post_derived_write": {
+        "count": 64,
+        "total_ns": 1393164500,
+        "max_ns": 42650500
+      },
+      "post_details_edges": {
+        "count": 64,
+        "total_ns": 840844000,
+        "max_ns": 33444900
+      },
+      "post_documents": {
+        "count": 64,
+        "total_ns": 281910900,
+        "max_ns": 11385400
+      },
+      "post_final_downgrade_full_commit": {
+        "count": 1,
+        "total_ns": 8063700,
+        "max_ns": 8063700
+      },
+      "post_header_query": {
+        "count": 17,
+        "total_ns": 526500,
+        "max_ns": 65300
+      },
+      "post_lifetime_resolve": {
+        "count": 16207,
+        "total_ns": 2830600,
+        "max_ns": 86300
+      },
+      "post_observations": {
+        "count": 64,
+        "total_ns": 268806300,
+        "max_ns": 7364500
+      },
+      "post_quality_graph": {
+        "count": 64,
+        "total_ns": 14256000,
+        "max_ns": 386900
+      },
+      "post_raw_index_materialization": {
+        "count": 1,
+        "total_ns": 30285661000,
+        "max_ns": 30285661000
+      },
+      "post_raw_read": {
+        "count": 130,
+        "total_ns": 277974000,
+        "max_ns": 131531400
+      },
+      "post_resource_read": {
+        "count": 501,
+        "total_ns": 7946100,
+        "max_ns": 259100
+      },
+      "post_state_association": {
+        "count": 1,
+        "total_ns": 9690700,
+        "max_ns": 9690700
+      },
+      "post_summary_read": {
+        "count": 1,
+        "total_ns": 2930000,
+        "max_ns": 2930000
+      },
+      "post_summary_write": {
+        "count": 1,
+        "total_ns": 6213468300,
+        "max_ns": 6213468300
+      },
+      "post_wall": {
+        "count": 1,
+        "total_ns": 65751355100,
+        "max_ns": 65751355100
+      },
+      "raw_batch_flush": {
+        "count": 69,
+        "total_ns": 1280248200,
+        "max_ns": 1125202100
+      },
+      "raw_commit_including_autocheckpoint": {
+        "count": 69,
+        "total_ns": 1206998900,
+        "max_ns": 1124093700
+      },
+      "raw_insert": {
+        "count": 69,
+        "total_ns": 69966900,
+        "max_ns": 8536100
+      },
+      "raw_serialize": {
+        "count": 16207,
+        "total_ns": 41222300,
+        "max_ns": 420800
+      }
+    }
+  },
   "light": {
     "light-D0-1-noise": {
       "capture_between_drains": {

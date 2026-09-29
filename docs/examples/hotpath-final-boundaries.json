@@ -1,0 +1,96 @@
+{
+  "note": "Diagnostic only. Exact identity/path/operation outside the frozen time interval receives no observation or attribution credit. Original scorer output unchanged; no time tolerance added.",
+  "trials": {
+    "final-D3-1-noise": {
+      "frozen_target_observed": 17,
+      "frozen_false_positives": 0,
+      "diagnostic_counts": {
+        "noise_unobserved": 1,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": []
+    },
+    "final-D3-1-ordinary": {
+      "frozen_target_observed": 17,
+      "frozen_false_positives": 0,
+      "diagnostic_counts": {
+        "noise_unobserved": 1,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": []
+    },
+    "final-D3-2-noise": {
+      "frozen_target_observed": 17,
+      "frozen_false_positives": 0,
+      "diagnostic_counts": {
+        "noise_unobserved": 1,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": []
+    },
+    "final-D3-2-ordinary": {
+      "frozen_target_observed": 17,
+      "frozen_false_positives": 0,
+      "diagnostic_counts": {
+        "noise_unobserved": 1,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": []
+    },
+    "final-D3-3-noise": {
+      "frozen_target_observed": 17,
+      "frozen_false_positives": 0,
+      "diagnostic_counts": {
+        "noise_unobserved": 1,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": []
+    },
+    "final-D3-3-ordinary": {
+      "frozen_target_observed": 17,
+      "frozen_false_positives": 0,
+      "diagnostic_counts": {
+        "noise_unobserved": 1,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": []
+    },
+    "final-D3-4-noise": {
+      "frozen_target_observed": 17,
+      "frozen_false_positives": 0,
+      "diagnostic_counts": {
+        "noise_unobserved": 1,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": []
+    },
+    "final-D3-4-ordinary": {
+      "frozen_target_observed": 17,
+      "frozen_false_positives": 0,
+      "diagnostic_counts": {
+        "noise_unobserved": 1,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": []
+    },
+    "final-D3-5-noise": {
+      "frozen_target_observed": 17,
+      "frozen_false_positives": 0,
+      "diagnostic_counts": {
+        "noise_unobserved": 15,
+        "noise_exact_identity_path_operation_outside_interval": 14,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": []
+    },
+    "final-D3-5-ordinary": {
+      "frozen_target_observed": 17,
+      "frozen_false_positives": 0,
+      "diagnostic_counts": {
+        "noise_unobserved": 1,
+        "noise_no_exact_identity_path_operation_record": 1
+      },
+      "target_offsets": []
+    }
+  }
+}

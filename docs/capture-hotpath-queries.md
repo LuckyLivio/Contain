@@ -1,5 +1,10 @@
 # Capture hot-path query experiment
 
+Result: D1/D2/D3 query-removal paths are implemented and independently selectable.
+The final D3 series passed its ten small target gates and all three 1000-file gates;
+all three 10000-file gates failed. Earlier small/CI failures remain below. D0 stays
+the default: this branch is an experiment, not a stability or performance release.
+
 Starting branch: `fix/capture-ingest-regression`, clean local/remote
 `b602628b67842dc3d403b9610496b757c3c94ea2`. Work is isolated on
 `fix/capture-hotpath-queries`; main remains `bef6ac17cf3c816733e661fb76dc8974f5a30f12`.
@@ -96,7 +101,8 @@ wait, following [Microsoft's API contract](https://learn.microsoft.com/en-us/win
 The original fixture/scorer, registry mutation loop (1000 calls per process, no
 inter-operation sleeps), deadlines and all product limits remain unchanged.
 This harness correction is a separate variable; final noise results cannot be
-credited solely to query removal. The ten final attempts have not yet run.
+credited solely to query removal. At this decision point the ten final attempts
+had not yet run; their subsequent outcomes are recorded below.
 
 H1 and H2 each have independent mechanism evidence, so D3 is eligible for the
 predeclared combined test. Keep D0 as default pending its results.
@@ -188,6 +194,13 @@ unmatched. This suggests an ETW/fixture timebase-boundary issue; it does not est
 its cause, invalidate the scorer, or justify changing tolerance. The later PID-context
 correctness patch does not claim to fix this timing issue.
 
+The [boundary diagnostic](examples/hotpath-combined-1-boundaries.json) checks all
+ten attempts without rescoring: all 42 missing target rows have an exact
+PID/birth/path/operation record outside their interval. All 9818 missing supplemental
+noise rows likewise have such records outside their intervals. The original
+unrelated registry operation has no exact-identity record. These distinctions
+explain the observed scorer failures; they award no observation/exclusion credit.
+
 The same runner's three 1000-file pairs all passed (D0 and D3): 2500/2500,
 zero relevant losses/false positives/tails/timeouts. Wall seconds D0/D3 were
 23.261/32.054, 30.096/21.783, 21.888/55.723. D3 paged post-processing alone took
@@ -234,3 +247,144 @@ Snapshot failures remain visible; they do not prove exclusion or a complete proc
 inventory. Snapshot fallback still polls; missing lifecycle exits still reach the
 maximum drain deadline and report incomplete. Raw evidence remains provisional
 until final quality checks; crash/failed-derived/old-schema recovery tests are retained.
+
+## Additional ordinary CI failure retained
+
+[CI 36591392983](https://github.com/LuckyLivio/Contain/actions/runs/36591392983)
+on report commit `6ebc69cccce60d9e19b3f908da69a06d07f7c7e6` used **D0**, not D3.
+Format, Clippy, Rust/scorer tests and first ETW fixture passed (17/17).
+The immediate-launch repeat failed (15/17, two unmatched positives); ETW, queue,
+context, retention and persistence losses were all zero. Snapshot fallback was
+skipped in this run, not passed. Both missing registry rows have exact identity /
+path / operation records just **one 100 ns tick** after the oracle end.
+This demonstrates the boundary symptom also occurs with the original query path;
+its underlying timebase cause remains unproven. Preserve the red CI.
+
+[Both CI fixture counters](examples/hotpath-ci-failure.json),
+[boundary diagnostic](examples/hotpath-ci-failure-boundaries.json), artifact
+`11043843054` (ZIP SHA256
+`53b1b92328ffb30f0b2fa9f4c4ebd89e51543f9a2d4af5795421c49b40b48d5d`).
+Ordinary CI on the actual correctness patch
+[`d60f6ae`](https://github.com/LuckyLivio/Contain/actions/runs/36589609934)
+passed; that is a separate run, not a replacement for this failure.
+
+## Final measured candidate and outcomes
+
+Actual binary/configuration: **`d60f6ae6dfec312935b71cdcd07c8a874b4a7d5d`, D3**.
+[Run 36589638546](https://github.com/LuckyLivio/Contain/actions/runs/36589638546)
+completed the predeclared ten small attempts, three alternating D0/D3 1000 pairs,
+then three alternating D0/D3 10000 pairs on one elevated Windows 26100 / NTFS /
+four-logical-processor runner. Runtime SQLite **3.50.2**, release `--locked`.
+The workflow is **failed**, correctly, at the original 10000 gate. No retries.
+Report commits after this SHA are not further tested binaries.
+
+### Ten small attempts: target 10/10, supplemental noise 9986/10000
+
+Every attempt observed and correctly attributed all **13 file + 4 registry** target
+operations, including the short-lived child. Every attempt had zero measured ETW
+event/buffer, queue, cache, retention and persistence loss; zero false target
+attribution, zero queue tail and no drain timeout.
+
+| Round | Ordinary wall s | Noise wall s | Pre-existing noise confirmed-other / 1000 | Post-start noise confirmed-other / 1000 |
+|---|---|---|---|---|
+| 1 | 15.776 | 12.797 | 1000 | 1000 |
+| 2 | 11.375 | 19.392 | 1000 | 1000 |
+| 3 | 13.459 | 12.890 | 1000 | 1000 |
+| 4 | 16.860 | 12.770 | 1000 | 1000 |
+| 5 | 17.784 | 13.191 | 1000 | 986 |
+
+The remaining 14 noise rows are **unobserved**, not correctly excluded. Diagnostic
+inspection finds exact-identity/path records outside their oracle intervals; no
+credit or tolerance is added. In every attempt the original unrelated fixture
+remains 2/3 observed but unresolved, zero confirmed-other, one unobserved registry
+row. Each deliberate failed delete is unobserved and not promoted. These ten
+successes do not erase the preceding ten failed D3 attempts or the D0 CI failure.
+
+D3 registry callback identity calls/time: **0 / 0** in all ten; callback body totals
+8.24–126.11 ms for 1634–30163 registry records. Receiver process polls, their native
+identity calls and descendant queries: **0**, not moved to a worker. Each initial
+snapshot made 137–142 explicit queries, 5.57–7.02 ms query time, 14.23–19.98 ms
+total (separately timed enumeration 7.52–12.46 ms); four queries failed in each,
+zero skipped. The one owned installer-handle query remains. Snapshot OS calls
+are not hard-deadline interruptible. Queue high water 142–1603; maximum queue
+latency 19.00–54.66 ms. Small final DB size 1.94–22.77 MiB; raw committed evidence
+607–7206 records / 0.60–7.90 MB. Background global records vary by attempt.
+
+### 1000 files / four workers / 2500 operations
+
+All D3 rounds: **2500/2500 observed and correctly attributed**, zero relevant
+losses, false attribution, tail and drain timeout. D0 round 1 had 5433 queue drops,
+1669 observed and zero correct after final downgrade; D0 rounds 2/3 passed.
+The functional intermediate capability is preserved. **Speed is not restored.**
+
+| Round | D0 wall s | D3 wall s | D0 receive s | D3 receive s | D0 measured post s | D3 measured post s | D3 memory / DB / WAL MiB |
+|---|---|---|---|---|---|---|---|
+| 1 | 14.662 (loss) | 58.911 | 3.739 | 3.486 | 5.637 | 53.951 | 25.55 / 90.04 / 35.60 |
+| 2 | 41.370 | 49.583 | 3.334 | 8.671 | 36.714 | 35.531 | 22.78 / 90.44 / 35.69 |
+| 3 | 35.891 | 70.699 | 3.015 | 3.632 | 31.576 | 65.732 | 26.12 / 90.06 / 35.31 |
+
+Measured post sums raw-index/derived processing, after-file/inventory snapshots,
+state correlation and final transaction. Setup, remaining CLI/DB-close time and
+profiling output are included in external wall, not hidden as post-experiment work.
+Parent peak memory excludes children/kernel buffers; DB/WAL peaks are sampled
+separately, not a simultaneous combined peak.
+
+D0 polls were 76/51/51, taking 939/579/569 ms (max 299/219/232 ms); D3 zero.
+D0 descendant queries were 5136/3612/3624; D3 zero. D3 queue high water was
+4253/4339/4145. Its maximum no-drain intervals were **1365/5503/1126 ms**, tracking
+raw COMMIT maxima **1364/5501/1124 ms**. Thus fitting these bursts in the existing
+queue is not evidence of adequate sustained throughput. Post-processing remained
+variable and expensive: paged stages 25.34/27.21/58.43 s and final transactions
+27.44/7.26/6.21 s. The SQL strategy was not changed to address them.
+
+### 10000 files / four workers / 25000 operations: 0/3
+
+| D3 round | Observed / 25000 | Correct | Queue drops | ETW events lost | Drain timeout | Receive / measured post / wall s | Memory / DB / WAL MiB |
+|---|---|---|---|---|---|---|---|
+| 1 | 5827 (23.31%) | 0 | 106440 | 19024 | yes | 15.892 / 41.205 / 71.750 | 44.75 / 156.66 / 73.92 |
+| 2 | 8072 (32.29%) | 0 | 103174 | 0 | yes | 16.170 / 73.568 / 111.736 | 47.13 / 202.86 / 93.36 |
+| 3 | 8044 (32.18%) | 0 | 103311 | 0 | yes | 15.830 / 71.398 / 107.221 | 47.04 / 202.32 / 93.32 |
+
+All had zero ETW buffer loss, retention/persistence loss and final queue tail.
+All tested false-attribution counts were zero **because lost evidence suppresses
+promotion**; zero correct attribution is not a pass. Original 300-operation file
+noise was observed but unresolved in every stress trial, never confirmed excluded.
+D0 also failed all three: 7685/7964/7621 observed, zero correct, queue losses
+103881/103197/104352, zero ETW loss; wall 98.226/99.325/98.215 s.
+
+Removing queries did not solve this load: D3 still hit queue capacity 8192 and
+2.37–2.66 s queue latency. No-drain maxima 2202/2126/2065 ms closely follow raw
+COMMIT maxima 2200/2125/2062 ms, despite zero receiver polls/identity queries.
+Automatic checkpoint time is included in COMMIT, not isolated. This provides
+evidence for storage stalls as a remaining receiving bottleneck; it does not prove
+checkpoint causality or explain the additional ETW loss. Missing exits remained
+pending and correctly reported maximum drain expiry instead of assumed exit.
+
+## Delivery conclusion and evidence
+
+H1 confirms substantial callback query cost and removes it while retaining positive
+registry capability. It does **not** prove the older 9357-event loss is fixed.
+H2 removes a source of long receiver pauses and restores zero-loss 1000 observations
+in the tested final series. It is **not** the primary sufficient explanation for
+10000 failure: large commit stalls and queue loss remain without any such queries.
+No default promotion, main stability change, merge or Release is made. The next
+single throughput hypothesis is whether measured commit-tail stalls and burst
+arrivals explain the remaining overflow under the frozen storage policy. The
+separate timebase-boundary correctness uncertainty remains explicitly unresolved.
+
+Rust: 55 ordinary tests passed (one explicit storage microbenchmark remains ignored),
+Clippy/format and frozen PowerShell/Python scorer rejection tests passed. Existing
+recovery, quota/storage failure, PID/TID reuse, failed-operation, pagination and
+migration tests remain. Local notification-based noise with snapshot fallback
+passed; remote ordinary CI recovery/fallback status is reported per run above.
+
+Full [final small counters](examples/hotpath-final.json),
+[1000 comparison](examples/hotpath-final-1000.json),
+[10000 comparison](examples/hotpath-final-10000.json),
+[all measured stage summaries](examples/hotpath-stage-summary.json),
+[final boundary diagnostic](examples/hotpath-final-boundaries.json).
+Raw safe fixture events, independent truth rows, original scores and full profiles:
+[artifact 11043944321](https://github.com/LuckyLivio/Contain/actions/runs/36589638546/artifacts/11043944321),
+ZIP SHA256 `0443cb789ba3812d6dacfe614663f5c8206c34b7780a5483ade015e5c535c836`.
+Earlier artifacts and failed counters remain linked above. Published fixture
+projections omit machine-wide data only after scoring, not as an acceptance filter.
