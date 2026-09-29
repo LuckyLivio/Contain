@@ -177,6 +177,15 @@ impl EtwSource {
                     "not_requested"
                 }
                 .into();
+                if let Err(code) = native::synchronize_providers(&name, registry_enabled) {
+                    source.stop();
+                    source.report.etw_file = "unavailable".into();
+                    source.report.etw_process = "unavailable".into();
+                    source.report.etw_registry = "unavailable".into();
+                    source.report.warnings.push(format!(
+                        "ETW provider readiness failed: Win32 {code}; using snapshots."
+                    ));
+                }
             }
             Err(error) => {
                 tracing::warn!(session = %name, error = ?error, "ETW unavailable; using snapshot fallback");

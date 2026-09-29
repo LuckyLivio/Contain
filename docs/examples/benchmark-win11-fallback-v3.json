@@ -1,0 +1,67 @@
+{
+  "os": "Microsoft Windows NT 10.0.26200.0",
+  "commit": "07dcef2f512b048d02aea4f958d5748d8ceac279",
+  "baseline": {
+    "elapsed_seconds": 7.0839079,
+    "sampled_peak_working_set_bytes": 6602752
+  },
+  "files": 10000,
+  "reliability": {
+    "expected": 25000,
+    "observed": 5000,
+    "correctly_attributed": 0,
+    "unknown": 25000,
+    "incorrect_attribution": 0,
+    "dropped": 0,
+    "etw_events_lost": null,
+    "etw_buffers_lost": null,
+    "quality": "Degraded",
+    "definition": "One row per instrumented syscall. Observed includes matching raw operation in its exact time interval or compatible final state; Correct requires exact PID+birth and application High. Noise remains Unknown. Missing observations are included in Unknown. This is fixture coverage, not global accuracy."
+  },
+  "end_to_end_overhead_ratio": 2.1290236847940953,
+  "capture": {
+    "elapsed_seconds": 15.0818077,
+    "sqlite_bytes": 12316672,
+    "stats": {
+      "capture_elapsed_ms": 14624,
+      "drain_timed_out": false,
+      "events_dropped": 0,
+      "events_normalized": 0,
+      "events_received": 0,
+      "events_retained": 5010,
+      "high_confidence_events": 0,
+      "known_actor_events": 0,
+      "known_resource_events": 0,
+      "notification_gaps": 0,
+      "snapshot_gaps": 0,
+      "unknown_actor_events": 0,
+      "unknown_resource_events": 0
+    },
+    "backend": {
+      "decode_errors": 0,
+      "dropped_events": 0,
+      "etw_buffers_lost": null,
+      "etw_events_lost": null,
+      "etw_file": "disabled",
+      "etw_process": "disabled",
+      "etw_registry": "disabled",
+      "events_received": 0,
+      "registry_path_gaps": 0,
+      "warnings": []
+    },
+    "sampled_peak_working_set_bytes": 37662720,
+    "quality": {
+      "level": "Degraded",
+      "reasons": [
+        "Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.",
+        "ETW process lifecycle unavailable; sampling cannot recover short-lived actors."
+      ]
+    },
+    "admitted_events_per_second": 0.0
+  },
+  "schema_version": 1,
+  "measurement": "Debug build; one sequential baseline/capture pair, four fixture workers; process wall time includes inventory, drain, hashing and SQLite commit. Memory is the monitored parent process PeakWorkingSet sampled every 20ms, excluding descendants and kernel ETW buffers. Throughput is admitted source records per entire capture wall time, not raw system event rate. Scoring is outside the timed region.",
+  "elevated": false,
+  "end_to_end_overhead_seconds": 7.997899800000001,
+  "workers": 4
+}

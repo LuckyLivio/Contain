@@ -234,6 +234,63 @@ pub struct TraceLoss {
     pub buffers: u64,
 }
 
+/// ferrisetw enables providers asynchronously. Wait for configuration before launch.
+pub fn synchronize_providers(name: &str, registry: bool) -> Result<(), u32> {
+    use windows_sys::Win32::System::Diagnostics::Etw::*;
+    // SAFETY: query our UUID session into aligned storage, then reapply exactly its provider
+    // configuration with a bounded synchronous timeout. No global logger is modified.
+    unsafe {
+        let mut buffer: TracePropertiesBuffer = zeroed();
+        buffer.properties.Wnode.BufferSize = size_of::<TracePropertiesBuffer>() as u32;
+        buffer.properties.LoggerNameOffset = size_of::<EVENT_TRACE_PROPERTIES>() as u32;
+        let name: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
+        let status = ControlTraceW(
+            CONTROLTRACE_HANDLE { Value: 0 },
+            name.as_ptr(),
+            &mut buffer.properties,
+            EVENT_TRACE_CONTROL_QUERY,
+        );
+        if status != 0 {
+            return Err(status);
+        }
+        let handle = CONTROLTRACE_HANDLE {
+            Value: buffer.properties.Wnode.Anonymous1.HistoricalContext,
+        };
+        let providers = [
+            (0xedd08927_9cc4_4e65_b970_c2560fb5c289u128, 4, 0x1ef0, true),
+            (0x22fb2cd6_0e7b_422b_a0c7_2fad1fd0e716u128, 5, 0x30, false),
+            (0x70eb4f03_c1de_4f73_a051_33d13d5413bdu128, 4, 0x7301, true),
+        ];
+        for (i, (id, level, keywords, start_key)) in providers.into_iter().enumerate() {
+            if i == 2 && !registry {
+                continue;
+            }
+            let guid = windows_sys::core::GUID::from_u128(id);
+            let mut params: ENABLE_TRACE_PARAMETERS = zeroed();
+            params.Version = ENABLE_TRACE_PARAMETERS_VERSION_2;
+            params.EnableProperty = if start_key {
+                EVENT_ENABLE_PROPERTY_PROCESS_START_KEY
+            } else {
+                0
+            };
+            let status = EnableTraceEx2(
+                handle,
+                &guid,
+                EVENT_CONTROL_CODE_ENABLE_PROVIDER,
+                level,
+                keywords,
+                0,
+                5000,
+                &params,
+            );
+            if status != 0 {
+                return Err(status);
+            }
+        }
+        Ok(())
+    }
+}
+
 pub fn file_identity(handle: BorrowedHandle<'_>) -> Option<String> {
     use windows_sys::Win32::Storage::FileSystem::{
         BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,

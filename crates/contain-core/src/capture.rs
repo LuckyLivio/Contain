@@ -217,10 +217,29 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
                 || e.raw.resource_resolved
                 || e.confidence == Confidence::High)
     });
+    let source_intact = backend.dropped_events == 0
+        && backend.decode_errors == 0
+        && backend.etw_events_lost == Some(0)
+        && backend.etw_buffers_lost == Some(0);
+    if !source_intact {
+        for e in &mut events {
+            if e.event_type == "completion" {
+                e.success = None;
+            }
+            if matches!(e.event_type.as_str(), "file" | "registry") {
+                e.confidence = Confidence::Unknown;
+                e.evidence.rule = AttributionRule::EventLoss;
+                e.raw.resource_resolved = false;
+                e.reason="Source continuity is unverified; actor identity is retained but resource/operation correlation and application attribution are not promoted.".into();
+            }
+        }
+    }
     let after_files = filesystem::snapshot(&roots)?;
     let operations = crate::correlation::correlate(&mut events, &before_files, &after_files);
-    for event in &mut events {
-        attribution::attribute(event, &processes, &id);
+    if source_intact {
+        for event in &mut events {
+            attribution::attribute(event, &processes, &id);
+        }
     }
     let seen = observer
         .as_ref()

@@ -76,17 +76,25 @@ pub fn attribute(event: &mut SystemEvent, processes: &[ProcessRecord], session_i
 }
 
 pub fn compose_files(files: &mut [FileChange], events: &mut [SystemEvent], complete: bool) {
+    let mut by_path: std::collections::HashMap<String, Vec<usize>> =
+        std::collections::HashMap::new();
+    for (i, event) in events.iter().enumerate() {
+        if event.event_type == "file"
+            && !matches!(event.operation.as_str(), "open_requested" | "close")
+            && event.success != Some(false)
+        {
+            by_path
+                .entry(normalize_path(&event.resource, &[]))
+                .or_default()
+                .push(i);
+        }
+    }
     for file in files {
         let path = normalize_path(&file.path, &[]);
-        let related: Vec<_> = events
-            .iter_mut()
-            .filter(|event| {
-                event.event_type == "file"
-                    && !matches!(event.operation.as_str(), "open_requested" | "close")
-                    && normalize_path(&event.resource, &[]) == path
-                    && event.success != Some(false)
-            })
-            .collect();
+        let Some(indices) = by_path.get(&path) else {
+            continue;
+        };
+        let related: Vec<_> = indices.iter().map(|&i| &events[i]).collect();
         file.evidence = related.iter().map(|event| event.evidence.clone()).collect();
         if related.is_empty() {
             continue;
@@ -97,8 +105,8 @@ pub fn compose_files(files: &mut [FileChange], events: &mut [SystemEvent], compl
         if complete && all_attributed {
             file.confidence = Confidence::High;
             file.reason = "Verified installer-family file activity matches a before/after state change; this is session attribution, not exclusive resource ownership.".into();
-            for event in related {
-                event.state_validated = true;
+            for &i in indices {
+                events[i].state_validated = true;
             }
         } else {
             file.confidence = Confidence::Unknown;
