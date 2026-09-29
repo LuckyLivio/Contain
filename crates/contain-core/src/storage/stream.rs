@@ -43,9 +43,18 @@ pub struct StreamStats {
     pub sqlite_page_size_bytes: Option<u32>,
 }
 
+struct RawRow {
+    sequence: u64,
+    ticks: u64,
+    kind: String,
+    header_pid: Option<u32>,
+    related: Option<String>,
+    document: String,
+}
+
 pub struct RawBuffer {
     session: String,
-    batch: Vec<String>,
+    batch: Vec<RawRow>,
     bytes: usize,
     last_flush: Instant,
     pub stats: StreamStats,
@@ -119,7 +128,14 @@ impl RawBuffer {
                 continue;
             }
             self.bytes += size;
-            self.batch.push(document);
+            self.batch.push(RawRow {
+                sequence: e.sequence,
+                ticks: e.timestamp_ticks,
+                kind: e.event_type,
+                header_pid: e.raw.header_pid,
+                related: e.raw.related_event,
+                document,
+            });
             if self.batch.len() >= PAGE {
                 self.flush(db);
             }
@@ -137,9 +153,18 @@ impl RawBuffer {
             let tx = db.connection.transaction()?;
             {
                 let _insert_clock = profile::timer("raw_insert");
-                let mut insert=tx.prepare_cached("INSERT INTO raw_stream VALUES (?1,json_extract(?2,'$.sequence'),CAST(json_extract(?2,'$.timestamp_ticks') AS INTEGER),json_extract(?2,'$.event_type'),json_extract(?2,'$.raw.header_pid'),json_extract(?2,'$.raw.related_event'),?2)")?;
+                let mut insert =
+                    tx.prepare_cached("INSERT INTO raw_stream VALUES (?1,?2,?3,?4,?5,?6,?7)")?;
                 for e in &self.batch {
-                    insert.execute(params![self.session, e])?;
+                    insert.execute(params![
+                        self.session,
+                        e.sequence,
+                        e.ticks,
+                        e.kind,
+                        e.header_pid,
+                        e.related,
+                        e.document
+                    ])?;
                 }
             }
             let mut stats = self.stats.clone();

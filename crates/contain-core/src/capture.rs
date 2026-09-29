@@ -237,6 +237,10 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         "descendant_quiet_drain".into(),
         drain_start.elapsed().as_millis() as u64,
     );
+    profile::add(
+        "capture_receive_wall",
+        installer_clock.elapsed().as_nanos() as u64,
+    );
     let association_clock = Instant::now();
     let mut processes = process_observer.finish();
     if let Some(root) = processes
@@ -374,6 +378,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         after_clock.elapsed().as_millis() as u64,
     );
     let correlation_clock = Instant::now();
+    let state_association_timer = profile::timer("post_state_association");
     let operations = crate::correlation::correlate(&mut [], &before_files, &after_files);
 
     let seen = observer
@@ -446,6 +451,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         "correlation_attribution".into(),
         correlation_clock.elapsed().as_millis() as u64,
     );
+    drop(state_association_timer);
     let inventory_clock = Instant::now();
     let after_inventory = inventory::snapshot();
     let inventory = inventory::diff(&before_inventory, &after_inventory, &processes, &id);
@@ -526,6 +532,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     )?;
     // Summary returns no full raw-event vector. Full/paged history remains in Storage.
     capture = measured!("post_summary_read", db.load_summary(&capture.id))?;
+    profile::add("post_wall", association_clock.elapsed().as_nanos() as u64);
     profile::finish()?;
     tracing::info!(session_id = %capture.id, events = capture.events.len(), files = capture.files.len(),
         dropped = capture.backend.dropped_events, "capture completed");
