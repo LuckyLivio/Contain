@@ -100,3 +100,40 @@ credited solely to query removal. The ten final attempts have not yet run.
 
 H1 and H2 each have independent mechanism evidence, so D3 is eligible for the
 predeclared combined test. Keep D0 as default pending its results.
+
+All isolated small results (file: observed/correct of 13; registry: observed/correct
+of 4; pre/post: observed and confirmed-other of 1000 each):
+
+| Variant | Round / environment | File | Registry | Pre / post noise | Callback identity queries / ms | Target gate |
+|---|---|---|---|---|---|---|
+| D0 | 1 ordinary | 13/13 | 4/4 | — | 849 / 39.363 | pass |
+| D0 | 1 noise | 13/13 | 4/4 | 595 / 536 | 3771 / 108.583 | pass |
+| D1 | 1 ordinary | 13/13 | 4/4 | — | 0 / 0 | pass |
+| D1 | 1 noise | 13/13 | 4/4 | 1000 / 1000 | 0 / 0 | pass |
+| D2 | 1 ordinary | 13/13 | 4/4 | — | 869 / 28.911 | pass |
+| D2 | 1 noise | 13/13 | 4/4 | 513 / 236 | 4211 / 106.289 | pass |
+| D2 | 2 ordinary | 13/13 | 4/4 | — | 2522 / 70.924 | pass |
+| D2 | 2 noise | 13/13 | 4/4 | 556 / 348 | 3841 / 93.142 | pass |
+| D1 | 2 ordinary | 13/13 | 4/4 | — | 0 / 0 | pass |
+| D1 | 2 noise | 13/0 | 4/0 | 799 / 795 | 0 / 0 | FAIL, context cap |
+| D0 | 2 ordinary | 13/13 | 4/4 | — | 842 / 37.477 | pass |
+| D0 | 2 noise | 13/13 | 4/4 | 495 / 340 | 3032 / 87.622 | pass |
+
+All twelve: original unrelated fixture 2/3 observed but unresolved, zero confirmed
+exclusions; deliberately failed delete unobserved and never promoted; zero false
+target attribution. Supplemental noise rows missing from the table's numerators
+are unobserved, never credited as excluded. Query timings count calls, not just
+successful lookups. Provider `callback` excludes separately reported `lock_wait`;
+`context` and property timers nest, so do not sum them as disjoint phases.
+`unresolved` in provider counters specifically means unresolved registry path;
+final actor resolution is scored separately. Initial enumeration includes sysinfo
+work and is timed separately from explicit native identity calls.
+
+Full counters: [12 attempts](examples/hotpath-light.json),
+[single 1000 pair](examples/hotpath-light-1000.json).
+Raw safe fixture evidence, all scored truth rows and per-stage profiles:
+artifact `11042541664` on the light run above (ZIP SHA256
+`a5ba5f3603515a95ef5a9f535ec437077786b5b449308098404cee467455504a`).
+Public exports are fixture-only projections made **after unmodified scoring**;
+global machine inventory/registry/process rows are not published. The full raw
+database is therefore not reproducible from that public projection.

@@ -306,7 +306,7 @@ fn dispatch(
     if let Ok(mut d) = decoder.lock() {
         let metrics = d.metrics.clone();
         metrics.provider(provider);
-        // Include the observed mutex wait in total callback elapsed time.
+        // Decode/callback body and pre-lock wait are reported separately.
         let _callback = metrics.timer(Time::Callback);
         metrics.record_lock(start.elapsed().as_nanos() as u64);
         metrics.add(Count::Callback, 1);
