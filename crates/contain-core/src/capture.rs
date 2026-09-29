@@ -208,8 +208,17 @@ pub fn install(options: InstallOptions) -> Result<Capture> {
     for event in &mut events {
         attribution::attribute(event, &processes, &id);
     }
+    // Retain raw lifecycle evidence for scoped file header actors as well as the family.
+    // Header PID alone never attributes a file; keeping its lifetime makes rejection auditable.
+    let scoped_pids: std::collections::BTreeSet<u32> = events
+        .iter()
+        .filter(|e| e.event_type == "file")
+        .filter_map(|e| e.raw.header_pid)
+        .filter(|p| *p > 4)
+        .collect();
     events.retain(|e| {
         (e.event_type != "lifecycle"
+            || e.evidence.pid.is_some_and(|pid| scoped_pids.contains(&pid))
             || processes.iter().any(|p| {
                 Some(p.pid) == e.evidence.pid && p.creation_time == e.evidence.process_creation_time
             }))

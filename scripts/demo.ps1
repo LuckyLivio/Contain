@@ -79,6 +79,9 @@ try {
         if ($score.incorrect_attribution -ne 0) { throw 'false attribution detected' }
         if ($RequireEtw) {
             Write-Output ("PROCESSES: " + ($manifest.processes | ConvertTo-Json -Depth 8 -Compress))
+            $shortPid=@($score.rows | Where-Object role -eq "short")[0].pid
+            $rootPid=@($manifest.processes | Where-Object confidence -eq "Certain")[0].pid
+            Write-Output ("LIFECYCLES: " + (@($manifest.events | Where-Object { $_.event_type -eq "lifecycle" -and $_.evidence.pid -in @($shortPid,$rootPid) }) | ConvertTo-Json -Depth 8 -Compress))
             Write-Output ("SHORT: " + (@($manifest.events | Where-Object { $_.resource -like '*\short.txt' }) | ConvertTo-Json -Depth 8 -Compress))
             Write-Output ("REGISTRY_EXAMPLE: " + (@($manifest.events | Where-Object { $_.event_type -eq "registry" -and $_.operation -eq "set_value" -and $_.confidence -eq "High" -and $_.raw.resource_resolved } | Select-Object -First 1) | ConvertTo-Json -Depth 8 -Compress))
             Write-Output ("SCORED: " + ($score.rows | ConvertTo-Json -Depth 8 -Compress))
