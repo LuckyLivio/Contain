@@ -49,6 +49,15 @@ try {
         if ($LASTEXITCODE -ne 0 -or $document.schema_version -ne 3) { throw 'inspect JSON contract failed' }
         $manifest = $document.data
         Write-Output ("BACKEND: " + ($manifest.backend | ConvertTo-Json -Compress))
+        # Capture has stopped. Preserve the independent score and export before any
+        # quality assertion can fail, so a red CI sample remains inspectable.
+        $score = & "$PSScriptRoot/score-fixture.ps1" -Capture $manifest -Root $truthRoot
+        if ($OutputDirectory) {
+            New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+            $document | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'capture.json') -Encoding utf8
+            $score | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'reliability.json') -Encoding utf8
+            Copy-Item -LiteralPath (Join-Path $truthRoot 'ground-truth.json') -Destination $OutputDirectory
+        }
         if ($manifest.processes.Count -lt 3) { throw 'parent/child/grandchild were not all observed' }
         if (@($manifest.processes | Where-Object confidence -eq 'Certain').Count -ne 1) { throw 'installer must be Certain' }
         if (@($manifest.processes | Where-Object confidence -eq 'High').Count -lt 2) { throw 'child and grandchild must have verified ancestry' }
@@ -73,13 +82,6 @@ try {
         if (@($manifest.operations | Where-Object { $_.operation -eq 'Renamed' -and $_.resource -like '*\renamed.txt' }).Count -ne 1) { throw 'stable file identity rename was not recovered' }
         $noiseRegistry=@($manifest.registry | Where-Object name -eq 'NoiseOnly')
         if ($noiseRegistry.Count -ne 1 -or $noiseRegistry[0].confidence -ne 'Unknown') { throw 'independent registry state was misattributed' }
-        $score = & "$PSScriptRoot/score-fixture.ps1" -Capture $manifest -Root $truthRoot
-        if ($OutputDirectory) {
-            New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
-            $document | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'capture.json') -Encoding utf8
-            $score | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'reliability.json') -Encoding utf8
-            Copy-Item -LiteralPath (Join-Path $truthRoot 'ground-truth.json') -Destination $OutputDirectory
-        }
         if ($score.expected -ne 21) { throw "ground truth incomplete: expected 21 instrumented operations" }
         Write-Output ("RELIABILITY: " + (($score | Select-Object -Property * -ExcludeProperty rows) | ConvertTo-Json -Compress))
         if (@($manifest.events | Where-Object { $_.evidence.pid -eq $unrelated.Id -and $_.confidence -in @('High','Certain') }).Count -gt 0) { throw 'independent source actor received application attribution' }

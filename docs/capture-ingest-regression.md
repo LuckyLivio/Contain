@@ -315,3 +315,24 @@ had `drain_timed_out=false`, so this check does not reinterpret their result.
 
 The branch is an intermediate repair, with slower full completion and a failed
 10000 gate. Main's stability statement and release status remain unchanged.
+
+### Later small-fixture CI failure (not erased)
+
+[CI 36582571276](https://github.com/LuckyLivio/Contain/actions/runs/36582571276)
+on report commit **c8c73c6** passed format, Clippy, Rust tests, build, scorer rejection
+cases and the first real ETW fixture (17/17 target operations). Its immediate-launch
+repeat failed: **9357 ETW events lost**, zero application queue/persistence/retention
+loss, queue high water 37. All 2138 dequeued records were committed. The callback
+handled 210913 global records, with 9.375 s cumulative callback time including
+6.121 s identity queries; registry path gaps were 81308. Final loss degradation
+removed High file attribution, so the existing assertion correctly failed. This
+reinforces the remaining callback/system-query hypothesis, not a new SQLite failure.
+Snapshot fallback was skipped in this run; earlier remote CI and local fallback
+results remain separate. Full regression acceptance is therefore not established.
+
+[Preserved counters](examples/capture-regression-ci-failure.json) come from the
+original job log. The old demo script saved artifacts only after its first quality
+assertions, so its failing repeat export was not uploaded and cannot be reconstructed.
+The follow-up moves scoring/export before quality assertions, after capture stops,
+to retain future failing fixture evidence. Fixture operations, scorer rules and all
+assertions remain unchanged. This does not repair the observed ETW source loss.
