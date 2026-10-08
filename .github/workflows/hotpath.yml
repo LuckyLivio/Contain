@@ -30,6 +30,8 @@ jobs:
           ./scripts/test-score.ps1
           python scripts/test-score.py
           if($LASTEXITCODE -ne 0){throw 'scorer tests failed'}
+          python scripts/test-commit-tail.py
+          if($LASTEXITCODE -ne 0){throw 'Commit-tail diagnostic tests failed'}
       - name: Fixed small ETW attempts (all failures retained)
         shell: pwsh
         env:
@@ -92,6 +94,16 @@ jobs:
           $r=Get-Content -Raw ./target/hotpath-public/light-summary.json | ConvertFrom-Json
           $candidate=@($r.trials|Where-Object variant -ne 'D0')
           if($r.trials.Count -ne 12 -or @($candidate|Where-Object {-not $_.acceptance_pass}).Count){throw 'Isolated small candidate gate failed; all planned attempts retained'}
+      - name: Summarize commit windows without changing acceptance
+        if: always()
+        shell: pwsh
+        run: |
+          if(Test-Path ./target/hotpath-public){
+            foreach($profile in Get-ChildItem ./target/hotpath-public -Filter profile.json -Recurse){
+              python scripts/analyze-commit-tail.py $profile.FullName --output (Join-Path $profile.DirectoryName 'commit-tail.json')
+              if($LASTEXITCODE -ne 0){throw 'Commit-tail analysis failed; original fixture evidence retained'}
+            }
+          }
       - name: Upload safe fixture evidence and counters
         if: always()
         uses: actions/upload-artifact@v4

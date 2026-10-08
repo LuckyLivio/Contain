@@ -27,6 +27,9 @@ jobs:
         run: |
           ./scripts/test-score.ps1
           python scripts/test-score.py
+          if($LASTEXITCODE -ne 0){throw 'Frozen scorer tests failed'}
+          python scripts/test-commit-tail.py
+          if($LASTEXITCODE -ne 0){throw 'Commit-tail diagnostic tests failed'}
       - name: ETW fixture integration
         env:
           RUST_LOG: contain_core::windows::etw=debug

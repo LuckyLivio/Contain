@@ -148,6 +148,7 @@ impl RawBuffer {
         if self.batch.is_empty() {
             return;
         }
+        let _queue_span = profile::queue_span("raw_batch_flush");
         let start = Instant::now();
         let result = (|| -> Result<()> {
             let tx = db.connection.transaction()?;
@@ -175,7 +176,10 @@ impl RawBuffer {
                 "UPDATE capture_runs SET stats_json=?2 WHERE session_id=?1",
                 params![self.session, serde_json::to_string(&stats)?],
             )?;
-            measured!("raw_commit_including_autocheckpoint", tx.commit())?;
+            {
+                let _queue_span = profile::queue_span("raw_commit_including_autocheckpoint");
+                measured!("raw_commit_including_autocheckpoint", tx.commit())?;
+            }
             Ok(())
         })();
         let elapsed = start.elapsed().as_nanos() as u64;
