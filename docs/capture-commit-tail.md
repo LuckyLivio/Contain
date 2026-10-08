@@ -109,3 +109,63 @@ The analyzer also accepts an explicit `backend.pipeline: null` from snapshot
 fallback. It reports absent counters and unmeasured stage statistics as null,
 not zero loss; unknown input structures still fail validation. This was checked
 against the actual local snapshot fixture as well as its focused test.
+
+Code/analyzer revision `0b9b2ce` passed both
+[push CI 37711531208](https://github.com/LuckyLivio/Contain/actions/runs/37711531208)
+and [PR CI 37711535131](https://github.com/LuckyLivio/Contain/actions/runs/37711535131),
+including format, Clippy, Rust/analyzer/frozen scorer tests, two real ETW fixture
+captures and snapshot fallback. These checks do not establish the stress gate.
+
+### New measured run: commit windows cover nearly all D3 queue loss
+
+[Run 37710778338](https://github.com/LuckyLivio/Contain/actions/runs/37710778338)
+used **`6f0e5208f3a474e051b45e02fe5c5f689bc059f2`**, release `--locked`, an
+elevated four-logical-processor Windows runner and NTFS. All 22 attempts are
+retained in the [numeric summary](examples/commit-tail-final.json), with hashes
+of the original profile, result and score files. The workflow correctly failed
+at the original 10000-file gate; measurement and artifact publication succeeded.
+
+| Group | D0 | D3 |
+|---|---|---|
+| Fixed small target gates | Not part of this group | 10/10, each 17/17 target operations |
+| 1000 files / 2500 target operations | 2/3 passed | 3/3 passed, each 2500/2500 |
+| 10000 files / 25000 target operations | 0/3 passed | 0/3 passed |
+
+D3 1000-file wall times were 25.764 / 29.071 / 26.849 seconds, with zero queue
+or measured ETW loss. This is not a speedup claim against the older runner.
+D0's failed 1000-file trial lost 476 queue records; 457 increments (96.01%)
+were recorded inside commit windows.
+
+| D3 10000 round | Observed / 25000 | Queue loss | Loss within commit windows | Share | ETW event loss | Wall seconds |
+|---|---|---|---|---|---|---|
+| 1 | 10331 | 83412 | 83394 | 99.9784% | 26317 | 102.707 |
+| 2 | 10329 | 89913 | 89884 | 99.9677% | 0 | 211.838 |
+| 3 | 7702 | 98499 | 98443 | 99.9431% | 0 | 98.638 |
+
+All three D3 trials reached the drain deadline. Final correct attribution was
+zero because continuity loss suppresses promotion. ETW source loss is a separate
+counter, not part of the queue-loss denominator above. Commit maximum durations
+were 1040.680 / 986.861 / 1293.224 ms. Each stage's counter intervals are disjoint;
+no spans were omitted. Enclosing flush windows covered 83400 / 89889 / 98463 queue
+losses respectively, and must not be added to the commit counts.
+
+D0 10000 commit-window shares were 86.77% / 86.96% / 91.14%, with all three
+acceptance gates failed. Every target/noise/failed-operation score remains in
+the source artifact. The summary omits event payloads and copies scalar scores
+without rerunning the scorer; the local analyzer's later null/fallback handling
+does not change these measured counter deltas.
+
+This rules out the low-commit-window-share hypothesis for these D3 samples:
+almost all application queue overflow happened while the receiver could not
+drain because it was committing. It does **not** isolate checkpoint work from
+other commit I/O or scheduler delays, explain the separate ETW loss, prove that
+a different storage policy will pass, or resolve the independent timebase issue.
+The next implementation experiment should isolate raw commit/checkpoint
+scheduling while preserving queue/quota limits, crash readability, final sync,
+full end-to-end timing and the original workload gates. No storage policy or
+default variant is promoted by this diagnostic milestone.
+
+Full fixture-only events, independent truth, original scores and profiles:
+[artifact 11523145559](https://github.com/LuckyLivio/Contain/actions/runs/37710778338/artifacts/11523145559).
+GitHub archive digest:
+`sha256:3842da96be631f9d60b2c207bc2a053817125420d230ffbad11d560b2603da31`.
