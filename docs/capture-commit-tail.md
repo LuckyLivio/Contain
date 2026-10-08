@@ -77,10 +77,10 @@ Results are recorded below after verification. Local non-elevated fallback does
 not establish ETW stress coverage, and a successful measurement is not a passing
 throughput gate.
 
-Local format, Clippy and workspace tests passed: 57 ordinary tests, one ignored
+Local format, Clippy and workspace tests passed: 58 ordinary tests, one ignored
 disk replay. The real nonblocking channel test forces two Full errors from a
 separate producer while the consumer is held, then checks both span counters and
-final draining. Seven analyzer tests and seven frozen Python scorer tests passed,
+final draining. Eight analyzer tests and seven frozen Python scorer tests passed,
 as did the PowerShell scorer and snapshot fixture JSON/readback/dry-run checks.
 
 [Historical D3 summary](examples/commit-tail-historical.json) preserves the three
@@ -96,3 +96,11 @@ Run the analyzer on a matching pair (the metadata argument can be omitted when
 ```powershell
 python scripts/analyze-commit-tail.py profile.json result.json --max-windows 8 --output commit-tail.json
 ```
+
+The first new ordinary CI ([37710777744](https://github.com/LuckyLivio/Contain/actions/runs/37710777744))
+failed Clippy because the runner's newer Rust deprecated the pre-existing
+`AtomicU64::fetch_update`. The follow-up uses an equivalent explicit relaxed CAS
+loop compatible with the local Rust 1.98.1 and adds a concurrent counting test.
+That failure happened before ETW integration; it supplies no capture result.
+The concurrently dispatched diagnostic experiment remains identified by its own
+`6f0e520` binary, before this counter API compatibility edit.

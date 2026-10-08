@@ -145,13 +145,14 @@ def analyze(profile, metadata, max_windows=20):
         distinct = union_width([(s["overflow_counter_before"], s["overflow_counter_after"])
                                 for s in spans])
         span_summary[stage] = dict(
+            measured=bool(spans),
             retained_spans=len(spans),
             retained_interval_union_ns=union_width([(s["start_ns"], s["end_ns"]) for s in spans]),
-            overflow_delta_sum=observed_sum,
-            distinct_overflow_increments=distinct,
-            overlapping_counter_increments=observed_sum - distinct,
-            fraction_of_total_overflow=(distinct / total if total else None),
-            total_overflows_not_covered=(total - distinct if total is not None else None),
+            overflow_delta_sum=observed_sum if spans else None,
+            distinct_overflow_increments=distinct if spans else None,
+            overlapping_counter_increments=observed_sum - distinct if spans else None,
+            fraction_of_total_overflow=(distinct / total if spans and total else None),
+            total_overflows_not_covered=(total - distinct if spans and total is not None else None),
             displayed_windows=selected(spans, max_windows, "overflow_delta"),
             undisplayed_windows=max(0, len(spans) - max_windows),
         )
@@ -172,6 +173,7 @@ def analyze(profile, metadata, max_windows=20):
             "Queue snapshots read separate atomics; overflow deltas are evaluated independently. Pending is not used for exact balance or occupancy reconstruction.",
             "Queue-span endpoints bracket the counter snapshots as well as the stage; their duration is not exact SQL execution time.",
             "Commit and flush summaries are separate, nested measurements and must not be added together.",
+            "A stage with no retained spans is unmeasured, not a measured zero. Fractions cover retained spans only; missing spans prevent estimating the complete stage share.",
             "Omitted spans/batches and intervals outside retained windows are unmeasured; unrecorded timestamps have unknown timing.",
             "Elapsed timings include scheduling. Automatic checkpoint time is included in COMMIT and no checkpoint causality is established.",
         ],

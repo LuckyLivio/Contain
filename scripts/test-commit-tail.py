@@ -32,7 +32,7 @@ class CommitTailTests(unittest.TestCase):
         self.assertEqual(len(result["legacy_batches"]["displayed_windows"]), 1)
         self.assertEqual(result["legacy_batches"]["undisplayed_windows"], 1)
         self.assertEqual(result["legacy_batches"]["omitted_batches"], 2)
-        self.assertEqual(result["queue_spans"][diagnostic.STAGES[0]]["distinct_overflow_increments"], 0)
+        self.assertIsNone(result["queue_spans"][diagnostic.STAGES[0]]["distinct_overflow_increments"])
 
     def test_nested_commit_and_flush_are_not_added_and_pending_is_not_balance(self):
         commit = span(diagnostic.STAGES[0], 120, 180, 2, 8)
@@ -62,6 +62,28 @@ class CommitTailTests(unittest.TestCase):
         result = diagnostic.analyze({}, dict(pipeline=dict(queue_overflow=0, overflow_last_ns=0)))
         self.assertIsNone(result["queue_spans"][diagnostic.STAGES[0]]["fraction_of_total_overflow"])
         self.assertIsNone(result["overflow"]["last_overflow_ns"])
+
+    def test_absent_samples_measured_zero_and_zero_denominator_are_distinct(self):
+        stage = diagnostic.STAGES[0]
+        for profile in ({}, dict(queue_spans=[]), dict(queue_spans=[span(diagnostic.STAGES[1], 1, 2, 0, 0)])):
+            result = diagnostic.analyze(profile, dict(queue_overflow=10))["queue_spans"][stage]
+            self.assertFalse(result["measured"])
+            self.assertEqual(result["retained_spans"], 0)
+            for key in ("overflow_delta_sum", "distinct_overflow_increments", "overlapping_counter_increments",
+                        "fraction_of_total_overflow", "total_overflows_not_covered"):
+                self.assertIsNone(result[key], key)
+        profile = dict(queue_spans=[span(stage, 1, 2, 3, 3)])
+        result = diagnostic.analyze(profile, dict(queue_overflow=10))["queue_spans"][stage]
+        self.assertTrue(result["measured"])
+        self.assertEqual(result["distinct_overflow_increments"], 0)
+        self.assertEqual(result["fraction_of_total_overflow"], 0.0)
+        self.assertEqual(result["total_overflows_not_covered"], 10)
+        profile = dict(queue_spans=[span(stage, 1, 2, 0, 0)])
+        result = diagnostic.analyze(profile, dict(queue_overflow=0))["queue_spans"][stage]
+        self.assertTrue(result["measured"])
+        self.assertEqual(result["distinct_overflow_increments"], 0)
+        self.assertIsNone(result["fraction_of_total_overflow"])
+        self.assertEqual(result["total_overflows_not_covered"], 0)
 
     def test_windows_are_half_open_and_duplicate_overlapping_windows_do_not_double_count(self):
         profile = dict(batches=[[100, 1, 1, 100], [200, 1, 1, 100], [150, 1, 1, 100]])

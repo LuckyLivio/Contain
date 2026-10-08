@@ -111,27 +111,29 @@ impl Metrics {
     pub fn entering(&self) -> u64 {
         if let Some(start) = self.profile_start {
             let window = (start.elapsed().as_millis() as u64 / 100).min(u32::MAX as u64);
-            let value = self
-                .arrivals
-                .fetch_update(Relaxed, Relaxed, |old| {
-                    Some(
-                        (window << 32)
-                            | if old >> 32 == window {
-                                (old & 0xffffffff) + 1
-                            } else {
-                                1
-                            },
-                    )
-                })
-                .unwrap();
-            let count = if value >> 32 == window {
-                (value & 0xffffffff) + 1
-            } else {
-                1
-            };
+            let count = self.count_arrival(window);
             self.peak_arrivals.fetch_max(count, Relaxed);
         }
         self.counts[Count::Pending as usize].fetch_add(1, Relaxed) + 1
+    }
+    fn count_arrival(&self, window: u64) -> u64 {
+        // Explicit CAS retains compatibility with toolchains on either side of
+        // the fetch_update -> try_update rename, without suppressing warnings.
+        let mut old = self.arrivals.load(Relaxed);
+        loop {
+            let count = if old >> 32 == window {
+                (old & 0xffffffff) + 1
+            } else {
+                1
+            };
+            match self
+                .arrivals
+                .compare_exchange_weak(old, (window << 32) | count, Relaxed, Relaxed)
+            {
+                Ok(_) => return count,
+                Err(current) => old = current,
+            }
+        }
     }
     pub fn admitted(&self, pending: u64) {
         self.counts[Count::HighWater as usize]
@@ -248,3 +250,28 @@ macro_rules! measured {
     }};
 }
 pub(super) use measured;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn arrival_windows_count_concurrent_updates_and_reset_on_next_window() {
+        let metrics = std::sync::Arc::new(Metrics::default());
+        let workers: Vec<_> = (0..4)
+            .map(|_| {
+                let metrics = metrics.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..1000 {
+                        metrics.count_arrival(7);
+                    }
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        assert_eq!(metrics.count_arrival(7), 4001);
+        assert_eq!(metrics.count_arrival(8), 1);
+        assert_eq!(metrics.count_arrival(8), 2);
+    }
+}
