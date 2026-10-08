@@ -3,6 +3,9 @@ use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::fs;
 use std::path::Path;
+pub(crate) mod checkpoint;
+#[cfg(test)]
+mod checkpoint_tests;
 mod evidence;
 mod migration;
 mod reliability;

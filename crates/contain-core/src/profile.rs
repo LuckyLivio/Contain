@@ -80,6 +80,14 @@ pub fn start() {
     }
 }
 
+pub(crate) fn checkpoint_deferred() {
+    DATA.with(|p| {
+        if let Some(p) = &mut *p.borrow_mut() {
+            p.checkpoint_timing = "E1: automatic checkpoint disabled during capture; explicit PASSIVE after stop, queue drain and final raw batch; restored to 4096 before postprocessing";
+        }
+    });
+}
+
 /// One callback counter handle; no event payloads, I/O or decoder lock required.
 pub fn observe_queue(probe: impl Fn() -> QueueSnapshot + 'static) {
     DATA.with(|p| {

@@ -66,7 +66,7 @@ pub fn finish(c: &mut Capture) {
     }
     if loss {
         c.quality.reasons.push(
-            "Source loss, decode failure or bounded cache/channel overflow was reported.".into(),
+            "Source loss, decode failure, bounded cache/channel overflow or raw journal/checkpoint failure was reported.".into(),
         );
     }
     if c.stats.drain_timed_out {

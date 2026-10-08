@@ -77,6 +77,10 @@ The current release comparison passes 100 files / four workers in three trials.
 1000 and 10000 files fail the useful-attribution gate; 1000 is a regression against
 the baseline. This remains experimental. See the [measured limits](docs/performance.md#final-measured-decision-2026-09-29).
 
+Opt-in development experiments are tracked separately in the
+[commit-window diagnostics](docs/capture-commit-tail.md) and
+[deferred checkpoint report](docs/capture-deferred-checkpoint.md).
+
 ## What v0.3 records
 
 | Source | Recorded evidence | Attribution boundary |
