@@ -38,9 +38,37 @@ pub struct StreamStats {
     pub error: Option<String>,
     #[serde(default)]
     pub sqlite_version: Option<String>,
+    #[serde(default)]
+    pub sqlite_journal_mode: Option<String>,
     pub sqlite_synchronous: Option<u32>,
     pub wal_autocheckpoint_pages: Option<u32>,
     pub sqlite_page_size_bytes: Option<u32>,
+    #[serde(default)]
+    pub checkpoint_variant: Option<String>,
+    #[serde(default)]
+    pub wal_budget_bytes: Option<u64>,
+    #[serde(default)]
+    pub wal_initial_bytes: Option<u64>,
+    #[serde(default)]
+    pub wal_peak_bytes: Option<u64>,
+    #[serde(default)]
+    pub wal_growth_bytes: Option<u64>,
+    #[serde(default)]
+    pub wal_budget_overshoot_bytes: Option<u64>,
+    #[serde(default)]
+    pub wal_samples: u64,
+    #[serde(default)]
+    pub wal_budget_exceeded: bool,
+    #[serde(default)]
+    pub disk_free_min_bytes: Option<u64>,
+    #[serde(default)]
+    pub disk_reserve_bytes: Option<u64>,
+    #[serde(default)]
+    pub checkpoint: Option<checkpoint::Report>,
+    #[serde(default)]
+    pub checkpoint_completed: bool,
+    #[serde(default)]
+    pub restored_wal_autocheckpoint_pages: Option<u32>,
 }
 
 struct RawRow {
@@ -61,13 +89,32 @@ pub struct RawBuffer {
 }
 impl RawBuffer {
     pub fn new(db: &mut Storage, capture: &Capture, quota: u64) -> Result<Self> {
+        Self::with_policy(db, capture, quota, checkpoint::Policy::default())
+    }
+    pub(crate) fn with_policy(
+        db: &mut Storage,
+        capture: &Capture,
+        quota: u64,
+        policy: checkpoint::Policy,
+    ) -> Result<Self> {
         db.connection.execute_batch(
             "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA wal_autocheckpoint=4096;",
         )?;
         db.save(capture)?;
+        if policy.deferred() {
+            db.connection.pragma_update(None, "wal_autocheckpoint", 0)?;
+            profile::checkpoint_deferred();
+        }
         let stats = StreamStats {
             quota_bytes: quota,
+            checkpoint_variant: policy.variant.map(str::to_owned),
+            wal_budget_bytes: policy.variant.map(|_| policy.budget),
             sqlite_version: Some(rusqlite::version().into()),
+            sqlite_journal_mode: Some(db.connection.pragma_query_value(
+                None,
+                "journal_mode",
+                |r| r.get(0),
+            )?),
             sqlite_synchronous: Some(db.connection.pragma_query_value(
                 None,
                 "synchronous",
@@ -89,13 +136,20 @@ impl RawBuffer {
             "INSERT INTO capture_runs VALUES (?1,'capturing',?2,NULL)",
             params![capture.id, serde_json::to_string(&stats)?],
         )?;
-        Ok(Self {
+        let mut writer = Self {
             session: capture.id.clone(),
             batch: Vec::with_capacity(PAGE),
             bytes: 0,
             last_flush: Instant::now(),
             stats,
-        })
+        };
+        if let Err(e) = checkpoint::sample(db, &mut writer.stats) {
+            checkpoint::record_error(
+                &mut writer.stats,
+                format!("WAL budget sampling failed: {e:#}"),
+            );
+        }
+        Ok(writer)
     }
     pub fn append(&mut self, db: &mut Storage, incoming: Vec<SystemEvent>) {
         for e in incoming {
@@ -151,6 +205,7 @@ impl RawBuffer {
         let _queue_span = profile::queue_span("raw_batch_flush");
         let start = Instant::now();
         let result = (|| -> Result<()> {
+            checkpoint::sample(db, &mut self.stats)?;
             let tx = db.connection.transaction()?;
             {
                 let _insert_clock = profile::timer("raw_insert");
@@ -191,6 +246,12 @@ impl RawBuffer {
                 self.stats.persisted += self.batch.len() as u64;
                 self.stats.committed_bytes += self.bytes as u64;
                 self.stats.batches += 1;
+                if let Err(e) = checkpoint::sample(db, &mut self.stats) {
+                    checkpoint::record_error(
+                        &mut self.stats,
+                        format!("WAL budget sampling failed: {e:#}"),
+                    );
+                }
             }
             Err(e) => {
                 self.stats.failed += self.batch.len() as u64;
@@ -203,6 +264,9 @@ impl RawBuffer {
     }
     pub fn finish(mut self, db: &mut Storage) -> Result<StreamStats> {
         self.flush(db);
+        // Caller has stopped the producer and drained its queue before finish.
+        // Do not retry or escalate PASSIVE: partial results remain explicit failures.
+        checkpoint::complete(db, &mut self.stats);
         // Failure can also prevent saving the error. The last committed state stays unfinished.
         db.connection.execute(
             "UPDATE capture_runs SET state=?2,stats_json=?3,error=?4 WHERE session_id=?1",
@@ -217,6 +281,11 @@ impl RawBuffer {
                 self.stats.error
             ],
         )?;
+        anyhow::ensure!(
+            self.stats.checkpoint_variant.as_deref() != Some("E1")
+                || self.stats.restored_wal_autocheckpoint_pages == Some(checkpoint::AUTO_PAGES),
+            "automatic checkpoint restoration failed; postprocessing stopped"
+        );
         Ok(self.stats)
     }
 }

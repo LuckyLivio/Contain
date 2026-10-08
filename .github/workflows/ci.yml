@@ -30,6 +30,10 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Frozen scorer tests failed'}
           python scripts/test-commit-tail.py
           if($LASTEXITCODE -ne 0){throw 'Commit-tail diagnostic tests failed'}
+          python scripts/test-checkpoint-gate.py
+          if($LASTEXITCODE -ne 0){throw 'Checkpoint gate tests failed'}
+          python scripts/test-hotpath-artifact.py
+          if($LASTEXITCODE -ne 0){throw 'Safe partial-artifact tests failed'}
       - name: ETW fixture integration
         env:
           RUST_LOG: contain_core::windows::etw=debug

@@ -9,13 +9,25 @@ def write_trial(source, destination, variant, error):
     destination.mkdir(parents=True, exist_ok=True)
     result = dict(variant=variant, harness_error=error or None, acceptance_pass=False)
     capture_path = source / "capture.json"
+    score_path = (source / "reliability.json") if (source / "reliability.json").exists() else (source / "score.json")
+    truth_path = source / "ground-truth.json"
+    scored = None
     if not capture_path.exists():
         result["missing_capture"] = True
+    elif not score_path.exists() or not truth_path.exists():
+        # An interrupted scorer/export must not publish unscoped machine records.
+        result["incomplete_scoring"] = True
+        result["harness_error"] = error or "Capture exists but complete score/truth is unavailable"
     else:
-        envelope = json.loads(capture_path.read_text(encoding="utf-8-sig"))
+        try:
+            scored = tuple(json.loads(path.read_text(encoding="utf-8-sig")) for path in (capture_path, score_path, truth_path))
+        except (OSError, ValueError) as exc:
+            result["incomplete_scoring"] = True
+            result["harness_error"] = error or "Capture/score/truth could not be read completely"
+            result["scoring_read_error"] = type(exc).__name__
+    if scored is not None:
+        envelope, score, truth = scored
         c = envelope["data"]
-        score = json.loads(((source / "reliability.json") if (source / "reliability.json").exists() else (source / "score.json")).read_text(encoding="utf-8-sig"))
-        truth = json.loads((source / "ground-truth.json").read_text(encoding="utf-8-sig"))
         pids = {t["pid"] for t in truth}
         result.update(stats=c["stats"], backend=c["backend"], quality=c["quality"],
                       score={k: v for k, v in score.items() if k != "rows"})

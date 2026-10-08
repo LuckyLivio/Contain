@@ -194,6 +194,9 @@ pub struct BackendReport {
 impl BackendReport {
     pub fn has_loss(&self) -> bool {
         self.dropped_events > 0
+            // Storage finalization may fail without losing an individual row.
+            // Suppress promotion without inventing a dropped-event count.
+            || self.stream.as_ref().is_some_and(|s| s.error.is_some())
             || self.context_losses > 0
             || self.decode_errors > 0
             || self.etw_events_lost.unwrap_or(0) > 0

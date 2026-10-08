@@ -30,6 +30,15 @@ pub struct InstallOptions {
 }
 
 pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
+    let policy = crate::storage::checkpoint::Policy::from_env()?;
+    crate::storage::checkpoint::scoped(db, policy, |db| install_inner(options, db, policy))
+}
+
+fn install_inner(
+    options: InstallOptions,
+    db: &mut Storage,
+    policy: crate::storage::checkpoint::Policy,
+) -> Result<Capture> {
     profile::start();
     let capture_clock = Instant::now();
     let mut phases = std::collections::BTreeMap::new();
@@ -105,7 +114,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         },
         ..Default::default()
     };
-    let mut journal = RawBuffer::new(db, &initial, options.evidence_quota_bytes)?;
+    let mut journal = RawBuffer::with_policy(db, &initial, options.evidence_quota_bytes, policy)?;
     let mut source = EtwSource::start(&watch_roots, nt_root.clone(), options.etw);
     phases.insert(
         "provider_readiness".into(),
@@ -222,7 +231,25 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     }
     let stop_clock = Instant::now();
     let mut backend = source.stop_with(|incoming| journal.append(db, incoming));
+    phases.insert(
+        "etw_stop_and_queue_drain".into(),
+        stop_clock.elapsed().as_millis() as u64,
+    );
+    phases.insert(
+        "descendant_quiet_drain".into(),
+        drain_start.elapsed().as_millis() as u64,
+    );
+    profile::add(
+        "capture_receive_wall",
+        installer_clock.elapsed().as_nanos() as u64,
+    );
     let stream = journal.finish(db)?;
+    if let Some(checkpoint) = &stream.checkpoint {
+        phases.insert(
+            "post_raw_checkpoint".into(),
+            checkpoint.duration_ns / 1_000_000,
+        );
+    }
     phases.insert(
         "raw_persistence_overlapping".into(),
         stream.persistence_ns / 1_000_000,
@@ -237,18 +264,6 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         backend.warnings.push(error.clone());
     }
     backend.stream = Some(stream);
-    phases.insert(
-        "etw_stop_and_queue_drain".into(),
-        stop_clock.elapsed().as_millis() as u64,
-    );
-    phases.insert(
-        "descendant_quiet_drain".into(),
-        drain_start.elapsed().as_millis() as u64,
-    );
-    profile::add(
-        "capture_receive_wall",
-        installer_clock.elapsed().as_nanos() as u64,
-    );
     let association_clock = Instant::now();
     db.prepare_raw(&id)?;
     let mut processes = process_observer.finish();
@@ -506,7 +521,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         ));
     }
     if backend.has_loss() {
-        warnings.push(format!("Capture incomplete: {} raw record losses, {} context losses, {:?} ETW events lost, {:?} ETW buffers lost, {} decode errors; state attribution remains Unknown.",backend.dropped_events,backend.context_losses,backend.etw_events_lost,backend.etw_buffers_lost,backend.decode_errors));
+        warnings.push(format!("Capture incomplete: {} raw record losses, {} context losses, {:?} ETW events lost, {:?} ETW buffers lost, {} decode errors, journal error={:?}; state attribution remains Unknown.",backend.dropped_events,backend.context_losses,backend.etw_events_lost,backend.etw_buffers_lost,backend.decode_errors,backend.stream.as_ref().and_then(|s|s.error.as_deref())));
     }
     let finished_at = native::timestamp(native::now_ticks());
     let name = options.name.unwrap_or_else(|| {

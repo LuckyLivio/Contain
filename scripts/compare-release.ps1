@@ -1,13 +1,14 @@
-param([Parameter(Mandatory)][string]$BaselineDirectory,[int]$Files=10000,[int]$Trials=3,[string]$OutputDirectory='./target/release-comparison',[switch]$SnapshotOnly,[switch]$Profile,[switch]$SingleScale,[switch]$SkipExtras,[string]$RegressionDirectory,[string]$LightDirectory,[string]$BaselineVariant,[string]$CandidateVariant)
+param([Parameter(Mandatory)][string]$BaselineDirectory,[int]$Files=10000,[int]$Trials=3,[string]$OutputDirectory='./target/release-comparison',[switch]$SnapshotOnly,[switch]$Profile,[switch]$SingleScale,[switch]$SkipExtras,[string]$RegressionDirectory,[string]$LightDirectory,[string]$BaselineVariant,[string]$CandidateVariant,[switch]$CheckpointComparison)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 if ($Files -lt 4 -or $Files -gt 10000 -or $Trials -lt 1 -or $Trials -gt 5) {throw 'Bounded comparison requires 4..10000 files and 1..5 trials'}
+if($CheckpointComparison -and ($BaselineVariant -ne 'D3' -or $CandidateVariant -ne 'D3' -or $RegressionDirectory -or $LightDirectory -or -not $SingleScale -or -not $SkipExtras -or -not $Profile -or $SnapshotOnly)){throw 'Checkpoint comparison requires fixed D3/D3, Profile, SingleScale and SkipExtras with real ETW'}
 $repo=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $BaselineDirectory=(Resolve-Path -LiteralPath $BaselineDirectory).Path
 if($RegressionDirectory){$RegressionDirectory=(Resolve-Path -LiteralPath $RegressionDirectory).Path}
 if($LightDirectory){$LightDirectory=(Resolve-Path -LiteralPath $LightDirectory).Path}
 $cargo=Join-Path $env:USERPROFILE '.cargo/bin/cargo.exe'
-foreach($directory in @($BaselineDirectory,$repo,$RegressionDirectory,$LightDirectory)|Where-Object {$_}) {
+foreach($directory in @($BaselineDirectory,$repo,$RegressionDirectory,$LightDirectory)|Where-Object {$_}|Select-Object -Unique) {
     Push-Location $directory
     try { & $cargo build --release --workspace --locked; if($LASTEXITCODE -ne 0){throw 'release build failed'} } finally {Pop-Location}
 }
@@ -20,6 +21,7 @@ $bins=@{baseline=(Join-Path $BaselineDirectory 'target/release/contain.exe');can
 if($RegressionDirectory){$bins.regression=Join-Path $RegressionDirectory 'target/release/contain.exe'}
 if($LightDirectory){$bins.light=Join-Path $LightDirectory 'target/release/contain.exe'}
 $records=[Collections.Generic.List[object]]::new()
+$environment=$null
 $previousTruth=$env:CONTAIN_FIXTURE_TRUTH
 function Get-SampledLength([string]$Path) {
     try { return [IO.FileInfo]::new($Path).get_Length() }
@@ -30,18 +32,24 @@ function Run-Trial([string]$Mode,[int]$Count,[int]$Trial,[string]$Role='stress',
     $label="$Mode-$Role-$Count-$Trial";if($Overload){$label+='-overload'}
     if($FilterOff){$label+='-filter-off'}
     $priorVariant=$env:CONTAIN_HOTPATH_VARIANT
-    if($Mode -eq 'baseline' -and $BaselineVariant){$env:CONTAIN_HOTPATH_VARIANT=$BaselineVariant}
-    elseif($Mode -eq 'candidate' -and $CandidateVariant){$env:CONTAIN_HOTPATH_VARIANT=$CandidateVariant}
+    $priorCheckpoint=$env:CONTAIN_CHECKPOINT_VARIANT
+    $priorWalBudget=$env:CONTAIN_WAL_BUDGET_BYTES
+    $checkpointVariant=if($Mode -eq 'baseline'){'E0'}else{'E1'}
     $priorProfile=$env:CONTAIN_PROFILE_PATH
     $priorFilter=$env:CONTAIN_ETW_EVENT_ID_FILTER
+    $watch=$null;$peak=0L;$dbPeak=0L;$walPeak=0L;$record=$null;$noise=$null
+    $root=$null;$truthRoot=$null;$db=$null;$dest=$null
+    try {
+    if($CheckpointComparison){$env:CONTAIN_CHECKPOINT_VARIANT=$checkpointVariant;$env:CONTAIN_WAL_BUDGET_BYTES='536870912'}
+    if($Mode -eq 'baseline' -and $BaselineVariant){$env:CONTAIN_HOTPATH_VARIANT=$BaselineVariant}
+    elseif($Mode -eq 'candidate' -and $CandidateVariant){$env:CONTAIN_HOTPATH_VARIANT=$CandidateVariant}
     $env:CONTAIN_ETW_EVENT_ID_FILTER=if($FilterOff){'0'}else{'1'}
     $dest=Join-Path $OutputDirectory $label;New-Item -ItemType Directory -Path $dest | Out-Null
     if($Profile -and ($Mode -in @('candidate','light') -or $BaselineVariant)){$env:CONTAIN_PROFILE_PATH=Join-Path $dest 'profile.json'}else{$env:CONTAIN_PROFILE_PATH=$null}
     $name='contain-demo-'+[guid]::NewGuid().ToString('N')
     $root=Join-Path $env:TEMP $name;$truthRoot=Join-Path $env:TEMP ($name+'-truth');$db=Join-Path $env:TEMP ($name+'.db')
     foreach($path in @($root,$truthRoot)){New-Item -ItemType Directory -Path $path | Out-Null;[IO.File]::WriteAllText((Join-Path $path '.contain-demo-marker'),'Contain test fixture')}
-    $env:CONTAIN_FIXTURE_TRUTH=$truthRoot;$noise=$null
-    try {
+    $env:CONTAIN_FIXTURE_TRUTH=$truthRoot
         if($Role -eq 'stress') {
             $noise=Start-Process -WindowStyle Hidden -FilePath $fixture -ArgumentList @('--root',('"'+$root+'"'),'--role','noise','--files','100') -PassThru -RedirectStandardOutput (Join-Path $dest 'noise.stdout.txt') -RedirectStandardError (Join-Path $dest 'noise.stderr.txt')
             $deadline=[DateTime]::UtcNow.AddSeconds(30)
@@ -61,7 +69,7 @@ function Run-Trial([string]$Mode,[int]$Count,[int]$Trial,[string]$Role='stress',
             Start-Sleep -Milliseconds 20
         }
         $process.WaitForExit();$watch.Stop()
-        if($process.ExitCode -ne 0){throw "Capture failed: $label; see preserved stderr and database $db"}
+        if($process.ExitCode -ne 0){throw "Capture failed: $label; exit=$($process.ExitCode); local stderr retained"}
         if($noise -and (-not $noise.WaitForExit(30000) -or $noise.ExitCode -ne 0)){throw 'noise fixture failed'}
         $export=Start-Process -WindowStyle Hidden -FilePath $bins[$Mode] -ArgumentList @('--db',('"'+$db+'"'),'inspect','ReleaseFixture','--json') -PassThru -Wait -RedirectStandardOutput (Join-Path $dest 'capture.json') -RedirectStandardError (Join-Path $dest 'export.stderr.txt')
         if($export.ExitCode -ne 0){throw 'database export failed'}
@@ -85,23 +93,47 @@ function Run-Trial([string]$Mode,[int]$Count,[int]$Trial,[string]$Role='stress',
         if($Count -eq 1000 -and $Role -eq 'stress'){$pass=$pass -and $score.groups.target_success.observed -eq $expected -and $score.groups.target_success.correctly_attributed -eq $expected}
         $record=[ordered]@{mode=$Mode;files=$Count;workers=$(if($Role -eq 'stress'){4}else{1});trial=$Trial;role=$Role;intentional_overload=[bool]$Overload;elapsed_seconds=$watch.Elapsed.TotalSeconds;parent_peak_working_set_bytes=$peak;sqlite_bytes=(Get-Item $db).Length;sampled_db_peak_bytes=$dbPeak;sampled_wal_peak_bytes=$walPeak;stats=$capture.stats;backend=$capture.backend;quality=$capture.quality;score=($score|Select-Object * -ExcludeProperty rows);counter_balances=$balances;acceptance_pass=$pass}
         $record.file_filter_experiment=[bool]$FilterOff
+        if($CheckpointComparison){
+            $record.checkpoint_variant=$checkpointVariant
+            $record | ConvertTo-Json -Depth 30 | Set-Content (Join-Path $dest 'measurement.json') -Encoding utf8
+            & python -X utf8 "$PSScriptRoot/checkpoint-gate.py" (Join-Path $dest 'measurement.json') $checkpointVariant
+            if($LASTEXITCODE -ne 0){throw 'Checkpoint gate validation failed'}
+            $record=Get-Content -Raw -LiteralPath (Join-Path $dest 'measurement.json') | ConvertFrom-Json
+        }
         $records.Add($record)
         $record | ConvertTo-Json -Depth 30 | Set-Content (Join-Path $dest 'measurement.json') -Encoding utf8
         Write-Output ('TRIAL: '+($record|ConvertTo-Json -Depth 30 -Compress))
         if(-not $SnapshotOnly -and -not $balances){throw "Pipeline accounting mismatch: $label; measurement preserved"}
         if($Overload -and ($p.retention_dropped -eq 0 -or $capture.stats.high_confidence_events -ne 0 -or $capture.quality.level -ne 'Incomplete')){throw 'intentional overload failed to suppress attribution'}
+    } catch {
+        if(-not $CheckpointComparison){throw}
+        if($watch){$watch.Stop()}
+        # A crashed capture or failed export remains an attempted denominator entry.
+        # Detailed stdout/stderr and any machine-wide capture stay private.
+        if($null -eq $record -or -not $records.Contains($record)){
+            $record=[ordered]@{mode=$Mode;checkpoint_variant=$checkpointVariant;files=$Count;workers=4;trial=$Trial;role=$Role;intentional_overload=[bool]$Overload;file_filter_experiment=[bool]$FilterOff;elapsed_seconds=$(if($watch){$watch.Elapsed.TotalSeconds}else{$null});parent_peak_working_set_bytes=$peak;sampled_db_peak_bytes=$dbPeak;sampled_wal_peak_bytes=$walPeak;counter_balances=$false;acceptance_pass=$false;harness_error=$_.Exception.Message}
+            $records.Add($record)
+            if($dest -and (Test-Path -LiteralPath $dest)){$record | ConvertTo-Json -Depth 30 | Set-Content (Join-Path $dest 'measurement.json') -Encoding utf8}
+            Write-Output ('FAILED TRIAL: '+($record|ConvertTo-Json -Depth 30 -Compress))
+        }
     } finally {
         $env:CONTAIN_HOTPATH_VARIANT=$priorVariant
+        $env:CONTAIN_CHECKPOINT_VARIANT=$priorCheckpoint
+        $env:CONTAIN_WAL_BUDGET_BYTES=$priorWalBudget
         $env:CONTAIN_PROFILE_PATH=$priorProfile
         $env:CONTAIN_ETW_EVENT_ID_FILTER=$priorFilter
         if($noise -and -not $noise.HasExited){$noise.Kill();$noise.WaitForExit()}
-        & $fixture --root $root --cleanup; if($LASTEXITCODE -ne 0){throw 'fixture cleanup failed'}
-        & $fixture --root $truthRoot --cleanup; if($LASTEXITCODE -ne 0){throw 'truth cleanup failed'}
-        foreach($suffix in @('','-wal','-shm')){$path=$db+$suffix;if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path -Force}}
+        foreach($ownedRoot in @($root,$truthRoot)){
+            if($ownedRoot -and (Test-Path -LiteralPath (Join-Path $ownedRoot '.contain-demo-marker'))){& $fixture --root $ownedRoot --cleanup; if($LASTEXITCODE -ne 0){throw 'fixture/truth cleanup failed'}}
+        }
+        if($db){foreach($suffix in @('','-wal','-shm')){$path=$db+$suffix;if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path -Force}}}
     }
 }
 try {
     $environment=[ordered]@{schema_version=2;baseline_variant=$BaselineVariant;candidate_variant=$CandidateVariant;candidate_commit=(& git -C $repo rev-parse HEAD);baseline_commit=(& git -C $BaselineDirectory rev-parse HEAD);profile='release --locked';rustc=((& (Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe') -Vv)-join "`n");os=[Environment]::OSVersion.VersionString;elevated=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator);filesystem=(Get-Volume -DriveLetter ([IO.Path]::GetPathRoot($env:TEMP).Substring(0,1))).FileSystem;logical_processors=[Environment]::ProcessorCount;candidate_lock_sha256=(Get-FileHash (Join-Path $repo 'Cargo.lock')).Hash;baseline_lock_sha256=(Get-FileHash (Join-Path $BaselineDirectory 'Cargo.lock')).Hash;fixture_sha256=(Get-FileHash $fixture).Hash;scorer_sha256=(Get-FileHash (Join-Path $PSScriptRoot 'score-fixture.py')).Hash;measurement='Same runner, compiler, release profile and frozen common fixture. Alternating baseline/candidate pairs; independent noise. Parent PeakWorkingSet64 and DB/WAL sampled every20ms, excludes child memory/kernel buffers. Capture wall includes final commit; export/scoring outside timing. Callback timers overlap wall phases; no CPU utilization claim. Background/caches uncontrolled, Defender unchanged.'}
+    if($CheckpointComparison){
+        $environment.checkpoint_experiment=[ordered]@{baseline_variant='E0';candidate_variant='E1';wal_budget_bytes=536870912;budget_semantics='Sampled stop threshold; one transaction can overshoot; raw quota is separate';fixed_hotpath='D3';capture_wall='Includes ETW stop, tail flush, explicit checkpoint when enabled, postprocessing, FULL final commit and database close';expected_attempts=2*$Trials}
+    }
     if($RegressionDirectory){$environment.regression_commit=(& git -C $RegressionDirectory rev-parse HEAD)}
     if($LightDirectory){$environment.light_commit=(& git -C $LightDirectory rev-parse HEAD)}
     $environment|ConvertTo-Json -Depth 10|Set-Content (Join-Path $OutputDirectory 'environment.json') -Encoding utf8
@@ -118,4 +150,12 @@ try {
     $result.medians=$medians;$result.trials=$records
     $result|ConvertTo-Json -Depth 40|Set-Content (Join-Path $OutputDirectory 'comparison.json') -Encoding utf8
     Write-Output ('COMPARISON: '+($result|ConvertTo-Json -Depth 40 -Compress))
-} finally {$env:CONTAIN_FIXTURE_TRUTH=$previousTruth}
+} finally {
+    if($CheckpointComparison -and $environment){
+        # Persist partial results even if a cleanup or later harness operation aborts.
+        $environment.trials=$records
+        $environment.completed_attempts=$records.Count
+        $environment | ConvertTo-Json -Depth 40 | Set-Content (Join-Path $OutputDirectory 'comparison.json') -Encoding utf8
+    }
+    $env:CONTAIN_FIXTURE_TRUTH=$previousTruth
+}
