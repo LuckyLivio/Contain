@@ -67,6 +67,15 @@ impl Default for Metrics {
     }
 }
 impl Metrics {
+    pub fn queue_snapshot(&self) -> crate::profile::QueueSnapshot {
+        crate::profile::QueueSnapshot {
+            enqueued: self.get(Count::Enqueued),
+            overflow: self.get(Count::Overflow),
+            dequeued: self.get(Count::Dequeued),
+            pending: self.get(Count::Pending),
+        }
+    }
+
     pub fn provider(&self, provider: usize) {
         self.provider.store(provider, Relaxed);
     }

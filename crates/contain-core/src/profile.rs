@@ -3,6 +3,27 @@
 use serde::Serialize;
 use std::{cell::RefCell, collections::BTreeMap, time::Instant};
 
+const MAX_QUEUE_SPANS: usize = 8192;
+
+/// Independent monotonic counters, plus an approximate occupancy sample. The
+/// callback may advance between loads; this is not an atomic queue balance.
+#[derive(Clone, Copy, Debug, Default, Serialize)]
+pub struct QueueSnapshot {
+    pub enqueued: u64,
+    pub overflow: u64,
+    pub dequeued: u64,
+    pub pending: u64,
+}
+
+#[derive(Serialize)]
+struct QueueSpan {
+    stage: &'static str,
+    start_ns: u64,
+    end_ns: u64,
+    before: QueueSnapshot,
+    after: QueueSnapshot,
+}
+
 #[derive(Default, Serialize)]
 pub struct Distribution {
     count: u64,
@@ -33,17 +54,77 @@ struct Profile {
     batches: Vec<[u64; 4]>,
     omitted_batches: u64,
     checkpoint_timing: &'static str,
+    #[serde(skip)]
+    queue_probe: Option<Box<dyn Fn() -> QueueSnapshot>>,
+    queue_spans: Vec<QueueSpan>,
+    omitted_queue_spans: u64,
 }
 thread_local! {
     static DATA: RefCell<Option<Profile>> = const { RefCell::new(None) };
 }
-pub fn start() {
-    if std::env::var_os("CONTAIN_PROFILE_PATH").is_some() {
-        DATA.with(|p| *p.borrow_mut() = Some(Profile {
+fn begin() {
+    DATA.with(|p| {
+        *p.borrow_mut() = Some(Profile {
             start: Instant::now(), last_drain: None, stages: BTreeMap::new(),
             batches: Vec::new(), omitted_batches: 0,
             checkpoint_timing: "not isolated; automatic checkpoint is included in commit; scheduling unchanged",
-        }));
+            queue_probe: None, queue_spans: Vec::new(), omitted_queue_spans: 0,
+        });
+    });
+}
+pub fn start() {
+    if std::env::var_os("CONTAIN_PROFILE_PATH").is_some() {
+        begin();
+    } else {
+        DATA.with(|p| *p.borrow_mut() = None);
+    }
+}
+
+/// One callback counter handle; no event payloads, I/O or decoder lock required.
+pub fn observe_queue(probe: impl Fn() -> QueueSnapshot + 'static) {
+    DATA.with(|p| {
+        if let Some(p) = &mut *p.borrow_mut() {
+            p.queue_probe = Some(Box::new(probe));
+        }
+    });
+}
+
+pub struct QueueTimer(Option<(&'static str, u64, QueueSnapshot)>);
+
+pub fn queue_span(stage: &'static str) -> QueueTimer {
+    QueueTimer(DATA.with(|p| {
+        let p = p.borrow();
+        let p = p.as_ref()?;
+        let probe = p.queue_probe.as_ref()?;
+        // Window brackets both counter samples, including their small sampling cost.
+        Some((stage, p.start.elapsed().as_nanos() as u64, probe()))
+    }))
+}
+
+impl Drop for QueueTimer {
+    fn drop(&mut self) {
+        let Some((stage, start_ns, before)) = self.0 else {
+            return;
+        };
+        DATA.with(|p| {
+            if let Some(p) = &mut *p.borrow_mut()
+                && let Some(probe) = &p.queue_probe
+            {
+                let after = probe();
+                let end_ns = p.start.elapsed().as_nanos() as u64;
+                if p.queue_spans.len() < MAX_QUEUE_SPANS {
+                    p.queue_spans.push(QueueSpan {
+                        stage,
+                        start_ns,
+                        end_ns,
+                        before,
+                        after,
+                    });
+                } else {
+                    p.omitted_queue_spans += 1;
+                }
+            }
+        });
     }
 }
 pub fn epoch() -> Option<Instant> {
@@ -115,3 +196,76 @@ macro_rules! measured {
     }};
 }
 pub(crate) use measured;
+
+#[cfg(test)]
+pub(crate) fn test_profile(action: impl FnOnce()) -> serde_json::Value {
+    begin();
+    action();
+    serde_json::to_value(DATA.with(|p| p.borrow_mut().take()).unwrap()).unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{cell::Cell, rc::Rc};
+
+    #[test]
+    fn queue_spans_count_stall_arrivals_and_keep_nested_windows_separate() {
+        begin();
+        let counters = Rc::new(Cell::new(QueueSnapshot::default()));
+        let probe = counters.clone();
+        observe_queue(move || probe.get());
+        {
+            let _batch = queue_span("raw_batch_flush");
+            counters.set(QueueSnapshot {
+                enqueued: 3,
+                pending: 3,
+                ..Default::default()
+            });
+            {
+                let _commit = queue_span("raw_commit_including_autocheckpoint");
+                counters.set(QueueSnapshot {
+                    enqueued: 8,
+                    overflow: 5,
+                    pending: 8,
+                    dequeued: 0,
+                });
+            }
+            counters.set(QueueSnapshot {
+                enqueued: 8,
+                overflow: 7,
+                pending: 8,
+                dequeued: 0,
+            });
+        }
+        let p = DATA.with(|p| p.borrow_mut().take()).unwrap();
+        assert_eq!(p.queue_spans.len(), 2);
+        let commit = &p.queue_spans[0];
+        let batch = &p.queue_spans[1];
+        assert_eq!(commit.after.overflow - commit.before.overflow, 5);
+        assert_eq!(batch.after.overflow - batch.before.overflow, 7);
+        assert_eq!(commit.after.enqueued - commit.before.enqueued, 5);
+        assert!(batch.start_ns <= commit.start_ns && commit.end_ns <= batch.end_ns);
+        assert!(
+            serde_json::to_value(p)
+                .unwrap()
+                .get("queue_probe")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn queue_diagnostics_are_bounded_and_absent_without_a_probe() {
+        begin();
+        drop(queue_span("no_probe"));
+        observe_queue(QueueSnapshot::default);
+        for _ in 0..MAX_QUEUE_SPANS + 3 {
+            drop(queue_span("raw_batch_flush"));
+        }
+        let p = DATA.with(|p| p.borrow_mut().take()).unwrap();
+        assert_eq!(p.queue_spans.len(), MAX_QUEUE_SPANS);
+        assert_eq!(p.omitted_queue_spans, 3);
+        drop(queue_span("disabled"));
+        assert!(!enabled());
+    }
+}

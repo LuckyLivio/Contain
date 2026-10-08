@@ -97,6 +97,10 @@ impl EtwSource {
         let registry_path_gaps = Arc::new(AtomicU64::new(0));
         let received = Arc::new(AtomicU64::new(0));
         let metrics = Arc::new(Metrics::default());
+        if crate::profile::enabled() {
+            let queue_metrics = metrics.clone();
+            crate::profile::observe_queue(move || queue_metrics.queue_snapshot());
+        }
         let name = format!("Contain-{}", uuid::Uuid::new_v4());
         let mut source = Self {
             decoder: None,
@@ -481,6 +485,8 @@ mod tests {
     fn full_channel_drops_without_blocking_and_counts_loss() {
         let (tx, rx) = mpsc::sync_channel(1);
         let dropped = Arc::new(AtomicU64::new(0));
+        let mut source = EtwSource::start(&[], None, false);
+        source.rx = rx;
         let decoder = Decoder {
             deferred_registry: false,
             lifetimes: Default::default(),
@@ -491,16 +497,36 @@ mod tests {
             registry_root: None,
             devices: vec![],
             tx,
-            metrics: Arc::new(Metrics::default()),
+            metrics: source.metrics.clone(),
             dropped: dropped.clone(),
             errors: Arc::new(AtomicU64::new(0)),
             registry_path_gaps: Arc::new(AtomicU64::new(0)),
             received: Arc::new(AtomicU64::new(0)),
         };
-        decoder.send(SystemEvent::default());
-        decoder.send(SystemEvent::default());
-        assert_eq!(dropped.load(Ordering::Relaxed), 1);
-        assert_eq!(rx.try_iter().count(), 1);
+        let metrics = source.metrics.clone();
+        let profile = crate::profile::test_profile(|| {
+            crate::profile::observe_queue(move || metrics.queue_snapshot());
+            let _span = crate::profile::queue_span("consumer_stalled");
+            // The span is open before the producer starts. Joining without reading
+            // guarantees two real Full errors, without sleeps or ETW permissions.
+            thread::spawn(move || {
+                for _ in 0..3 {
+                    decoder.send(SystemEvent::default());
+                }
+            })
+            .join()
+            .unwrap();
+        });
+        let span = &profile["queue_spans"][0];
+        assert_eq!(span["before"]["overflow"], 0);
+        assert_eq!(span["after"]["overflow"], 2);
+        assert_eq!(span["after"]["enqueued"], 1);
+        assert_eq!(span["after"]["dequeued"], 0);
+        assert_eq!(span["after"]["pending"], 1);
+        assert_eq!(dropped.load(Ordering::Relaxed), 2);
+        assert_eq!(source.drain().len(), 1);
+        assert_eq!(source.metrics.get(Count::Pending), 0);
+        assert_eq!(source.metrics.get(Count::Dequeued), 1);
     }
 
     #[test]
