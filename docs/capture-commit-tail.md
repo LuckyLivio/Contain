@@ -80,7 +80,7 @@ throughput gate.
 Local format, Clippy and workspace tests passed: 58 ordinary tests, one ignored
 disk replay. The real nonblocking channel test forces two Full errors from a
 separate producer while the consumer is held, then checks both span counters and
-final draining. Eight analyzer tests and seven frozen Python scorer tests passed,
+final draining. Nine analyzer tests and seven frozen Python scorer tests passed,
 as did the PowerShell scorer and snapshot fixture JSON/readback/dry-run checks.
 
 [Historical D3 summary](examples/commit-tail-historical.json) preserves the three
@@ -104,3 +104,8 @@ loop compatible with the local Rust 1.98.1 and adds a concurrent counting test.
 That failure happened before ETW integration; it supplies no capture result.
 The concurrently dispatched diagnostic experiment remains identified by its own
 `6f0e520` binary, before this counter API compatibility edit.
+
+The analyzer also accepts an explicit `backend.pipeline: null` from snapshot
+fallback. It reports absent counters and unmeasured stage statistics as null,
+not zero loss; unknown input structures still fail validation. This was checked
+against the actual local snapshot fixture as well as its focused test.

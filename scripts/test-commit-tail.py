@@ -117,6 +117,18 @@ class CommitTailTests(unittest.TestCase):
             self.assertTrue(json.loads(run.stdout)["diagnostic_only"])
             self.assertNotIn("private-marker", run.stdout)
 
+    def test_explicit_null_backend_pipeline_is_unmeasured_snapshot_fallback(self):
+        metadata = dict(backend=dict(pipeline=None))
+        for wrapped in (metadata, dict(metadata=metadata), dict(result=metadata), dict(measurement=metadata)):
+            result = diagnostic.analyze(dict(queue_spans=[]), wrapped)
+            self.assertIsNone(result["overflow"]["total"])
+            for stage in diagnostic.STAGES:
+                self.assertFalse(result["queue_spans"][stage]["measured"])
+                self.assertIsNone(result["queue_spans"][stage]["fraction_of_total_overflow"])
+        for unrelated in ({}, dict(backend={}), dict(pipeline=None), dict(unrecognized=metadata)):
+            with self.assertRaises(ValueError):
+                diagnostic.analyze({}, unrelated)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -29,8 +29,13 @@ def pipeline_from(record):
             candidates.append(record[name])
     for candidate in candidates:
         backend = candidate.get("backend", {})
-        if isinstance(backend, dict) and isinstance(backend.get("pipeline"), dict):
-            return backend["pipeline"]
+        if isinstance(backend, dict) and "pipeline" in backend:
+            # Snapshot fallback explicitly has no ETW pipeline. This differs
+            # from a wrong input file with no recognized pipeline field.
+            if backend["pipeline"] is None:
+                return {}
+            if isinstance(backend["pipeline"], dict):
+                return backend["pipeline"]
         if isinstance(candidate.get("pipeline"), dict):
             return candidate["pipeline"]
         if any(key in candidate for key in ("queue_overflow", "overflow_first_ns")):
