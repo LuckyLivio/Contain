@@ -1,0 +1,5354 @@
+{
+  "schema_version": 1,
+  "experiment": "local_snapshot_fallback",
+  "baseline_commit": "7c5a5b2b534d235f4db6c472c2c34a60e8be66ee",
+  "candidate_commit": "880b4501897ed75225e65f66a26945e9bf1d2348",
+  "summary_script_lf_sha256": "084302fb2101ede38663d39c1b5d16594acacbb8c3a49d87bb5fa48844a81e3e",
+  "source_association": "Commit identities supplied by the experiment operator; exact measured executable/scorer/script SHA-256 are retained per run. This archive does not represent later candidate revisions.",
+  "baseline_environment": {
+    "source_sha256": "a95cda65aabcb677d89a93cdfc5ffd204ced7858da90ccce4e48e21204c88ffc",
+    "observed_at": "2026-10-22T23:49:26.6878323+08:00",
+    "windows_version": "10.0.26300",
+    "windows_build": 26300,
+    "logical_processors": 24,
+    "physical_memory_bytes": 33690267648,
+    "elevated": false,
+    "filesystem": "NTFS",
+    "rustc_version": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "python_version": "Python 3.12.7",
+    "powershell_version": "7.6.5"
+  },
+  "sources": [
+    {
+      "label": "final",
+      "public_projection_sha256": "317f249947ca2f3235709964b08a8ddc8b4b8bde5c778c34a529edf2c08b2c3a",
+      "planned_attempts": 18,
+      "completed_attempts": 18,
+      "source_acceptance_pass": true,
+      "environment": {
+        "schema_version": 1,
+        "logical_processors": 24,
+        "snapshot_only": true,
+        "baseline_variant": null,
+        "candidate_variant": null,
+        "executables": {
+          "baseline": {
+            "sha256": "91b24ecf41860cc54cfdb9742eab4e6af132846f67c89004193bdbcd0d047708"
+          },
+          "candidate": {
+            "sha256": "c35ab98727c3e066a356e781553b4bd94f3ace5b0e8a4059677270e61d5ac7fe"
+          },
+          "fixture": {
+            "sha256": "4109e1bd7edc290b0dc600e5cb4276ac1cb64132f32d5497705957ff9d1054f9"
+          }
+        },
+        "scorer_sha256": "aa20dc9b8103c6e79ed3d96b00f6b0219e76d9771f2749a58ffee79a56689ab7",
+        "script_sha256": "6db62ea42882899d152befdfa4c2b5d3c06490ac756d52819dcc840d2e6d978e"
+      },
+      "provenance": {}
+    }
+  ],
+  "planned_attempts": 18,
+  "recorded_attempts": 18,
+  "completed_attempts": 18,
+  "fallback_passes": 18,
+  "etw_release_gate": null,
+  "measurement": "Medians include every available sample in its declared group, including failed samples; measured_samples exposes missing metrics. Groups/runs are not pooled. No ETW attribution or physical-disk throughput claim. Parent CPU/memory/I/O scope and sampling follow v04-matrix.py.",
+  "publication": "Numeric public projection only. All attempts retained. Oracle row counts and hashes are retained; individual fixture paths/rows, process identities, global inventory, databases and logs are omitted. Full public projections and private evidence remain separate.",
+  "groups": [
+    {
+      "run": "final",
+      "files": 100,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "mode": "baseline",
+      "attempts": 3,
+      "completed": 3,
+      "passed": 3,
+      "medians": {
+        "elapsed_seconds": 8.380063300000074,
+        "parent_cpu_seconds": 0.609375,
+        "parent_peak_working_set_bytes": 18735104,
+        "parent_sampled_peak_private_bytes": 8507392,
+        "sampled_db_peak_bytes": 4096,
+        "sampled_wal_peak_bytes": 358472,
+        "sqlite_bytes": 409600
+      },
+      "measured_samples": {
+        "elapsed_seconds": 3,
+        "parent_cpu_seconds": 3,
+        "parent_peak_working_set_bytes": 3,
+        "parent_sampled_peak_private_bytes": 3,
+        "sampled_db_peak_bytes": 3,
+        "sampled_wal_peak_bytes": 3,
+        "sqlite_bytes": 3
+      },
+      "parent_io_medians": {
+        "read_operations": 739,
+        "write_operations": 470,
+        "other_operations": 4400,
+        "read_bytes": 4693489,
+        "write_bytes": 1117506,
+        "other_bytes": 177866
+      },
+      "parent_io_measured_samples": {
+        "read_operations": 3,
+        "write_operations": 3,
+        "other_operations": 3,
+        "read_bytes": 3,
+        "write_bytes": 3,
+        "other_bytes": 3
+      }
+    },
+    {
+      "run": "final",
+      "files": 100,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "mode": "candidate",
+      "attempts": 3,
+      "completed": 3,
+      "passed": 3,
+      "medians": {
+        "elapsed_seconds": 7.777641300000141,
+        "parent_cpu_seconds": 0.578125,
+        "parent_peak_working_set_bytes": 18677760,
+        "parent_sampled_peak_private_bytes": 8515584,
+        "sampled_db_peak_bytes": 4096,
+        "sampled_wal_peak_bytes": 374952,
+        "sqlite_bytes": 430080
+      },
+      "measured_samples": {
+        "elapsed_seconds": 3,
+        "parent_cpu_seconds": 3,
+        "parent_peak_working_set_bytes": 3,
+        "parent_sampled_peak_private_bytes": 3,
+        "sampled_db_peak_bytes": 3,
+        "sampled_wal_peak_bytes": 3,
+        "sqlite_bytes": 3
+      },
+      "parent_io_medians": {
+        "read_operations": 791,
+        "write_operations": 492,
+        "other_operations": 4363,
+        "read_bytes": 4713969,
+        "write_bytes": 1166945,
+        "other_bytes": 176820
+      },
+      "parent_io_measured_samples": {
+        "read_operations": 3,
+        "write_operations": 3,
+        "other_operations": 3,
+        "read_bytes": 3,
+        "write_bytes": 3,
+        "other_bytes": 3
+      }
+    },
+    {
+      "run": "final",
+      "files": 1000,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "mode": "baseline",
+      "attempts": 3,
+      "completed": 3,
+      "passed": 3,
+      "medians": {
+        "elapsed_seconds": 8.197904500000277,
+        "parent_cpu_seconds": 0.765625,
+        "parent_peak_working_set_bytes": 22630400,
+        "parent_sampled_peak_private_bytes": 11907072,
+        "sampled_db_peak_bytes": 4096,
+        "sampled_wal_peak_bytes": 2661552,
+        "sqlite_bytes": 2371584
+      },
+      "measured_samples": {
+        "elapsed_seconds": 3,
+        "parent_cpu_seconds": 3,
+        "parent_peak_working_set_bytes": 3,
+        "parent_sampled_peak_private_bytes": 3,
+        "sampled_db_peak_bytes": 3,
+        "sampled_wal_peak_bytes": 3,
+        "sqlite_bytes": 3
+      },
+      "parent_io_medians": {
+        "read_operations": 2252,
+        "write_operations": 1907,
+        "other_operations": 16184,
+        "read_bytes": 7154677,
+        "write_bytes": 5052995,
+        "other_bytes": 690610
+      },
+      "parent_io_measured_samples": {
+        "read_operations": 3,
+        "write_operations": 3,
+        "other_operations": 3,
+        "read_bytes": 3,
+        "write_bytes": 3,
+        "other_bytes": 3
+      }
+    },
+    {
+      "run": "final",
+      "files": 1000,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "mode": "candidate",
+      "attempts": 3,
+      "completed": 3,
+      "passed": 3,
+      "medians": {
+        "elapsed_seconds": 8.42217010000013,
+        "parent_cpu_seconds": 0.859375,
+        "parent_peak_working_set_bytes": 22593536,
+        "parent_sampled_peak_private_bytes": 11616256,
+        "sampled_db_peak_bytes": 4096,
+        "sampled_wal_peak_bytes": 2575032,
+        "sqlite_bytes": 2482176
+      },
+      "measured_samples": {
+        "elapsed_seconds": 3,
+        "parent_cpu_seconds": 3,
+        "parent_peak_working_set_bytes": 3,
+        "parent_sampled_peak_private_bytes": 3,
+        "sampled_db_peak_bytes": 3,
+        "sampled_wal_peak_bytes": 3,
+        "sqlite_bytes": 3
+      },
+      "parent_io_medians": {
+        "read_operations": 2306,
+        "write_operations": 1995,
+        "other_operations": 16180,
+        "read_bytes": 7363573,
+        "write_bytes": 5283180,
+        "other_bytes": 691034
+      },
+      "parent_io_measured_samples": {
+        "read_operations": 3,
+        "write_operations": 3,
+        "other_operations": 3,
+        "read_bytes": 3,
+        "write_bytes": 3,
+        "other_bytes": 3
+      }
+    },
+    {
+      "run": "final",
+      "files": 10000,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "mode": "baseline",
+      "attempts": 3,
+      "completed": 3,
+      "passed": 3,
+      "medians": {
+        "elapsed_seconds": 12.713314100000389,
+        "parent_cpu_seconds": 3.15625,
+        "parent_peak_working_set_bytes": 43716608,
+        "parent_sampled_peak_private_bytes": 34996224,
+        "sampled_db_peak_bytes": 21905408,
+        "sampled_wal_peak_bytes": 22301592,
+        "sqlite_bytes": 21905408
+      },
+      "measured_samples": {
+        "elapsed_seconds": 3,
+        "parent_cpu_seconds": 3,
+        "parent_peak_working_set_bytes": 3,
+        "parent_sampled_peak_private_bytes": 3,
+        "sampled_db_peak_bytes": 3,
+        "sampled_wal_peak_bytes": 3,
+        "sqlite_bytes": 3
+      },
+      "parent_io_medians": {
+        "read_operations": 27693,
+        "write_operations": 18746,
+        "other_operations": 134164,
+        "read_bytes": 74568633,
+        "write_bytes": 44312187,
+        "other_bytes": 5908784
+      },
+      "parent_io_measured_samples": {
+        "read_operations": 3,
+        "write_operations": 3,
+        "other_operations": 3,
+        "read_bytes": 3,
+        "write_bytes": 3,
+        "other_bytes": 3
+      }
+    },
+    {
+      "run": "final",
+      "files": 10000,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "mode": "candidate",
+      "attempts": 3,
+      "completed": 3,
+      "passed": 3,
+      "medians": {
+        "elapsed_seconds": 12.1604155,
+        "parent_cpu_seconds": 3.09375,
+        "parent_peak_working_set_bytes": 43106304,
+        "parent_sampled_peak_private_bytes": 33849344,
+        "sampled_db_peak_bytes": 22982656,
+        "sampled_wal_peak_bytes": 23393392,
+        "sqlite_bytes": 22982656
+      },
+      "measured_samples": {
+        "elapsed_seconds": 3,
+        "parent_cpu_seconds": 3,
+        "parent_peak_working_set_bytes": 3,
+        "parent_sampled_peak_private_bytes": 3,
+        "sampled_db_peak_bytes": 3,
+        "sampled_wal_peak_bytes": 3,
+        "sqlite_bytes": 3
+      },
+      "parent_io_medians": {
+        "read_operations": 25943,
+        "write_operations": 17031,
+        "other_operations": 134133,
+        "read_bytes": 67360457,
+        "write_bytes": 46437015,
+        "other_bytes": 5907840
+      },
+      "parent_io_measured_samples": {
+        "read_operations": 3,
+        "write_operations": 3,
+        "other_operations": 3,
+        "read_bytes": 3,
+        "write_bytes": 3,
+        "other_bytes": 3
+      }
+    }
+  ],
+  "trials": [
+    {
+      "attempt": 1,
+      "mode": "baseline",
+      "files": 100,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "trial": 1,
+      "status": "completed",
+      "measurement_sha256": "a926e811739d8d712bb85d4caaed8e350a672ae6d7628ff958c423022800e482",
+      "acceptance_pass": true,
+      "expected_target_operations": 252,
+      "expected_noise_operations": 300,
+      "database_initial_bytes": 0,
+      "elapsed_seconds": 8.61727189999965,
+      "parent_cpu_seconds": 0.609375,
+      "parent_cpu_percent_machine_average": 0.2946480660544206,
+      "parent_peak_working_set_bytes": 18714624,
+      "parent_sampled_peak_private_bytes": 8507392,
+      "sampled_db_peak_bytes": 4096,
+      "sampled_wal_peak_bytes": 358472,
+      "sqlite_bytes": 409600,
+      "capture_exit": 0,
+      "label_mismatch": false,
+      "seed_label_verified": true,
+      "harness_error_present": false,
+      "cleanup_error_present": false,
+      "metric_error_count": 0,
+      "stats": {
+        "capture_elapsed_ms": 8546,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 0,
+        "events_received": 0,
+        "events_retained": 52,
+        "high_confidence_events": 0,
+        "known_actor_events": 0,
+        "known_resource_events": 0,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 7,
+          "after_inventory": 3720,
+          "before_snapshot_inventory": 3212,
+          "correlation_attribution": 0,
+          "descendant_quiet_drain": 1506,
+          "etw_stop_and_queue_drain": 0,
+          "final_persistence_commit": 1,
+          "installer_root": 98,
+          "lifetime_attribution_and_paged_persistence": 0,
+          "provider_readiness": 0,
+          "raw_persistence_overlapping": 0
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 0,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": null,
+        "etw_events_lost": null,
+        "events_received": 0,
+        "file_event_id_filter": null,
+        "pipeline": null,
+        "registry_path_gaps": 0,
+        "stream": {
+          "accepted": 0,
+          "batches": 0,
+          "checkpoint": null,
+          "checkpoint_completed": false,
+          "checkpoint_variant": null,
+          "committed_bytes": 0,
+          "disk_free_min_bytes": null,
+          "disk_reserve_bytes": null,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 0,
+          "persisted": 0,
+          "persistence_ns": 0,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "restored_wal_autocheckpoint_pages": null,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "wal_autocheckpoint_pages": 4096,
+          "wal_budget_bytes": null,
+          "wal_budget_exceeded": false,
+          "wal_budget_overshoot_bytes": null,
+          "wal_growth_bytes": null,
+          "wal_initial_bytes": null,
+          "wal_peak_bytes": null,
+          "wal_samples": 0
+        },
+        "warnings": [],
+        "etw_file": "disabled",
+        "etw_registry": "disabled",
+        "etw_process": "disabled"
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 552,
+        "observed": 0,
+        "correctly_attributed": 0,
+        "unknown": 552,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 252,
+            "unobserved": 252,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 300,
+            "unobserved": 300,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 0,
+        "false_positive_target_events": 0,
+        "unexpected_positive_events": [],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 0,
+        "precision": null,
+        "dropped": 0,
+        "etw_events_lost": null,
+        "etw_buffers_lost": null
+      },
+      "gate": {
+        "checks": {
+          "target_denominator": true,
+          "noise_denominator": true,
+          "no_false_attribution": true,
+          "no_drain_timeout": true,
+          "etw_disabled": true,
+          "no_source_promotion": true,
+          "no_state_promotion": true
+        },
+        "pass": true,
+        "etw_release_gate": null
+      },
+      "parent_io": {
+        "read_operations": 739,
+        "write_operations": 470,
+        "other_operations": 4400,
+        "read_bytes": 4703884,
+        "write_bytes": 1117505,
+        "other_bytes": 177866
+      },
+      "quality_level": "Degraded",
+      "stream_error_present": false,
+      "score.json_status": "available",
+      "ground-truth.json_status": "available",
+      "artifact_complete": true,
+      "profile_status": "available",
+      "run": "final",
+      "scored_row_count": 552,
+      "truth_row_count": 552,
+      "profile_stages": {
+        "capture_between_drains": {
+          "count": 631,
+          "total_ns": 1556755100,
+          "max_ns": 34157100
+        },
+        "capture_descendant_query": {
+          "count": 610,
+          "total_ns": 1058600,
+          "max_ns": 17000
+        },
+        "capture_process_poll": {
+          "count": 32,
+          "total_ns": 648249800,
+          "max_ns": 41783200
+        },
+        "capture_queue_take": {
+          "count": 632,
+          "total_ns": 176400,
+          "max_ns": 2100
+        },
+        "capture_receive_wall": {
+          "count": 1,
+          "total_ns": 1605170600,
+          "max_ns": 1605170600
+        },
+        "lifetime_attach": {
+          "count": 610,
+          "total_ns": 180800,
+          "max_ns": 3600
+        },
+        "post_derived_group_commit": {
+          "count": 1,
+          "total_ns": 1600,
+          "max_ns": 1600
+        },
+        "post_final_downgrade_full_commit": {
+          "count": 1,
+          "total_ns": 730100,
+          "max_ns": 730100
+        },
+        "post_raw_index_materialization": {
+          "count": 1,
+          "total_ns": 51600,
+          "max_ns": 51600
+        },
+        "post_raw_read": {
+          "count": 2,
+          "total_ns": 47800,
+          "max_ns": 42500
+        },
+        "post_resource_read": {
+          "count": 49,
+          "total_ns": 125700,
+          "max_ns": 53100
+        },
+        "post_state_association": {
+          "count": 1,
+          "total_ns": 244600,
+          "max_ns": 244600
+        },
+        "post_summary_read": {
+          "count": 1,
+          "total_ns": 281900,
+          "max_ns": 281900
+        },
+        "post_summary_write": {
+          "count": 1,
+          "total_ns": 1428700,
+          "max_ns": 1428700
+        },
+        "post_wall": {
+          "count": 1,
+          "total_ns": 3730977300,
+          "max_ns": 3730977300
+        },
+        "process_poll_identity_query": {
+          "count": 64,
+          "total_ns": 772200,
+          "max_ns": 55500
+        }
+      }
+    },
+    {
+      "attempt": 2,
+      "mode": "candidate",
+      "files": 100,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "trial": 1,
+      "status": "completed",
+      "measurement_sha256": "a961d127f73e97394853fee5c24c05d5cbb78861927ce28c97b78e6a02c056d1",
+      "acceptance_pass": true,
+      "expected_target_operations": 252,
+      "expected_noise_operations": 300,
+      "database_initial_bytes": 0,
+      "elapsed_seconds": 7.777641300000141,
+      "parent_cpu_seconds": 0.640625,
+      "parent_cpu_percent_machine_average": 0.34319798642980426,
+      "parent_peak_working_set_bytes": 19046400,
+      "parent_sampled_peak_private_bytes": 8503296,
+      "sampled_db_peak_bytes": 4096,
+      "sampled_wal_peak_bytes": 374952,
+      "sqlite_bytes": 430080,
+      "capture_exit": 0,
+      "label_mismatch": false,
+      "seed_label_verified": true,
+      "harness_error_present": false,
+      "cleanup_error_present": false,
+      "metric_error_count": 0,
+      "stats": {
+        "capture_elapsed_ms": 7694,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 0,
+        "events_received": 0,
+        "events_retained": 52,
+        "high_confidence_events": 0,
+        "known_actor_events": 0,
+        "known_resource_events": 0,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 7,
+          "after_inventory": 3011,
+          "before_snapshot_inventory": 3068,
+          "correlation_attribution": 0,
+          "descendant_quiet_drain": 1500,
+          "etw_stop_and_queue_drain": 0,
+          "final_persistence_commit": 1,
+          "installer_root": 105,
+          "lifetime_attribution_and_paged_persistence": 0,
+          "provider_readiness": 0,
+          "raw_persistence_overlapping": 0
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 0,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": null,
+        "etw_events_lost": null,
+        "events_received": 0,
+        "file_event_id_filter": null,
+        "pipeline": null,
+        "registry_path_gaps": 0,
+        "stream": {
+          "accepted": 0,
+          "batches": 0,
+          "checkpoint": null,
+          "checkpoint_completed": false,
+          "checkpoint_variant": null,
+          "committed_bytes": 0,
+          "disk_free_min_bytes": null,
+          "disk_reserve_bytes": null,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 0,
+          "persisted": 0,
+          "persistence_ns": 0,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "restored_wal_autocheckpoint_pages": null,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "wal_autocheckpoint_pages": 4096,
+          "wal_budget_bytes": null,
+          "wal_budget_exceeded": false,
+          "wal_budget_overshoot_bytes": null,
+          "wal_growth_bytes": null,
+          "wal_initial_bytes": null,
+          "wal_peak_bytes": null,
+          "wal_samples": 0
+        },
+        "warnings": [],
+        "etw_file": "disabled",
+        "etw_registry": "disabled",
+        "etw_process": "disabled"
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 552,
+        "observed": 0,
+        "correctly_attributed": 0,
+        "unknown": 552,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 252,
+            "unobserved": 252,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 300,
+            "unobserved": 300,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 0,
+        "false_positive_target_events": 0,
+        "unexpected_positive_events": [],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 0,
+        "precision": null,
+        "dropped": 0,
+        "etw_events_lost": null,
+        "etw_buffers_lost": null
+      },
+      "gate": {
+        "checks": {
+          "target_denominator": true,
+          "noise_denominator": true,
+          "no_false_attribution": true,
+          "no_drain_timeout": true,
+          "etw_disabled": true,
+          "no_source_promotion": true,
+          "no_state_promotion": true
+        },
+        "pass": true,
+        "etw_release_gate": null
+      },
+      "parent_io": {
+        "read_operations": 791,
+        "write_operations": 492,
+        "other_operations": 4538,
+        "read_bytes": 16113137,
+        "write_bytes": 1166945,
+        "other_bytes": 181836
+      },
+      "quality_level": "Degraded",
+      "stream_error_present": false,
+      "score.json_status": "available",
+      "ground-truth.json_status": "available",
+      "artifact_complete": true,
+      "profile_status": "available",
+      "run": "final",
+      "scored_row_count": 552,
+      "truth_row_count": 552,
+      "profile_stages": {
+        "capture_between_drains": {
+          "count": 687,
+          "total_ns": 1556296200,
+          "max_ns": 40421100
+        },
+        "capture_descendant_query": {
+          "count": 661,
+          "total_ns": 1126600,
+          "max_ns": 15600
+        },
+        "capture_process_poll": {
+          "count": 33,
+          "total_ns": 605284500,
+          "max_ns": 42979200
+        },
+        "capture_queue_take": {
+          "count": 688,
+          "total_ns": 190000,
+          "max_ns": 3500
+        },
+        "capture_receive_wall": {
+          "count": 1,
+          "total_ns": 1605351300,
+          "max_ns": 1605351300
+        },
+        "lifetime_attach": {
+          "count": 661,
+          "total_ns": 454300,
+          "max_ns": 14700
+        },
+        "post_derived_group_commit": {
+          "count": 2,
+          "total_ns": 5200,
+          "max_ns": 3600
+        },
+        "post_final_downgrade_full_commit": {
+          "count": 1,
+          "total_ns": 869900,
+          "max_ns": 869900
+        },
+        "post_raw_index_materialization": {
+          "count": 1,
+          "total_ns": 51000,
+          "max_ns": 51000
+        },
+        "post_raw_read": {
+          "count": 2,
+          "total_ns": 51700,
+          "max_ns": 46400
+        },
+        "post_resource_read": {
+          "count": 49,
+          "total_ns": 54700,
+          "max_ns": 35400
+        },
+        "post_state_association": {
+          "count": 1,
+          "total_ns": 215000,
+          "max_ns": 215000
+        },
+        "post_summary_read": {
+          "count": 1,
+          "total_ns": 334200,
+          "max_ns": 334200
+        },
+        "post_summary_write": {
+          "count": 1,
+          "total_ns": 1290900,
+          "max_ns": 1290900
+        },
+        "post_wall": {
+          "count": 1,
+          "total_ns": 3022217800,
+          "max_ns": 3022217800
+        },
+        "process_poll_identity_query": {
+          "count": 66,
+          "total_ns": 852900,
+          "max_ns": 81900
+        }
+      }
+    },
+    {
+      "attempt": 3,
+      "mode": "candidate",
+      "files": 100,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "trial": 2,
+      "status": "completed",
+      "measurement_sha256": "85297ffffa0431867fba19fddb85309e88093e2829f07a4eeedc00895a18d481",
+      "acceptance_pass": true,
+      "expected_target_operations": 252,
+      "expected_noise_operations": 300,
+      "database_initial_bytes": 0,
+      "elapsed_seconds": 7.975184899999931,
+      "parent_cpu_seconds": 0.578125,
+      "parent_cpu_percent_machine_average": 0.302043676337421,
+      "parent_peak_working_set_bytes": 18665472,
+      "parent_sampled_peak_private_bytes": 8519680,
+      "sampled_db_peak_bytes": 4096,
+      "sampled_wal_peak_bytes": 716912,
+      "sqlite_bytes": 430080,
+      "capture_exit": 0,
+      "label_mismatch": false,
+      "seed_label_verified": true,
+      "harness_error_present": false,
+      "cleanup_error_present": false,
+      "metric_error_count": 0,
+      "stats": {
+        "capture_elapsed_ms": 7896,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 0,
+        "events_received": 0,
+        "events_retained": 52,
+        "high_confidence_events": 0,
+        "known_actor_events": 0,
+        "known_resource_events": 0,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 7,
+          "after_inventory": 3133,
+          "before_snapshot_inventory": 3152,
+          "correlation_attribution": 0,
+          "descendant_quiet_drain": 1501,
+          "etw_stop_and_queue_drain": 0,
+          "final_persistence_commit": 1,
+          "installer_root": 100,
+          "lifetime_attribution_and_paged_persistence": 0,
+          "provider_readiness": 0,
+          "raw_persistence_overlapping": 0
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 0,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": null,
+        "etw_events_lost": null,
+        "events_received": 0,
+        "file_event_id_filter": null,
+        "pipeline": null,
+        "registry_path_gaps": 0,
+        "stream": {
+          "accepted": 0,
+          "batches": 0,
+          "checkpoint": null,
+          "checkpoint_completed": false,
+          "checkpoint_variant": null,
+          "committed_bytes": 0,
+          "disk_free_min_bytes": null,
+          "disk_reserve_bytes": null,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 0,
+          "persisted": 0,
+          "persistence_ns": 0,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "restored_wal_autocheckpoint_pages": null,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "wal_autocheckpoint_pages": 4096,
+          "wal_budget_bytes": null,
+          "wal_budget_exceeded": false,
+          "wal_budget_overshoot_bytes": null,
+          "wal_growth_bytes": null,
+          "wal_initial_bytes": null,
+          "wal_peak_bytes": null,
+          "wal_samples": 0
+        },
+        "warnings": [],
+        "etw_file": "disabled",
+        "etw_registry": "disabled",
+        "etw_process": "disabled"
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 552,
+        "observed": 0,
+        "correctly_attributed": 0,
+        "unknown": 552,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 252,
+            "unobserved": 252,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 300,
+            "unobserved": 300,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 0,
+        "false_positive_target_events": 0,
+        "unexpected_positive_events": [],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 0,
+        "precision": null,
+        "dropped": 0,
+        "etw_events_lost": null,
+        "etw_buffers_lost": null
+      },
+      "gate": {
+        "checks": {
+          "target_denominator": true,
+          "noise_denominator": true,
+          "no_false_attribution": true,
+          "no_drain_timeout": true,
+          "etw_disabled": true,
+          "no_source_promotion": true,
+          "no_state_promotion": true
+        },
+        "pass": true,
+        "etw_release_gate": null
+      },
+      "parent_io": {
+        "read_operations": 836,
+        "write_operations": 492,
+        "other_operations": 4363,
+        "read_bytes": 4713969,
+        "write_bytes": 1166945,
+        "other_bytes": 176820
+      },
+      "quality_level": "Degraded",
+      "stream_error_present": false,
+      "score.json_status": "available",
+      "ground-truth.json_status": "available",
+      "artifact_complete": true,
+      "profile_status": "available",
+      "run": "final",
+      "scored_row_count": 552,
+      "truth_row_count": 552,
+      "profile_stages": {
+        "capture_between_drains": {
+          "count": 691,
+          "total_ns": 1553345900,
+          "max_ns": 29838700
+        },
+        "capture_descendant_query": {
+          "count": 665,
+          "total_ns": 1049100,
+          "max_ns": 5500
+        },
+        "capture_process_poll": {
+          "count": 33,
+          "total_ns": 594676400,
+          "max_ns": 42668300
+        },
+        "capture_queue_take": {
+          "count": 692,
+          "total_ns": 197600,
+          "max_ns": 16100
+        },
+        "capture_receive_wall": {
+          "count": 1,
+          "total_ns": 1602405600,
+          "max_ns": 1602405600
+        },
+        "lifetime_attach": {
+          "count": 665,
+          "total_ns": 466800,
+          "max_ns": 8900
+        },
+        "post_derived_group_commit": {
+          "count": 2,
+          "total_ns": 4600,
+          "max_ns": 3100
+        },
+        "post_final_downgrade_full_commit": {
+          "count": 1,
+          "total_ns": 4115300,
+          "max_ns": 4115300
+        },
+        "post_raw_index_materialization": {
+          "count": 1,
+          "total_ns": 47400,
+          "max_ns": 47400
+        },
+        "post_raw_read": {
+          "count": 2,
+          "total_ns": 44800,
+          "max_ns": 40000
+        },
+        "post_resource_read": {
+          "count": 49,
+          "total_ns": 48500,
+          "max_ns": 26900
+        },
+        "post_state_association": {
+          "count": 1,
+          "total_ns": 179200,
+          "max_ns": 179200
+        },
+        "post_summary_read": {
+          "count": 1,
+          "total_ns": 299800,
+          "max_ns": 299800
+        },
+        "post_summary_write": {
+          "count": 1,
+          "total_ns": 1342300,
+          "max_ns": 1342300
+        },
+        "post_wall": {
+          "count": 1,
+          "total_ns": 3146692000,
+          "max_ns": 3146692000
+        },
+        "process_poll_identity_query": {
+          "count": 66,
+          "total_ns": 1924600,
+          "max_ns": 71500
+        }
+      }
+    },
+    {
+      "attempt": 4,
+      "mode": "baseline",
+      "files": 100,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "trial": 2,
+      "status": "completed",
+      "measurement_sha256": "706f7bd71032ad6cfc2c52235a2e7c99af493a5fd6f82321520eea0a82be1956",
+      "acceptance_pass": true,
+      "expected_target_operations": 252,
+      "expected_noise_operations": 300,
+      "database_initial_bytes": 0,
+      "elapsed_seconds": 7.982566799999859,
+      "parent_cpu_seconds": 0.546875,
+      "parent_cpu_percent_machine_average": 0.28545277357821464,
+      "parent_peak_working_set_bytes": 18735104,
+      "parent_sampled_peak_private_bytes": 8507392,
+      "sampled_db_peak_bytes": 4096,
+      "sampled_wal_peak_bytes": 358472,
+      "sqlite_bytes": 409600,
+      "capture_exit": 0,
+      "label_mismatch": false,
+      "seed_label_verified": true,
+      "harness_error_present": false,
+      "cleanup_error_present": false,
+      "metric_error_count": 0,
+      "stats": {
+        "capture_elapsed_ms": 7912,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 0,
+        "events_received": 0,
+        "events_retained": 52,
+        "high_confidence_events": 0,
+        "known_actor_events": 0,
+        "known_resource_events": 0,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 6,
+          "after_inventory": 3162,
+          "before_snapshot_inventory": 3161,
+          "correlation_attribution": 0,
+          "descendant_quiet_drain": 1501,
+          "etw_stop_and_queue_drain": 0,
+          "final_persistence_commit": 1,
+          "installer_root": 78,
+          "lifetime_attribution_and_paged_persistence": 0,
+          "provider_readiness": 0,
+          "raw_persistence_overlapping": 0
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 0,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": null,
+        "etw_events_lost": null,
+        "events_received": 0,
+        "file_event_id_filter": null,
+        "pipeline": null,
+        "registry_path_gaps": 0,
+        "stream": {
+          "accepted": 0,
+          "batches": 0,
+          "checkpoint": null,
+          "checkpoint_completed": false,
+          "checkpoint_variant": null,
+          "committed_bytes": 0,
+          "disk_free_min_bytes": null,
+          "disk_reserve_bytes": null,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 0,
+          "persisted": 0,
+          "persistence_ns": 0,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "restored_wal_autocheckpoint_pages": null,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "wal_autocheckpoint_pages": 4096,
+          "wal_budget_bytes": null,
+          "wal_budget_exceeded": false,
+          "wal_budget_overshoot_bytes": null,
+          "wal_growth_bytes": null,
+          "wal_initial_bytes": null,
+          "wal_peak_bytes": null,
+          "wal_samples": 0
+        },
+        "warnings": [],
+        "etw_file": "disabled",
+        "etw_registry": "disabled",
+        "etw_process": "disabled"
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 552,
+        "observed": 0,
+        "correctly_attributed": 0,
+        "unknown": 552,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 252,
+            "unobserved": 252,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 300,
+            "unobserved": 300,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 0,
+        "false_positive_target_events": 0,
+        "unexpected_positive_events": [],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 0,
+        "precision": null,
+        "dropped": 0,
+        "etw_events_lost": null,
+        "etw_buffers_lost": null
+      },
+      "gate": {
+        "checks": {
+          "target_denominator": true,
+          "noise_denominator": true,
+          "no_false_attribution": true,
+          "no_drain_timeout": true,
+          "etw_disabled": true,
+          "no_source_promotion": true,
+          "no_state_promotion": true
+        },
+        "pass": true,
+        "etw_release_gate": null
+      },
+      "parent_io": {
+        "read_operations": 877,
+        "write_operations": 470,
+        "other_operations": 4415,
+        "read_bytes": 4693489,
+        "write_bytes": 1117513,
+        "other_bytes": 179344
+      },
+      "quality_level": "Degraded",
+      "stream_error_present": false,
+      "score.json_status": "available",
+      "ground-truth.json_status": "available",
+      "artifact_complete": true,
+      "profile_status": "available",
+      "run": "final",
+      "scored_row_count": 552,
+      "truth_row_count": 552,
+      "profile_stages": {
+        "capture_between_drains": {
+          "count": 686,
+          "total_ns": 1525131100,
+          "max_ns": 36375700
+        },
+        "capture_descendant_query": {
+          "count": 666,
+          "total_ns": 1322700,
+          "max_ns": 104600
+        },
+        "capture_process_poll": {
+          "count": 33,
+          "total_ns": 588056600,
+          "max_ns": 48208700
+        },
+        "capture_queue_take": {
+          "count": 687,
+          "total_ns": 203300,
+          "max_ns": 10100
+        },
+        "capture_receive_wall": {
+          "count": 1,
+          "total_ns": 1579917400,
+          "max_ns": 1579917400
+        },
+        "lifetime_attach": {
+          "count": 666,
+          "total_ns": 190100,
+          "max_ns": 3100
+        },
+        "post_derived_group_commit": {
+          "count": 1,
+          "total_ns": 1500,
+          "max_ns": 1500
+        },
+        "post_final_downgrade_full_commit": {
+          "count": 1,
+          "total_ns": 2918100,
+          "max_ns": 2918100
+        },
+        "post_raw_index_materialization": {
+          "count": 1,
+          "total_ns": 50600,
+          "max_ns": 50600
+        },
+        "post_raw_read": {
+          "count": 2,
+          "total_ns": 46200,
+          "max_ns": 41000
+        },
+        "post_resource_read": {
+          "count": 49,
+          "total_ns": 116800,
+          "max_ns": 36300
+        },
+        "post_state_association": {
+          "count": 1,
+          "total_ns": 223300,
+          "max_ns": 223300
+        },
+        "post_summary_read": {
+          "count": 1,
+          "total_ns": 340700,
+          "max_ns": 340700
+        },
+        "post_summary_write": {
+          "count": 1,
+          "total_ns": 1220500,
+          "max_ns": 1220500
+        },
+        "post_wall": {
+          "count": 1,
+          "total_ns": 3174854600,
+          "max_ns": 3174854600
+        },
+        "process_poll_identity_query": {
+          "count": 66,
+          "total_ns": 1835800,
+          "max_ns": 75400
+        }
+      }
+    },
+    {
+      "attempt": 5,
+      "mode": "baseline",
+      "files": 100,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "trial": 3,
+      "status": "completed",
+      "measurement_sha256": "a139945b5204b4e791e1f9ea15efc5094392d42eff83164c4970ef276ba257b0",
+      "acceptance_pass": true,
+      "expected_target_operations": 252,
+      "expected_noise_operations": 300,
+      "database_initial_bytes": 0,
+      "elapsed_seconds": 8.380063300000074,
+      "parent_cpu_seconds": 0.609375,
+      "parent_cpu_percent_machine_average": 0.3029884631062366,
+      "parent_peak_working_set_bytes": 18751488,
+      "parent_sampled_peak_private_bytes": 8540160,
+      "sampled_db_peak_bytes": 4096,
+      "sampled_wal_peak_bytes": 688072,
+      "sqlite_bytes": 409600,
+      "capture_exit": 0,
+      "label_mismatch": false,
+      "seed_label_verified": true,
+      "harness_error_present": false,
+      "cleanup_error_present": false,
+      "metric_error_count": 0,
+      "stats": {
+        "capture_elapsed_ms": 8305,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 0,
+        "events_received": 0,
+        "events_retained": 52,
+        "high_confidence_events": 0,
+        "known_actor_events": 0,
+        "known_resource_events": 0,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 7,
+          "after_inventory": 3563,
+          "before_snapshot_inventory": 3152,
+          "correlation_attribution": 0,
+          "descendant_quiet_drain": 1501,
+          "etw_stop_and_queue_drain": 0,
+          "final_persistence_commit": 1,
+          "installer_root": 79,
+          "lifetime_attribution_and_paged_persistence": 0,
+          "provider_readiness": 0,
+          "raw_persistence_overlapping": 0
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 0,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": null,
+        "etw_events_lost": null,
+        "events_received": 0,
+        "file_event_id_filter": null,
+        "pipeline": null,
+        "registry_path_gaps": 0,
+        "stream": {
+          "accepted": 0,
+          "batches": 0,
+          "checkpoint": null,
+          "checkpoint_completed": false,
+          "checkpoint_variant": null,
+          "committed_bytes": 0,
+          "disk_free_min_bytes": null,
+          "disk_reserve_bytes": null,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 0,
+          "persisted": 0,
+          "persistence_ns": 0,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "restored_wal_autocheckpoint_pages": null,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "wal_autocheckpoint_pages": 4096,
+          "wal_budget_bytes": null,
+          "wal_budget_exceeded": false,
+          "wal_budget_overshoot_bytes": null,
+          "wal_growth_bytes": null,
+          "wal_initial_bytes": null,
+          "wal_peak_bytes": null,
+          "wal_samples": 0
+        },
+        "warnings": [],
+        "etw_file": "disabled",
+        "etw_registry": "disabled",
+        "etw_process": "disabled"
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 552,
+        "observed": 0,
+        "correctly_attributed": 0,
+        "unknown": 552,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 252,
+            "unobserved": 252,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 300,
+            "unobserved": 300,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 0,
+        "false_positive_target_events": 0,
+        "unexpected_positive_events": [],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 0,
+        "precision": null,
+        "dropped": 0,
+        "etw_events_lost": null,
+        "etw_buffers_lost": null
+      },
+      "gate": {
+        "checks": {
+          "target_denominator": true,
+          "noise_denominator": true,
+          "no_false_attribution": true,
+          "no_drain_timeout": true,
+          "etw_disabled": true,
+          "no_source_promotion": true,
+          "no_state_promotion": true
+        },
+        "pass": true,
+        "etw_release_gate": null
+      },
+      "parent_io": {
+        "read_operations": 668,
+        "write_operations": 470,
+        "other_operations": 4376,
+        "read_bytes": 4693489,
+        "write_bytes": 1117506,
+        "other_bytes": 177326
+      },
+      "quality_level": "Degraded",
+      "stream_error_present": false,
+      "score.json_status": "available",
+      "ground-truth.json_status": "available",
+      "artifact_complete": true,
+      "profile_status": "available",
+      "run": "final",
+      "scored_row_count": 552,
+      "truth_row_count": 552,
+      "profile_stages": {
+        "capture_between_drains": {
+          "count": 655,
+          "total_ns": 1529628100,
+          "max_ns": 32407600
+        },
+        "capture_descendant_query": {
+          "count": 635,
+          "total_ns": 1009400,
+          "max_ns": 14200
+        },
+        "capture_process_poll": {
+          "count": 31,
+          "total_ns": 649659900,
+          "max_ns": 44128800
+        },
+        "capture_queue_take": {
+          "count": 656,
+          "total_ns": 179800,
+          "max_ns": 3200
+        },
+        "capture_receive_wall": {
+          "count": 1,
+          "total_ns": 1580560400,
+          "max_ns": 1580560400
+        },
+        "lifetime_attach": {
+          "count": 635,
+          "total_ns": 191500,
+          "max_ns": 8000
+        },
+        "post_derived_group_commit": {
+          "count": 1,
+          "total_ns": 1600,
+          "max_ns": 1600
+        },
+        "post_final_downgrade_full_commit": {
+          "count": 1,
+          "total_ns": 920500,
+          "max_ns": 920500
+        },
+        "post_raw_index_materialization": {
+          "count": 1,
+          "total_ns": 49300,
+          "max_ns": 49300
+        },
+        "post_raw_read": {
+          "count": 2,
+          "total_ns": 47900,
+          "max_ns": 42800
+        },
+        "post_resource_read": {
+          "count": 49,
+          "total_ns": 119500,
+          "max_ns": 48400
+        },
+        "post_state_association": {
+          "count": 1,
+          "total_ns": 220400,
+          "max_ns": 220400
+        },
+        "post_summary_read": {
+          "count": 1,
+          "total_ns": 357900,
+          "max_ns": 357900
+        },
+        "post_summary_write": {
+          "count": 1,
+          "total_ns": 1757100,
+          "max_ns": 1757100
+        },
+        "post_wall": {
+          "count": 1,
+          "total_ns": 3575031000,
+          "max_ns": 3575031000
+        },
+        "process_poll_identity_query": {
+          "count": 62,
+          "total_ns": 727000,
+          "max_ns": 71100
+        }
+      }
+    },
+    {
+      "attempt": 6,
+      "mode": "candidate",
+      "files": 100,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "trial": 3,
+      "status": "completed",
+      "measurement_sha256": "4cee46d62660d6448e7589e32e0a8e1689cf7179e7883a02e8dd7e278c9486ff",
+      "acceptance_pass": true,
+      "expected_target_operations": 252,
+      "expected_noise_operations": 300,
+      "database_initial_bytes": 0,
+      "elapsed_seconds": 7.740926099999797,
+      "parent_cpu_seconds": 0.53125,
+      "parent_cpu_percent_machine_average": 0.28595308081635407,
+      "parent_peak_working_set_bytes": 18677760,
+      "parent_sampled_peak_private_bytes": 8515584,
+      "sampled_db_peak_bytes": 4096,
+      "sampled_wal_peak_bytes": 374952,
+      "sqlite_bytes": 430080,
+      "capture_exit": 0,
+      "label_mismatch": false,
+      "seed_label_verified": true,
+      "harness_error_present": false,
+      "cleanup_error_present": false,
+      "metric_error_count": 0,
+      "stats": {
+        "capture_elapsed_ms": 7677,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 0,
+        "events_received": 0,
+        "events_retained": 52,
+        "high_confidence_events": 0,
+        "known_actor_events": 0,
+        "known_resource_events": 0,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 7,
+          "after_inventory": 3059,
+          "before_snapshot_inventory": 3012,
+          "correlation_attribution": 0,
+          "descendant_quiet_drain": 1500,
+          "etw_stop_and_queue_drain": 0,
+          "final_persistence_commit": 1,
+          "installer_root": 95,
+          "lifetime_attribution_and_paged_persistence": 0,
+          "provider_readiness": 0,
+          "raw_persistence_overlapping": 0
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 0,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": null,
+        "etw_events_lost": null,
+        "events_received": 0,
+        "file_event_id_filter": null,
+        "pipeline": null,
+        "registry_path_gaps": 0,
+        "stream": {
+          "accepted": 0,
+          "batches": 0,
+          "checkpoint": null,
+          "checkpoint_completed": false,
+          "checkpoint_variant": null,
+          "committed_bytes": 0,
+          "disk_free_min_bytes": null,
+          "disk_reserve_bytes": null,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 0,
+          "persisted": 0,
+          "persistence_ns": 0,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "restored_wal_autocheckpoint_pages": null,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "wal_autocheckpoint_pages": 4096,
+          "wal_budget_bytes": null,
+          "wal_budget_exceeded": false,
+          "wal_budget_overshoot_bytes": null,
+          "wal_growth_bytes": null,
+          "wal_initial_bytes": null,
+          "wal_peak_bytes": null,
+          "wal_samples": 0
+        },
+        "warnings": [],
+        "etw_file": "disabled",
+        "etw_registry": "disabled",
+        "etw_process": "disabled"
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 552,
+        "observed": 0,
+        "correctly_attributed": 0,
+        "unknown": 552,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 252,
+            "unobserved": 252,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 300,
+            "unobserved": 300,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 0,
+        "false_positive_target_events": 0,
+        "unexpected_positive_events": [],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 0,
+        "precision": null,
+        "dropped": 0,
+        "etw_events_lost": null,
+        "etw_buffers_lost": null
+      },
+      "gate": {
+        "checks": {
+          "target_denominator": true,
+          "noise_denominator": true,
+          "no_false_attribution": true,
+          "no_drain_timeout": true,
+          "etw_disabled": true,
+          "no_source_promotion": true,
+          "no_state_promotion": true
+        },
+        "pass": true,
+        "etw_release_gate": null
+      },
+      "parent_io": {
+        "read_operations": 753,
+        "write_operations": 492,
+        "other_operations": 4361,
+        "read_bytes": 4713969,
+        "write_bytes": 1166946,
+        "other_bytes": 176582
+      },
+      "quality_level": "Degraded",
+      "stream_error_present": false,
+      "score.json_status": "available",
+      "ground-truth.json_status": "available",
+      "artifact_complete": true,
+      "profile_status": "available",
+      "run": "final",
+      "scored_row_count": 552,
+      "truth_row_count": 552,
+      "profile_stages": {
+        "capture_between_drains": {
+          "count": 725,
+          "total_ns": 1548781500,
+          "max_ns": 20854200
+        },
+        "capture_descendant_query": {
+          "count": 704,
+          "total_ns": 1151100,
+          "max_ns": 6800
+        },
+        "capture_process_poll": {
+          "count": 34,
+          "total_ns": 561181000,
+          "max_ns": 40276500
+        },
+        "capture_queue_take": {
+          "count": 726,
+          "total_ns": 162500,
+          "max_ns": 2200
+        },
+        "capture_receive_wall": {
+          "count": 1,
+          "total_ns": 1595879600,
+          "max_ns": 1595879600
+        },
+        "lifetime_attach": {
+          "count": 704,
+          "total_ns": 463100,
+          "max_ns": 8600
+        },
+        "post_derived_group_commit": {
+          "count": 2,
+          "total_ns": 8900,
+          "max_ns": 5500
+        },
+        "post_final_downgrade_full_commit": {
+          "count": 1,
+          "total_ns": 815100,
+          "max_ns": 815100
+        },
+        "post_raw_index_materialization": {
+          "count": 1,
+          "total_ns": 119900,
+          "max_ns": 119900
+        },
+        "post_raw_read": {
+          "count": 2,
+          "total_ns": 133900,
+          "max_ns": 118700
+        },
+        "post_resource_read": {
+          "count": 49,
+          "total_ns": 52500,
+          "max_ns": 31700
+        },
+        "post_state_association": {
+          "count": 1,
+          "total_ns": 181600,
+          "max_ns": 181600
+        },
+        "post_summary_read": {
+          "count": 1,
+          "total_ns": 340800,
+          "max_ns": 340800
+        },
+        "post_summary_write": {
+          "count": 1,
+          "total_ns": 1415000,
+          "max_ns": 1415000
+        },
+        "post_wall": {
+          "count": 1,
+          "total_ns": 3070520200,
+          "max_ns": 3070520200
+        },
+        "process_poll_identity_query": {
+          "count": 68,
+          "total_ns": 901800,
+          "max_ns": 96100
+        }
+      }
+    },
+    {
+      "attempt": 7,
+      "mode": "baseline",
+      "files": 1000,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "trial": 1,
+      "status": "completed",
+      "measurement_sha256": "9c899dd373bd640cd23b11b5e8dbe262119f660df2c1ccd8030e20ac32eba881",
+      "acceptance_pass": true,
+      "expected_target_operations": 2500,
+      "expected_noise_operations": 300,
+      "database_initial_bytes": 0,
+      "elapsed_seconds": 8.028577199999745,
+      "parent_cpu_seconds": 0.6875,
+      "parent_cpu_percent_machine_average": 0.35679837933593317,
+      "parent_peak_working_set_bytes": 22835200,
+      "parent_sampled_peak_private_bytes": 12464128,
+      "sampled_db_peak_bytes": 4096,
+      "sampled_wal_peak_bytes": 2661552,
+      "sqlite_bytes": 2371584,
+      "capture_exit": 0,
+      "label_mismatch": false,
+      "seed_label_verified": true,
+      "harness_error_present": false,
+      "cleanup_error_present": false,
+      "metric_error_count": 0,
+      "stats": {
+        "capture_elapsed_ms": 7940,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 0,
+        "events_received": 0,
+        "events_retained": 507,
+        "high_confidence_events": 0,
+        "known_actor_events": 0,
+        "known_resource_events": 0,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 60,
+          "after_inventory": 2916,
+          "before_snapshot_inventory": 3050,
+          "correlation_attribution": 1,
+          "descendant_quiet_drain": 1502,
+          "etw_stop_and_queue_drain": 0,
+          "final_persistence_commit": 10,
+          "installer_root": 408,
+          "lifetime_attribution_and_paged_persistence": 0,
+          "provider_readiness": 0,
+          "raw_persistence_overlapping": 0
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 0,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": null,
+        "etw_events_lost": null,
+        "events_received": 0,
+        "file_event_id_filter": null,
+        "pipeline": null,
+        "registry_path_gaps": 0,
+        "stream": {
+          "accepted": 0,
+          "batches": 0,
+          "checkpoint": null,
+          "checkpoint_completed": false,
+          "checkpoint_variant": null,
+          "committed_bytes": 0,
+          "disk_free_min_bytes": null,
+          "disk_reserve_bytes": null,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 0,
+          "persisted": 0,
+          "persistence_ns": 0,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "restored_wal_autocheckpoint_pages": null,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "wal_autocheckpoint_pages": 4096,
+          "wal_budget_bytes": null,
+          "wal_budget_exceeded": false,
+          "wal_budget_overshoot_bytes": null,
+          "wal_growth_bytes": null,
+          "wal_initial_bytes": null,
+          "wal_peak_bytes": null,
+          "wal_samples": 0
+        },
+        "warnings": [],
+        "etw_file": "disabled",
+        "etw_registry": "disabled",
+        "etw_process": "disabled"
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 2800,
+        "observed": 0,
+        "correctly_attributed": 0,
+        "unknown": 2800,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 2500,
+            "unobserved": 2500,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 300,
+            "unobserved": 300,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 0,
+        "false_positive_target_events": 0,
+        "unexpected_positive_events": [],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 0,
+        "precision": null,
+        "dropped": 0,
+        "etw_events_lost": null,
+        "etw_buffers_lost": null
+      },
+      "gate": {
+        "checks": {
+          "target_denominator": true,
+          "noise_denominator": true,
+          "no_false_attribution": true,
+          "no_drain_timeout": true,
+          "etw_disabled": true,
+          "no_source_promotion": true,
+          "no_state_promotion": true
+        },
+        "pass": true,
+        "etw_release_gate": null
+      },
+      "parent_io": {
+        "read_operations": 2162,
+        "write_operations": 1907,
+        "other_operations": 16100,
+        "read_bytes": 7154677,
+        "write_bytes": 5052995,
+        "other_bytes": 688398
+      },
+      "quality_level": "Degraded",
+      "stream_error_present": false,
+      "score.json_status": "available",
+      "ground-truth.json_status": "available",
+      "artifact_complete": true,
+      "profile_status": "available",
+      "run": "final",
+      "scored_row_count": 2800,
+      "truth_row_count": 2800,
+      "profile_stages": {
+        "capture_between_drains": {
+          "count": 777,
+          "total_ns": 1862058500,
+          "max_ns": 45216300
+        },
+        "capture_descendant_query": {
+          "count": 2608,
+          "total_ns": 2908300,
+          "max_ns": 80700
+        },
+        "capture_process_poll": {
+          "count": 37,
+          "total_ns": 796069600,
+          "max_ns": 43682600
+        },
+        "capture_queue_take": {
+          "count": 778,
+          "total_ns": 206100,
+          "max_ns": 4100
+        },
+        "capture_receive_wall": {
+          "count": 1,
+          "total_ns": 1910239300,
+          "max_ns": 1910239300
+        },
+        "lifetime_attach": {
+          "count": 652,
+          "total_ns": 197100,
+          "max_ns": 3500
+        },
+        "post_derived_group_commit": {
+          "count": 1,
+          "total_ns": 1500,
+          "max_ns": 1500
+        },
+        "post_final_downgrade_full_commit": {
+          "count": 1,
+          "total_ns": 2647400,
+          "max_ns": 2647400
+        },
+        "post_raw_index_materialization": {
+          "count": 1,
+          "total_ns": 51200,
+          "max_ns": 51200
+        },
+        "post_raw_read": {
+          "count": 2,
+          "total_ns": 46600,
+          "max_ns": 41700
+        },
+        "post_resource_read": {
+          "count": 501,
+          "total_ns": 868800,
+          "max_ns": 72600
+        },
+        "post_state_association": {
+          "count": 1,
+          "total_ns": 1716000,
+          "max_ns": 1716000
+        },
+        "post_summary_read": {
+          "count": 1,
+          "total_ns": 1282900,
+          "max_ns": 1282900
+        },
+        "post_summary_write": {
+          "count": 1,
+          "total_ns": 10525300,
+          "max_ns": 10525300
+        },
+        "post_wall": {
+          "count": 1,
+          "total_ns": 2994249700,
+          "max_ns": 2994249700
+        },
+        "process_poll_identity_query": {
+          "count": 184,
+          "total_ns": 1849300,
+          "max_ns": 80100
+        }
+      }
+    },
+    {
+      "attempt": 8,
+      "mode": "candidate",
+      "files": 1000,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "trial": 1,
+      "status": "completed",
+      "measurement_sha256": "f037608eb42989aa646c4336b85afe750f45e25ca12e0ff8d45b82152e23a341",
+      "acceptance_pass": true,
+      "expected_target_operations": 2500,
+      "expected_noise_operations": 300,
+      "database_initial_bytes": 0,
+      "elapsed_seconds": 8.42217010000013,
+      "parent_cpu_seconds": 0.859375,
+      "parent_cpu_percent_machine_average": 0.42515517071622805,
+      "parent_peak_working_set_bytes": 22593536,
+      "parent_sampled_peak_private_bytes": 11730944,
+      "sampled_db_peak_bytes": 4096,
+      "sampled_wal_peak_bytes": 2575032,
+      "sqlite_bytes": 2482176,
+      "capture_exit": 0,
+      "label_mismatch": false,
+      "seed_label_verified": true,
+      "harness_error_present": false,
+      "cleanup_error_present": false,
+      "metric_error_count": 0,
+      "stats": {
+        "capture_elapsed_ms": 8340,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 0,
+        "events_received": 0,
+        "events_retained": 507,
+        "high_confidence_events": 0,
+        "known_actor_events": 0,
+        "known_resource_events": 0,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 60,
+          "after_inventory": 3198,
+          "before_snapshot_inventory": 3169,
+          "correlation_attribution": 1,
+          "descendant_quiet_drain": 1500,
+          "etw_stop_and_queue_drain": 0,
+          "final_persistence_commit": 10,
+          "installer_root": 410,
+          "lifetime_attribution_and_paged_persistence": 0,
+          "provider_readiness": 0,
+          "raw_persistence_overlapping": 0
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 0,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": null,
+        "etw_events_lost": null,
+        "events_received": 0,
+        "file_event_id_filter": null,
+        "pipeline": null,
+        "registry_path_gaps": 0,
+        "stream": {
+          "accepted": 0,
+          "batches": 0,
+          "checkpoint": null,
+          "checkpoint_completed": false,
+          "checkpoint_variant": null,
+          "committed_bytes": 0,
+          "disk_free_min_bytes": null,
+          "disk_reserve_bytes": null,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 0,
+          "persisted": 0,
+          "persistence_ns": 0,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "restored_wal_autocheckpoint_pages": null,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "wal_autocheckpoint_pages": 4096,
+          "wal_budget_bytes": null,
+          "wal_budget_exceeded": false,
+          "wal_budget_overshoot_bytes": null,
+          "wal_growth_bytes": null,
+          "wal_initial_bytes": null,
+          "wal_peak_bytes": null,
+          "wal_samples": 0
+        },
+        "warnings": [],
+        "etw_file": "disabled",
+        "etw_registry": "disabled",
+        "etw_process": "disabled"
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 2800,
+        "observed": 0,
+        "correctly_attributed": 0,
+        "unknown": 2800,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 2500,
+            "unobserved": 2500,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 300,
+            "unobserved": 300,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 0,
+        "false_positive_target_events": 0,
+        "unexpected_positive_events": [],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 0,
+        "precision": null,
+        "dropped": 0,
+        "etw_events_lost": null,
+        "etw_buffers_lost": null
+      },
+      "gate": {
+        "checks": {
+          "target_denominator": true,
+          "noise_denominator": true,
+          "no_false_attribution": true,
+          "no_drain_timeout": true,
+          "etw_disabled": true,
+          "no_source_promotion": true,
+          "no_state_promotion": true
+        },
+        "pass": true,
+        "etw_release_gate": null
+      },
+      "parent_io": {
+        "read_operations": 2306,
+        "write_operations": 1995,
+        "other_operations": 16106,
+        "read_bytes": 7363573,
+        "write_bytes": 5283180,
+        "other_bytes": 689244
+      },
+      "quality_level": "Degraded",
+      "stream_error_present": false,
+      "score.json_status": "available",
+      "ground-truth.json_status": "available",
+      "artifact_complete": true,
+      "profile_status": "available",
+      "run": "final",
+      "scored_row_count": 2800,
+      "truth_row_count": 2800,
+      "profile_stages": {
+        "capture_between_drains": {
+          "count": 798,
+          "total_ns": 1844371300,
+          "max_ns": 50226900
+        },
+        "capture_descendant_query": {
+          "count": 2736,
+          "total_ns": 3380200,
+          "max_ns": 89500
+        },
+        "capture_process_poll": {
+          "count": 38,
+          "total_ns": 753126700,
+          "max_ns": 59275000
+        },
+        "capture_queue_take": {
+          "count": 799,
+          "total_ns": 205300,
+          "max_ns": 2100
+        },
+        "capture_receive_wall": {
+          "count": 1,
+          "total_ns": 1910127400,
+          "max_ns": 1910127400
+        },
+        "lifetime_attach": {
+          "count": 684,
+          "total_ns": 522300,
+          "max_ns": 8900
+        },
+        "post_derived_group_commit": {
+          "count": 2,
+          "total_ns": 6300,
+          "max_ns": 4700
+        },
+        "post_final_downgrade_full_commit": {
+          "count": 1,
+          "total_ns": 2617000,
+          "max_ns": 2617000
+        },
+        "post_raw_index_materialization": {
+          "count": 1,
+          "total_ns": 50800,
+          "max_ns": 50800
+        },
+        "post_raw_read": {
+          "count": 2,
+          "total_ns": 45400,
+          "max_ns": 40000
+        },
+        "post_resource_read": {
+          "count": 501,
+          "total_ns": 228600,
+          "max_ns": 43100
+        },
+        "post_state_association": {
+          "count": 1,
+          "total_ns": 1017700,
+          "max_ns": 1017700
+        },
+        "post_summary_read": {
+          "count": 1,
+          "total_ns": 1220400,
+          "max_ns": 1220400
+        },
+        "post_summary_write": {
+          "count": 1,
+          "total_ns": 10898900,
+          "max_ns": 10898900
+        },
+        "post_wall": {
+          "count": 1,
+          "total_ns": 3275111500,
+          "max_ns": 3275111500
+        },
+        "process_poll_identity_query": {
+          "count": 187,
+          "total_ns": 1859700,
+          "max_ns": 109600
+        }
+      }
+    },
+    {
+      "attempt": 9,
+      "mode": "candidate",
+      "files": 1000,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "trial": 2,
+      "status": "completed",
+      "measurement_sha256": "2f42e97c50602c136073767dde75593beca1462dd26735015db1de25348559a7",
+      "acceptance_pass": true,
+      "expected_target_operations": 2500,
+      "expected_noise_operations": 300,
+      "database_initial_bytes": 0,
+      "elapsed_seconds": 8.274515099999917,
+      "parent_cpu_seconds": 0.84375,
+      "parent_cpu_percent_machine_average": 0.4248738394350184,
+      "parent_peak_working_set_bytes": 22540288,
+      "parent_sampled_peak_private_bytes": 11616256,
+      "sampled_db_peak_bytes": 4096,
+      "sampled_wal_peak_bytes": 2772792,
+      "sqlite_bytes": 2478080,
+      "capture_exit": 0,
+      "label_mismatch": false,
+      "seed_label_verified": true,
+      "harness_error_present": false,
+      "cleanup_error_present": false,
+      "metric_error_count": 0,
+      "stats": {
+        "capture_elapsed_ms": 8191,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 0,
+        "events_received": 0,
+        "events_retained": 507,
+        "high_confidence_events": 0,
+        "known_actor_events": 0,
+        "known_resource_events": 0,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 61,
+          "after_inventory": 3197,
+          "before_snapshot_inventory": 3008,
+          "correlation_attribution": 1,
+          "descendant_quiet_drain": 1514,
+          "etw_stop_and_queue_drain": 0,
+          "final_persistence_commit": 10,
+          "installer_root": 408,
+          "lifetime_attribution_and_paged_persistence": 0,
+          "provider_readiness": 0,
+          "raw_persistence_overlapping": 0
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 0,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": null,
+        "etw_events_lost": null,
+        "events_received": 0,
+        "file_event_id_filter": null,
+        "pipeline": null,
+        "registry_path_gaps": 0,
+        "stream": {
+          "accepted": 0,
+          "batches": 0,
+          "checkpoint": null,
+          "checkpoint_completed": false,
+          "checkpoint_variant": null,
+          "committed_bytes": 0,
+          "disk_free_min_bytes": null,
+          "disk_reserve_bytes": null,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 0,
+          "persisted": 0,
+          "persistence_ns": 0,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "restored_wal_autocheckpoint_pages": null,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "wal_autocheckpoint_pages": 4096,
+          "wal_budget_bytes": null,
+          "wal_budget_exceeded": false,
+          "wal_budget_overshoot_bytes": null,
+          "wal_growth_bytes": null,
+          "wal_initial_bytes": null,
+          "wal_peak_bytes": null,
+          "wal_samples": 0
+        },
+        "warnings": [],
+        "etw_file": "disabled",
+        "etw_registry": "disabled",
+        "etw_process": "disabled"
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 2800,
+        "observed": 0,
+        "correctly_attributed": 0,
+        "unknown": 2800,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 2500,
+            "unobserved": 2500,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 300,
+            "unobserved": 300,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 0,
+        "false_positive_target_events": 0,
+        "unexpected_positive_events": [],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 0,
+        "precision": null,
+        "dropped": 0,
+        "etw_events_lost": null,
+        "etw_buffers_lost": null
+      },
+      "gate": {
+        "checks": {
+          "target_denominator": true,
+          "noise_denominator": true,
+          "no_false_attribution": true,
+          "no_drain_timeout": true,
+          "etw_disabled": true,
+          "no_source_promotion": true,
+          "no_state_promotion": true
+        },
+        "pass": true,
+        "etw_release_gate": null
+      },
+      "parent_io": {
+        "read_operations": 2167,
+        "write_operations": 1992,
+        "other_operations": 16244,
+        "read_bytes": 7355381,
+        "write_bytes": 5274966,
+        "other_bytes": 692372
+      },
+      "quality_level": "Degraded",
+      "stream_error_present": false,
+      "score.json_status": "available",
+      "ground-truth.json_status": "available",
+      "artifact_complete": true,
+      "profile_status": "available",
+      "run": "final",
+      "scored_row_count": 2800,
+      "truth_row_count": 2800,
+      "profile_stages": {
+        "capture_between_drains": {
+          "count": 678,
+          "total_ns": 1873344000,
+          "max_ns": 51548600
+        },
+        "capture_descendant_query": {
+          "count": 2304,
+          "total_ns": 2600600,
+          "max_ns": 67300
+        },
+        "capture_process_poll": {
+          "count": 34,
+          "total_ns": 900449400,
+          "max_ns": 50023200
+        },
+        "capture_queue_take": {
+          "count": 679,
+          "total_ns": 182000,
+          "max_ns": 14700
+        },
+        "capture_receive_wall": {
+          "count": 1,
+          "total_ns": 1922731900,
+          "max_ns": 1922731900
+        },
+        "lifetime_attach": {
+          "count": 576,
+          "total_ns": 515400,
+          "max_ns": 18400
+        },
+        "post_derived_group_commit": {
+          "count": 2,
+          "total_ns": 6300,
+          "max_ns": 4800
+        },
+        "post_final_downgrade_full_commit": {
+          "count": 1,
+          "total_ns": 3287700,
+          "max_ns": 3287700
+        },
+        "post_raw_index_materialization": {
+          "count": 1,
+          "total_ns": 50000,
+          "max_ns": 50000
+        },
+        "post_raw_read": {
+          "count": 2,
+          "total_ns": 46100,
+          "max_ns": 41100
+        },
+        "post_resource_read": {
+          "count": 501,
+          "total_ns": 232400,
+          "max_ns": 44100
+        },
+        "post_state_association": {
+          "count": 1,
+          "total_ns": 1054500,
+          "max_ns": 1054500
+        },
+        "post_summary_read": {
+          "count": 1,
+          "total_ns": 1141600,
+          "max_ns": 1141600
+        },
+        "post_summary_write": {
+          "count": 1,
+          "total_ns": 10361800,
+          "max_ns": 10361800
+        },
+        "post_wall": {
+          "count": 1,
+          "total_ns": 3274949200,
+          "max_ns": 3274949200
+        },
+        "process_poll_identity_query": {
+          "count": 167,
+          "total_ns": 1900100,
+          "max_ns": 125000
+        }
+      }
+    },
+    {
+      "attempt": 10,
+      "mode": "baseline",
+      "files": 1000,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "trial": 2,
+      "status": "completed",
+      "measurement_sha256": "ddd0a71474a812060c03871aad523710b15fb8d82fd1a492b63e469698a0afc3",
+      "acceptance_pass": true,
+      "expected_target_operations": 2500,
+      "expected_noise_operations": 300,
+      "database_initial_bytes": 0,
+      "elapsed_seconds": 8.197904500000277,
+      "parent_cpu_seconds": 0.765625,
+      "parent_cpu_percent_machine_average": 0.38913653686336047,
+      "parent_peak_working_set_bytes": 22630400,
+      "parent_sampled_peak_private_bytes": 11907072,
+      "sampled_db_peak_bytes": 4096,
+      "sampled_wal_peak_bytes": 2661552,
+      "sqlite_bytes": 2371584,
+      "capture_exit": 0,
+      "label_mismatch": false,
+      "seed_label_verified": true,
+      "harness_error_present": false,
+      "cleanup_error_present": false,
+      "metric_error_count": 0,
+      "stats": {
+        "capture_elapsed_ms": 8114,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 0,
+        "events_received": 0,
+        "events_retained": 507,
+        "high_confidence_events": 0,
+        "known_actor_events": 0,
+        "known_resource_events": 0,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 58,
+          "after_inventory": 3053,
+          "before_snapshot_inventory": 3084,
+          "correlation_attribution": 1,
+          "descendant_quiet_drain": 1501,
+          "etw_stop_and_queue_drain": 0,
+          "final_persistence_commit": 9,
+          "installer_root": 412,
+          "lifetime_attribution_and_paged_persistence": 0,
+          "provider_readiness": 0,
+          "raw_persistence_overlapping": 0
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 0,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": null,
+        "etw_events_lost": null,
+        "events_received": 0,
+        "file_event_id_filter": null,
+        "pipeline": null,
+        "registry_path_gaps": 0,
+        "stream": {
+          "accepted": 0,
+          "batches": 0,
+          "checkpoint": null,
+          "checkpoint_completed": false,
+          "checkpoint_variant": null,
+          "committed_bytes": 0,
+          "disk_free_min_bytes": null,
+          "disk_reserve_bytes": null,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 0,
+          "persisted": 0,
+          "persistence_ns": 0,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "restored_wal_autocheckpoint_pages": null,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "wal_autocheckpoint_pages": 4096,
+          "wal_budget_bytes": null,
+          "wal_budget_exceeded": false,
+          "wal_budget_overshoot_bytes": null,
+          "wal_growth_bytes": null,
+          "wal_initial_bytes": null,
+          "wal_peak_bytes": null,
+          "wal_samples": 0
+        },
+        "warnings": [],
+        "etw_file": "disabled",
+        "etw_registry": "disabled",
+        "etw_process": "disabled"
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 2800,
+        "observed": 0,
+        "correctly_attributed": 0,
+        "unknown": 2800,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 2500,
+            "unobserved": 2500,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 300,
+            "unobserved": 300,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 0,
+        "false_positive_target_events": 0,
+        "unexpected_positive_events": [],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 0,
+        "precision": null,
+        "dropped": 0,
+        "etw_events_lost": null,
+        "etw_buffers_lost": null
+      },
+      "gate": {
+        "checks": {
+          "target_denominator": true,
+          "noise_denominator": true,
+          "no_false_attribution": true,
+          "no_drain_timeout": true,
+          "etw_disabled": true,
+          "no_source_promotion": true,
+          "no_state_promotion": true
+        },
+        "pass": true,
+        "etw_release_gate": null
+      },
+      "parent_io": {
+        "read_operations": 2286,
+        "write_operations": 1907,
+        "other_operations": 16190,
+        "read_bytes": 7150581,
+        "write_bytes": 5052993,
+        "other_bytes": 692400
+      },
+      "quality_level": "Degraded",
+      "stream_error_present": false,
+      "score.json_status": "available",
+      "ground-truth.json_status": "available",
+      "artifact_complete": true,
+      "profile_status": "available",
+      "run": "final",
+      "scored_row_count": 2800,
+      "truth_row_count": 2800,
+      "profile_stages": {
+        "capture_between_drains": {
+          "count": 710,
+          "total_ns": 1864628200,
+          "max_ns": 42858500
+        },
+        "capture_descendant_query": {
+          "count": 2400,
+          "total_ns": 2703100,
+          "max_ns": 74200
+        },
+        "capture_process_poll": {
+          "count": 35,
+          "total_ns": 838476200,
+          "max_ns": 42465200
+        },
+        "capture_queue_take": {
+          "count": 711,
+          "total_ns": 210800,
+          "max_ns": 10200
+        },
+        "capture_receive_wall": {
+          "count": 1,
+          "total_ns": 1914168200,
+          "max_ns": 1914168200
+        },
+        "lifetime_attach": {
+          "count": 600,
+          "total_ns": 187600,
+          "max_ns": 3300
+        },
+        "post_derived_group_commit": {
+          "count": 1,
+          "total_ns": 1600,
+          "max_ns": 1600
+        },
+        "post_final_downgrade_full_commit": {
+          "count": 1,
+          "total_ns": 2856400,
+          "max_ns": 2856400
+        },
+        "post_raw_index_materialization": {
+          "count": 1,
+          "total_ns": 53300,
+          "max_ns": 53300
+        },
+        "post_raw_read": {
+          "count": 2,
+          "total_ns": 47300,
+          "max_ns": 41900
+        },
+        "post_resource_read": {
+          "count": 501,
+          "total_ns": 790300,
+          "max_ns": 70500
+        },
+        "post_state_association": {
+          "count": 1,
+          "total_ns": 1511400,
+          "max_ns": 1511400
+        },
+        "post_summary_read": {
+          "count": 1,
+          "total_ns": 1369200,
+          "max_ns": 1369200
+        },
+        "post_summary_write": {
+          "count": 1,
+          "total_ns": 9594000,
+          "max_ns": 9594000
+        },
+        "post_wall": {
+          "count": 1,
+          "total_ns": 3129197100,
+          "max_ns": 3129197100
+        },
+        "process_poll_identity_query": {
+          "count": 174,
+          "total_ns": 1778300,
+          "max_ns": 105600
+        }
+      }
+    },
+    {
+      "attempt": 11,
+      "mode": "baseline",
+      "files": 1000,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "trial": 3,
+      "status": "completed",
+      "measurement_sha256": "890ac75494cb7e46794f4249689698e2b534e11cb07199a7ece560f4d1bcfb05",
+      "acceptance_pass": true,
+      "expected_target_operations": 2500,
+      "expected_noise_operations": 300,
+      "database_initial_bytes": 0,
+      "elapsed_seconds": 8.311723799999982,
+      "parent_cpu_seconds": 0.765625,
+      "parent_cpu_percent_machine_average": 0.3838077688128513,
+      "parent_peak_working_set_bytes": 22556672,
+      "parent_sampled_peak_private_bytes": 8974336,
+      "sampled_db_peak_bytes": 1470464,
+      "sampled_wal_peak_bytes": 2673912,
+      "sqlite_bytes": 2383872,
+      "capture_exit": 0,
+      "label_mismatch": false,
+      "seed_label_verified": true,
+      "harness_error_present": false,
+      "cleanup_error_present": false,
+      "metric_error_count": 0,
+      "stats": {
+        "capture_elapsed_ms": 8220,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 0,
+        "events_received": 0,
+        "events_retained": 507,
+        "high_confidence_events": 0,
+        "known_actor_events": 0,
+        "known_resource_events": 0,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 60,
+          "after_inventory": 3154,
+          "before_snapshot_inventory": 3092,
+          "correlation_attribution": 1,
+          "descendant_quiet_drain": 1512,
+          "etw_stop_and_queue_drain": 0,
+          "final_persistence_commit": 9,
+          "installer_root": 397,
+          "lifetime_attribution_and_paged_persistence": 0,
+          "provider_readiness": 0,
+          "raw_persistence_overlapping": 0
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 0,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": null,
+        "etw_events_lost": null,
+        "events_received": 0,
+        "file_event_id_filter": null,
+        "pipeline": null,
+        "registry_path_gaps": 0,
+        "stream": {
+          "accepted": 0,
+          "batches": 0,
+          "checkpoint": null,
+          "checkpoint_completed": false,
+          "checkpoint_variant": null,
+          "committed_bytes": 0,
+          "disk_free_min_bytes": null,
+          "disk_reserve_bytes": null,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 0,
+          "persisted": 0,
+          "persistence_ns": 0,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "restored_wal_autocheckpoint_pages": null,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "wal_autocheckpoint_pages": 4096,
+          "wal_budget_bytes": null,
+          "wal_budget_exceeded": false,
+          "wal_budget_overshoot_bytes": null,
+          "wal_growth_bytes": null,
+          "wal_initial_bytes": null,
+          "wal_peak_bytes": null,
+          "wal_samples": 0
+        },
+        "warnings": [],
+        "etw_file": "disabled",
+        "etw_registry": "disabled",
+        "etw_process": "disabled"
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 2800,
+        "observed": 0,
+        "correctly_attributed": 0,
+        "unknown": 2800,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 2500,
+            "unobserved": 2500,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 300,
+            "unobserved": 300,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 0,
+        "false_positive_target_events": 0,
+        "unexpected_positive_events": [],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 0,
+        "precision": null,
+        "dropped": 0,
+        "etw_events_lost": null,
+        "etw_buffers_lost": null
+      },
+      "gate": {
+        "checks": {
+          "target_denominator": true,
+          "noise_denominator": true,
+          "no_false_attribution": true,
+          "no_drain_timeout": true,
+          "etw_disabled": true,
+          "no_source_promotion": true,
+          "no_state_promotion": true
+        },
+        "pass": true,
+        "etw_release_gate": null
+      },
+      "parent_io": {
+        "read_operations": 2252,
+        "write_operations": 1916,
+        "other_operations": 16184,
+        "read_bytes": 7175157,
+        "write_bytes": 5077641,
+        "other_bytes": 690610
+      },
+      "quality_level": "Degraded",
+      "stream_error_present": false,
+      "score.json_status": "available",
+      "ground-truth.json_status": "available",
+      "artifact_complete": true,
+      "profile_status": "available",
+      "run": "final",
+      "scored_row_count": 2800,
+      "truth_row_count": 2800,
+      "profile_stages": {
+        "capture_between_drains": {
+          "count": 786,
+          "total_ns": 1861189800,
+          "max_ns": 48676100
+        },
+        "capture_descendant_query": {
+          "count": 2652,
+          "total_ns": 2439400,
+          "max_ns": 53100
+        },
+        "capture_process_poll": {
+          "count": 38,
+          "total_ns": 770939700,
+          "max_ns": 47621800
+        },
+        "capture_queue_take": {
+          "count": 787,
+          "total_ns": 201800,
+          "max_ns": 7000
+        },
+        "capture_receive_wall": {
+          "count": 1,
+          "total_ns": 1910528800,
+          "max_ns": 1910528800
+        },
+        "lifetime_attach": {
+          "count": 663,
+          "total_ns": 227700,
+          "max_ns": 27200
+        },
+        "post_derived_group_commit": {
+          "count": 1,
+          "total_ns": 1500,
+          "max_ns": 1500
+        },
+        "post_final_downgrade_full_commit": {
+          "count": 1,
+          "total_ns": 2641700,
+          "max_ns": 2641700
+        },
+        "post_raw_index_materialization": {
+          "count": 1,
+          "total_ns": 51000,
+          "max_ns": 51000
+        },
+        "post_raw_read": {
+          "count": 2,
+          "total_ns": 46700,
+          "max_ns": 41400
+        },
+        "post_resource_read": {
+          "count": 501,
+          "total_ns": 783600,
+          "max_ns": 65900
+        },
+        "post_state_association": {
+          "count": 1,
+          "total_ns": 1569300,
+          "max_ns": 1569300
+        },
+        "post_summary_read": {
+          "count": 1,
+          "total_ns": 1339000,
+          "max_ns": 1339000
+        },
+        "post_summary_write": {
+          "count": 1,
+          "total_ns": 9902000,
+          "max_ns": 9902000
+        },
+        "post_wall": {
+          "count": 1,
+          "total_ns": 3230875000,
+          "max_ns": 3230875000
+        },
+        "process_poll_identity_query": {
+          "count": 186,
+          "total_ns": 2041000,
+          "max_ns": 143700
+        }
+      }
+    },
+    {
+      "attempt": 12,
+      "mode": "candidate",
+      "files": 1000,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "trial": 3,
+      "status": "completed",
+      "measurement_sha256": "13d8199067b663660034239262c4fad7bc002a19dd9f1dae6ced5106d543886f",
+      "acceptance_pass": true,
+      "expected_target_operations": 2500,
+      "expected_noise_operations": 300,
+      "database_initial_bytes": 0,
+      "elapsed_seconds": 8.85163539999985,
+      "parent_cpu_seconds": 0.953125,
+      "parent_cpu_percent_machine_average": 0.44865767592130307,
+      "parent_peak_working_set_bytes": 22642688,
+      "parent_sampled_peak_private_bytes": 10842112,
+      "sampled_db_peak_bytes": 2486272,
+      "sampled_wal_peak_bytes": 374952,
+      "sqlite_bytes": 2486272,
+      "capture_exit": 0,
+      "label_mismatch": false,
+      "seed_label_verified": true,
+      "harness_error_present": false,
+      "cleanup_error_present": false,
+      "metric_error_count": 0,
+      "stats": {
+        "capture_elapsed_ms": 8757,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 0,
+        "events_received": 0,
+        "events_retained": 507,
+        "high_confidence_events": 0,
+        "known_actor_events": 0,
+        "known_resource_events": 0,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 62,
+          "after_inventory": 3567,
+          "before_snapshot_inventory": 3194,
+          "correlation_attribution": 1,
+          "descendant_quiet_drain": 1500,
+          "etw_stop_and_queue_drain": 0,
+          "final_persistence_commit": 10,
+          "installer_root": 430,
+          "lifetime_attribution_and_paged_persistence": 0,
+          "provider_readiness": 0,
+          "raw_persistence_overlapping": 0
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 0,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": null,
+        "etw_events_lost": null,
+        "events_received": 0,
+        "file_event_id_filter": null,
+        "pipeline": null,
+        "registry_path_gaps": 0,
+        "stream": {
+          "accepted": 0,
+          "batches": 0,
+          "checkpoint": null,
+          "checkpoint_completed": false,
+          "checkpoint_variant": null,
+          "committed_bytes": 0,
+          "disk_free_min_bytes": null,
+          "disk_reserve_bytes": null,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 0,
+          "persisted": 0,
+          "persistence_ns": 0,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "restored_wal_autocheckpoint_pages": null,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "wal_autocheckpoint_pages": 4096,
+          "wal_budget_bytes": null,
+          "wal_budget_exceeded": false,
+          "wal_budget_overshoot_bytes": null,
+          "wal_growth_bytes": null,
+          "wal_initial_bytes": null,
+          "wal_peak_bytes": null,
+          "wal_samples": 0
+        },
+        "warnings": [],
+        "etw_file": "disabled",
+        "etw_registry": "disabled",
+        "etw_process": "disabled"
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 2800,
+        "observed": 0,
+        "correctly_attributed": 0,
+        "unknown": 2800,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 2500,
+            "unobserved": 2500,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 300,
+            "unobserved": 300,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 0,
+        "false_positive_target_events": 0,
+        "unexpected_positive_events": [],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 0,
+        "precision": null,
+        "dropped": 0,
+        "etw_events_lost": null,
+        "etw_buffers_lost": null
+      },
+      "gate": {
+        "checks": {
+          "target_denominator": true,
+          "noise_denominator": true,
+          "no_false_attribution": true,
+          "no_drain_timeout": true,
+          "etw_disabled": true,
+          "no_source_promotion": true,
+          "no_state_promotion": true
+        },
+        "pass": true,
+        "etw_release_gate": null
+      },
+      "parent_io": {
+        "read_operations": 2439,
+        "write_operations": 1998,
+        "other_operations": 16180,
+        "read_bytes": 7371765,
+        "write_bytes": 5291396,
+        "other_bytes": 691034
+      },
+      "quality_level": "Degraded",
+      "stream_error_present": false,
+      "score.json_status": "available",
+      "ground-truth.json_status": "available",
+      "artifact_complete": true,
+      "profile_status": "available",
+      "run": "final",
+      "scored_row_count": 2800,
+      "truth_row_count": 2800,
+      "profile_stages": {
+        "capture_between_drains": {
+          "count": 665,
+          "total_ns": 1875530300,
+          "max_ns": 57227800
+        },
+        "capture_descendant_query": {
+          "count": 2220,
+          "total_ns": 3113400,
+          "max_ns": 117800
+        },
+        "capture_process_poll": {
+          "count": 33,
+          "total_ns": 924300000,
+          "max_ns": 55694100
+        },
+        "capture_queue_take": {
+          "count": 666,
+          "total_ns": 186300,
+          "max_ns": 2200
+        },
+        "capture_receive_wall": {
+          "count": 1,
+          "total_ns": 1930645100,
+          "max_ns": 1930645100
+        },
+        "lifetime_attach": {
+          "count": 555,
+          "total_ns": 502400,
+          "max_ns": 16700
+        },
+        "post_derived_group_commit": {
+          "count": 2,
+          "total_ns": 6500,
+          "max_ns": 4900
+        },
+        "post_final_downgrade_full_commit": {
+          "count": 1,
+          "total_ns": 2536600,
+          "max_ns": 2536600
+        },
+        "post_raw_index_materialization": {
+          "count": 1,
+          "total_ns": 49100,
+          "max_ns": 49100
+        },
+        "post_raw_read": {
+          "count": 2,
+          "total_ns": 45300,
+          "max_ns": 40300
+        },
+        "post_resource_read": {
+          "count": 501,
+          "total_ns": 257900,
+          "max_ns": 45600
+        },
+        "post_state_association": {
+          "count": 1,
+          "total_ns": 1185000,
+          "max_ns": 1185000
+        },
+        "post_summary_read": {
+          "count": 1,
+          "total_ns": 1152500,
+          "max_ns": 1152500
+        },
+        "post_summary_write": {
+          "count": 1,
+          "total_ns": 10093500,
+          "max_ns": 10093500
+        },
+        "post_wall": {
+          "count": 1,
+          "total_ns": 3645173800,
+          "max_ns": 3645173800
+        },
+        "process_poll_identity_query": {
+          "count": 165,
+          "total_ns": 1720000,
+          "max_ns": 96100
+        }
+      }
+    },
+    {
+      "attempt": 13,
+      "mode": "baseline",
+      "files": 10000,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "trial": 1,
+      "status": "completed",
+      "measurement_sha256": "9df9e6908971e914a88f1cf63743914732b54b1649fb42abed226df29f3744c0",
+      "acceptance_pass": true,
+      "expected_target_operations": 25000,
+      "expected_noise_operations": 300,
+      "database_initial_bytes": 0,
+      "elapsed_seconds": 12.06919710000011,
+      "parent_cpu_seconds": 3.15625,
+      "parent_cpu_percent_machine_average": 1.0896368298324126,
+      "parent_peak_working_set_bytes": 43737088,
+      "parent_sampled_peak_private_bytes": 35028992,
+      "sampled_db_peak_bytes": 21905408,
+      "sampled_wal_peak_bytes": 22301592,
+      "sqlite_bytes": 21905408,
+      "capture_exit": 0,
+      "label_mismatch": false,
+      "seed_label_verified": true,
+      "harness_error_present": false,
+      "cleanup_error_present": false,
+      "metric_error_count": 0,
+      "stats": {
+        "capture_elapsed_ms": 11704,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 0,
+        "events_received": 0,
+        "events_retained": 5007,
+        "high_confidence_events": 0,
+        "known_actor_events": 0,
+        "known_resource_events": 0,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 638,
+          "after_inventory": 2790,
+          "before_snapshot_inventory": 3025,
+          "correlation_attribution": 14,
+          "descendant_quiet_drain": 1501,
+          "etw_stop_and_queue_drain": 0,
+          "final_persistence_commit": 198,
+          "installer_root": 3732,
+          "lifetime_attribution_and_paged_persistence": 0,
+          "provider_readiness": 0,
+          "raw_persistence_overlapping": 0
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 0,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": null,
+        "etw_events_lost": null,
+        "events_received": 0,
+        "file_event_id_filter": null,
+        "pipeline": null,
+        "registry_path_gaps": 0,
+        "stream": {
+          "accepted": 0,
+          "batches": 0,
+          "checkpoint": null,
+          "checkpoint_completed": false,
+          "checkpoint_variant": null,
+          "committed_bytes": 0,
+          "disk_free_min_bytes": null,
+          "disk_reserve_bytes": null,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 0,
+          "persisted": 0,
+          "persistence_ns": 0,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "restored_wal_autocheckpoint_pages": null,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "wal_autocheckpoint_pages": 4096,
+          "wal_budget_bytes": null,
+          "wal_budget_exceeded": false,
+          "wal_budget_overshoot_bytes": null,
+          "wal_growth_bytes": null,
+          "wal_initial_bytes": null,
+          "wal_peak_bytes": null,
+          "wal_samples": 0
+        },
+        "warnings": [],
+        "etw_file": "disabled",
+        "etw_registry": "disabled",
+        "etw_process": "disabled"
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 25300,
+        "observed": 0,
+        "correctly_attributed": 0,
+        "unknown": 25300,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 25000,
+            "unobserved": 25000,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 300,
+            "unobserved": 300,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 0,
+        "false_positive_target_events": 0,
+        "unexpected_positive_events": [],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 0,
+        "precision": null,
+        "dropped": 0,
+        "etw_events_lost": null,
+        "etw_buffers_lost": null
+      },
+      "gate": {
+        "checks": {
+          "target_denominator": true,
+          "noise_denominator": true,
+          "no_false_attribution": true,
+          "no_drain_timeout": true,
+          "etw_disabled": true,
+          "no_source_promotion": true,
+          "no_state_promotion": true
+        },
+        "pass": true,
+        "etw_release_gate": null
+      },
+      "parent_io": {
+        "read_operations": 27693,
+        "write_operations": 18746,
+        "other_operations": 134164,
+        "read_bytes": 74568633,
+        "write_bytes": 44312187,
+        "other_bytes": 5906826
+      },
+      "quality_level": "Degraded",
+      "stream_error_present": false,
+      "score.json_status": "available",
+      "ground-truth.json_status": "available",
+      "artifact_complete": true,
+      "profile_status": "available",
+      "run": "final",
+      "scored_row_count": 25300,
+      "truth_row_count": 25300,
+      "profile_stages": {
+        "capture_between_drains": {
+          "count": 1832,
+          "total_ns": 5184854700,
+          "max_ns": 74464500
+        },
+        "capture_descendant_query": {
+          "count": 2484,
+          "total_ns": 2958500,
+          "max_ns": 74700
+        },
+        "capture_process_poll": {
+          "count": 88,
+          "total_ns": 2547826500,
+          "max_ns": 72647100
+        },
+        "capture_queue_take": {
+          "count": 1833,
+          "total_ns": 494700,
+          "max_ns": 6000
+        },
+        "capture_receive_wall": {
+          "count": 1,
+          "total_ns": 5233677900,
+          "max_ns": 5233677900
+        },
+        "lifetime_attach": {
+          "count": 621,
+          "total_ns": 194600,
+          "max_ns": 3100
+        },
+        "post_derived_group_commit": {
+          "count": 1,
+          "total_ns": 1600,
+          "max_ns": 1600
+        },
+        "post_final_downgrade_full_commit": {
+          "count": 1,
+          "total_ns": 46570200,
+          "max_ns": 46570200
+        },
+        "post_raw_index_materialization": {
+          "count": 1,
+          "total_ns": 49500,
+          "max_ns": 49500
+        },
+        "post_raw_read": {
+          "count": 2,
+          "total_ns": 47600,
+          "max_ns": 42000
+        },
+        "post_resource_read": {
+          "count": 5001,
+          "total_ns": 7232600,
+          "max_ns": 71600
+        },
+        "post_state_association": {
+          "count": 1,
+          "total_ns": 14656400,
+          "max_ns": 14656400
+        },
+        "post_summary_read": {
+          "count": 1,
+          "total_ns": 33496200,
+          "max_ns": 33496200
+        },
+        "post_summary_write": {
+          "count": 1,
+          "total_ns": 199429100,
+          "max_ns": 199429100
+        },
+        "post_wall": {
+          "count": 1,
+          "total_ns": 3729915600,
+          "max_ns": 3729915600
+        },
+        "process_poll_identity_query": {
+          "count": 438,
+          "total_ns": 9556100,
+          "max_ns": 143100
+        }
+      }
+    },
+    {
+      "attempt": 14,
+      "mode": "candidate",
+      "files": 10000,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "trial": 1,
+      "status": "completed",
+      "measurement_sha256": "470549f3ae4531ca0a5da05d24369962f5c6e080b483cc317cdbac21d3f0e2ea",
+      "acceptance_pass": true,
+      "expected_target_operations": 25000,
+      "expected_noise_operations": 300,
+      "database_initial_bytes": 0,
+      "elapsed_seconds": 11.944386499999837,
+      "parent_cpu_seconds": 3.09375,
+      "parent_cpu_percent_machine_average": 1.079220351752698,
+      "parent_peak_working_set_bytes": 42962944,
+      "parent_sampled_peak_private_bytes": 31879168,
+      "sampled_db_peak_bytes": 22962176,
+      "sampled_wal_peak_bytes": 23372792,
+      "sqlite_bytes": 22962176,
+      "capture_exit": 0,
+      "label_mismatch": false,
+      "seed_label_verified": true,
+      "harness_error_present": false,
+      "cleanup_error_present": false,
+      "metric_error_count": 0,
+      "stats": {
+        "capture_elapsed_ms": 11606,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 0,
+        "events_received": 0,
+        "events_retained": 5007,
+        "high_confidence_events": 0,
+        "known_actor_events": 0,
+        "known_resource_events": 0,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 631,
+          "after_inventory": 2897,
+          "before_snapshot_inventory": 2786,
+          "correlation_attribution": 9,
+          "descendant_quiet_drain": 1508,
+          "etw_stop_and_queue_drain": 0,
+          "final_persistence_commit": 202,
+          "installer_root": 3771,
+          "lifetime_attribution_and_paged_persistence": 0,
+          "provider_readiness": 0,
+          "raw_persistence_overlapping": 0
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 0,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": null,
+        "etw_events_lost": null,
+        "events_received": 0,
+        "file_event_id_filter": null,
+        "pipeline": null,
+        "registry_path_gaps": 0,
+        "stream": {
+          "accepted": 0,
+          "batches": 0,
+          "checkpoint": null,
+          "checkpoint_completed": false,
+          "checkpoint_variant": null,
+          "committed_bytes": 0,
+          "disk_free_min_bytes": null,
+          "disk_reserve_bytes": null,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 0,
+          "persisted": 0,
+          "persistence_ns": 0,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "restored_wal_autocheckpoint_pages": null,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "wal_autocheckpoint_pages": 4096,
+          "wal_budget_bytes": null,
+          "wal_budget_exceeded": false,
+          "wal_budget_overshoot_bytes": null,
+          "wal_growth_bytes": null,
+          "wal_initial_bytes": null,
+          "wal_peak_bytes": null,
+          "wal_samples": 0
+        },
+        "warnings": [],
+        "etw_file": "disabled",
+        "etw_registry": "disabled",
+        "etw_process": "disabled"
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 25300,
+        "observed": 0,
+        "correctly_attributed": 0,
+        "unknown": 25300,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 25000,
+            "unobserved": 25000,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 300,
+            "unobserved": 300,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 0,
+        "false_positive_target_events": 0,
+        "unexpected_positive_events": [],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 0,
+        "precision": null,
+        "dropped": 0,
+        "etw_events_lost": null,
+        "etw_buffers_lost": null
+      },
+      "gate": {
+        "checks": {
+          "target_denominator": true,
+          "noise_denominator": true,
+          "no_false_attribution": true,
+          "no_drain_timeout": true,
+          "etw_disabled": true,
+          "no_source_promotion": true,
+          "no_state_promotion": true
+        },
+        "pass": true,
+        "etw_release_gate": null
+      },
+      "parent_io": {
+        "read_operations": 28481,
+        "write_operations": 19561,
+        "other_operations": 134133,
+        "read_bytes": 77375233,
+        "write_bytes": 46437015,
+        "other_bytes": 5907840
+      },
+      "quality_level": "Degraded",
+      "stream_error_present": false,
+      "score.json_status": "available",
+      "ground-truth.json_status": "available",
+      "artifact_complete": true,
+      "profile_status": "available",
+      "run": "final",
+      "scored_row_count": 25300,
+      "truth_row_count": 25300,
+      "profile_stages": {
+        "capture_between_drains": {
+          "count": 1893,
+          "total_ns": 5227767000,
+          "max_ns": 58487600
+        },
+        "capture_descendant_query": {
+          "count": 2684,
+          "total_ns": 2617500,
+          "max_ns": 67700
+        },
+        "capture_process_poll": {
+          "count": 89,
+          "total_ns": 2575222500,
+          "max_ns": 56962800
+        },
+        "capture_queue_take": {
+          "count": 1894,
+          "total_ns": 533700,
+          "max_ns": 21700
+        },
+        "capture_receive_wall": {
+          "count": 1,
+          "total_ns": 5279849100,
+          "max_ns": 5279849100
+        },
+        "lifetime_attach": {
+          "count": 671,
+          "total_ns": 541700,
+          "max_ns": 8500
+        },
+        "post_derived_group_commit": {
+          "count": 2,
+          "total_ns": 7500,
+          "max_ns": 5800
+        },
+        "post_final_downgrade_full_commit": {
+          "count": 1,
+          "total_ns": 45995200,
+          "max_ns": 45995200
+        },
+        "post_raw_index_materialization": {
+          "count": 1,
+          "total_ns": 47300,
+          "max_ns": 47300
+        },
+        "post_raw_read": {
+          "count": 2,
+          "total_ns": 62200,
+          "max_ns": 56700
+        },
+        "post_resource_read": {
+          "count": 5001,
+          "total_ns": 1946600,
+          "max_ns": 47300
+        },
+        "post_state_association": {
+          "count": 1,
+          "total_ns": 9393400,
+          "max_ns": 9393400
+        },
+        "post_summary_read": {
+          "count": 1,
+          "total_ns": 11475100,
+          "max_ns": 11475100
+        },
+        "post_summary_write": {
+          "count": 1,
+          "total_ns": 202926900,
+          "max_ns": 202926900
+        },
+        "post_wall": {
+          "count": 1,
+          "total_ns": 3806051100,
+          "max_ns": 3806051100
+        },
+        "process_poll_identity_query": {
+          "count": 443,
+          "total_ns": 9323300,
+          "max_ns": 125700
+        }
+      }
+    },
+    {
+      "attempt": 15,
+      "mode": "candidate",
+      "files": 10000,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "trial": 2,
+      "status": "completed",
+      "measurement_sha256": "b56fca5bbdde9d11c247b8a599f92843cc3041c243ceb44254fefc93088a0350",
+      "acceptance_pass": true,
+      "expected_target_operations": 25000,
+      "expected_noise_operations": 300,
+      "database_initial_bytes": 0,
+      "elapsed_seconds": 12.953947999999855,
+      "parent_cpu_seconds": 3.078125,
+      "parent_cpu_percent_machine_average": 0.9900858667437509,
+      "parent_peak_working_set_bytes": 43499520,
+      "parent_sampled_peak_private_bytes": 36085760,
+      "sampled_db_peak_bytes": 23007232,
+      "sampled_wal_peak_bytes": 23418112,
+      "sqlite_bytes": 23007232,
+      "capture_exit": 0,
+      "label_mismatch": false,
+      "seed_label_verified": true,
+      "harness_error_present": false,
+      "cleanup_error_present": false,
+      "metric_error_count": 0,
+      "stats": {
+        "capture_elapsed_ms": 12643,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 0,
+        "events_received": 0,
+        "events_retained": 5007,
+        "high_confidence_events": 0,
+        "known_actor_events": 0,
+        "known_resource_events": 0,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 601,
+          "after_inventory": 3066,
+          "before_snapshot_inventory": 3392,
+          "correlation_attribution": 9,
+          "descendant_quiet_drain": 1505,
+          "etw_stop_and_queue_drain": 0,
+          "final_persistence_commit": 180,
+          "installer_root": 4066,
+          "lifetime_attribution_and_paged_persistence": 0,
+          "provider_readiness": 0,
+          "raw_persistence_overlapping": 0
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 0,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": null,
+        "etw_events_lost": null,
+        "events_received": 0,
+        "file_event_id_filter": null,
+        "pipeline": null,
+        "registry_path_gaps": 0,
+        "stream": {
+          "accepted": 0,
+          "batches": 0,
+          "checkpoint": null,
+          "checkpoint_completed": false,
+          "checkpoint_variant": null,
+          "committed_bytes": 0,
+          "disk_free_min_bytes": null,
+          "disk_reserve_bytes": null,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 0,
+          "persisted": 0,
+          "persistence_ns": 0,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "restored_wal_autocheckpoint_pages": null,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "wal_autocheckpoint_pages": 4096,
+          "wal_budget_bytes": null,
+          "wal_budget_exceeded": false,
+          "wal_budget_overshoot_bytes": null,
+          "wal_growth_bytes": null,
+          "wal_initial_bytes": null,
+          "wal_peak_bytes": null,
+          "wal_samples": 0
+        },
+        "warnings": [],
+        "etw_file": "disabled",
+        "etw_registry": "disabled",
+        "etw_process": "disabled"
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 25300,
+        "observed": 0,
+        "correctly_attributed": 0,
+        "unknown": 25300,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 25000,
+            "unobserved": 25000,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 300,
+            "unobserved": 300,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 0,
+        "false_positive_target_events": 0,
+        "unexpected_positive_events": [],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 0,
+        "precision": null,
+        "dropped": 0,
+        "etw_events_lost": null,
+        "etw_buffers_lost": null
+      },
+      "gate": {
+        "checks": {
+          "target_denominator": true,
+          "noise_denominator": true,
+          "no_false_attribution": true,
+          "no_drain_timeout": true,
+          "etw_disabled": true,
+          "no_source_promotion": true,
+          "no_state_promotion": true
+        },
+        "pass": true,
+        "etw_release_gate": null
+      },
+      "parent_io": {
+        "read_operations": 25943,
+        "write_operations": 17031,
+        "other_operations": 134327,
+        "read_bytes": 67360457,
+        "write_bytes": 46461812,
+        "other_bytes": 5916344
+      },
+      "quality_level": "Degraded",
+      "stream_error_present": false,
+      "score.json_status": "available",
+      "ground-truth.json_status": "available",
+      "artifact_complete": true,
+      "profile_status": "available",
+      "run": "final",
+      "scored_row_count": 25300,
+      "truth_row_count": 25300,
+      "profile_stages": {
+        "capture_between_drains": {
+          "count": 2023,
+          "total_ns": 5524886700,
+          "max_ns": 47615500
+        },
+        "capture_descendant_query": {
+          "count": 2632,
+          "total_ns": 4038600,
+          "max_ns": 116600
+        },
+        "capture_process_poll": {
+          "count": 96,
+          "total_ns": 2645294900,
+          "max_ns": 46052100
+        },
+        "capture_queue_take": {
+          "count": 2024,
+          "total_ns": 524900,
+          "max_ns": 11800
+        },
+        "capture_receive_wall": {
+          "count": 1,
+          "total_ns": 5572552900,
+          "max_ns": 5572552900
+        },
+        "lifetime_attach": {
+          "count": 658,
+          "total_ns": 521800,
+          "max_ns": 20800
+        },
+        "post_derived_group_commit": {
+          "count": 2,
+          "total_ns": 8500,
+          "max_ns": 6900
+        },
+        "post_final_downgrade_full_commit": {
+          "count": 1,
+          "total_ns": 43773000,
+          "max_ns": 43773000
+        },
+        "post_raw_index_materialization": {
+          "count": 1,
+          "total_ns": 48700,
+          "max_ns": 48700
+        },
+        "post_raw_read": {
+          "count": 2,
+          "total_ns": 46900,
+          "max_ns": 41200
+        },
+        "post_resource_read": {
+          "count": 5001,
+          "total_ns": 1938400,
+          "max_ns": 44500
+        },
+        "post_state_association": {
+          "count": 1,
+          "total_ns": 9278800,
+          "max_ns": 9278800
+        },
+        "post_summary_read": {
+          "count": 1,
+          "total_ns": 11349700,
+          "max_ns": 11349700
+        },
+        "post_summary_write": {
+          "count": 1,
+          "total_ns": 180940400,
+          "max_ns": 180940400
+        },
+        "post_wall": {
+          "count": 1,
+          "total_ns": 3919848000,
+          "max_ns": 3919848000
+        },
+        "process_poll_identity_query": {
+          "count": 479,
+          "total_ns": 10693300,
+          "max_ns": 147100
+        }
+      }
+    },
+    {
+      "attempt": 16,
+      "mode": "baseline",
+      "files": 10000,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "trial": 2,
+      "status": "completed",
+      "measurement_sha256": "67264a2296f80d8c079b8446aa3d0731bde13d5cba8068cf98936c7848b3adf3",
+      "acceptance_pass": true,
+      "expected_target_operations": 25000,
+      "expected_noise_operations": 300,
+      "database_initial_bytes": 0,
+      "elapsed_seconds": 12.713314100000389,
+      "parent_cpu_seconds": 3.109375,
+      "parent_cpu_percent_machine_average": 1.0190678107029756,
+      "parent_peak_working_set_bytes": 43692032,
+      "parent_sampled_peak_private_bytes": 34938880,
+      "sampled_db_peak_bytes": 21868544,
+      "sampled_wal_peak_bytes": 22264512,
+      "sqlite_bytes": 21868544,
+      "capture_exit": 0,
+      "label_mismatch": false,
+      "seed_label_verified": true,
+      "harness_error_present": false,
+      "cleanup_error_present": false,
+      "metric_error_count": 0,
+      "stats": {
+        "capture_elapsed_ms": 12365,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 0,
+        "events_received": 0,
+        "events_retained": 5007,
+        "high_confidence_events": 0,
+        "known_actor_events": 0,
+        "known_resource_events": 0,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 641,
+          "after_inventory": 3219,
+          "before_snapshot_inventory": 3196,
+          "correlation_attribution": 15,
+          "descendant_quiet_drain": 1500,
+          "etw_stop_and_queue_drain": 0,
+          "final_persistence_commit": 181,
+          "installer_root": 3791,
+          "lifetime_attribution_and_paged_persistence": 0,
+          "provider_readiness": 0,
+          "raw_persistence_overlapping": 0
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 0,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": null,
+        "etw_events_lost": null,
+        "events_received": 0,
+        "file_event_id_filter": null,
+        "pipeline": null,
+        "registry_path_gaps": 0,
+        "stream": {
+          "accepted": 0,
+          "batches": 0,
+          "checkpoint": null,
+          "checkpoint_completed": false,
+          "checkpoint_variant": null,
+          "committed_bytes": 0,
+          "disk_free_min_bytes": null,
+          "disk_reserve_bytes": null,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 0,
+          "persisted": 0,
+          "persistence_ns": 0,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "restored_wal_autocheckpoint_pages": null,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "wal_autocheckpoint_pages": 4096,
+          "wal_budget_bytes": null,
+          "wal_budget_exceeded": false,
+          "wal_budget_overshoot_bytes": null,
+          "wal_growth_bytes": null,
+          "wal_initial_bytes": null,
+          "wal_peak_bytes": null,
+          "wal_samples": 0
+        },
+        "warnings": [],
+        "etw_file": "disabled",
+        "etw_registry": "disabled",
+        "etw_process": "disabled"
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 25300,
+        "observed": 0,
+        "correctly_attributed": 0,
+        "unknown": 25300,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 25000,
+            "unobserved": 25000,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 300,
+            "unobserved": 300,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 0,
+        "false_positive_target_events": 0,
+        "unexpected_positive_events": [],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 0,
+        "precision": null,
+        "dropped": 0,
+        "etw_events_lost": null,
+        "etw_buffers_lost": null
+      },
+      "gate": {
+        "checks": {
+          "target_denominator": true,
+          "noise_denominator": true,
+          "no_false_attribution": true,
+          "no_drain_timeout": true,
+          "etw_disabled": true,
+          "no_source_promotion": true,
+          "no_state_promotion": true
+        },
+        "pass": true,
+        "etw_release_gate": null
+      },
+      "parent_io": {
+        "read_operations": 25163,
+        "write_operations": 16190,
+        "other_operations": 134158,
+        "read_bytes": 63575753,
+        "write_bytes": 44169402,
+        "other_bytes": 5909218
+      },
+      "quality_level": "Degraded",
+      "stream_error_present": false,
+      "score.json_status": "available",
+      "ground-truth.json_status": "available",
+      "artifact_complete": true,
+      "profile_status": "available",
+      "run": "final",
+      "scored_row_count": 25300,
+      "truth_row_count": 25300,
+      "profile_stages": {
+        "capture_between_drains": {
+          "count": 1929,
+          "total_ns": 5237653800,
+          "max_ns": 45721400
+        },
+        "capture_descendant_query": {
+          "count": 2636,
+          "total_ns": 2638400,
+          "max_ns": 84800
+        },
+        "capture_process_poll": {
+          "count": 89,
+          "total_ns": 2564478700,
+          "max_ns": 47654600
+        },
+        "capture_queue_take": {
+          "count": 1930,
+          "total_ns": 508400,
+          "max_ns": 9000
+        },
+        "capture_receive_wall": {
+          "count": 1,
+          "total_ns": 5291671000,
+          "max_ns": 5291671000
+        },
+        "lifetime_attach": {
+          "count": 659,
+          "total_ns": 191100,
+          "max_ns": 3300
+        },
+        "post_derived_group_commit": {
+          "count": 1,
+          "total_ns": 1500,
+          "max_ns": 1500
+        },
+        "post_final_downgrade_full_commit": {
+          "count": 1,
+          "total_ns": 49017100,
+          "max_ns": 49017100
+        },
+        "post_raw_index_materialization": {
+          "count": 1,
+          "total_ns": 52000,
+          "max_ns": 52000
+        },
+        "post_raw_read": {
+          "count": 2,
+          "total_ns": 47800,
+          "max_ns": 42200
+        },
+        "post_resource_read": {
+          "count": 5001,
+          "total_ns": 7160400,
+          "max_ns": 72700
+        },
+        "post_state_association": {
+          "count": 1,
+          "total_ns": 15186400,
+          "max_ns": 15186400
+        },
+        "post_summary_read": {
+          "count": 1,
+          "total_ns": 34160200,
+          "max_ns": 34160200
+        },
+        "post_summary_write": {
+          "count": 1,
+          "total_ns": 182286800,
+          "max_ns": 182286800
+        },
+        "post_wall": {
+          "count": 1,
+          "total_ns": 4148666600,
+          "max_ns": 4148666600
+        },
+        "process_poll_identity_query": {
+          "count": 442,
+          "total_ns": 9857800,
+          "max_ns": 112600
+        }
+      }
+    },
+    {
+      "attempt": 17,
+      "mode": "baseline",
+      "files": 10000,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "trial": 3,
+      "status": "completed",
+      "measurement_sha256": "7719f7c917ee6acaa967589eafa1c3ff79521ce7f0f8609ebc16492778fd1385",
+      "acceptance_pass": true,
+      "expected_target_operations": 25000,
+      "expected_noise_operations": 300,
+      "database_initial_bytes": 0,
+      "elapsed_seconds": 12.771218800000042,
+      "parent_cpu_seconds": 3.171875,
+      "parent_cpu_percent_machine_average": 1.0348382593941063,
+      "parent_peak_working_set_bytes": 43716608,
+      "parent_sampled_peak_private_bytes": 34996224,
+      "sampled_db_peak_bytes": 21958656,
+      "sampled_wal_peak_bytes": 22355152,
+      "sqlite_bytes": 21958656,
+      "capture_exit": 0,
+      "label_mismatch": false,
+      "seed_label_verified": true,
+      "harness_error_present": false,
+      "cleanup_error_present": false,
+      "metric_error_count": 0,
+      "stats": {
+        "capture_elapsed_ms": 12418,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 0,
+        "events_received": 0,
+        "events_retained": 5007,
+        "high_confidence_events": 0,
+        "known_actor_events": 0,
+        "known_resource_events": 0,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 612,
+          "after_inventory": 3035,
+          "before_snapshot_inventory": 3469,
+          "correlation_attribution": 14,
+          "descendant_quiet_drain": 1501,
+          "etw_stop_and_queue_drain": 0,
+          "final_persistence_commit": 195,
+          "installer_root": 3782,
+          "lifetime_attribution_and_paged_persistence": 0,
+          "provider_readiness": 0,
+          "raw_persistence_overlapping": 0
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 0,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": null,
+        "etw_events_lost": null,
+        "events_received": 0,
+        "file_event_id_filter": null,
+        "pipeline": null,
+        "registry_path_gaps": 0,
+        "stream": {
+          "accepted": 0,
+          "batches": 0,
+          "checkpoint": null,
+          "checkpoint_completed": false,
+          "checkpoint_variant": null,
+          "committed_bytes": 0,
+          "disk_free_min_bytes": null,
+          "disk_reserve_bytes": null,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 0,
+          "persisted": 0,
+          "persistence_ns": 0,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "restored_wal_autocheckpoint_pages": null,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "wal_autocheckpoint_pages": 4096,
+          "wal_budget_bytes": null,
+          "wal_budget_exceeded": false,
+          "wal_budget_overshoot_bytes": null,
+          "wal_growth_bytes": null,
+          "wal_initial_bytes": null,
+          "wal_peak_bytes": null,
+          "wal_samples": 0
+        },
+        "warnings": [],
+        "etw_file": "disabled",
+        "etw_registry": "disabled",
+        "etw_process": "disabled"
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 25300,
+        "observed": 0,
+        "correctly_attributed": 0,
+        "unknown": 25300,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 25000,
+            "unobserved": 25000,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 300,
+            "unobserved": 300,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 0,
+        "false_positive_target_events": 0,
+        "unexpected_positive_events": [],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 0,
+        "precision": null,
+        "dropped": 0,
+        "etw_events_lost": null,
+        "etw_buffers_lost": null
+      },
+      "gate": {
+        "checks": {
+          "target_denominator": true,
+          "noise_denominator": true,
+          "no_false_attribution": true,
+          "no_drain_timeout": true,
+          "etw_disabled": true,
+          "no_source_promotion": true,
+          "no_state_promotion": true
+        },
+        "pass": true,
+        "etw_release_gate": null
+      },
+      "parent_io": {
+        "read_operations": 28032,
+        "write_operations": 18821,
+        "other_operations": 134230,
+        "read_bytes": 75523889,
+        "write_bytes": 44415785,
+        "other_bytes": 5908784
+      },
+      "quality_level": "Degraded",
+      "stream_error_present": false,
+      "score.json_status": "available",
+      "ground-truth.json_status": "available",
+      "artifact_complete": true,
+      "profile_status": "available",
+      "run": "final",
+      "scored_row_count": 25300,
+      "truth_row_count": 25300,
+      "profile_stages": {
+        "capture_between_drains": {
+          "count": 1918,
+          "total_ns": 5232979800,
+          "max_ns": 55668800
+        },
+        "capture_descendant_query": {
+          "count": 2556,
+          "total_ns": 3477200,
+          "max_ns": 157100
+        },
+        "capture_process_poll": {
+          "count": 90,
+          "total_ns": 2539687300,
+          "max_ns": 54078900
+        },
+        "capture_queue_take": {
+          "count": 1919,
+          "total_ns": 545800,
+          "max_ns": 14900
+        },
+        "capture_receive_wall": {
+          "count": 1,
+          "total_ns": 5284159800,
+          "max_ns": 5284159800
+        },
+        "lifetime_attach": {
+          "count": 639,
+          "total_ns": 196200,
+          "max_ns": 3200
+        },
+        "post_derived_group_commit": {
+          "count": 1,
+          "total_ns": 1600,
+          "max_ns": 1600
+        },
+        "post_final_downgrade_full_commit": {
+          "count": 1,
+          "total_ns": 42824000,
+          "max_ns": 42824000
+        },
+        "post_raw_index_materialization": {
+          "count": 1,
+          "total_ns": 51200,
+          "max_ns": 51200
+        },
+        "post_raw_read": {
+          "count": 2,
+          "total_ns": 48800,
+          "max_ns": 43400
+        },
+        "post_resource_read": {
+          "count": 5001,
+          "total_ns": 7234600,
+          "max_ns": 70600
+        },
+        "post_state_association": {
+          "count": 1,
+          "total_ns": 14964100,
+          "max_ns": 14964100
+        },
+        "post_summary_read": {
+          "count": 1,
+          "total_ns": 33808800,
+          "max_ns": 33808800
+        },
+        "post_summary_write": {
+          "count": 1,
+          "total_ns": 196110600,
+          "max_ns": 196110600
+        },
+        "post_wall": {
+          "count": 1,
+          "total_ns": 3943635100,
+          "max_ns": 3943635100
+        },
+        "process_poll_identity_query": {
+          "count": 448,
+          "total_ns": 9479600,
+          "max_ns": 99300
+        }
+      }
+    },
+    {
+      "attempt": 18,
+      "mode": "candidate",
+      "files": 10000,
+      "workers": 4,
+      "noise_files": 100,
+      "seed_index": 0,
+      "trial": 3,
+      "status": "completed",
+      "measurement_sha256": "c3dc055ec1cc8459126e3249d0f28a89bda376ff132b975b90f166931512dd35",
+      "acceptance_pass": true,
+      "expected_target_operations": 25000,
+      "expected_noise_operations": 300,
+      "database_initial_bytes": 0,
+      "elapsed_seconds": 12.1604155,
+      "parent_cpu_seconds": 3.28125,
+      "parent_cpu_percent_machine_average": 1.1242934092178019,
+      "parent_peak_working_set_bytes": 43106304,
+      "parent_sampled_peak_private_bytes": 33849344,
+      "sampled_db_peak_bytes": 22982656,
+      "sampled_wal_peak_bytes": 23393392,
+      "sqlite_bytes": 22982656,
+      "capture_exit": 0,
+      "label_mismatch": false,
+      "seed_label_verified": true,
+      "harness_error_present": false,
+      "cleanup_error_present": false,
+      "metric_error_count": 0,
+      "stats": {
+        "capture_elapsed_ms": 11846,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 0,
+        "events_received": 0,
+        "events_retained": 5007,
+        "high_confidence_events": 0,
+        "known_actor_events": 0,
+        "known_resource_events": 0,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 620,
+          "after_inventory": 2971,
+          "before_snapshot_inventory": 2967,
+          "correlation_attribution": 9,
+          "descendant_quiet_drain": 1510,
+          "etw_stop_and_queue_drain": 0,
+          "final_persistence_commit": 186,
+          "installer_root": 3765,
+          "lifetime_attribution_and_paged_persistence": 0,
+          "provider_readiness": 0,
+          "raw_persistence_overlapping": 0
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 0,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": null,
+        "etw_events_lost": null,
+        "events_received": 0,
+        "file_event_id_filter": null,
+        "pipeline": null,
+        "registry_path_gaps": 0,
+        "stream": {
+          "accepted": 0,
+          "batches": 0,
+          "checkpoint": null,
+          "checkpoint_completed": false,
+          "checkpoint_variant": null,
+          "committed_bytes": 0,
+          "disk_free_min_bytes": null,
+          "disk_reserve_bytes": null,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 0,
+          "persisted": 0,
+          "persistence_ns": 0,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "restored_wal_autocheckpoint_pages": null,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "wal_autocheckpoint_pages": 4096,
+          "wal_budget_bytes": null,
+          "wal_budget_exceeded": false,
+          "wal_budget_overshoot_bytes": null,
+          "wal_growth_bytes": null,
+          "wal_initial_bytes": null,
+          "wal_peak_bytes": null,
+          "wal_samples": 0
+        },
+        "warnings": [],
+        "etw_file": "disabled",
+        "etw_registry": "disabled",
+        "etw_process": "disabled"
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 25300,
+        "observed": 0,
+        "correctly_attributed": 0,
+        "unknown": 25300,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 25000,
+            "unobserved": 25000,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 300,
+            "unobserved": 300,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 0,
+        "false_positive_target_events": 0,
+        "unexpected_positive_events": [],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 0,
+        "precision": null,
+        "dropped": 0,
+        "etw_events_lost": null,
+        "etw_buffers_lost": null
+      },
+      "gate": {
+        "checks": {
+          "target_denominator": true,
+          "noise_denominator": true,
+          "no_false_attribution": true,
+          "no_drain_timeout": true,
+          "etw_disabled": true,
+          "no_source_promotion": true,
+          "no_state_promotion": true
+        },
+        "pass": true,
+        "etw_release_gate": null
+      },
+      "parent_io": {
+        "read_operations": 25766,
+        "write_operations": 17013,
+        "other_operations": 134074,
+        "read_bytes": 66836169,
+        "write_bytes": 46412506,
+        "other_bytes": 5904494
+      },
+      "quality_level": "Degraded",
+      "stream_error_present": false,
+      "score.json_status": "available",
+      "ground-truth.json_status": "available",
+      "artifact_complete": true,
+      "profile_status": "available",
+      "run": "final",
+      "scored_row_count": 25300,
+      "truth_row_count": 25300,
+      "profile_stages": {
+        "capture_between_drains": {
+          "count": 1856,
+          "total_ns": 5224887500,
+          "max_ns": 51001700
+        },
+        "capture_descendant_query": {
+          "count": 2612,
+          "total_ns": 2263600,
+          "max_ns": 21200
+        },
+        "capture_process_poll": {
+          "count": 89,
+          "total_ns": 2561237000,
+          "max_ns": 49460500
+        },
+        "capture_queue_take": {
+          "count": 1857,
+          "total_ns": 496200,
+          "max_ns": 14100
+        },
+        "capture_receive_wall": {
+          "count": 1,
+          "total_ns": 5276338900,
+          "max_ns": 5276338900
+        },
+        "lifetime_attach": {
+          "count": 653,
+          "total_ns": 503800,
+          "max_ns": 8800
+        },
+        "post_derived_group_commit": {
+          "count": 2,
+          "total_ns": 7500,
+          "max_ns": 5900
+        },
+        "post_final_downgrade_full_commit": {
+          "count": 1,
+          "total_ns": 47236800,
+          "max_ns": 47236800
+        },
+        "post_raw_index_materialization": {
+          "count": 1,
+          "total_ns": 48400,
+          "max_ns": 48400
+        },
+        "post_raw_read": {
+          "count": 2,
+          "total_ns": 58600,
+          "max_ns": 40700
+        },
+        "post_resource_read": {
+          "count": 5001,
+          "total_ns": 1944900,
+          "max_ns": 44100
+        },
+        "post_state_association": {
+          "count": 1,
+          "total_ns": 9509300,
+          "max_ns": 9509300
+        },
+        "post_summary_read": {
+          "count": 1,
+          "total_ns": 11309500,
+          "max_ns": 11309500
+        },
+        "post_summary_write": {
+          "count": 1,
+          "total_ns": 186550400,
+          "max_ns": 186550400
+        },
+        "post_wall": {
+          "count": 1,
+          "total_ns": 3853434800,
+          "max_ns": 3853434800
+        },
+        "process_poll_identity_query": {
+          "count": 443,
+          "total_ns": 9105700,
+          "max_ns": 106700
+        }
+      }
+    }
+  ]
+}

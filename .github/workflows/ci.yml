@@ -34,7 +34,7 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Checkpoint gate tests failed'}
           python scripts/test-hotpath-artifact.py
           if($LASTEXITCODE -ne 0){throw 'Safe partial-artifact tests failed'}
-          foreach($script in @('test-summarize-checkpoint.py','test-v04-matrix.py','test-v04-public.py','test-v04-verify-views.py','test-v04-metrics.py')) {
+          foreach($script in @('test-summarize-checkpoint.py','test-v04-matrix.py','test-v04-public.py','test-v04-verify-views.py','test-v04-metrics.py','test-v04-summarize-matrix.py')) {
             python "scripts/$script"
             if($LASTEXITCODE -ne 0){throw "Validation failed: $script"}
           }

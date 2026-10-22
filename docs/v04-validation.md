@@ -183,6 +183,7 @@ python scripts/test-v04-matrix.py
 python scripts/test-v04-public.py
 python scripts/test-v04-verify-views.py
 python scripts/test-v04-metrics.py
+python scripts/test-v04-summarize-matrix.py
 ```
 
 These tests cover workload denominators and unchanged thresholds, missing loss
