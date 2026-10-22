@@ -111,6 +111,13 @@ acceptance thresholds are unchanged. Twelve identity/attribution/completion
 counterexamples were first observed failing before their fixes; all pass now.
 Raw logs: `target/v04/raw/reliability` and `target/v04/raw/final-*.log`.
 
+A final targeted audit found one additional parent-PID reuse case: revalidation
+could revoke a child and then reattach it to a different birth of the same parent
+PID. Promotion now respects an already-recorded parent creation time, leaving a
+conflict Unknown and preserving its original evidence. Its red test and 16 passing
+lifetime tests are retained as `parent-birth-{red,green}.txt`. Measurements of
+candidate `07e2e86` predate this extra guard and must keep that revision label.
+
 ## Measured storage optimization
 
 `storage/evidence.rs` used a linear search for every evidence row and repeatedly

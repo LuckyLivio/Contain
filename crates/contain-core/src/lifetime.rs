@@ -270,6 +270,8 @@ impl LifetimeCache {
                     let parent = self.resolve(p.parent_pid?, key.1)?;
                     if !matches!(parent.confidence, Confidence::Certain | Confidence::High)
                         || parent.creation_time == Some(key.1)
+                        || p.parent_creation_time
+                            .is_some_and(|birth| parent.creation_time != Some(birth))
                     {
                         return None;
                     }
@@ -471,6 +473,21 @@ mod tests {
         assert_eq!(cache.processes[&(1, 10)].confidence, Confidence::Certain);
         assert_eq!(cache.processes[&(2, 100)].confidence, Confidence::Unknown);
         assert_eq!(cache.processes[&(3, 120)].confidence, Confidence::Unknown);
+    }
+    #[test]
+    fn known_parent_creation_time_cannot_be_reassigned_after_pid_reuse() {
+        let mut cache = LifetimeCache::default();
+        let mut root = record(1, 20, None);
+        root.confidence = Confidence::Certain;
+        cache.seed(root);
+        let mut child = record(2, 30, None);
+        child.parent_pid = Some(1);
+        child.parent_creation_time = Some(10);
+        child.confidence = Confidence::High;
+        cache.seed(child);
+        cache.attach((1, 20), "s");
+        assert_eq!(cache.processes[&(2, 30)].confidence, Confidence::Unknown);
+        assert_eq!(cache.processes[&(2, 30)].parent_creation_time, Some(10));
     }
     #[test]
     fn conflicting_parent_or_image_cannot_promote_a_process() {
