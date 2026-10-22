@@ -47,6 +47,185 @@ The historical samples lack original ETW QPC, so their sub-millisecond boundary
 failures cannot be repaired by fitted offsets. The old ~86x result measures
 synthetic evidence readback only; it does not measure capture throughput.
 
+## Stabilization implementation and remaining gates
+
+**The main-flow stabilization milestone is not accepted yet.** Runtime candidate
+`076fe7634ab4644fa0bce123ac798c4a3dea6601` is still 0.3.1. The following fixes have
+local regression evidence; their real-time ETW throughput and useful attribution
+coverage have not been validated. No new product command or deletion executor was
+added. CLI JSON remains schema 3 and SQLite user_version remains 4.
+
+| Area | Implemented and tested | Remaining boundary |
+| --- | --- | --- |
+| Clock | Exact delivered signed event header, dependency clock configuration, bracketed QPC/precise FILETIME samples; independent fixture QPC/TID/sequence/bounds; strict diagnostic with no offsets/tolerance | ferrisetw 1.2.0 still delivers converted FILETIME, not original QPC, and does not expose the actual trace header. Provider emission outside syscall bounds remains unresolved. Old missing-clock samples remain unavailable, never rescored as passing |
+| Capture blocking | Scoped receiver owns lifecycle ingestion; one SQLite writer owns the existing journal. Foreground polling/Win32 queries do not run on the receiver. Bounded nonblocking handoff, distinct refusals, idle partial flush, STOP/drain/join protocol, worker profile merge | Initial identity setup remains synchronous before launch; bounded lifetime attachment takes a shared lock. Callback decoding/identity queries and upstream losses still need real ETW measurement |
+| State observations | Baseline files read after trace readiness; final files/registry read while receiving. Same-handle hashes/identities and bounded file read leases seal only after STOP/drain. Failed leases, deleted baseline-only evidence, registry ABA and SID failure remain explicit | An open can truncate without a write event; unresolved file contexts can be filtered. Production mutation coverage is false, so final state stays Unknown. Earlier verified source actors remain usable independently |
+| Storage/views | Late losses atomically revoke event, summary, operation, graph and embedded observation claims; unfinished full/page/explain use committed raw evidence and consistent Unknown dimensions/counts | WAL/NORMAL process-crash recovery is tested, not hardware power-loss durability. Live interrupted ETW sessions still require validation |
+
+The callback queue was split from 8192 records into 4096 callback records and 4096
+handoff records; capacity was not enlarged to hide loss. The handoff additionally
+charges 16 MiB encoded JSON and rejects individual records over 256 KiB. Rejected
+records have overflow/oversized/disconnected/serialization counters and suppress
+promotion. This adds a second serialization walk for size accounting and two scoped
+threads. In-flight pages (256 each), the existing 1-MiB journal batch, and caches
+are additional memory. See [exact balances](capture-counters.md). SQLite batching,
+WAL/NORMAL, final FULL commit, busy timeout and opt-in E0/E1 policy are unchanged.
+The writer's 100-ms idle tick prevents an idle partial batch waiting until STOP;
+this is a flush mechanism, not a hard durability-latency guarantee.
+
+Read leases are active measurement: they can reject concurrent write/delete opens
+and ancestor renames. The 256-handle budget includes ancestors; it is not a maximum
+hold duration. Baseline directory pins last through the baseline scan, and final
+pins through scan/registry read/STOP/drain. Windows share modes do not establish an
+atomic namespace or exclude every metadata/alias mutation. The actual
+[CreateFile sharing and truncate semantics](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)
+support this narrower boundary. A future oracle must retain instrumentation-induced
+sharing failures instead of interpreting prevented operations as absent behavior.
+
+### Regression evidence
+
+Failing tests were retained before fixes: stale late-loss summary metadata;
+unfinished explanation selecting derived evidence; missing/unsealed/read-conflicted
+snapshot proofs; a real unrelated `open(truncate)` with no write call; stale embedded
+`final_source_complete`; stale unfinished counts/High dimensions; and the report
+reader truncating a scalar compiler-version string to its first character.
+Baseline a072072 already kept production final-state attribution Unknown because
+its snapshot followed STOP. The truncate counterexample rejects an unsafe new
+promotion path after moving observation earlier; it is not evidence of a measured
+false attribution in that baseline's production captures.
+Raw logs are under `target/stabilization/raw/{storage,ingest}` and
+`target/v04/raw/reliability/p0c-*.log`. The intermediate integrated run with one
+remaining observation-flag failure is preserved as `candidate-first-full.log`.
+
+Final checks: **124 core + 6 fixture = 130 Rust tests passed**, 3 existing optional
+performance experiments ignored; fmt, Clippy `-D warnings`, locked release build
+passed. **84 Python tests** passed in the final complete run
+(`target/stabilization/raw/final-python-all.log`). The unchanged
+PowerShell scorer rejection suite passed. Original baseline Python scripts were
+extracted from a072072 into `target/stabilization/baseline-scripts`; all 62 passed.
+These are actual matching tests, not zero-test filters or build-only acceptance.
+
+New worker tests use actual SQLite files and deterministic queue bounds: saturation,
+byte/record refusals, partial tails, idle commits before STOP, pre-initialization
+accounting, insert-trigger failure, a real held write lock/busy failure, operation
+error/unwind, and release after STOP panic. Existing PID reuse, unordered/duplicate
+lifetimes, conflicting completions, abrupt-process-exit, FULL/busy/checkpoint and
+migration tests remain intact. Synthetic injection does not establish ETW capture.
+
+`scripts/demo.ps1 -Release -SnapshotOnly` passed: 3 processes, 12 file states,
+4 registry states, all 20 timeline events compared through full/paged history,
+diff and every explain. JSON contracts and repeated ordering passed. File hashes
+and the registry value were unchanged across `remove --dry-run`. Its independent
+journal contained 21 operations; **zero were observed as source operations**.
+Evidence is in `target/stabilization/integration/` and `raw/integration.log`.
+Two additional finished database backups (one written by each version) were read
+by both executables: their 52-event views matched after excluding only additive
+clock/handoff/observation fields. Results are in `target/stabilization/compatibility/`.
+
+### Paired local measurements: snapshot mode only
+
+The frozen baseline a072072 and runtime candidate 076fe76 used the same new fixture,
+with independent clock logging enabled in both arms. Each attempt checks all three
+binary hashes before and after, retains its command/profile/DB/score/truth, and
+alternates arm order. All 36 planned attempts completed and passed the existing
+**fallback conservatism** checks; none was a real ETW acceptance attempt.
+
+The [complete numeric archive](examples/stabilization-local.json) keeps every
+attempt, group, metric denominator and executable/source/script hash. Private raw
+captures and personal/system inventory are not committed. Median values below use
+all three repetitions per arm, four fixture workers, 32 noise files (96 independent
+noise syscalls), and initially empty databases:
+
+| Files | Fallback passes baseline / candidate | Wall seconds | Parent CPU seconds | Parent peak working set MiB | Final DB MiB | Sampled WAL peak MiB |
+| --- | --- | --- | --- | --- | --- | --- |
+| 100 | 3/3 / 3/3 | 8.070 / 7.996 | 0.594 / 0.625 | 17.80 / 17.11 | 0.410 / 0.453 | 0.358 / 0.358 |
+| 1,000 | 3/3 / 3/3 | 8.252 / 8.431 | 0.812 / 0.844 | 21.57 / 20.01 | 2.363 / 2.844 | 2.648 / 3.120 |
+| 10,000 | 3/3 / 3/3 | 12.450 / 12.810 | 3.547 / 3.531 | 41.07 / 59.34 | 21.945 / 27.293 | 22.337 / 27.716 |
+
+At 10,000, median parent logical read/write transfer increased from 64.259/44.341
+MiB to 86.809/55.058 MiB. These are process logical I/O counters, not physical disk
+traffic. The retained observation JSON adds storage and memory; this is a measured
+cost, not a performance win. Working set includes the parent only; private memory
+and DB/WAL peaks use 20-ms sampling. Caches/background load are uncontrolled, so
+small wall differences are not significant-speedup claims.
+
+Additional 1,000-file groups, three repetitions per arm, all fallback checks passed:
+
+| Condition | Baseline / candidate median wall seconds | Purpose |
+| --- | --- | --- |
+| 1 worker, 32 noise files, empty DB | 9.271 / 8.957 | Compare worker count with the four-worker core group |
+| 4 workers, zero noise, empty DB | 8.558 / 8.424 | Compare scoped background workload |
+| 4 workers, zero noise, 27.293-MiB seed DB | 8.325 / 8.543 | Same committed SQLite backup in both arms |
+
+These groups are separate; their repetitions cannot be pooled to satisfy the
+required ten-run 1,000-file stability test under one real ETW condition.
+Across the local matrix the independent journal has 211,512 successful target
+operations and 2,304 successful noise operations. For each applicable group,
+target source observation coverage = 0%, effective target attribution coverage =
+0%, Unknown rate = 100%, and false-attribution rows = 0. Precision/raw false-discovery
+rate are null because there are no positive source predictions. ETW loss counts
+and rate are null because ETW was disabled; zero application drops with no source
+traffic cannot establish capture reliability. These results do not meet useful
+attribution acceptance despite all fallback checks passing.
+
+Candidate observations retained at most 62/256/256 handles in the 100/1,000/10,000
+groups. Median per-attempt maximum file-handle hold was 9.831/73.009/694.874 ms;
+these do not bound ancestor hold time or future stalls. Stable read metadata covered
+49/245/246 changed files; 0/256/4,755 changed files had read-lease refusal diagnostics,
+principally the fixed handle quota at larger scales. Their readable states remain
+present and Unknown. The full derived count/hash records are retained at
+`target/stabilization/observation-metrics.json`.
+
+### Reproduction and unresolved acceptance
+
+```powershell
+$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+cargo build --workspace --release --locked
+$env:CONTAIN_FIXTURE_CLOCK = '1'
+python scripts/v04-matrix.py --baseline target/stabilization/baseline-bin/contain.exe --candidate target/stabilization/candidate-bin/contain.exe --fixture target/stabilization/candidate-bin/contain-test-installer.exe --baseline-revision a072072ad805880290fd1f47f67fba6828d2c24e --candidate-revision 076fe7634ab4644fa0bce123ac798c4a3dea6601 --output target/stabilization/local-paired-new --files 100 1000 10000 --workers 4 --noise-files 32 --trials 3 --snapshot-only
+Remove-Item Env:CONTAIN_FIXTURE_CLOCK
+./scripts/demo.ps1 -Release -SnapshotOnly -OutputDirectory target/stabilization/integration-new
+```
+
+Original raw directories are `local-paired`, `local-worker`, and `local-database`
+under `target/stabilization`. The latter two use the same command with files=1000,
+respectively workers=1/noise=32, and workers=4/noise=0 plus `--seed-database` pointing
+to `local-paired/0014-candidate-10000-w4-n32-db0-t1/capture.db`. Each has three trials;
+the database command includes both the empty and seeded condition. Output directories
+must be new. Use `v04-public.py` then `v04-summarize-matrix.py` for the numeric archive;
+never commit the complete capture or DB. The historical all-18-attempt stall audit
+is also retained as [numeric evidence](examples/stabilization-consumer-audit.json).
+
+All historical ETW failures remain failures, including 1,000-file candidate 1/3 and
+10,000-file 0/3. There is **no current paired ETW result** for 076fe76. The new
+[pre-registered protocol](v04-validation.md) plans 32 attempts per condition,
+including ten pairs at 1,000, with the old score separate from the new blocked
+clock/attribution gate. It has not run. No arbitrary tolerance, lower threshold,
+reduced workload, deleted sample or all-Unknown usability pass is introduced.
+
+Minimum remaining conditions: an already authorized isolated/recoverable Windows
+environment with suitable ETW permissions; frozen binaries built from both exact
+revisions and the common fixture; actual raw ETW QPC/trace-header capture with
+validated provider timing/provenance; independent operation/collector-loss evidence.
+Then run the fixed paired protocol, including snapshot interference and real STOP
+failures. A verified disposable guest and independently adjudicated reference ledger
+are additionally needed for third-party installers. No automatic elevation, remote
+dispatch or vendor installation was attempted here.
+
+**Do not start a safe-uninstall execution loop on this evidence.** Outstanding work
+is original-clock validation, complete file mutation/context accounting, measured
+live loss/coverage under 1,000 and 10,000 workloads, bounded observation interference,
+and real installer/reference validation. Source request attribution and stable read
+facts alone do not authorize deletion. Local development commits are kept on
+the development branch (historical name withheld); this task does not push, merge or tag.
+
+The remaining sections retain the earlier 2026-10-22 report. Their historical
+branch, baseline, validation and GitHub synchronization statements do not describe
+the new local-only stabilization commits above.
+
 Status: **development; v0.4.0 release gates are not satisfied**. Package version
 remains 0.3.1. This report separates historical elevated ETW measurements, local
 fallback measurements, synthetic storage experiments, and unexecuted installer

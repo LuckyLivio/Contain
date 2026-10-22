@@ -83,8 +83,12 @@ Opt-in development experiments are tracked separately in the
 
 The [v0.4 development report](docs/validation-v0.4.md) records measured readback
 optimizations and attribution fixes. Release gates remain unmet; the package is
-still 0.3.1. Final snapshots occur after ETW stops, so their ownership stays
-Unknown even when earlier source events have verified installer-family actors.
+still 0.3.1. The stabilization candidate separates receiving from SQLite and
+observes final resources while tracing. Optional successful file read leases
+temporarily restrict concurrent writes/deletes until stop/drain; they are not a
+global atomic snapshot. Uncovered open/truncate mutations and registry read races
+still prevent final-state ownership claims. Valid source actor evidence remains
+separate. The stabilization milestone is not yet accepted by live ETW validation.
 
 ## What v0.3 records
 

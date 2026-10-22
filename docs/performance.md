@@ -1,5 +1,11 @@
 # Reproducible performance measurements
 
+This page retains historical measurements and their original implementation
+limits. For the current 0.3.1 stabilization candidate, see the
+[current report](validation-v0.4.md#stabilization-implementation-and-remaining-gates),
+[queue definitions](capture-counters.md), and [architecture](architecture.md).
+Local snapshot comparisons do not establish live ETW throughput.
+
 ```powershell
 ./scripts/stress.ps1 -Files 10000 -SnapshotOnly
 ./scripts/stress.ps1 -Files 10000 -RequireEtw
