@@ -1,0 +1,135 @@
+{
+  "baseline_commit": "7c5a5b2b534d235f4db6c472c2c34a60e8be66ee",
+  "branch": "codex/deferred-checkpoint",
+  "timestamp": "2026-10-22T23:49:26.6878323+08:00",
+  "environment": {
+    "timestamp": "2026-10-22T23:49:26.6878323+08:00",
+    "branch": "codex/deferred-checkpoint",
+    "commit": "7c5a5b2b534d235f4db6c472c2c34a60e8be66ee",
+    "status": [
+      "?? docs/preview.md",
+      "?? scripts/build-preview.py",
+      "?? ui/"
+    ],
+    "os": {
+      "Caption": "Microsoft Windows 11 专业版",
+      "Version": "10.0.26300",
+      "BuildNumber": "26300",
+      "OSArchitecture": "64 位",
+      "TotalVisibleMemorySize": 32900652
+    },
+    "computer": {
+      "Manufacturer": "ASUSTeK COMPUTER INC.",
+      "Model": "ROG Strix G18 G815LW_G815LW",
+      "NumberOfLogicalProcessors": 24,
+      "TotalPhysicalMemory": 33690267648
+    },
+    "admin": false,
+    "powershell": "7.6.5",
+    "rust": [
+      "rustc 1.98.1 (48a229cea 2026-09-01)",
+      "binary: rustc",
+      "commit-hash: 48a229ceaefd4985c50990b14116b6d856af0985",
+      "commit-date: 2026-09-01",
+      "host: x86_64-pc-windows-msvc",
+      "release: 1.98.1",
+      "LLVM version: 22.1.8"
+    ],
+    "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+    "python": "Python 3.12.7",
+    "disk": {
+      "FileSystem": "NTFS",
+      "Size": 375809634304,
+      "SizeRemaining": 187713249280
+    },
+    "experiment_environment": []
+  },
+  "sha256": [
+    {
+      "file": "Cargo.lock",
+      "sha256": "7c4f7ec780a80a7d93d6fa5661feb855768e0ba44a19a1095993e229e7cff8ae"
+    },
+    {
+      "file": "contain-registry-noise.exe",
+      "sha256": "d4aa95b57f970d4b65346a59ccf31dfd624f2fa630f8c0b4a08b5bcf786471d0"
+    },
+    {
+      "file": "contain-test-installer.exe",
+      "sha256": "c142a0ff6ef3a9040d01bf09b458192ae1fbb309e577c86c2ed650694141d3f3"
+    },
+    {
+      "file": "contain.exe",
+      "sha256": "91b24ecf41860cc54cfdb9742eab4e6af132846f67c89004193bdbcd0d047708"
+    }
+  ],
+  "rust_tests": {
+    "ignored": 1,
+    "core_passed": 64,
+    "fixture_passed": 1
+  },
+  "python_tests": [
+    {
+      "exit_code": 0,
+      "test": "test-score.py"
+    },
+    {
+      "exit_code": 0,
+      "test": "test-commit-tail.py"
+    },
+    {
+      "exit_code": 0,
+      "test": "test-checkpoint-gate.py"
+    },
+    {
+      "exit_code": 0,
+      "test": "test-hotpath-artifact.py"
+    },
+    {
+      "exit_code": 0,
+      "test": "test-summarize-checkpoint.py"
+    }
+  ],
+  "etw_probe": {
+    "source_events": 0,
+    "raw_capture": "local only",
+    "status": "unavailable_access_denied",
+    "quality": {
+      "level": "Degraded",
+      "reasons": [
+        "Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.",
+        "ETW process lifecycle unavailable; sampling cannot recover short-lived actors."
+      ]
+    },
+    "files": 49,
+    "stats": {
+      "capture_elapsed_ms": 26629,
+      "drain_timed_out": false,
+      "events_dropped": 0,
+      "events_normalized": 0,
+      "events_received": 0,
+      "events_retained": 55,
+      "high_confidence_events": 0,
+      "known_actor_events": 0,
+      "known_resource_events": 0,
+      "notification_gaps": 0,
+      "phase_ms": {
+        "after_file_snapshot_hash": 6,
+        "after_inventory": 3705,
+        "before_snapshot_inventory": 20012,
+        "correlation_attribution": 0,
+        "descendant_quiet_drain": 1500,
+        "etw_stop_and_queue_drain": 0,
+        "final_persistence_commit": 1,
+        "installer_root": 1400,
+        "lifetime_attribution_and_paged_persistence": 0,
+        "provider_readiness": 4,
+        "raw_persistence_overlapping": 0
+      },
+      "snapshot_gaps": 0,
+      "unknown_actor_events": 0,
+      "unknown_resource_events": 0
+    },
+    "error": "0x80070005"
+  },
+  "release_gate": "not_met"
+}
