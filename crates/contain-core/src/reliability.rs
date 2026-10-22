@@ -1,12 +1,21 @@
 use crate::model::*;
 pub fn finish(c: &mut Capture) {
     for e in &mut c.events {
-        e.dimensions.actor =
-            if e.evidence.pid.is_some() && e.evidence.process_creation_time.is_some() {
-                Confidence::High
-            } else {
-                Confidence::Unknown
-            };
+        e.dimensions.actor = if e.evidence.pid.is_some()
+            && e.evidence.process_creation_time.is_some()
+            && matches!(
+                e.evidence.source,
+                EvidenceSource::ProcessApi
+                    | EvidenceSource::EtwFile
+                    | EvidenceSource::EtwRegistry
+                    | EvidenceSource::EtwProcess
+            )
+            && e.evidence.rule != AttributionRule::ExecutablePathMatch
+        {
+            Confidence::High
+        } else {
+            Confidence::Unknown
+        };
         e.dimensions.resource = if e.raw.resource_resolved
             || matches!(e.event_type.as_str(), "file_state" | "registry_state")
         {
@@ -102,13 +111,25 @@ pub fn finish(c: &mut Capture) {
     }
     for e in &c.events {
         let node = format!("event:{}", e.id);
-        if let (Some(pid), Some(birth)) = (e.evidence.pid, e.evidence.process_creation_time) {
+        if let (Some(pid), Some(birth)) = (e.evidence.pid, e.evidence.process_creation_time)
+            && e.dimensions.actor == Confidence::High
+        {
             c.edges.push(EvidenceEdge {
                 from: format!("process:{pid}:{birth}"),
                 to: node.clone(),
                 relation: "observed_actor".into(),
                 confidence: e.dimensions.actor,
                 reason: e.reason.clone(),
+            });
+        } else if e.evidence.rule == AttributionRule::ExecutablePathMatch
+            && let (Some(pid), Some(birth)) = (e.evidence.pid, e.evidence.process_creation_time)
+        {
+            c.edges.push(EvidenceEdge {
+                from: format!("process:{pid}:{birth}"),
+                to: node.clone(),
+                relation: "inventory_target".into(),
+                confidence: Confidence::Medium,
+                reason: "Inventory executable target matches this process; the configuration writer is unknown.".into(),
             });
         }
         if e.dimensions.resource == Confidence::High {
@@ -120,6 +141,32 @@ pub fn finish(c: &mut Capture) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn inventory_target_match_does_not_claim_an_observed_writer() {
+        let mut capture = Capture {
+            events: vec![SystemEvent {
+                id: "inventory".into(),
+                event_type: "service".into(),
+                evidence: AttributionEvidence {
+                    source: EvidenceSource::ServiceInventory,
+                    rule: AttributionRule::ExecutablePathMatch,
+                    pid: Some(1),
+                    process_creation_time: Some(10),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        finish(&mut capture);
+        assert_eq!(capture.events[0].dimensions.actor, Confidence::Unknown);
+        assert!(
+            !capture
+                .edges
+                .iter()
+                .any(|edge| edge.relation == "observed_actor")
+        );
+    }
     #[test]
     fn context_loss_suppresses_continuity_without_inventing_raw_record_drops() {
         let mut c = Capture::default();
@@ -138,6 +185,7 @@ mod tests {
             events: vec![SystemEvent {
                 event_type: "registry".into(),
                 evidence: AttributionEvidence {
+                    source: EvidenceSource::EtwRegistry,
                     pid: Some(1),
                     process_creation_time: Some(10),
                     ..Default::default()

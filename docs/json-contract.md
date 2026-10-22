@@ -50,8 +50,10 @@ Stats count admitted/retained/normalized observations, drops, actor/resource res
 High application events, elapsed time, snapshot/notification gaps and drain timeout.
 [Architecture](architecture.md) defines the counting domains.
 
-SQLite versioning is independent (`PRAGMA user_version=3`). Real v1 -> v3 and v2 -> v3
-migration tests preserve historical observations. Legacy captures explicitly identify
+SQLite versioning is independent (`PRAGMA user_version=4`, including durable ingest
+staging); the JSON envelope remains 3. Migration tests from v1/v2/v3 preserve
+historical observations. Additive session read indexes also install on existing
+schema-4 databases. Legacy captures explicitly identify
 missing metadata. Newer databases are rejected before schema mutation. The authoritative
 lifetime table is `process_instances`; PID-only v1 rows are compatibility data.
 
@@ -70,3 +72,11 @@ use `Storage::load` for full history, `load_summary` for summary, `events_page` 
 unpaged history retain complete export semantics. CLI history accepts `--limit`
 and `--offset`; legacy databases without a document index explicitly ask for
 unpaged history. Requested pagination never claims to contain every event.
+
+In v0.4 development, inventory executable matches use `inventory_target` edges;
+they do not identify an observed writer. Conflicting completions remain unresolved,
+and a delete without completion is `DeleteRequested`. File/registry final-state
+ownership stays Unknown when the snapshot lies outside the trace interval. A High
+source event and an Unknown state diff are different evidence domains, not a
+contradiction. `state_validated` is cleared on unfinished or continuity-lost source
+evidence; a snapshot observation can still establish that a state difference exists.

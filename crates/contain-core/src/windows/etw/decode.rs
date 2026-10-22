@@ -16,6 +16,21 @@ pub fn status_success(status: u32) -> Option<bool> {
 }
 
 impl Decoder {
+    fn admit_file_time(&mut self, time: u64) -> bool {
+        if time < self.file_watermark {
+            // FileObject and IRP numbers can be reused. Applying a delayed record
+            // to the current generation can invent a resource or completion.
+            // Do not rewind context or infer a mapping through this gap.
+            self.paths.clear();
+            self.pending.clear();
+            self.file_time_regressions += 1;
+            self.errors.fetch_add(1, Ordering::Relaxed);
+            return false;
+        }
+        self.file_watermark = time;
+        true
+    }
+
     pub(super) fn send(&self, mut event: SystemEvent) {
         event.sequence = self.received.fetch_add(1, Ordering::Relaxed) + 1;
         let _timer = self.metrics.timer(Time::Enqueue);
@@ -121,12 +136,15 @@ impl Decoder {
             return;
         }
         self.metrics.add(Count::Attempted, 1);
+        let time = record.raw_timestamp().max(0) as u64;
+        if !self.admit_file_time(time) {
+            return;
+        }
         let Ok(schema) = measured!(self.metrics, Schema, locator.event_schema(record)) else {
             self.errors.fetch_add(1, Ordering::Relaxed);
             return;
         };
         let p = Parser::create(record, &schema);
-        let time = record.raw_timestamp().max(0) as u64;
         let irp = pointer(&self.metrics, &p, "Irp");
         if id == 24 {
             if let Some((request, start)) = irp.as_ref().and_then(|irp| self.pending.remove(irp))
@@ -423,5 +441,58 @@ impl Decoder {
             e.event_type = "registry_context".into();
         }
         self.send(e);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn delayed_file_record_cannot_reuse_newer_object_or_irp_context() {
+        let (tx, _rx) = mpsc::sync_channel(1);
+        let mut decoder = Decoder {
+            deferred_registry: false,
+            file_watermark: 0,
+            file_time_regressions: 0,
+            lifetimes: Default::default(),
+            paths: HashMap::new(),
+            pending: HashMap::new(),
+            registry_context: Default::default(),
+            roots: vec![],
+            registry_root: None,
+            devices: vec![],
+            tx,
+            metrics: Arc::new(Metrics::default()),
+            dropped: Arc::new(AtomicU64::new(0)),
+            errors: Arc::new(AtomicU64::new(0)),
+            registry_path_gaps: Arc::new(AtomicU64::new(0)),
+            received: Arc::new(AtomicU64::new(0)),
+        };
+        assert!(decoder.admit_file_time(30));
+        decoder
+            .paths
+            .insert(7, ("new-file".into(), "new-generation".into()));
+        decoder
+            .pending
+            .insert("irp".into(), ("new-request".into(), 30));
+        assert!(!decoder.admit_file_time(20));
+        assert!(decoder.paths.is_empty());
+        assert!(decoder.pending.is_empty());
+        assert_eq!(decoder.file_watermark, 30);
+        assert_eq!(decoder.errors.load(Ordering::Relaxed), 1);
+        assert_eq!(decoder.file_time_regressions, 1);
+        assert!(!decoder.admit_file_time(25));
+        assert!(decoder.admit_file_time(30));
+        assert!(decoder.admit_file_time(40));
+        assert_eq!(decoder.dropped.load(Ordering::Relaxed), 0);
+        // Ambiguity counts as decode loss, not a fabricated queue overflow.
+        let backend = BackendReport {
+            decode_errors: decoder.errors.load(Ordering::Relaxed),
+            etw_events_lost: Some(0),
+            etw_buffers_lost: Some(0),
+            ..Default::default()
+        };
+        assert!(!backend.source_intact());
     }
 }

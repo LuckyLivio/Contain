@@ -61,7 +61,7 @@ Sources: [performance](performance.md), [ingest repair](capture-ingest-regressio
 trial archives. Results from different runners must not be combined into a speedup.
 Default hotpath remains D0, and E1 remains explicitly opt-in.
 
-## Audit findings and validation in progress
+## Correctness fixes
 
 Eight new minimal regression cases fail against the baseline: duplicated thread
 start reopens an ended interval; conflicting thread start overwrites its owner;
@@ -76,8 +76,40 @@ Storage audit identified and measured a quadratic evidence readback loop. The
 live queue (8192), raw batch (256), evidence quota,
 provider masks, drain limits, and frozen attribution gates are not relaxed.
 
-Subsequent sections will record the fixes, measured comparisons, complete
-regression results, installer preflight, and remaining release gates.
+The fixes now retain pending stop boundaries, make duplicate starts idempotent,
+reject conflicting identities, shrink rather than extend lifetime endpoints,
+and revoke descendant claims when an ancestor becomes ambiguous. The owned
+installer handle remains independent Certain evidence. File/registry composition
+checks mutation direction and ordering; unrelated/mixed writers remain Unknown.
+Inventory parsing requires an exact executable token, and an `inventory_target`
+Medium edge replaces the incorrect `observed_actor` edge.
+
+Further regression tests reject duplicate/conflicting completions (including the
+paged storage lookup), retain all source references, and preserve an uncompleted
+delete as `DeleteRequested`. File records arriving before the decoder's watermark
+are rejected before object/IRP context can be reused. This increments decode
+ambiguity, clears unsafe context, and suppresses session promotion. It is deliberately
+conservative across objects; real ETW testing must quantify resulting coverage loss.
+
+State validation now persists only selected event IDs in one post-stop transaction,
+including registry values, updating typed and JSON stores together. Tests compare
+full/history/page/explain events and inject rollback, foreign-session, unfinished
+capture and late-loss cases. A same-path unselected event is never marked validated.
+
+The audit also found a fundamental sampling gap: final snapshots run **after**
+ETW stop and database finalization. An unrelated writer can change the resource
+in that interval. The capture path now checks the monotonic trace/snapshot boundary
+and keeps these final-state ownership claims **Unknown**, even with zero reported
+loss and an earlier High source event. Source-event actor attribution is preserved;
+the snapshot does not prove who wrote its final bytes. This intentionally reduces
+state attribution coverage and does not change the frozen syscall oracle.
+
+Validation at this stage: formatting, Clippy with `-D warnings`, locked release
+build and workspace tests pass: **92 core + 2 fixture tests**, with three opt-in
+disk experiments excluded from the ordinary suite. Original assertions and
+acceptance thresholds are unchanged. Twelve identity/attribution/completion
+counterexamples were first observed failing before their fixes; all pass now.
+Raw logs: `target/v04/raw/reliability` and `target/v04/raw/final-*.log`.
 
 ## Measured storage optimization
 

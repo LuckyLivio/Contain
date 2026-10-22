@@ -7,29 +7,39 @@ pub fn correlate(
     before: &Snapshot,
     after: &Snapshot,
 ) -> Vec<NormalizedOperation> {
-    let completions: BTreeMap<_, _> = events
-        .iter()
-        .filter(|e| e.event_type == "completion")
-        .filter_map(|e| {
-            Some((
-                e.raw.related_event.clone()?,
-                (e.id.clone(), e.success, e.raw.status),
-            ))
-        })
-        .collect();
+    let mut completions: BTreeMap<_, Vec<_>> = BTreeMap::new();
+    for event in events.iter().filter(|e| e.event_type == "completion") {
+        if let Some(request) = &event.raw.related_event {
+            completions.entry(request.clone()).or_default().push((
+                event.id.clone(),
+                event.success,
+                event.raw.status,
+            ));
+        }
+    }
     let mut result = Vec::new();
     for e in events.iter_mut().filter(|e| {
         e.event_type == "file" && !matches!(e.operation.as_str(), "open_requested" | "close")
     }) {
         let mut refs = vec![e.id.clone()];
-        if let Some((id, success, status)) = completions.get(&e.id) {
-            e.success = *success;
-            e.raw.status = *status;
-            refs.push(id.clone());
+        let mut ambiguous_completion = false;
+        if let Some(matches) = completions.get(&e.id) {
+            refs.extend(matches.iter().map(|(id, _, _)| id.clone()));
+            if let [(.., success, status)] = matches.as_slice() {
+                e.success = *success;
+                e.raw.status = *status;
+            } else {
+                // Match paged storage: more than one completion is ambiguous,
+                // even when statuses happen to agree. Never select by input order.
+                e.success = None;
+                e.raw.status = None;
+                ambiguous_completion = true;
+            }
         }
         let operation = match (e.operation.as_str(), e.success) {
             ("write_requested", Some(true)) => "Modified",
             ("delete_requested", Some(true)) => "Deleted",
+            ("delete_requested", None) => "DeleteRequested",
             (_, Some(false)) => "Failed",
             ("rename_requested", _) => "RenameRequested",
             ("create_new_file", _) => "CreateObserved",
@@ -42,7 +52,9 @@ pub fn correlate(
             raw_events: refs,
             success: e.success,
             confidence: e.confidence,
-            reason: if e.success == Some(false) {
+            reason: if ambiguous_completion {
+                "Multiple completion records refer to this request; result is ambiguous and all raw references are retained."
+            } else if e.success == Some(false) {
                 "Request failed; this is not a state deletion."
             } else if e.success.is_some() {
                 "IRP completion matched the scoped request generation; raw status is retained."
@@ -96,6 +108,49 @@ pub fn correlate(
 mod tests {
     use super::*;
     use crate::filesystem::FileState;
+    #[test]
+    fn missing_delete_completion_remains_a_delete_request() {
+        let mut events = [SystemEvent {
+            id: "request".into(),
+            event_type: "file".into(),
+            operation: "delete_requested".into(),
+            ..Default::default()
+        }];
+        let operations = correlate(&mut events, &Snapshot::default(), &Snapshot::default());
+        assert_eq!(operations[0].operation, "DeleteRequested");
+        assert_eq!(operations[0].success, None);
+    }
+    #[test]
+    fn conflicting_completions_never_select_the_last_result() {
+        let request = SystemEvent {
+            id: "request".into(),
+            event_type: "file".into(),
+            operation: "delete_requested".into(),
+            ..Default::default()
+        };
+        let completion = |id: &str, success| SystemEvent {
+            id: id.into(),
+            event_type: "completion".into(),
+            success: Some(success),
+            raw: RawEvidence {
+                related_event: Some("request".into()),
+                status: Some(if success { 0 } else { 0xc0000022 }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        for completions in [
+            [completion("failed", false), completion("success", true)],
+            [completion("success", true), completion("failed", false)],
+        ] {
+            let mut events = vec![request.clone()];
+            events.extend(completions);
+            let operations = correlate(&mut events, &Snapshot::default(), &Snapshot::default());
+            assert_eq!(events[0].success, None);
+            assert_eq!(operations[0].operation, "DeleteRequested");
+            assert_eq!(operations[0].raw_events.len(), 3);
+        }
+    }
     #[test]
     fn rename_uses_identity_not_hash_and_replacement_is_separate() {
         let mut a = Snapshot::default();

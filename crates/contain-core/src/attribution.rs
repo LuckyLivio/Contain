@@ -80,7 +80,10 @@ pub fn compose_files(files: &mut [FileChange], events: &mut [SystemEvent], compl
         std::collections::HashMap::new();
     for (i, event) in events.iter().enumerate() {
         if event.event_type == "file"
-            && !matches!(event.operation.as_str(), "open_requested" | "close")
+            && matches!(
+                event.operation.as_str(),
+                "write_requested" | "delete_requested" | "rename_requested" | "create_new_file"
+            )
             && event.success != Some(false)
         {
             by_path
@@ -90,10 +93,17 @@ pub fn compose_files(files: &mut [FileChange], events: &mut [SystemEvent], compl
         }
     }
     for file in files {
+        file.confidence = Confidence::Unknown;
+        file.evidence.clear();
+        file.reason =
+            "Snapshot state difference has no compatible verified writer evidence.".into();
         let path = normalize_path(&file.path, &[]);
         let Some(indices) = by_path.get(&path) else {
             continue;
         };
+        for &i in indices {
+            events[i].state_validated = false;
+        }
         let related: Vec<_> = indices.iter().map(|&i| &events[i]).collect();
         file.evidence = related.iter().map(|event| event.evidence.clone()).collect();
         if related.is_empty() {
@@ -101,16 +111,55 @@ pub fn compose_files(files: &mut [FileChange], events: &mut [SystemEvent], compl
         }
         let all_attributed = related
             .iter()
-            .all(|event| event.confidence == Confidence::High);
-        if complete && all_attributed {
+            .all(|event| event.confidence == Confidence::High && event.raw.resource_resolved);
+        let supports_state = |event: &&SystemEvent| match file.operation.as_str() {
+            "created" | "modified" => matches!(
+                event.operation.as_str(),
+                "write_requested" | "create_new_file"
+            ),
+            "deleted" => event.operation == "delete_requested",
+            _ => false,
+        };
+        let supporting_time = related
+            .iter()
+            .copied()
+            .filter(supports_state)
+            .map(|e| e.timestamp_ticks)
+            .max();
+        let contradictory_time = related
+            .iter()
+            .filter(|e| {
+                e.success == Some(true)
+                    && match file.operation.as_str() {
+                        "created" | "modified" => e.operation == "delete_requested",
+                        "deleted" => {
+                            matches!(e.operation.as_str(), "write_requested" | "create_new_file")
+                        }
+                        _ => false,
+                    }
+            })
+            .map(|e| e.timestamp_ticks)
+            .max();
+        let compatible = supporting_time
+            .is_some_and(|at| contradictory_time.is_none_or(|conflict| at > conflict));
+        if complete && all_attributed && compatible {
             file.confidence = Confidence::High;
             file.reason = "Verified installer-family file activity matches a before/after state change; this is session attribution, not exclusive resource ownership.".into();
             for &i in indices {
-                events[i].state_validated = true;
+                if match file.operation.as_str() {
+                    "created" | "modified" => matches!(
+                        events[i].operation.as_str(),
+                        "write_requested" | "create_new_file"
+                    ),
+                    "deleted" => events[i].operation == "delete_requested",
+                    _ => false,
+                } {
+                    events[i].state_validated = true;
+                }
             }
         } else {
             file.confidence = Confidence::Unknown;
-            file.reason = if complete { "Observed writers include an unrelated or unresolved process; final state ownership is ambiguous." } else { "Capture reported event loss or incomplete decoding; final state ownership is not inferred." }.into();
+            file.reason = if !complete { "Capture reported event loss or incomplete decoding; final state ownership is not inferred." } else if !compatible { "Observed operation types or their ordering do not support the snapshot state; path coincidence cannot validate this change." } else { "Observed writers include an unrelated or unresolved process; final state ownership is ambiguous." }.into();
         }
     }
 }
@@ -121,12 +170,18 @@ pub fn compose_registry(
     nt_root: Option<&str>,
     complete: bool,
 ) {
+    for change in changes.iter_mut() {
+        change.confidence = Confidence::Unknown;
+        change.evidence.clear();
+        change.reason =
+            "Snapshot value difference has no compatible verified writer evidence.".into();
+    }
     let Some(nt_root) = nt_root else {
         return;
     };
     for change in changes {
         let resource = format!("{}\\{}", nt_root, change.name).to_lowercase();
-        let related: Vec<_> = events
+        let mut related: Vec<_> = events
             .iter_mut()
             .filter(|event| {
                 event.event_type == "registry"
@@ -134,18 +189,45 @@ pub fn compose_registry(
                     && event.success != Some(false)
             })
             .collect();
+        for event in &mut related {
+            event.state_validated = false;
+        }
         change.evidence = related.iter().map(|event| event.evidence.clone()).collect();
+        let expected = match change.operation.as_str() {
+            "created" | "modified" => "set_value",
+            "deleted" => "delete_value",
+            _ => "",
+        };
+        let supporting_time = related
+            .iter()
+            .filter(|e| e.operation == expected)
+            .map(|e| e.timestamp_ticks)
+            .max();
+        let contradictory_time = related
+            .iter()
+            .filter(|e| e.operation != expected && e.success == Some(true))
+            .map(|e| e.timestamp_ticks)
+            .max();
+        let compatible = supporting_time
+            .is_some_and(|at| contradictory_time.is_none_or(|conflict| at > conflict));
         if complete
+            && compatible
             && !related.is_empty()
-            && related
-                .iter()
-                .all(|event| event.confidence == Confidence::High && event.success == Some(true))
+            && related.iter().all(|event| {
+                event.confidence == Confidence::High
+                    && event.success == Some(true)
+                    && event.raw.resource_resolved
+            })
         {
             change.confidence = Confidence::High;
             change.reason = "Successful registry activity from verified installation processes matches the scoped value-state diff.".into();
             for event in related {
-                event.state_validated = true;
+                if event.operation == expected {
+                    event.state_validated = true;
+                }
             }
+        } else if !compatible && !related.is_empty() {
+            change.reason = "Observed registry operations do not support this value-state difference; writer timing alone does not validate it.".into();
         }
     }
 }
@@ -156,18 +238,23 @@ pub fn inventory_evidence(
     processes: &[ProcessRecord],
     session_id: &str,
 ) -> (Confidence, AttributionEvidence, String) {
-    let executable = if let Some(quoted) = command.strip_prefix('"') {
-        quoted.split('"').next().unwrap_or("")
+    // Task actions already store an executable separately from its arguments.
+    // Service/Run command strings require an unambiguous token, never a substring
+    // ending at the first `.exe` in a path or directory name.
+    let executable = if source == EvidenceSource::TaskInventory {
+        Some(command)
+    } else if let Some(quoted) = command.trim_start().strip_prefix('"') {
+        quoted.split_once('"').and_then(|(path, rest)| {
+            (rest.is_empty() || rest.starts_with(char::is_whitespace)).then_some(path)
+        })
     } else {
-        command
-            .to_ascii_lowercase()
-            .find(".exe")
-            .map(|i| &command[..i + 4])
-            .unwrap_or(command)
+        command.split_whitespace().next()
     };
     let matched = processes.iter().find(|process| {
         matches!(process.confidence, Confidence::Certain | Confidence::High)
-            && normalize_path(executable, &[]) == normalize_path(&process.image, &[])
+            && executable.is_some_and(|path| {
+                !path.is_empty() && normalize_path(path, &[]) == normalize_path(&process.image, &[])
+            })
     });
     match matched {
         Some(process) => (Confidence::Medium, AttributionEvidence { source, pid: Some(process.pid),
@@ -204,6 +291,149 @@ mod tests {
             },
             ..Default::default()
         }
+    }
+    #[test]
+    fn incompatible_file_operation_cannot_validate_snapshot() {
+        for (change, operation) in [
+            ("created", "delete_requested"),
+            ("modified", "delete_requested"),
+            ("deleted", "write_requested"),
+            ("created", "read"),
+        ] {
+            let mut e = event(Some(2), Some(100));
+            e.operation = operation.into();
+            e.success = Some(true);
+            attribute(&mut e, &[process(2, 100, Confidence::High)], "s");
+            let mut files = [FileChange {
+                path: e.resource.clone(),
+                operation: change.into(),
+                ..Default::default()
+            }];
+            let mut events = [e];
+            compose_files(&mut files, &mut events, true);
+            assert_eq!(
+                files[0].confidence,
+                Confidence::Unknown,
+                "{change}/{operation}"
+            );
+            assert!(!events[0].state_validated);
+        }
+    }
+    #[test]
+    fn incompatible_registry_operation_cannot_validate_snapshot() {
+        let mut change = [RegistryChange {
+            name: "value".into(),
+            operation: "created".into(),
+            ..Default::default()
+        }];
+        let mut e = event(Some(2), Some(100));
+        e.event_type = "registry".into();
+        e.resource = "root\\value".into();
+        e.operation = "delete_value".into();
+        e.success = Some(true);
+        e.confidence = Confidence::High;
+        compose_registry(&mut change, &mut [e], Some("root"), true);
+        assert_eq!(change[0].confidence, Confidence::Unknown);
+    }
+    #[test]
+    fn compatible_mutations_validate_only_matching_snapshot_direction() {
+        for (change, operation) in [
+            ("created", "create_new_file"),
+            ("modified", "write_requested"),
+            ("deleted", "delete_requested"),
+        ] {
+            let mut e = event(Some(2), Some(100));
+            e.operation = operation.into();
+            e.raw.resource_resolved = true;
+            attribute(&mut e, &[process(2, 100, Confidence::High)], "s");
+            let mut files = [FileChange {
+                path: e.resource.clone(),
+                operation: change.into(),
+                ..Default::default()
+            }];
+            let mut events = [e];
+            compose_files(&mut files, &mut events, true);
+            assert_eq!(
+                files[0].confidence,
+                Confidence::High,
+                "{change}/{operation}"
+            );
+            assert!(events[0].state_validated);
+            compose_files(&mut files, &mut events, false);
+            assert_eq!(files[0].confidence, Confidence::Unknown);
+            assert!(!events[0].state_validated);
+        }
+    }
+    #[test]
+    fn later_or_simultaneous_conflicting_mutation_prevents_state_promotion() {
+        for conflict_time in [200, 201] {
+            let mut write = event(Some(2), Some(100));
+            write.operation = "write_requested".into();
+            write.confidence = Confidence::High;
+            write.raw.resource_resolved = true;
+            write.success = Some(true);
+            let mut delete = write.clone();
+            delete.operation = "delete_requested".into();
+            delete.timestamp_ticks = conflict_time;
+            let mut files = [FileChange {
+                path: write.resource.clone(),
+                operation: "created".into(),
+                ..Default::default()
+            }];
+            compose_files(&mut files, &mut [write, delete], true);
+            assert_eq!(files[0].confidence, Confidence::Unknown);
+        }
+    }
+    #[test]
+    fn registry_creation_and_deletion_use_value_mutations_only() {
+        for (change, operation) in [("created", "set_value"), ("deleted", "delete_value")] {
+            let mut changes = [RegistryChange {
+                name: "value".into(),
+                operation: change.into(),
+                ..Default::default()
+            }];
+            let mut e = event(Some(2), Some(100));
+            e.event_type = "registry".into();
+            e.resource = "root\\value".into();
+            e.operation = operation.into();
+            e.confidence = Confidence::High;
+            e.success = Some(true);
+            e.raw.resource_resolved = true;
+            let mut events = [e];
+            compose_registry(&mut changes, &mut events, Some("root"), true);
+            assert_eq!(changes[0].confidence, Confidence::High);
+            assert!(events[0].state_validated);
+            compose_registry(&mut changes, &mut events, Some("root"), false);
+            assert_eq!(changes[0].confidence, Confidence::Unknown);
+            assert!(!events[0].state_validated);
+        }
+    }
+    #[test]
+    fn inventory_executable_suffix_and_unquoted_space_are_not_exact_targets() {
+        let processes = [process(2, 100, Confidence::High)];
+        for command in [
+            "C:\\App\\helper.exe.backup --service",
+            "C:\\App\\helper.exe\\other.exe",
+            "\"C:\\App\\helper.exe --service",
+        ] {
+            assert_eq!(
+                inventory_evidence(command, EvidenceSource::ServiceInventory, &processes, "s").0,
+                Confidence::Unknown,
+                "{command}"
+            );
+        }
+        let mut spaced = processes[0].clone();
+        spaced.image = "C:\\Program Files\\App\\helper.exe".into();
+        assert_eq!(
+            inventory_evidence(
+                &spaced.image,
+                EvidenceSource::ServiceInventory,
+                &[spaced.clone()],
+                "s"
+            )
+            .0,
+            Confidence::Unknown
+        );
     }
     #[test]
     fn child_and_grandchild_events_are_high_with_instance_evidence() {

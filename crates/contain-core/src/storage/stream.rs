@@ -448,6 +448,39 @@ impl Storage {
                 .collect::<Result<Vec<_>>>()?,
         ))
     }
+    /// Persist the exact observations validated by snapshot association. Call inside
+    /// an evidence_group so resources share one transaction and keep one bounded
+    /// resource page in memory. Never infer registry NT paths from snapshot names.
+    pub(crate) fn persist_state_validation(
+        &mut self,
+        session: &str,
+        events: &[SystemEvent],
+    ) -> Result<()> {
+        if !events
+            .iter()
+            .any(|e| e.state_validated && e.confidence == Confidence::High)
+        {
+            return Ok(());
+        }
+        anyhow::ensure!(
+            !self.connection.is_autocommit(),
+            "State validation requires an evidence group"
+        );
+        let mut observation = self.connection.prepare_cached(
+            "UPDATE observations SET state_validated=1 WHERE session_id=?1 AND id=?2 AND confidence='High' AND ((event_type='file' AND operation NOT IN ('open_requested','close') AND success IS NOT 0) OR (event_type='registry' AND success=1))",
+        )?;
+        let mut document = self.connection.prepare_cached(
+            "UPDATE event_documents SET document=json_set(document,'$.state_validated',json('true')) WHERE session_id=?1 AND id=?2 AND EXISTS(SELECT 1 FROM observations o WHERE o.session_id=?1 AND o.id=?2 AND o.state_validated=1)",
+        )?;
+        for event in events
+            .iter()
+            .filter(|e| e.state_validated && e.confidence == Confidence::High)
+        {
+            observation.execute(params![session, event.id])?;
+            document.execute(params![session, event.id])?;
+        }
+        Ok(())
+    }
     pub(crate) fn mark_finished(&mut self, c: &Capture) -> Result<()> {
         let pending: bool = self.connection.query_row(
             "SELECT EXISTS(SELECT 1 FROM raw_ingest WHERE session_id=?1)",
@@ -460,14 +493,14 @@ impl Storage {
         let tx = self.connection.transaction()?;
         if !c.backend.source_intact() {
             // This also covers records persisted before a later failure became known.
-            tx.execute("UPDATE observations SET confidence='Unknown',rule=?2,reason='Session continuity unverified; final promotion suppressed' WHERE session_id=?1 AND event_type IN ('file','registry')",params![c.id,serde_json::to_string(&AttributionRule::EventLoss)?])?;
+            tx.execute("UPDATE observations SET confidence='Unknown',state_validated=0,rule=?2,reason='Session continuity unverified; final promotion suppressed' WHERE session_id=?1 AND event_type IN ('file','registry')",params![c.id,serde_json::to_string(&AttributionRule::EventLoss)?])?;
             tx.execute("UPDATE evidence_edges SET confidence='Unknown',reason='Session continuity unverified; resource association suppressed' WHERE session_id=?1 AND from_node IN (SELECT 'event:'||id FROM observations WHERE session_id=?1 AND event_type IN ('file','registry'))",[&c.id])?;
             tx.execute("UPDATE normalized_operations SET detail_json=json_set(detail_json,'$.confidence','Unknown') WHERE session_id=?1",[&c.id])?;
             tx.execute("UPDATE normalized_operations SET operation='UnresolvedRequest',detail_json=json_set(detail_json,'$.operation','UnresolvedRequest','$.success',NULL,'$.reason','Session continuity unverified; raw request only') WHERE session_id=?1 AND json_array_length(detail_json,'$.raw_events')>0",[&c.id])?;
             tx.execute("UPDATE observations SET success=NULL WHERE session_id=?1 AND event_type IN ('file','completion')",[&c.id])?;
             tx.execute("UPDATE observation_details SET raw_json=json_set(raw_json,'$.resource_resolved',json('false')),dimensions_json=json_set(dimensions_json,'$.resource','Unknown') WHERE event_id IN (SELECT id FROM observations WHERE session_id=?1 AND event_type IN ('file','registry'))",[&c.id])?;
             tx.execute("UPDATE observation_details SET dimensions_json=json_set(dimensions_json,'$.operation','Unknown') WHERE event_id IN (SELECT id FROM observations WHERE session_id=?1 AND event_type IN ('file','completion'))",[&c.id])?;
-            tx.execute("UPDATE event_documents SET document=json_set(document,'$.confidence','Unknown','$.evidence.rule','EventLoss','$.raw.resource_resolved',json('false'),'$.dimensions.resource','Unknown','$.reason','Session continuity unverified; final promotion suppressed') WHERE session_id=?1 AND json_extract(document,'$.event_type') IN ('file','registry')",[&c.id])?;
+            tx.execute("UPDATE event_documents SET document=json_set(document,'$.confidence','Unknown','$.state_validated',json('false'),'$.evidence.rule','EventLoss','$.raw.resource_resolved',json('false'),'$.dimensions.resource','Unknown','$.reason','Session continuity unverified; final promotion suppressed') WHERE session_id=?1 AND json_extract(document,'$.event_type') IN ('file','registry')",[&c.id])?;
             tx.execute("UPDATE event_documents SET document=json_set(document,'$.success',NULL,'$.dimensions.operation','Unknown') WHERE session_id=?1 AND json_extract(document,'$.event_type') IN ('file','completion')",[&c.id])?;
         }
         tx.execute(
@@ -504,6 +537,7 @@ impl Storage {
                 let mut e: SystemEvent = serde_json::from_str(&document)?;
                 e.confidence = Confidence::Unknown;
                 e.success = None;
+                e.state_validated = false;
                 e.reason="Raw journal evidence without a finalized observation; no attribution promotion".into();
                 c.events.push(e);
                 return Ok(Some(c));
@@ -577,6 +611,7 @@ impl Storage {
             for e in &mut rows {
                 e.confidence = Confidence::Unknown;
                 e.success = None;
+                e.state_validated = false;
                 e.reason = "Unfinished session: raw evidence only; no final attribution".into();
             }
         }
@@ -597,19 +632,6 @@ pub(super) fn save_documents(tx: &Connection, c: &Capture) -> Result<()> {
     }
     Ok(())
 }
-pub(super) fn save_state_validation(tx: &rusqlite::Transaction<'_>, c: &Capture) -> Result<()> {
-    let resources = c
-        .files
-        .iter()
-        .filter(|f| f.confidence == Confidence::High)
-        .map(|f| crate::windows::native::normalize_path(&f.path, &[]));
-    for resource in resources {
-        tx.prepare_cached("UPDATE observations SET state_validated=1 WHERE session_id=?1 AND resource=?2 AND event_type='file' AND operation NOT IN ('open_requested','close') AND success IS NOT 0")?.execute(params![c.id,resource])?;
-        tx.prepare_cached("UPDATE event_documents SET document=json_set(document,'$.state_validated',json('true')) WHERE session_id=?1 AND resource=?2 AND id IN (SELECT id FROM observations WHERE session_id=?1 AND resource=?2 AND state_validated=1)")?.execute(params![c.id,resource])?;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -874,6 +896,69 @@ mod tests {
         assert!(loaded.operations.is_empty() && loaded.edges.is_empty());
         // Every historical raw index survives; no global index drop was used.
         assert_eq!(db.connection.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN ('raw_stream_time','raw_stream_related','raw_stream_header','raw_stream_id')",[],|r|r.get::<_,u64>(0)).unwrap(),4);
+    }
+
+    #[test]
+    fn completion_lookup_rejects_duplicate_or_conflicting_records_in_either_order() {
+        for statuses in [
+            [Some(true), Some(false)],
+            [Some(false), Some(true)],
+            [Some(true), Some(true)],
+            [Some(false), Some(false)],
+            [None, Some(true)],
+        ] {
+            let mut db = Storage::open(Path::new(":memory:")).unwrap();
+            let c = capture();
+            let mut writer = RawBuffer::new(&mut db, &c, DEFAULT_QUOTA).unwrap();
+            let mut rows = vec![event(1)];
+            for (i, status) in statuses.into_iter().enumerate() {
+                let mut completion = event(i as u64 + 2);
+                completion.event_type = "completion".into();
+                completion.operation = "operation_end".into();
+                completion.raw.related_event = Some("e1".into());
+                completion.success = status;
+                rows.push(completion);
+            }
+            writer.append(&mut db, rows);
+            writer.finish(&mut db).unwrap();
+            db.prepare_raw(&c.id).unwrap();
+            assert!(db.completion(&c.id, "e1").unwrap().is_none());
+            assert_eq!(db.raw_page(&c.id, (0, 0)).unwrap().len(), 3);
+        }
+    }
+
+    #[test]
+    fn completion_lookup_preserves_unique_result_and_isolates_sessions() {
+        let mut db = Storage::open(Path::new(":memory:")).unwrap();
+        for (session, success) in [("first", true), ("second", false)] {
+            let mut c = capture();
+            c.id = session.into();
+            let mut writer = RawBuffer::new(&mut db, &c, DEFAULT_QUOTA).unwrap();
+            let mut completion = event(2);
+            completion.id = format!("{session}-completion");
+            completion.event_type = "completion".into();
+            completion.raw.related_event = Some("same-request".into());
+            completion.success = Some(success);
+            writer.append(&mut db, vec![completion]);
+            writer.finish(&mut db).unwrap();
+            db.prepare_raw(&c.id).unwrap();
+        }
+        assert_eq!(
+            db.completion("first", "same-request")
+                .unwrap()
+                .unwrap()
+                .success,
+            Some(true)
+        );
+        assert_eq!(
+            db.completion("second", "same-request")
+                .unwrap()
+                .unwrap()
+                .success,
+            Some(false)
+        );
+        assert!(db.completion("absent", "same-request").unwrap().is_none());
+        assert!(db.completion("first", "absent").unwrap().is_none());
     }
 
     #[test]

@@ -231,6 +231,7 @@ fn install_inner(
     }
     let stop_clock = Instant::now();
     let mut backend = source.stop_with(|incoming| journal.append(db, incoming));
+    let trace_stopped = Instant::now();
     phases.insert(
         "etw_stop_and_queue_drain".into(),
         stop_clock.elapsed().as_millis() as u64,
@@ -443,6 +444,7 @@ fn install_inner(
         .as_deref()
         .map(registry::snapshot)
         .transpose()?;
+    let snapshots_finished = Instant::now();
     let mut registry = match (
         options.registry_key.as_deref(),
         before_registry,
@@ -451,34 +453,17 @@ fn install_inner(
         (Some(key), Some(before), Some(after)) => registry::diff(key, &before, &after),
         _ => Vec::new(),
     };
-    let complete = backend.etw_events_lost == Some(0)
-        && backend.etw_buffers_lost == Some(0)
-        && !backend.has_loss();
-    for file in &mut files {
-        match db.resource_events(&id, &file.path)? {
-            Some(mut events) => {
-                attribution::compose_files(std::slice::from_mut(file), &mut events, complete);
-            }
-            None => {
-                backend.context_losses += 1;
-                if let Some(p) = &mut backend.pipeline {
-                    p.context_evictions += 1;
+    let complete = state_coverage_intact(&backend, trace_stopped, snapshots_finished);
+    // Persist exactly the observations validated by composition, for both files
+    // and registry values. One post-stop transaction retains the existing
+    // per-resource bound instead of accumulating a full-session event vector.
+    db.evidence_group(&id, |db| {
+        for file in &mut files {
+            match db.resource_events(&id, &file.path)? {
+                Some(mut events) => {
+                    attribution::compose_files(std::slice::from_mut(file), &mut events, complete);
+                    db.persist_state_validation(&id, &events)?;
                 }
-                warnings.push(
-                    "Per-resource association quota exceeded; session promotion suppressed".into(),
-                );
-            }
-        }
-    }
-    if let Some(root) = &nt_root {
-        for change in &mut registry {
-            match db.resource_events(&id, &format!("{root}\\{}", change.name))? {
-                Some(mut events) => attribution::compose_registry(
-                    std::slice::from_mut(change),
-                    &mut events,
-                    nt_root.as_deref(),
-                    complete && backend.registry_path_gaps == 0,
-                ),
                 None => {
                     backend.context_losses += 1;
                     if let Some(p) = &mut backend.pipeline {
@@ -491,6 +476,42 @@ fn install_inner(
                 }
             }
         }
+        if let Some(root) = &nt_root {
+            for change in &mut registry {
+                match db.resource_events(&id, &format!("{root}\\{}", change.name))? {
+                    Some(mut events) => {
+                        attribution::compose_registry(
+                            std::slice::from_mut(change),
+                            &mut events,
+                            nt_root.as_deref(),
+                            complete && backend.registry_path_gaps == 0,
+                        );
+                        db.persist_state_validation(&id, &events)?;
+                    }
+                    None => {
+                        backend.context_losses += 1;
+                        if let Some(p) = &mut backend.pipeline {
+                            p.context_evictions += 1;
+                        }
+                        warnings.push(
+                            "Per-resource association quota exceeded; session promotion suppressed"
+                                .into(),
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
+    })?;
+    if snapshots_finished > trace_stopped {
+        let reason = "Final state was sampled after ETW stopped; earlier source activity does not prove who wrote this state.";
+        for file in &mut files {
+            file.reason = reason.into();
+        }
+        for change in &mut registry {
+            change.reason = reason.into();
+        }
+        warnings.push(reason.into());
     }
     phases.insert(
         "correlation_attribution".into(),
@@ -595,6 +616,18 @@ fn suppress(e: &mut SystemEvent) {
         e.reason = "Source continuity unverified; no application promotion".into();
     }
 }
+
+fn state_coverage_intact(
+    backend: &BackendReport,
+    trace_stopped: Instant,
+    snapshots_finished: Instant,
+) -> bool {
+    // Zero loss counters describe the trace interval only. The current pipeline
+    // deliberately snapshots after stopping; its blind interval cannot establish
+    // final-state authorship, even when an earlier same-path event has a known actor.
+    backend.source_intact() && snapshots_finished <= trace_stopped
+}
+
 fn add_stats(to: &mut CaptureStats, from: &CaptureStats) {
     to.events_retained += from.events_retained;
     to.events_normalized += from.events_normalized;
@@ -603,4 +636,70 @@ fn add_stats(to: &mut CaptureStats, from: &CaptureStats) {
     to.known_resource_events += from.known_resource_events;
     to.unknown_resource_events += from.unknown_resource_events;
     to.high_confidence_events += from.high_confidence_events;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn after_stop_snapshot_cannot_promote_an_earlier_attributed_mutation() {
+        let stopped = Instant::now();
+        let backend = BackendReport {
+            etw_events_lost: Some(0),
+            etw_buffers_lost: Some(0),
+            ..Default::default()
+        };
+        let complete = state_coverage_intact(&backend, stopped, stopped + Duration::from_millis(1));
+        assert!(!complete);
+        let file_event = SystemEvent {
+            event_type: "file".into(),
+            operation: "write_requested".into(),
+            resource: "C:\\test\\shared.txt".into(),
+            confidence: Confidence::High,
+            success: Some(true),
+            raw: RawEvidence {
+                resource_resolved: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut files = [FileChange {
+            path: file_event.resource.clone(),
+            operation: "modified".into(),
+            ..Default::default()
+        }];
+        let mut file_events = [file_event];
+        attribution::compose_files(&mut files, &mut file_events, complete);
+        assert_eq!(files[0].confidence, Confidence::Unknown);
+        assert_eq!(file_events[0].confidence, Confidence::High);
+        assert!(!file_events[0].state_validated);
+        let mut registry_events = [SystemEvent {
+            event_type: "registry".into(),
+            operation: "set_value".into(),
+            resource: "root\\value".into(),
+            confidence: Confidence::High,
+            success: Some(true),
+            raw: RawEvidence {
+                resource_resolved: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }];
+        let mut changes = [RegistryChange {
+            name: "value".into(),
+            operation: "modified".into(),
+            ..Default::default()
+        }];
+        attribution::compose_registry(&mut changes, &mut registry_events, Some("root"), complete);
+        assert_eq!(changes[0].confidence, Confidence::Unknown);
+        assert_eq!(registry_events[0].confidence, Confidence::High);
+        assert!(!registry_events[0].state_validated);
+        assert!(state_coverage_intact(&backend, stopped, stopped));
+        let lossy = BackendReport {
+            dropped_events: 1,
+            ..backend
+        };
+        assert!(!state_coverage_intact(&lossy, stopped, stopped));
+    }
 }

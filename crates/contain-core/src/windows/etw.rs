@@ -26,6 +26,8 @@ pub(crate) const FILE_EVENT_IDS: &[u16] = &[12, 14, 16, 24, 26, 27, 30];
 
 struct Decoder {
     deferred_registry: bool,
+    file_watermark: u64,
+    file_time_regressions: u64,
     lifetimes: crate::lifetime::LifetimeCache,
     paths: HashMap<u64, (String, String)>,
     pending: HashMap<String, (String, u64)>,
@@ -153,6 +155,8 @@ impl EtwSource {
         let decoder = Arc::new(Mutex::new(Decoder {
             deferred_registry: registry_enabled
                 && crate::hotpath::Variant::from_env().deferred_registry(),
+            file_watermark: 0,
+            file_time_regressions: 0,
             lifetimes: Default::default(),
             paths: HashMap::new(),
             pending: HashMap::new(),
@@ -467,6 +471,18 @@ impl EtwSource {
         self.report.events_received = self.received.load(Ordering::Relaxed);
         self.report.decode_errors = self.errors.load(Ordering::Relaxed);
         self.report.registry_path_gaps = self.registry_path_gaps.load(Ordering::Relaxed);
+        if let Some(decoder) = &self.decoder {
+            let decoder = decoder.lock().unwrap();
+            if decoder.file_time_regressions > 0 {
+                let warning = format!(
+                    "{} file records arrived before the file context watermark; rejected ambiguous object/IRP reuse and suppressed application promotion.",
+                    decoder.file_time_regressions
+                );
+                if !self.report.warnings.contains(&warning) {
+                    self.report.warnings.push(warning);
+                }
+            }
+        }
         if let Some(old) = self.report.pipeline.take() {
             let mut p = self.metrics.snapshot();
             p.etw_realtime_buffers_lost = old.etw_realtime_buffers_lost;
@@ -489,6 +505,8 @@ mod tests {
         source.rx = rx;
         let decoder = Decoder {
             deferred_registry: false,
+            file_watermark: 0,
+            file_time_regressions: 0,
             lifetimes: Default::default(),
             paths: HashMap::new(),
             pending: HashMap::new(),

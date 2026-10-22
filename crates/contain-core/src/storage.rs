@@ -11,6 +11,8 @@ mod migration;
 #[cfg(test)]
 mod perf;
 mod reliability;
+#[cfg(test)]
+mod state_validation_tests;
 pub mod stream;
 
 pub struct Storage {
@@ -93,7 +95,6 @@ impl Storage {
         evidence::save(&tx, capture)?;
         reliability::save(&tx, capture)?;
         stream::save_documents(&tx, capture)?;
-        stream::save_state_validation(&tx, capture)?;
         tx.commit()?;
         let mut stats = capture.stats.clone();
         stats.phase_ms.insert(

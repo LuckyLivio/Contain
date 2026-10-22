@@ -81,6 +81,11 @@ Opt-in development experiments are tracked separately in the
 [commit-window diagnostics](docs/capture-commit-tail.md) and
 [deferred checkpoint report](docs/capture-deferred-checkpoint.md).
 
+The [v0.4 development report](docs/validation-v0.4.md) records measured readback
+optimizations and attribution fixes. Release gates remain unmet; the package is
+still 0.3.1. Final snapshots occur after ETW stops, so their ownership stays
+Unknown even when earlier source events have verified installer-family actors.
+
 ## What v0.3 records
 
 | Source | Recorded evidence | Attribution boundary |

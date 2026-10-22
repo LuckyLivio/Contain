@@ -61,8 +61,9 @@ and buffer losses have different units and stay separate.
 
 ## SQLite and explanations
 
-SQLite `user_version=3` keeps v1 tables, v2 observations/process instances, and v3 raw
-details, normalized operations, stats, quality and adjacency edges. Migrations are
+SQLite `user_version=4` keeps v1 tables, v2 observations/process instances, v3 raw
+details, normalized operations, stats, quality and adjacency edges, and v4 durable
+ingest staging. JSON stays schema 3. Migrations are
 transactional and preserve old history without inventing evidence. Legacy captures
 show missing v3 metadata. Newer schemas are rejected before any table changes.
 
@@ -70,6 +71,11 @@ Adjacency nodes identify sessions, `(PID,birth)`, events and resolved resources.
 Edges persist relationship, confidence and reason. `explain` walks incoming actor
 ancestry and lists operations referencing the selected event. A visited-node set
 bounds graph traversal. Source evidence and snapshot operations remain distinct.
+
+Final snapshots currently occur after ETW stop. Their final-state ownership stays
+Unknown because that interval is not observed; earlier attributed mutations remain
+separate source facts. Inventory targets identify configuration relationships, not
+writers. See the [v0.4 audit and measurements](validation-v0.4.md).
 
 ## Boundaries
 
