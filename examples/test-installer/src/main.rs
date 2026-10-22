@@ -37,6 +37,8 @@ struct Args {
     files: usize,
     #[arg(long, default_value_t = 0)]
     worker: usize,
+    #[arg(long, default_value_t = 4, value_parser = clap::value_parser!(u16).range(1..=64))]
+    workers: u16,
 }
 
 fn main() {
@@ -249,8 +251,8 @@ fn run() -> Result<()> {
             fs::write(root.join(".contain-demo-marker"), b"Contain test fixture")?;
             fs::write(root.join(".fixture-go"), b"begin")?;
             let mut children = Vec::new();
-            for worker in 0..4 {
-                let count = args.files / 4 + usize::from(worker < args.files % 4);
+            for worker in 0..usize::from(args.workers) {
+                let count = worker_file_count(args.files, usize::from(args.workers), worker);
                 children.push(
                     Command::new(std::env::current_exe()?)
                         .args(["--role", "worker", "--root"])
@@ -289,6 +291,10 @@ fn run() -> Result<()> {
     Ok(())
 }
 
+fn worker_file_count(files: usize, workers: usize, worker: usize) -> usize {
+    files / workers + usize::from(worker < files % workers)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -296,5 +302,21 @@ mod tests {
     fn fixture_rejects_outside_temp_and_traversal() {
         assert!(checked_root(&std::env::current_dir().unwrap()).is_err());
         assert!(checked_root(&std::env::temp_dir().join("..")).is_err());
+    }
+
+    #[test]
+    fn stress_workers_preserve_the_file_denominator_and_original_default() {
+        for files in [4, 100, 500, 1000, 3000, 10000] {
+            for workers in [1, 4, 8, 64] {
+                let counts: Vec<_> = (0..workers)
+                    .map(|worker| worker_file_count(files, workers, worker))
+                    .collect();
+                assert_eq!(counts.iter().sum::<usize>(), files);
+                assert!(counts.iter().max().unwrap() - counts.iter().min().unwrap() <= 1);
+            }
+        }
+        assert_eq!(worker_file_count(100, 4, 0), 25);
+        assert_eq!(worker_file_count(10000, 4, 3), 2500);
+        assert_eq!(Args::parse_from(["fixture", "--root", "x"]).workers, 4);
     }
 }

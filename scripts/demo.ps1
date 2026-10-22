@@ -76,6 +76,9 @@ try {
             $score | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'reliability.json') -Encoding utf8
             Copy-Item -LiteralPath (Join-Path $truthRoot 'ground-truth.json') -Destination $OutputDirectory
         }
+        $viewReport=if($OutputDirectory){Join-Path $OutputDirectory 'view-consistency.json'}else{$db+'.views.json'}
+        python "$PSScriptRoot/v04-verify-views.py" --contain $contain --database $db --app TestFixture --output $viewReport
+        if($LASTEXITCODE -ne 0){throw 'Cross-CLI evidence consistency failed; see view-consistency report'}
         if ($manifest.processes.Count -lt 3) { throw 'parent/child/grandchild were not all observed' }
         if (@($manifest.processes | Where-Object confidence -eq 'Certain').Count -ne 1) { throw 'installer must be Certain' }
         if (@($manifest.processes | Where-Object confidence -eq 'High').Count -lt 2) { throw 'child and grandchild must have verified ancestry' }
@@ -156,7 +159,7 @@ try {
             if ($LASTEXITCODE -ne 0 -or (Test-Path -LiteralPath $root) -or (Test-Path -LiteralPath $registryPath)) { throw 'fixture cleanup failed' }
             & $fixture --root $truthRoot --cleanup
             if ($LASTEXITCODE -ne 0) { throw 'truth cleanup failed' }
-            foreach ($suffix in @('','-wal','-shm')) { $target=$db+$suffix; if(Test-Path -LiteralPath $target){ Remove-Item -LiteralPath $target -Force } }
+            foreach ($suffix in @('','-wal','-shm','.views.json')) { $target=$db+$suffix; if(Test-Path -LiteralPath $target){ Remove-Item -LiteralPath $target -Force } }
         } else { Write-Output "Fixture: $root`nDatabase: $db`nTruth: $truthRoot" }
     }
 } finally { $env:CONTAIN_FIXTURE_TRUTH=$previousTruth; Pop-Location }

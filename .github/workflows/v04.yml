@@ -1,0 +1,95 @@
+name: v0.4 paired ETW acceptance
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/v04.yml'
+
+jobs:
+  paired-etw:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: candidate
+      - uses: actions/checkout@v4
+        with:
+          ref: 7c5a5b2b534d235f4db6c472c2c34a60e8be66ee
+          path: baseline
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            candidate -> target
+            baseline -> target
+      - name: Build both locked release binaries with the same toolchain
+        shell: pwsh
+        run: |
+          foreach($directory in @('baseline','candidate')) {
+            Push-Location $directory
+            try {
+              cargo build --release --workspace --locked
+              if($LASTEXITCODE -ne 0){throw "release build failed: $directory"}
+            } finally { Pop-Location }
+          }
+      - name: Validate frozen scorer and v0.4 harness
+        working-directory: candidate
+        shell: pwsh
+        run: |
+          foreach($script in @('test-score.py','test-v04-matrix.py','test-v04-public.py','test-v04-verify-views.py','test-v04-metrics.py')) {
+            python "scripts/$script"
+            if($LASTEXITCODE -ne 0){throw "validation failed: $script"}
+          }
+      - name: Run all 18 paired attempts with unchanged quality thresholds
+        id: matrix
+        working-directory: candidate
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference=$false
+          python scripts/v04-matrix.py --baseline ../baseline/target/release/contain.exe --candidate target/release/contain.exe --fixture target/release/contain-test-installer.exe --output target/v04-private --files 100 1000 10000 --workers 4 --trials 3 --noise-files 100
+          # Exit 2 means a measured or harness failure; retain all attempts first.
+          $matrixExit=$LASTEXITCODE
+          if(-not(Test-Path target/v04-private/environment.json)){throw 'Matrix did not create its fixed attempt plan'}
+          $provenance=[ordered]@{
+            baseline_commit=(& git -C ../baseline rev-parse HEAD)
+            candidate_commit=(& git rev-parse HEAD)
+            baseline_lock_sha256=(Get-FileHash ../baseline/Cargo.lock).Hash
+            candidate_lock_sha256=(Get-FileHash Cargo.lock).Hash
+            rustc_version=(& rustc --version)
+            windows_build=[Environment]::OSVersion.Version.Build
+            logical_processors=[Environment]::ProcessorCount
+            elevated=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          }
+          $provenance | ConvertTo-Json | Set-Content target/v04-private/build-provenance.json -Encoding utf8
+          "matrix_exit=$matrixExit" >> $env:GITHUB_OUTPUT
+          exit 0
+      - name: Publish only numeric diagnostics and independent fixture rows
+        if: always()
+        working-directory: candidate
+        shell: pwsh
+        run: |
+          if(Test-Path target/v04-private/environment.json) {
+            python scripts/v04-public.py target/v04-private target/v04-public
+            if($LASTEXITCODE -ne 0){throw 'Public evidence projection failed'}
+          } else { throw 'No matrix evidence; build or harness failed before the attempt plan' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v04-paired-etw-fixture-evidence
+          path: candidate/target/v04-public
+          if-no-files-found: error
+      - name: Enforce the actual workload gate after evidence publication
+        if: always()
+        working-directory: candidate
+        shell: pwsh
+        env:
+          MATRIX_EXIT: ${{ steps.matrix.outputs.matrix_exit }}
+        run: |
+          if(-not(Test-Path target/v04-public/comparison.json)){throw 'Acceptance evidence missing'}
+          $report=Get-Content -Raw target/v04-public/comparison.json | ConvertFrom-Json
+          if($env:MATRIX_EXIT -ne '0' -or $report.planned_attempts -ne 18 -or $report.completed_attempts -ne 18 -or -not $report.acceptance_pass) {
+            throw 'v0.4 ETW workload acceptance FAILED; all planned attempts remain in the published evidence'
+          }
