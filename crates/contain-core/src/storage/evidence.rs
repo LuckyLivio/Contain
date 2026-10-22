@@ -119,6 +119,20 @@ pub fn load(connection: &Connection, capture: &mut Capture, full: bool) -> Resul
             });
         }
     }
+    // State rows and evidence rows have independent SQL ordering. Index the exact
+    // persisted resource spelling once, rather than scanning and reallocating a
+    // registry resource string for every candidate in an O(n^2) readback join.
+    // Preserve the historical first-match behavior for duplicate state rows.
+    let mut file_indices = std::collections::HashMap::with_capacity(capture.files.len());
+    for (i, file) in capture.files.iter().enumerate() {
+        file_indices.entry(file.path.clone()).or_insert(i);
+    }
+    let mut registry_indices = std::collections::HashMap::with_capacity(capture.registry.len());
+    for (i, value) in capture.registry.iter().enumerate() {
+        registry_indices
+            .entry(format!("{}\\{}", value.key, value.name))
+            .or_insert(i);
+    }
     let mut statement = connection
         .prepare("SELECT kind,resource,evidence_json FROM change_evidence WHERE session_id=?1")?;
     let mut rows = statement.query([&capture.id])?;
@@ -127,15 +141,11 @@ pub fn load(connection: &Connection, capture: &mut Capture, full: bool) -> Resul
         let resource: String = row.get(1)?;
         let evidence: Vec<AttributionEvidence> = serde_json::from_str(&row.get::<_, String>(2)?)?;
         if kind == "file" {
-            if let Some(file) = capture.files.iter_mut().find(|file| file.path == resource) {
-                file.evidence = evidence;
+            if let Some(&i) = file_indices.get(&resource) {
+                capture.files[i].evidence = evidence;
             }
-        } else if let Some(registry) = capture
-            .registry
-            .iter_mut()
-            .find(|r| format!("{}\\{}", r.key, r.name) == resource)
-        {
-            registry.evidence = evidence;
+        } else if let Some(&i) = registry_indices.get(&resource) {
+            capture.registry[i].evidence = evidence;
         }
     }
     let mut statement = connection.prepare("SELECT kind,name,operation,before_state_json,after_state_json,confidence,reason,evidence_json FROM inventory_changes WHERE session_id=?1 ORDER BY kind,name")?;

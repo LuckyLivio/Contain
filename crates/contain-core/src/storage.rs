@@ -8,6 +8,8 @@ pub(crate) mod checkpoint;
 mod checkpoint_tests;
 mod evidence;
 mod migration;
+#[cfg(test)]
+mod perf;
 mod reliability;
 pub mod stream;
 

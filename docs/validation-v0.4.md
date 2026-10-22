@@ -72,9 +72,66 @@ inventory target match is labeled as an observed writer. Red-test output is
 retained at `target/v04/raw/reliability/red-tests.txt`. These are correctness
 failures, distinct from queue loss, evidence gaps, and environment restrictions.
 
-Storage audit identified a quadratic evidence readback loop; measurements must
-precede replacement. The live queue (8192), raw batch (256), evidence quota,
+Storage audit identified and measured a quadratic evidence readback loop. The
+live queue (8192), raw batch (256), evidence quota,
 provider masks, drain limits, and frozen attribution gates are not relaxed.
 
 Subsequent sections will record the fixes, measured comparisons, complete
 regression results, installer preflight, and remaining release gates.
+
+## Measured storage optimization
+
+`storage/evidence.rs` used a linear search for every evidence row and repeatedly
+allocated registry resource names. Exact-resource lookup maps replace that join;
+they preserve the existing first-match behavior and add O(N) temporary memory.
+Release disk-backed fixtures contain N files **and** N registry values, with
+distinct evidence per row. All three reads per API and all verification assertions
+are retained. Warm-cache timings exclude fixture writes, verification and close.
+
+| N files + N values | Summary before/after median ms | Full read before/after median ms |
+| ---: | ---: | ---: |
+| 100 | 0.743 / 0.370 | 0.777 / 0.460 |
+| 1,000 | 37.616 / 2.707 | 37.769 / 2.656 |
+| 5,000 | 904.521 / 20.587 | 901.002 / 21.456 |
+| 10,000 | 3655.371 / 42.452 | 3633.803 / 42.319 |
+
+Database sizes are identical for this isolated map change. This is approximately
+86x faster summary readback at the largest synthetic scale, **not live ETW
+throughput or installer speedup**.
+
+A separate experiment keeps a 100-file/100-value target fixed and adds unrelated
+sessions, each with 1,000 files, 1,000 values and 1,000 normalized operations.
+Query plans confirmed missing session indexes on `system_events` and
+`normalized_operations`. Additive indexes now install on both new and existing
+schema-4 databases, without changing table contracts or JSON schema 3.
+
+| History sessions | Summary before/after ms | Full before/after ms | DB before/after bytes |
+| ---: | ---: | ---: | ---: |
+| 0 | 0.341 / 0.403 | 0.376 / 0.441 | 286720 / 311296 |
+| 10 | 3.399 / 0.383 | 6.648 / 0.443 | 14131200 / 16932864 |
+| 50 | 25.524 / 0.398 | 52.303 / 0.473 | 70021120 / 83988480 |
+
+The tradeoff is explicit: total elapsed for the 50 history writes increased
+1095.353 to 1287.679 ms (+17.56%), median write increased 16.082 to 18.983 ms,
+and database size increased 19.95%. Index creation on an old database also needs
+one-time time and disk space. No raw-journal index or live commit policy changed.
+
+[Every raw timing sample](examples/v04-storage.json) includes the earlier
+diagnostic without write timings; it was not discarded. Tests verify exact
+evidence mapping after SQL ordering and existing schema-4 index installation
+without row changes. Existing recovery, rollback, full-disk and checkpoint tests
+also passed (30 storage tests; three explicitly opt-in experiments ignored by the
+ordinary suite, with both new benchmarks separately executed).
+
+```powershell
+$env:CONTAIN_STORAGE_BENCHMARK_OUTPUT = (Join-Path $PWD 'target/v04/readback.json')
+cargo test -p contain-core --release --locked storage::perf::state_evidence_readback_scaling -- --ignored --exact --nocapture
+$env:CONTAIN_STORAGE_BENCHMARK_OUTPUT = (Join-Path $PWD 'target/v04/history.json')
+cargo test -p contain-core --release --locked storage::perf::history_database_readback_scaling -- --ignored --exact --nocapture
+```
+
+For the first before arm, add only `storage/perf.rs` and its test module declaration
+to baseline `7c5a5b2`. For the index before arm, keep the map fix but omit the two
+new indexes in `storage/migration.rs`. Run only the named ignored test in each
+command; do not change its workload, assertions, or run two disk experiments
+concurrently. Full raw stdout is retained locally in `target/v04/raw/storage`.

@@ -1,0 +1,462 @@
+{
+  "baseline_commit": "7c5a5b2b534d235f4db6c472c2c34a60e8be66ee",
+  "environment_reference": "v04-baseline.json",
+  "profile": "release --locked",
+  "synthetic_only": true,
+  "experiments": {
+    "readback-before": {
+      "samples": [
+        {
+          "db_after_close_bytes": 286720,
+          "files": 100,
+          "full_ns": [
+            785500,
+            761200,
+            776700
+          ],
+          "registry_values": 100,
+          "save_ns": 6802100,
+          "summary_ns": [
+            838200,
+            700300,
+            742700
+          ]
+        },
+        {
+          "db_after_close_bytes": 1183744,
+          "files": 1000,
+          "full_ns": [
+            37582600,
+            37768600,
+            38476500
+          ],
+          "registry_values": 1000,
+          "save_ns": 14989500,
+          "summary_ns": [
+            39536800,
+            37089000,
+            37616000
+          ]
+        },
+        {
+          "db_after_close_bytes": 5271552,
+          "files": 5000,
+          "full_ns": [
+            917501600,
+            899150300,
+            901001500
+          ],
+          "registry_values": 5000,
+          "save_ns": 82026800,
+          "summary_ns": [
+            918999100,
+            894564900,
+            904520800
+          ]
+        },
+        {
+          "db_after_close_bytes": 10399744,
+          "files": 10000,
+          "full_ns": [
+            3619885100,
+            3723767900,
+            3633802500
+          ],
+          "registry_values": 10000,
+          "save_ns": 214791700,
+          "summary_ns": [
+            3690708400,
+            3655370500,
+            3641245800
+          ]
+        }
+      ],
+      "schema_version": 1,
+      "sqlite_version": "3.50.2",
+      "synthetic_only": true,
+      "timing": "load/load_summary only; excludes fixture save, verification and connection close; warm-cache sequential samples",
+      "trials": 3
+    },
+    "readback-after": {
+      "samples": [
+        {
+          "db_after_close_bytes": 286720,
+          "files": 100,
+          "full_ns": [
+            485100,
+            460300,
+            426800
+          ],
+          "registry_values": 100,
+          "save_ns": 6648600,
+          "summary_ns": [
+            498600,
+            369800,
+            361500
+          ]
+        },
+        {
+          "db_after_close_bytes": 1183744,
+          "files": 1000,
+          "full_ns": [
+            2695000,
+            2655600,
+            2648000
+          ],
+          "registry_values": 1000,
+          "save_ns": 15328100,
+          "summary_ns": [
+            2707100,
+            2585900,
+            2779500
+          ]
+        },
+        {
+          "db_after_close_bytes": 5271552,
+          "files": 5000,
+          "full_ns": [
+            22285900,
+            21456100,
+            20877100
+          ],
+          "registry_values": 5000,
+          "save_ns": 116437200,
+          "summary_ns": [
+            20587200,
+            20757200,
+            20580900
+          ]
+        },
+        {
+          "db_after_close_bytes": 10399744,
+          "files": 10000,
+          "full_ns": [
+            44217900,
+            42318900,
+            41826400
+          ],
+          "registry_values": 10000,
+          "save_ns": 209843000,
+          "summary_ns": [
+            42204800,
+            42452400,
+            43194800
+          ]
+        }
+      ],
+      "schema_version": 1,
+      "sqlite_version": "3.50.2",
+      "synthetic_only": true,
+      "timing": "load/load_summary only; excludes fixture save, verification and connection close; warm-cache sequential samples",
+      "trials": 3
+    },
+    "history-readback-before": {
+      "samples": [
+        {
+          "database_logical_bytes": 286720,
+          "full_ns": [
+            467000,
+            473100,
+            435500
+          ],
+          "history_files": 0,
+          "history_normalized_operations": 0,
+          "history_registry_values": 0,
+          "history_sessions": 0,
+          "summary_ns": [
+            675600,
+            541900,
+            419300
+          ],
+          "target_files": 100,
+          "target_registry_values": 100
+        },
+        {
+          "database_logical_bytes": 14131200,
+          "full_ns": [
+            7217000,
+            9002700,
+            6601300
+          ],
+          "history_files": 10000,
+          "history_normalized_operations": 10000,
+          "history_registry_values": 10000,
+          "history_sessions": 10,
+          "summary_ns": [
+            3686600,
+            3602600,
+            1200300
+          ],
+          "target_files": 100,
+          "target_registry_values": 100
+        },
+        {
+          "database_logical_bytes": 70021120,
+          "full_ns": [
+            55960300,
+            56241200,
+            56414600
+          ],
+          "history_files": 50000,
+          "history_normalized_operations": 50000,
+          "history_registry_values": 50000,
+          "history_sessions": 50,
+          "summary_ns": [
+            26825900,
+            27447200,
+            27248600
+          ],
+          "target_files": 100,
+          "target_registry_values": 100
+        }
+      ],
+      "schema_version": 1,
+      "sqlite_version": "3.50.2",
+      "synthetic_only": true,
+      "timing": "load/load_summary fixed 100-file/100-value target with unrelated history; excludes seed writes and verification; warm-cache samples",
+      "trials": 3
+    },
+    "history-readback-before-with-writes": {
+      "samples": [
+        {
+          "database_logical_bytes": 286720,
+          "full_ns": [
+            433300,
+            376000,
+            375100
+          ],
+          "history_files": 0,
+          "history_normalized_operations": 0,
+          "history_registry_values": 0,
+          "history_save_ns": [],
+          "history_sessions": 0,
+          "summary_ns": [
+            606800,
+            340900,
+            325500
+          ],
+          "target_files": 100,
+          "target_registry_values": 100
+        },
+        {
+          "database_logical_bytes": 14131200,
+          "full_ns": [
+            6648000,
+            8817700,
+            6514300
+          ],
+          "history_files": 10000,
+          "history_normalized_operations": 10000,
+          "history_registry_values": 10000,
+          "history_save_ns": [
+            16698300,
+            16598400,
+            38369800,
+            15168800,
+            15157600,
+            32033600,
+            15423000,
+            15201900,
+            33374000,
+            15486400
+          ],
+          "history_sessions": 10,
+          "summary_ns": [
+            3943000,
+            3399000,
+            1152400
+          ],
+          "target_files": 100,
+          "target_registry_values": 100
+        },
+        {
+          "database_logical_bytes": 70021120,
+          "full_ns": [
+            52303200,
+            51674700,
+            52936800
+          ],
+          "history_files": 50000,
+          "history_normalized_operations": 50000,
+          "history_registry_values": 50000,
+          "history_save_ns": [
+            16288600,
+            34433400,
+            15970100,
+            15621000,
+            35880200,
+            16656100,
+            15906700,
+            34356300,
+            15846400,
+            16276400,
+            34539500,
+            16265700,
+            15833600,
+            37225400,
+            15687500,
+            15824200,
+            36836300,
+            16011500,
+            15848000,
+            33265000,
+            15700100,
+            15648200,
+            33383400,
+            15626800,
+            15632000,
+            33982900,
+            16188100,
+            15913000,
+            35077800,
+            16023300,
+            15887800,
+            34999600,
+            15780300,
+            16093100,
+            34389500,
+            16422700,
+            15860300,
+            33010900,
+            15578200,
+            16070900
+          ],
+          "history_sessions": 50,
+          "summary_ns": [
+            25524100,
+            25312100,
+            25653800
+          ],
+          "target_files": 100,
+          "target_registry_values": 100
+        }
+      ],
+      "schema_version": 1,
+      "sqlite_version": "3.50.2",
+      "synthetic_only": true,
+      "timing": "load/load_summary fixed 100-file/100-value target with unrelated history; excludes seed writes and verification; warm-cache samples",
+      "trials": 3
+    },
+    "history-readback-after": {
+      "samples": [
+        {
+          "database_logical_bytes": 311296,
+          "full_ns": [
+            446400,
+            420400,
+            440500
+          ],
+          "history_files": 0,
+          "history_normalized_operations": 0,
+          "history_registry_values": 0,
+          "history_save_ns": [],
+          "history_sessions": 0,
+          "summary_ns": [
+            604400,
+            403300,
+            332800
+          ],
+          "target_files": 100,
+          "target_registry_values": 100
+        },
+        {
+          "database_logical_bytes": 16932864,
+          "full_ns": [
+            519400,
+            443200,
+            425400
+          ],
+          "history_files": 10000,
+          "history_normalized_operations": 10000,
+          "history_registry_values": 10000,
+          "history_save_ns": [
+            19230700,
+            34292000,
+            18786800,
+            17702300,
+            37797300,
+            17611300,
+            17701600,
+            39971200,
+            17961000,
+            18555200
+          ],
+          "history_sessions": 10,
+          "summary_ns": [
+            787500,
+            383200,
+            339100
+          ],
+          "target_files": 100,
+          "target_registry_values": 100
+        },
+        {
+          "database_logical_bytes": 83988480,
+          "full_ns": [
+            472600,
+            475100,
+            444300
+          ],
+          "history_files": 50000,
+          "history_normalized_operations": 50000,
+          "history_registry_values": 50000,
+          "history_save_ns": [
+            41103200,
+            18292800,
+            18379400,
+            38525300,
+            18728500,
+            18590100,
+            38711600,
+            18921100,
+            18310800,
+            41144800,
+            18880500,
+            19098400,
+            42945700,
+            20950100,
+            18782500,
+            38085900,
+            19075300,
+            18526200,
+            40287400,
+            18593200,
+            18214300,
+            39799300,
+            19170600,
+            18723900,
+            38544000,
+            18899000,
+            18478300,
+            40022600,
+            18526400,
+            19077200,
+            37538000,
+            18639400,
+            19180400,
+            41815700,
+            18955400,
+            18421300,
+            40933800,
+            18834000,
+            19010900,
+            39352400
+          ],
+          "history_sessions": 50,
+          "summary_ns": [
+            970100,
+            397600,
+            345800
+          ],
+          "target_files": 100,
+          "target_registry_values": 100
+        }
+      ],
+      "schema_version": 1,
+      "sqlite_version": "3.50.2",
+      "synthetic_only": true,
+      "timing": "load/load_summary fixed 100-file/100-value target with unrelated history; excludes seed writes and verification; warm-cache samples",
+      "trials": 3
+    }
+  }
+}
