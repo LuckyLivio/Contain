@@ -75,6 +75,54 @@ evidence before enforcing a failing result. It executes only the bounded synthet
 fixture. A red result at 1000 or 10000 is a failed release gate, even if every
 measurement completed. These samples cannot be pooled with local fallback runs.
 
+The following **stabilization protocol is preregistered and has not been executed**.
+Use `--stabilization` to keep ordinary matrix defaults compatible while requiring
+the original three scales, at least three pairs at 100/10000, and ten pairs at
+1000 by default (`--stability-trials`, range 10..30). Each worker/noise/database
+condition gets its own alternating baseline/candidate pairs; no failed attempt
+is discarded. `--snapshot-only`, fewer trials, omitted scales, duplicate
+conditions and abbreviated source revisions are rejected. The three-scale,
+four-worker, single-noise/empty-database command below plans **32 attempts**:
+
+```powershell
+# Preregistration example, not an executed validation result. Set these paths
+# and full 40-character revisions to the prebuilt, frozen experiment inputs.
+python scripts/v04-matrix.py --stabilization --baseline $baselineExe --candidate $candidateExe --fixture $commonFixtureExe --baseline-revision $baselineRevision --candidate-revision $candidateRevision --output target/v04/stabilization-etw --files 100 1000 10000 --workers 4 --trials 3 --stability-trials 10 --noise-files 100
+```
+
+The manifest retains protocol/version, parameters, planned attempts, source/script
+hashes and supplied revisions. Revisions are operator declarations, not executable
+build attestations. All three executable hashes are checked before and after every
+attempt; replacement fails that attempt and retains its fixture. The same opt-in
+QPC fixture is used for both arms. Ordinary ETW captures keep their original
+`score.json` and strict `gate`, with `clock-diagnostic.json` written separately.
+Stabilization additionally records `legacy_acceptance_pass` and an explicit
+`stabilization_gate`. Its status is currently **blocked**: original ETW QPC,
+same-machine/same-boot provenance and a validated provider emission-time contract
+are still missing. Even `diagnostic_ready` cannot satisfy that new gate. There is
+no override or automatic fallback that can turn it green.
+
+When a new capture supplies `backend.handoff`, its counters must be nonnegative
+integers and satisfy all of the following in addition to the frozen original
+pipeline/storage/loss gates:
+
+```text
+pipeline.dequeued = handoff.initial_accepted + handoff.received
+handoff.received = handoff.submitted + overflow + oversized + disconnected + serialize_failed
+handoff.submitted = handoff.drained + handoff.pending
+stream.accepted = handoff.initial_accepted + handoff.submitted
+handoff.pending = overflow = oversized = disconnected = serialize_failed = 0
+```
+
+Missing or malformed handoff fields cannot pass. A balanced queue with recorded
+loss still fails. Both receiver/writer completion flags must be exactly true;
+record and byte high-water marks must fit their positive recorded capacities.
+Captures without handoff retain the previous direct
+`pipeline.dequeued = stream.accepted` contract. This protocol has no remote
+dispatch or elevation capability. The current public exporter predates these
+additional diagnostic fields; retain complete private records and review its
+whitelist before publishing a future stabilization run.
+
 `v04-public.py PRIVATE NEW_PUBLIC_DIRECTORY` exports a numeric/scoped projection
 after original scoring. It preserves all planned attempts and scored rows, replaces
 validated fixture roots with `<FIXTURE>`, and redacts outside paths. Global process
@@ -114,6 +162,86 @@ Verified unrelated actors do not inflate Unknown. Failed and unsupported calls
 retain separate denominators. ETW event loss, ETW buffer loss and application drop
 counts remain separate, and missing counters remain null. Positive raw duplicates
 do not increase syscall recall. Consistent CLI output is not independent truth.
+
+## Independent clock protocol, version 1
+
+This is an observability protocol, **not a replacement score or a release gate**.
+The seven historical interval mismatches and their original strict scores remain
+unchanged. The locked ferrisetw 1.2.0 controller sets `ClientContext=1` (QPC), but
+its consumer sets `REAL_TIME|EVENT_RECORD` without `RAW_TIMESTAMP`. The name
+`record.raw_timestamp()` therefore does not mean original QPC. By default,
+[ProcessTrace converts the header to FILETIME](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/ns-evntrace-event_trace_logfilew).
+Converting those delivered integers back to QPC would invent missing evidence.
+
+Production observations are additive and keep JSON schema 3 / SQLite schema 4:
+
+- `backend.clock` identifies the locked dependency configuration, clock type,
+  consumer flags, measured QPC frequency, and explicit `raw_qpc_available:false`
+  and `trace_header_available:false`. The dependency does not expose OpenTrace's
+  `TRACE_LOGFILE_HEADER`; configuration is not presented as an observed header.
+- Four calibration phases bracket trace start request, consumer readiness, stop
+  request and consumer completion. Each records QPC → precise UTC FILETIME → QPC
+  in call order. Missing phases and API errors remain visible. They sample the
+  host clock; they do not recover ETW's original timestamp or prove continuous
+  clock stability between samples.
+- Every retained source record has `raw.clock.header_timestamp` with the exact
+  signed delivered header, `timestamp_domain:"filetime_100ns"`, and `raw_qpc:null`.
+  Lifecycle `ExitTime` can still supply `timestamp_ticks`; its original header is
+  separately retained. Existing timestamp mapping, ordering and attribution are
+  unchanged. Legacy records omit this optional metadata.
+
+Set `CONTAIN_FIXTURE_CLOCK=1` only for a newly labelled experiment. The independent
+fixture calls Windows directly and shares no clock implementation with Contain.
+Each syscall row gains a QPC start/end, frequency, thread ID, per-process sequence,
+and a separately bracketed `GetSystemTimePreciseAsFileTime` sample before and
+after. Failed syscalls remain in the journal. Serialization/journal writes occur
+outside the recorded operation interval. The original `SystemTime` fields and
+`score-fixture.py` remain intact; without the environment variable the old row
+format is preserved and no extra Windows clock API calls are made. QPC measures intervals; precise
+FILETIME observes UTC, as described by
+[Microsoft's QPC documentation](https://learn.microsoft.com/en-us/windows/win32/api/profileapi/nf-profileapi-queryperformancecounter)
+and [precise time API documentation](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-getsystemtimepreciseasfiletime).
+
+Use the same newly built fixture for both baseline and candidate and a new output
+directory. Preserve the executable hashes, command, environment switch and raw
+journals. Added timing calls have overhead, so do not pool these timings with
+earlier fixtures. This example continues to use the original matrix scorer; its
+acceptance result is separate from the new diagnostic:
+
+```powershell
+$previousFixtureClock = $env:CONTAIN_FIXTURE_CLOCK
+try {
+    $env:CONTAIN_FIXTURE_CLOCK = '1'
+    python scripts/v04-matrix.py --baseline BASELINE.exe --candidate CANDIDATE.exe --fixture target/release/contain-test-installer.exe --output target/v04/clock-paired --files 100 --workers 4 --trials 3 --noise-files 100 --keep-fixtures
+} finally { $env:CONTAIN_FIXTURE_CLOCK = $previousFixtureClock }
+python scripts/v04-clock-protocol.py --capture target/v04/clock-paired/TRIAL/capture.json --truth target/v04/clock-paired/TRIAL/ground-truth.json --output target/v04/clock-paired/TRIAL/clock-diagnostic.json
+```
+
+Run the diagnostic identically for every baseline and candidate attempt, including
+failed attempts with readable inputs. It never reads or rewrites a score, refuses
+to overwrite an output, records input hashes, and preserves every truth row.
+Historical journals, fallback captures, converted source headers, missing actor
+birth or raw QPC, frequency mismatch, or an operation outside the measured trace
+window cannot satisfy the original-QPC check. The current baseline **and** new
+candidate remain `unavailable`, exit 2, because neither records original ETW QPC.
+This is the expected honest result; running non-elevated does not fix that gap.
+
+Future raw timestamp capture must first retain actual trace-header metadata and
+establish same-machine/same-boot provenance independently. Merely setting JSON
+flags cannot establish that provenance; the diagnostic reports it as unverified.
+Its raw-QPC branch uses exact integer intervals with zero added tolerance and
+marks overlapping candidates ambiguous. `diagnostic_ready` means data can be
+inspected, not that attribution passed. `release_gate` is always null. Calibration
+offset envelopes use exact rational arithmetic and only test compatibility at
+sampled points; wall-clock steps or disjoint envelopes are never repaired by a
+fitted offset. Provider emission outside syscall bounds remains a separate
+unresolved observation, even when PID, birth, path and operation agree.
+
+Pending validation: capture original ETW QPC without changing production evidence
+semantics; retain actual OpenTrace header values; run the same new fixture on both
+arms in an already authorized elevated environment; verify provider emission
+boundaries and independent trace loss. No vendored consumer, elevation, remote
+dispatch, installer download or historical rescoring is performed by this protocol.
 
 ## Vendor workloads to validate in a disposable guest
 
@@ -183,6 +311,7 @@ python scripts/test-v04-public.py
 python scripts/test-v04-verify-views.py
 python scripts/test-v04-metrics.py
 python scripts/test-v04-summarize-matrix.py
+python scripts/test-v04-clock-protocol.py
 ```
 
 These tests cover workload denominators and unchanged thresholds, missing loss

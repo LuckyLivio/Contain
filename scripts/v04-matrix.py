@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -27,6 +28,10 @@ SCRIPT = Path(__file__).resolve()
 SPEC = importlib.util.spec_from_file_location("v04_frozen_oracle", SCRIPT.with_name("score-fixture.py"))
 ORACLE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ORACLE)
+CLOCK_SCRIPT = SCRIPT.with_name("v04-clock-protocol.py")
+CLOCK_SPEC = importlib.util.spec_from_file_location("v04_clock_protocol", CLOCK_SCRIPT)
+CLOCK = importlib.util.module_from_spec(CLOCK_SPEC)
+CLOCK_SPEC.loader.exec_module(CLOCK)
 
 
 def write_json(path, value):
@@ -83,8 +88,30 @@ def quality_gate(capture, score, files, workers, noise, snapshot):
             balanced = balanced and type(backend.get("events_received")) is int
             balanced = balanced and pipeline["callback_records"] == pipeline["deliberately_filtered"] + backend["events_received"] + pipeline["failed_without_output"]
             balanced = balanced and backend["events_received"] == pipeline["enqueued"] + pipeline["queue_overflow"] + pipeline["enqueue_disconnected"]
-            balanced = balanced and pipeline["dequeued"] == stream.get("accepted")
+            if backend.get("handoff") is None:
+                balanced = balanced and pipeline["dequeued"] == stream.get("accepted")
             balanced = balanced and stream["accepted"] == stream["persisted"] + stream["failed"] + stream["quota_dropped"]
+        if backend.get("handoff") is not None:
+            handoff = backend["handoff"]
+            fields = ("initial_accepted", "received", "submitted", "overflow", "oversized",
+                      "disconnected", "serialize_failed", "drained", "pending")
+            valid = (isinstance(handoff, dict) and all(type(handoff.get(key)) is int and handoff[key] >= 0 for key in fields)
+                     and type(pipeline.get("dequeued")) is int and type(stream.get("accepted")) is int)
+            handoff_balanced = valid and (
+                pipeline["dequeued"] == handoff["initial_accepted"] + handoff["received"]
+                and handoff["received"] == sum(handoff[key] for key in ("submitted", "overflow", "oversized", "disconnected", "serialize_failed"))
+                and handoff["submitted"] == handoff["drained"] + handoff["pending"]
+                and stream["accepted"] == handoff["initial_accepted"] + handoff["submitted"])
+            checks.update(handoff_balanced=handoff_balanced,
+                          handoff_final_empty=valid and handoff["pending"] == 0,
+                          handoff_loss_zero=valid and sum(handoff[key] for key in ("overflow", "oversized", "disconnected", "serialize_failed")) == 0)
+            bounded = isinstance(handoff, dict) and all(type(handoff.get(key)) is int and handoff[key] >= 0
+                for key in ("high_water_records", "high_water_bytes", "record_capacity", "byte_capacity"))
+            checks.update(handoff_workers_finished=isinstance(handoff, dict)
+                              and handoff.get("receiver_finished") is True and handoff.get("writer_finished") is True,
+                          handoff_bounded=bounded and handoff["record_capacity"] > 0 and handoff["byte_capacity"] > 0
+                              and handoff["high_water_records"] <= handoff["record_capacity"]
+                              and handoff["high_water_bytes"] <= handoff["byte_capacity"])
         minimum = 1.0 if files == 1000 else 0.95
         checks.update(etw_active=backend["etw_file"] == "active", pipeline_balanced=balanced,
                       final_queue_empty=pipeline.get("queue_pending") == 0,
@@ -97,6 +124,22 @@ def quality_gate(capture, score, files, workers, noise, snapshot):
                       target_attribution=target["correct_attribution_rate"] is not None and target["correct_attribution_rate"] >= minimum)
     return {"mode": "fallback_conservatism" if snapshot else "useful_etw_attribution",
             "checks": checks, "pass": all(checks.values()), "etw_release_gate": None if snapshot else all(checks.values())}
+
+
+def stabilization_gate(legacy_gate, diagnostic):
+    # A diagnostic-ready clock comparison is not an empirically validated
+    # provider emission contract. There is deliberately no CLI override.
+    checks = dict(legacy_strict_gate=legacy_gate["pass"],
+                  original_clock_diagnostic=diagnostic.get("status") == "diagnostic_ready",
+                  same_machine_boot_provenance=False,
+                  provider_timing_contract_validated=False)
+    return dict({"pass": False}, protocol="v04-stabilization-1", status="blocked", checks=checks,
+                reason="Original QPC, independently established same-boot provenance and an empirically validated provider timing contract are required; no replacement score is authorized.")
+
+
+def frozen_binaries(args):
+    actual = {name: sha(getattr(args, name)) for name in args.frozen_hashes}
+    return dict(expected=args.frozen_hashes, actual=actual, match=actual == args.frozen_hashes)
 
 
 class ProcessMetrics:
@@ -178,6 +221,9 @@ def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, s
                   seed_database=str(seed) if seed else None, status="started", acceptance_pass=False,
                   fixture_root=str(root), truth_root=str(truth_root), app=name,
                   expected_target_operations=target_operations(files, workers), expected_noise_operations=noise_count * 3)
+    if getattr(args, "stabilization", False):
+        record.update(protocol="v04-stabilization-1", source_revision=getattr(args, mode + "_revision"),
+                      source_revision_provenance="operator_declared_not_build_attestation", stability_trials=args.stability_trials)
     write_json(directory / "measurement.json", record)
     noise = process = metrics = start = None
     db_peak = wal_peak = 0
@@ -188,10 +234,16 @@ def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, s
         environment.pop(key, None)
     environment["CONTAIN_PROFILE_PATH"] = str(directory / "profile.json")
     environment["CONTAIN_FIXTURE_TRUTH"] = str(truth_root)
+    if getattr(args, "stabilization", False):
+        environment["CONTAIN_FIXTURE_CLOCK"] = "1"
     variant = args.baseline_variant if mode == "baseline" else args.candidate_variant
     if variant:
         environment["CONTAIN_HOTPATH_VARIANT"] = variant
     try:
+        if getattr(args, "frozen_hashes", None):
+            record["binary_hash_before"] = frozen_binaries(args)
+            if not record["binary_hash_before"]["match"]:
+                raise RuntimeError("experiment executable hash changed before attempt; capture not launched")
         for path in (root, truth_root):
             path.mkdir()
             (path / ".contain-demo-marker").write_text("Contain test fixture", encoding="utf-8")
@@ -253,6 +305,16 @@ def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, s
                       score={key: value for key, value in score.items() if key != "rows"})
         record["gate"] = quality_gate(capture, score, files, workers, noise_count, args.snapshot_only)
         record["acceptance_pass"] = record["gate"]["pass"]
+        if not args.snapshot_only:
+            diagnostic = CLOCK.analyze(capture, truth, args.sid)
+            diagnostic["input_sha256"] = dict(capture=sha(directory / "capture.json"), truth=sha(directory / "ground-truth.json"))
+            diagnostic["script_sha256"] = sha(CLOCK_SCRIPT)
+            write_json(directory / "clock-diagnostic.json", diagnostic)
+            record["clock_diagnostic_status"] = diagnostic["status"]
+            if getattr(args, "stabilization", False):
+                record["legacy_acceptance_pass"] = record["gate"]["pass"]
+                record["stabilization_gate"] = stabilization_gate(record["gate"], diagnostic)
+                record["acceptance_pass"] = record["stabilization_gate"]["pass"]
         record["status"] = "completed"
     except (OSError, ValueError, KeyError, RuntimeError, sqlite3.Error, subprocess.SubprocessError) as error:
         record["status"] = "failed"
@@ -276,6 +338,13 @@ def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, s
             noise.kill()
             noise.wait()
             record["noise_terminated_on_harness_exit"] = True
+        if getattr(args, "frozen_hashes", None):
+            try:
+                record["binary_hash_after"] = frozen_binaries(args)
+                if not record["binary_hash_after"]["match"]:
+                    raise RuntimeError("experiment executable hash changed during attempt")
+            except (OSError, RuntimeError) as error:
+                record.update(status="failed", acceptance_pass=False, binary_hash_error=str(error))
         # Preserve raw independent logs even when capture/scoring failed.
         if truth_root.exists():
             journal_directory = directory / "truth-journals"
@@ -307,6 +376,10 @@ def parser():
     result.add_argument("--workers", nargs="+", type=int, default=[1, 4, 8])
     result.add_argument("--noise-files", nargs="+", type=int, default=[100])
     result.add_argument("--trials", type=int, default=3)
+    result.add_argument("--stabilization", action="store_true", help="Preregister the blocked v04-stabilization-1 real-ETW protocol; never a fallback run")
+    result.add_argument("--stability-trials", type=int, default=10, help="1000-file pairs per condition with --stabilization (10..30; default 10)")
+    result.add_argument("--baseline-revision", help="Full source commit declared by the operator; required for stabilization")
+    result.add_argument("--candidate-revision", help="Full source commit declared by the operator; required for stabilization")
     result.add_argument("--seed-database", action="append", type=Path, default=[])
     result.add_argument("--baseline-variant", choices=["D0", "D1", "D2", "D3"])
     result.add_argument("--candidate-variant", choices=["D0", "D1", "D2", "D3"])
@@ -316,16 +389,45 @@ def parser():
     return result
 
 
+def validate_parameters(args):
+    if not (1 <= args.trials <= 5 and 10 <= args.timeout <= 3600
+            and all(4 <= count <= 100000 for count in args.files)
+            and all(1 <= count <= 64 for count in args.workers)
+            and all(0 <= count <= 10000 for count in args.noise_files)):
+        raise ValueError("bounds: trials 1..5, timeout 10..3600, files 4..100000, workers 1..64, noise 0..10000")
+    if args.stabilization:
+        if args.snapshot_only or args.trials < 3 or not 10 <= args.stability_trials <= 30:
+            raise ValueError("stabilization requires real ETW, 3..5 ordinary trials and 10..30 stability trials")
+        if not {100, 1000, 10000}.issubset(args.files):
+            raise ValueError("stabilization requires every original scale: 100, 1000 and 10000")
+        if any(len(values) != len(set(values)) for values in (args.files, args.workers, args.noise_files)):
+            raise ValueError("duplicate stabilization conditions are not independent trials")
+        if not all(re.fullmatch(r"[0-9a-fA-F]{40}", value or "") for value in (args.baseline_revision, args.candidate_revision)):
+            raise ValueError("stabilization requires full baseline and candidate source revisions")
+    elif args.stability_trials != 10:
+        raise ValueError("--stability-trials requires --stabilization")
+
+
+def plan_attempts(args):
+    planned = []
+    for files, workers, noise_count, seed_index in itertools.product(args.files, args.workers, args.noise_files,
+                                                                     range(len(args.seed_database) + 1)):
+        trials = args.stability_trials if args.stabilization and files == 1000 else args.trials
+        for trial in range(1, trials + 1):
+            for mode in (["baseline", "candidate"] if trial % 2 else ["candidate", "baseline"]):
+                planned.append(dict(mode=mode, files=files, workers=workers, noise_files=noise_count, seed_index=seed_index, trial=trial))
+    return planned
+
+
 def main():
     cli = parser()
     args = cli.parse_args()
     if sys.platform != "win32":
         cli.error("Windows required; this script never runs vendor installers")
-    if not (1 <= args.trials <= 5 and 10 <= args.timeout <= 3600
-            and all(4 <= count <= 100000 for count in args.files)
-            and all(1 <= count <= 64 for count in args.workers)
-            and all(0 <= count <= 10000 for count in args.noise_files)):
-        cli.error("bounds: trials 1..5, timeout 10..3600, files 4..100000, workers 1..64, noise 0..10000")
+    try:
+        validate_parameters(args)
+    except ValueError as error:
+        cli.error(str(error))
     for name in ("baseline", "candidate", "fixture"):
         path = getattr(args, name).resolve(strict=True)
         if not path.is_file():
@@ -337,19 +439,26 @@ def main():
     sid_command = ["powershell", "-NoProfile", "-Command", "[Security.Principal.WindowsIdentity]::GetCurrent().User.Value"]
     args.sid = subprocess.check_output(sid_command, text=True, creationflags=subprocess.CREATE_NO_WINDOW).strip()
     records = []
-    planned = []
-    for files, workers, noise_count, seed_index, trial in itertools.product(args.files, args.workers, args.noise_files,
-                                                                          range(len(args.seed_database) + 1), range(1, args.trials + 1)):
-        for mode in (["baseline", "candidate"] if trial % 2 else ["candidate", "baseline"]):
-            planned.append(dict(mode=mode, files=files, workers=workers, noise_files=noise_count, seed_index=seed_index, trial=trial))
+    planned = plan_attempts(args)
+    args.frozen_hashes = {name: sha(getattr(args, name)) for name in ("baseline", "candidate", "fixture")}
     environment = dict(schema_version=1, platform=platform.platform(), logical_processors=os.cpu_count(), python=sys.version,
                        snapshot_only=args.snapshot_only, baseline_variant=args.baseline_variant, candidate_variant=args.candidate_variant,
-                       executables={name: dict(path=str(getattr(args, name)), sha256=sha(getattr(args, name))) for name in ("baseline", "candidate", "fixture")},
+                       executables={name: dict(path=str(getattr(args, name)), sha256=args.frozen_hashes[name]) for name in ("baseline", "candidate", "fixture")},
                        scorer_sha256=sha(SCRIPT.with_name("score-fixture.py")), script_sha256=sha(SCRIPT),
+                       clock_protocol_sha256=sha(CLOCK_SCRIPT),
+                       fixture_clock_enabled=args.stabilization or os.environ.get("CONTAIN_FIXTURE_CLOCK") == "1",
+                       declared_revisions=dict(baseline=args.baseline_revision, candidate=args.candidate_revision),
                        seeds=[dict(path=str(path), sha256=sha(path), bytes=path.stat().st_size,
                                    wal_bytes=sampled_size(Path(str(path) + "-wal"))) for path in args.seed_database],
                        planned_attempts=planned,
                        measurement="Capture wall through process exit; export/scoring excluded. Parent CPU and I/O are cumulative handle counters. I/O transfer bytes are logical process I/O, not physical disk traffic. Parent memory excludes descendants and ETW kernel buffers; private memory and DB/WAL peaks sampled every 20ms. Background load/caches uncontrolled. No actual ETW loss rate: enabled-provider total is unavailable. Snapshot passes never establish ETW attribution.")
+    if args.stabilization:
+        environment["protocol"] = dict(id="v04-stabilization-1", status="blocked",
+            required_scales=[100, 1000, 10000], ordinary_trials=args.trials, stability_trials=args.stability_trials,
+            files=args.files, workers=args.workers, noise_files=args.noise_files, timeout_seconds=args.timeout,
+            require_etw=True, fallback_allowed=False, paired_order="alternating within identical conditions",
+            revision_provenance="operator_declared_not_build_attestation", provider_timing_contract="unvalidated",
+            original_scorer_unchanged=True, clock_diagnostic_is_not_attribution_score=True)
     write_json(args.output / "environment.json", environment)
     try:
         for index, plan in enumerate(planned, 1):
@@ -362,7 +471,7 @@ def main():
     finally:
         write_json(args.output / "comparison.json", dict(environment=environment, trials=records, completed_attempts=len(records),
                                                         planned_attempts=len(planned), interrupted=len(records) != len(planned)))
-    return 0 if all(row["acceptance_pass"] for row in records) else 2
+    return 0 if planned and len(records) == len(planned) and all(row["acceptance_pass"] for row in records) else 2
 
 
 if __name__ == "__main__":

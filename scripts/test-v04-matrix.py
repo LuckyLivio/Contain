@@ -1,6 +1,7 @@
 """Checks denominator/gate invariants and preservation of failed matrix attempts."""
 import copy
 import importlib.util
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -26,7 +27,136 @@ def data(files=1000, workers=4):
     return capture, score
 
 
+def handoff_data(**changes):
+    result = dict(initial_accepted=2, received=8, submitted=8, overflow=0, oversized=0,
+                  disconnected=0, serialize_failed=0, drained=8, pending=0,
+                  high_water_records=8, high_water_bytes=4096, record_capacity=4096, byte_capacity=16 * 1024 * 1024,
+                  receiver_finished=True, writer_finished=True)
+    result.update(changes)
+    return result
+
+
 class MatrixTests(unittest.TestCase):
+    def arguments(self, *extra):
+        return MATRIX.parser().parse_args(["--baseline", "baseline.exe", "--candidate", "candidate.exe",
+            "--fixture", "fixture.exe", "--output", "output", "--files", "100", "1000", "10000", "--workers", "4", *extra])
+
+    def test_stabilization_preregisters_ten_trials_at_thousand_files_and_preserves_legacy_plan(self):
+        legacy = self.arguments()
+        MATRIX.validate_parameters(legacy)
+        self.assertEqual(len(MATRIX.plan_attempts(legacy)), 18)
+        args = self.arguments("--stabilization", "--baseline-revision", "a" * 40, "--candidate-revision", "b" * 40)
+        MATRIX.validate_parameters(args)
+        plan = MATRIX.plan_attempts(args)
+        self.assertEqual(len(plan), 32)
+        counts = MATRIX.itertools.groupby(plan, key=lambda row: row["files"])
+        self.assertEqual({files: len(list(rows)) for files, rows in counts}, {100: 6, 1000: 20, 10000: 6})
+        for left, right in zip(plan[::2], plan[1::2]):
+            self.assertEqual({key: value for key, value in left.items() if key != "mode"},
+                             {key: value for key, value in right.items() if key != "mode"})
+            self.assertEqual([left["mode"], right["mode"]], ["baseline", "candidate"] if left["trial"] % 2 else ["candidate", "baseline"])
+
+    def test_stabilization_rejects_fallback_missing_scales_short_revisions_and_fewer_trials(self):
+        valid = self.arguments("--stabilization", "--baseline-revision", "a" * 40, "--candidate-revision", "b" * 40)
+        for patch in (dict(snapshot_only=True), dict(files=[100, 1000]), dict(trials=2), dict(stability_trials=9),
+                      dict(baseline_revision="a072072"), dict(candidate_revision=None), dict(workers=[4, 4])):
+            with self.subTest(patch=patch):
+                args = copy.deepcopy(valid)
+                args.__dict__.update(patch)
+                with self.assertRaises(ValueError):
+                    MATRIX.validate_parameters(args)
+        args = self.arguments("--trials", "10")
+        with self.assertRaises(ValueError):
+            MATRIX.validate_parameters(args)
+
+    def test_unvalidated_clock_provider_contract_never_passes_stabilization(self):
+        for status in ("unavailable", "invalid", "diagnostic_ready"):
+            gate = MATRIX.stabilization_gate({"pass": True}, dict(status=status))
+            self.assertFalse(gate["pass"])
+            self.assertEqual(gate["status"], "blocked")
+            self.assertFalse(gate["checks"]["provider_timing_contract_validated"])
+
+    def test_executable_replacement_is_detected_against_the_frozen_pair(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            args = SimpleNamespace(**{name: root / name for name in ("baseline", "candidate", "fixture")})
+            for name in ("baseline", "candidate", "fixture"):
+                getattr(args, name).write_bytes(name.encode())
+            args.frozen_hashes = {name: MATRIX.sha(getattr(args, name)) for name in ("baseline", "candidate", "fixture")}
+            self.assertTrue(MATRIX.frozen_binaries(args)["match"])
+            args.fixture.write_bytes(b"replaced")
+            self.assertFalse(MATRIX.frozen_binaries(args)["match"])
+
+    def test_stabilization_retains_every_failed_planned_attempt(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            argv = ["v04-matrix.py", "--stabilization", "--files", "100", "1000", "10000", "--workers", "4",
+                    "--baseline-revision", "a" * 40, "--candidate-revision", "b" * 40, "--output", str(root / "result")]
+            for name in ("baseline", "candidate", "fixture"):
+                binary = root / (name + ".exe")
+                binary.write_bytes(name.encode())
+                argv += ["--" + name, str(binary)]
+            def failed(args, directory, mode, files, workers, noise, trial, seed, seed_index):
+                return dict(mode=mode, files=files, workers=workers, noise_files=noise, trial=trial,
+                            seed_index=seed_index, status="failed", acceptance_pass=False, harness_error="injected failure")
+            with mock.patch.object(MATRIX.sys, "argv", argv), mock.patch.object(MATRIX.sys, "platform", "win32"), \
+                 mock.patch.object(MATRIX.subprocess, "check_output", return_value="S-1-5-21"), \
+                 mock.patch.object(MATRIX.subprocess, "CREATE_NO_WINDOW", 0, create=True), \
+                 mock.patch.object(MATRIX, "run_trial", side_effect=failed) as run, mock.patch.object(MATRIX.sys, "stdout", io.StringIO()):
+                self.assertEqual(MATRIX.main(), 2)
+            report = json.loads((root / "result/comparison.json").read_text())
+            self.assertEqual(run.call_count, 32)
+            self.assertEqual(report["planned_attempts"], 32)
+            self.assertEqual(len(report["trials"]), 32)
+            self.assertFalse(report["interrupted"])
+            self.assertTrue(all(row["status"] == "failed" for row in report["trials"]))
+            self.assertEqual(report["environment"]["protocol"]["status"], "blocked")
+
+    def test_handoff_balances_and_missing_or_bad_counters_fail_closed(self):
+        capture, score = data()
+        handoff = handoff_data()
+        capture["backend"]["handoff"] = handoff
+        self.assertTrue(MATRIX.quality_gate(capture, score, 1000, 4, 100, False)["pass"])
+        for field in ("initial_accepted", "received", "submitted", "overflow", "oversized", "disconnected", "serialize_failed", "drained", "pending"):
+            for changed in (None, -1, True, handoff[field] + 1):
+                with self.subTest(field=field, changed=changed):
+                    candidate = copy.deepcopy(capture)
+                    candidate["backend"]["handoff"][field] = changed
+                    self.assertFalse(MATRIX.quality_gate(candidate, score, 1000, 4, 100, False)["pass"])
+        capture["backend"]["handoff"] = {}
+        self.assertFalse(MATRIX.quality_gate(capture, score, 1000, 4, 100, False)["pass"])
+
+    def test_balanced_handoff_drop_or_pending_queue_still_fails(self):
+        for drop in ("overflow", "oversized", "disconnected", "serialize_failed"):
+            capture, score = data()
+            handoff = handoff_data(submitted=7, drained=7)
+            handoff[drop] = 1
+            capture["backend"]["handoff"] = handoff
+            capture["backend"]["stream"].update(accepted=9, persisted=9)
+            gate = MATRIX.quality_gate(capture, score, 1000, 4, 100, False)
+            self.assertTrue(gate["checks"]["handoff_balanced"])
+            self.assertFalse(gate["checks"]["handoff_loss_zero"])
+            self.assertFalse(gate["pass"])
+        capture, score = data()
+        capture["backend"]["handoff"] = handoff_data(drained=7, pending=1)
+        gate = MATRIX.quality_gate(capture, score, 1000, 4, 100, False)
+        self.assertTrue(gate["checks"]["handoff_balanced"])
+        self.assertFalse(gate["checks"]["handoff_final_empty"])
+        self.assertFalse(gate["pass"])
+
+    def test_handoff_workers_must_finish_and_high_water_must_fit_recorded_limits(self):
+        for patch in (dict(receiver_finished=False), dict(writer_finished=1), dict(writer_finished=None),
+                      dict(high_water_records=4097), dict(high_water_bytes=16 * 1024 * 1024 + 1),
+                      dict(record_capacity=0), dict(byte_capacity=None), dict(high_water_records=True)):
+            with self.subTest(patch=patch):
+                capture, score = data()
+                capture["backend"]["handoff"] = handoff_data(**patch)
+                self.assertFalse(MATRIX.quality_gate(capture, score, 1000, 4, 100, False)["pass"])
+        capture, score = data()
+        capture["backend"]["handoff"] = handoff_data()
+        del capture["backend"]["handoff"]["receiver_finished"]
+        self.assertFalse(MATRIX.quality_gate(capture, score, 1000, 4, 100, False)["pass"])
+
     def test_original_workload_and_uneven_worker_denominators(self):
         self.assertEqual(MATRIX.target_operations(100, 4), 252)
         self.assertEqual(MATRIX.target_operations(1000, 4), 2500)

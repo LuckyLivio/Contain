@@ -127,6 +127,18 @@ cargo build --workspace --locked
 
 Windows CI requires both real ETW evidence and fallback integration. Read the [architecture](docs/architecture.md), [backend ADR](docs/adr/0001-event-attribution-backend.md), [contribution guide](CONTRIBUTING.md), [security policy](SECURITY.md), and [code of conduct](CODE_OF_CONDUCT.md).
 
+The next stabilization matrix is **preregistered, not executed**. With frozen
+baseline/candidate executables, one common fixture and their full source revisions,
+this command plans 32 real-ETW attempts (three pairs at 100/10000, ten at 1000):
+
+```powershell
+python scripts/v04-matrix.py --stabilization --baseline $baselineExe --candidate $candidateExe --fixture $commonFixtureExe --baseline-revision $baselineRevision --candidate-revision $candidateRevision --output target/v04/stabilization-etw --files 100 1000 10000 --workers 4 --trials 3 --stability-trials 10 --noise-files 100
+```
+
+The [protocol](docs/v04-validation.md) retains the original scores separately.
+Its new gate remains blocked until original ETW QPC and provider timing rules are
+independently validated; fallback or a clock diagnostic cannot count as a pass.
+
 Next: broader Windows validation, more registry context coverage and stronger multi-step operation evidence. GUI and real cleanup remain deferred.
 
 ## License
