@@ -48,6 +48,15 @@ class MatrixSummaryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.summarize()
 
+    def test_environment_accepts_scalar_and_legacy_command_line_arrays(self):
+        self.path.write_text(json.dumps(self.document))
+        path = Path(self.temp.name) / "environment.json"
+        rust = "rustc 1.98.1 (48a229cea 2026-09-01)"
+        for value in (rust, [rust]):
+            path.write_text(json.dumps(dict(rust=value, time="2026-10-23", os=dict(BuildNumber="26300"))))
+            report = SUMMARY.summarize([("core", self.path)], "a" * 40, "b" * 40, path)
+            self.assertEqual(report["baseline_environment"]["rustc_version"], rust)
+            self.assertEqual(report["baseline_environment"]["observed_at"], "2026-10-23")
     def test_etw_or_unmeasured_capture_mode_cannot_be_relabelled_as_fallback(self):
         for value in (False, None, 1, "true"):
             with self.subTest(snapshot_only=value):

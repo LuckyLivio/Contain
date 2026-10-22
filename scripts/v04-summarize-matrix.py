@@ -77,12 +77,14 @@ def summarize(inputs, baseline_commit, candidate_commit, baseline_environment=No
     environment = None
     if baseline_environment:
         private = json.loads(baseline_environment.read_text(encoding="utf-8-sig"))
-        environment = dict(source_sha256=sha(baseline_environment), observed_at=private.get("timestamp"),
+        rust = private.get("rust")
+        rust = rust[0] if isinstance(rust, list) and rust else rust
+        environment = dict(source_sha256=sha(baseline_environment), observed_at=private.get("timestamp", private.get("time")),
                            windows_version=private.get("os", {}).get("Version"), windows_build=int(private.get("os", {}).get("BuildNumber")),
                            logical_processors=private.get("computer", {}).get("NumberOfLogicalProcessors"),
                            physical_memory_bytes=private.get("computer", {}).get("TotalPhysicalMemory"),
                            elevated=private.get("admin"), filesystem=private.get("disk", {}).get("FileSystem"),
-                           rustc_version=(private.get("rust") or [None])[0], python_version=private.get("python"), powershell_version=private.get("powershell"))
+                           rustc_version=rust if isinstance(rust, str) else None, python_version=private.get("python"), powershell_version=private.get("powershell"))
     return dict(schema_version=1, experiment="local_snapshot_fallback", baseline_commit=baseline_commit, candidate_commit=candidate_commit,
                 summary_script_lf_sha256=hashlib.sha256(Path(__file__).read_bytes().replace(b"\r\n", b"\n")).hexdigest(),
                 source_association="Commit identities supplied by the experiment operator; exact measured executable/scorer/script SHA-256 are retained per run. This archive does not represent later candidate revisions.",
