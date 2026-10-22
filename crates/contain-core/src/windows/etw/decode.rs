@@ -109,6 +109,7 @@ impl Decoder {
                 ..Default::default()
             },
             raw: RawEvidence {
+                clock: Some(super::super::clock::record_header(record.raw_timestamp())),
                 event_id: Some(id),
                 thread_id: measured!(self.metrics, Properties, p.try_parse::<u32>("ThreadID")).ok(),
                 process_key: pointer(&self.metrics, &p, "ProcessSequenceNumber"),
@@ -162,6 +163,7 @@ impl Decoder {
                     status.and_then(status_success),
                 );
                 e.raw = RawEvidence {
+                    clock: Some(super::super::clock::record_header(record.raw_timestamp())),
                     event_id: Some(id),
                     irp,
                     status,
@@ -241,6 +243,7 @@ impl Decoder {
             None,
         );
         e.raw = RawEvidence {
+            clock: Some(super::super::clock::record_header(record.raw_timestamp())),
             event_id: Some(id),
             thread_id: tid,
             header_pid: Some(record.process_id()),
@@ -417,6 +420,7 @@ impl Decoder {
         e.raw = RawEvidence {
             event_id: Some(id),
             header_pid: Some(pid),
+            clock: Some(super::super::clock::record_header(record.raw_timestamp())),
             registry_object: Some(format!("{object:016x}")),
             object_generation: generation,
             registry_fields: fields,

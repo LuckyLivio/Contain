@@ -83,6 +83,7 @@ impl ProcessObserver {
                     ancestor_pid: Some(self.root.pid),
                     session_id: Some(self.session_id.clone()),
                     rule: AttributionRule::DescendantProcess,
+                    observation: None,
                 };
                 self.records.entry((identity.pid, identity.creation_time)).or_insert(ProcessRecord {
                     pid: identity.pid, parent_pid: Some(parent_pid), image: identity.image.clone(),

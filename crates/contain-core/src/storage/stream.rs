@@ -493,6 +493,14 @@ impl Storage {
         let tx = self.connection.transaction()?;
         if !c.backend.source_intact() {
             // This also covers records persisted before a later failure became known.
+            // Summary and detailed views cross the same completion boundary: a
+            // diagnostic discovered after save() must not leave a stale High
+            // summary beside downgraded event documents after reopening.
+            tx.execute(
+                "UPDATE capture_metadata SET backend_json=?2 WHERE session_id=?1",
+                params![c.id, serde_json::to_string(&c.backend)?],
+            )?;
+            tx.execute("UPDATE system_events SET confidence='Unknown',reason='Session continuity unverified; final promotion suppressed' WHERE session_id=?1 AND event_type IN ('file','registry')",[&c.id])?;
             tx.execute("UPDATE observations SET confidence='Unknown',state_validated=0,rule=?2,reason='Session continuity unverified; final promotion suppressed' WHERE session_id=?1 AND event_type IN ('file','registry')",params![c.id,serde_json::to_string(&AttributionRule::EventLoss)?])?;
             tx.execute("UPDATE evidence_edges SET confidence='Unknown',reason='Session continuity unverified; resource association suppressed' WHERE session_id=?1 AND from_node IN (SELECT 'event:'||id FROM observations WHERE session_id=?1 AND event_type IN ('file','registry'))",[&c.id])?;
             tx.execute("UPDATE normalized_operations SET detail_json=json_set(detail_json,'$.confidence','Unknown') WHERE session_id=?1",[&c.id])?;
@@ -502,6 +510,62 @@ impl Storage {
             tx.execute("UPDATE observation_details SET dimensions_json=json_set(dimensions_json,'$.operation','Unknown') WHERE event_id IN (SELECT id FROM observations WHERE session_id=?1 AND event_type IN ('file','completion'))",[&c.id])?;
             tx.execute("UPDATE event_documents SET document=json_set(document,'$.confidence','Unknown','$.state_validated',json('false'),'$.evidence.rule','EventLoss','$.raw.resource_resolved',json('false'),'$.dimensions.resource','Unknown','$.reason','Session continuity unverified; final promotion suppressed') WHERE session_id=?1 AND json_extract(document,'$.event_type') IN ('file','registry')",[&c.id])?;
             tx.execute("UPDATE event_documents SET document=json_set(document,'$.success',NULL,'$.dimensions.operation','Unknown') WHERE session_id=?1 AND json_extract(document,'$.event_type') IN ('file','completion')",[&c.id])?;
+            // Snapshot observations are independent documents. Retain measured
+            // identities, hashes and intervals, but revoke a provisional final
+            // continuity claim in the same transaction as event promotion.
+            // Preserve array order and leave legacy evidence without observation
+            // objects unchanged.
+            tx.execute(
+                "UPDATE change_evidence SET evidence_json=(
+                    SELECT json_group_array(json(patched)) FROM (
+                        SELECT CASE WHEN json_type(value,'$.observation')='object'
+                            THEN json_set(value,'$.observation.final_source_complete',json('false'))
+                            ELSE value END AS patched
+                        FROM json_each(change_evidence.evidence_json) ORDER BY CAST(key AS INTEGER)
+                    )
+                ) WHERE session_id=?1 AND kind IN ('file','registry') AND EXISTS (
+                    SELECT 1 FROM json_each(change_evidence.evidence_json)
+                    WHERE json_extract(value,'$.observation.final_source_complete')=1
+                )",
+                [&c.id],
+            )?;
+            let metadata: Option<(String, String)> = tx
+                .query_row(
+                    "SELECT stats_json,quality_json FROM reliability_metadata WHERE session_id=?1",
+                    [&c.id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            if let Some((stats, quality)) = metadata {
+                // Keep the persisted phase measurements, including save()'s
+                // final-commit measurement, rather than replacing them with an
+                // earlier in-memory stats snapshot.
+                let mut stats: CaptureStats = serde_json::from_str(&stats)?;
+                let mut quality: CaptureQuality = serde_json::from_str(&quality)?;
+                stats.events_dropped = c.backend.dropped_events;
+                stats.high_confidence_events = 0;
+                stats.known_resource_events = 0;
+                stats.unknown_resource_events = tx.query_row(
+                    "SELECT COUNT(*) FROM observations WHERE session_id=?1 AND event_type IN ('file','registry')",
+                    [&c.id], |row| row.get(0),
+                )?;
+                if c.backend.has_loss()
+                    || (c.backend.etw_file == "active"
+                        && (c.backend.etw_events_lost.is_none()
+                            || c.backend.etw_buffers_lost.is_none()))
+                {
+                    quality.level = QualityLevel::Incomplete;
+                    let reason =
+                        "Session continuity unverified; final attribution promotion suppressed";
+                    if !quality.reasons.iter().any(|existing| existing == reason) {
+                        quality.reasons.push(reason.into());
+                    }
+                }
+                tx.execute(
+                    "UPDATE reliability_metadata SET stats_json=?2,quality_json=?3 WHERE session_id=?1",
+                    params![c.id, serde_json::to_string(&stats)?, serde_json::to_string(&quality)?],
+                )?;
+            }
         }
         tx.execute(
             "UPDATE capture_runs SET state='finished' WHERE session_id=?1 AND state='finalizing'",
@@ -535,20 +599,35 @@ impl Storage {
             if let Some((session, document)) = raw {
                 let mut c = self.load_summary(&session)?;
                 let mut e: SystemEvent = serde_json::from_str(&document)?;
-                e.confidence = Confidence::Unknown;
-                e.success = None;
-                e.state_validated = false;
-                e.reason="Raw journal evidence without a finalized observation; no attribution promotion".into();
+                suppress_unfinished(&mut e);
+                if c.capture_state.as_deref().is_none_or(|s| s == "finished") {
+                    e.reason="Raw journal evidence without a finalized observation; no attribution promotion".into();
+                }
                 c.events.push(e);
                 return Ok(Some(c));
             }
             return Ok(None);
         };
         let mut c = self.load_summary(&session)?;
-        anyhow::ensure!(
-            c.capture_state.as_deref().is_none_or(|s| s == "finished"),
-            "Session is unfinished; use paged history for raw evidence"
-        );
+        if c.capture_state.as_deref().is_some_and(|s| s != "finished") {
+            // Derived rows may have committed before an interrupted finalization.
+            // Explain the same committed raw record as paged/full history, never
+            // the stale derived document or its provisional ancestry edges.
+            let table = self.raw_table(&session)?;
+            let sql = format!(
+                "SELECT document FROM {table} WHERE session_id=?1 AND json_extract(document,'$.id')=?2 LIMIT 1"
+            );
+            let raw: Option<String> = self
+                .connection
+                .query_row(&sql, params![session, id], |row| row.get(0))
+                .optional()?;
+            let raw = raw
+                .context("Unfinished session has no committed raw record for this derived event")?;
+            let mut e = serde_json::from_str(&raw)?;
+            suppress_unfinished(&mut e);
+            c.events.push(e);
+            return Ok(Some(c));
+        }
         c.events.push(serde_json::from_str(&document)?);
         let mut nodes = vec![format!("event:{id}")];
         let mut visited = std::collections::HashSet::new();
@@ -609,15 +688,64 @@ impl Storage {
             .collect::<Result<Vec<SystemEvent>>>()?;
         if unfinished {
             for e in &mut rows {
-                e.confidence = Confidence::Unknown;
-                e.success = None;
-                e.state_validated = false;
-                e.reason = "Unfinished session: raw evidence only; no final attribution".into();
+                suppress_unfinished(e);
             }
         }
         Ok(rows)
     }
 }
+
+fn suppress_unfinished(event: &mut SystemEvent) {
+    event.confidence = Confidence::Unknown;
+    // These are conclusions of final association, not raw provider fields.
+    // Keep the original header/status/identity payload for later inspection.
+    event.dimensions = ConfidenceDimensions::default();
+    event.success = None;
+    event.state_validated = false;
+    event.reason = "Unfinished session: raw evidence only; no final attribution".into();
+}
+
+/// Final continuity is not established for an interrupted capture, even when a
+/// previous summary transaction retained a provisional observation document.
+pub(super) fn suppress_unfinished_state_evidence(
+    db: &Storage,
+    capture: &mut Capture,
+) -> Result<()> {
+    let table = db.raw_table(&capture.id)?;
+    let sql = format!(
+        "SELECT COUNT(*), COALESCE(SUM(CASE WHEN kind IN ('file','registry') THEN 1 ELSE 0 END),0) FROM {table} WHERE session_id=?1"
+    );
+    let (retained, relevant): (u64, u64) = db
+        .connection
+        .query_row(&sql, [&capture.id], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    // Match the committed raw projection used by events_page(), including its
+    // deliberate removal of every derived confidence dimension. Other counters
+    // and phase measurements cannot be rebuilt here and remain as recorded.
+    capture.stats.events_retained = retained;
+    capture.stats.events_normalized = 0;
+    capture.stats.high_confidence_events = 0;
+    capture.stats.known_actor_events = 0;
+    capture.stats.known_resource_events = 0;
+    capture.stats.unknown_actor_events = relevant;
+    capture.stats.unknown_resource_events = relevant;
+    for evidence in capture
+        .files
+        .iter_mut()
+        .flat_map(|change| &mut change.evidence)
+        .chain(
+            capture
+                .registry
+                .iter_mut()
+                .flat_map(|change| &mut change.evidence),
+        )
+    {
+        if let Some(observation) = &mut evidence.observation {
+            observation.final_source_complete = false;
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn save_documents(tx: &Connection, c: &Capture) -> Result<()> {
     let mut q = tx.prepare_cached("INSERT INTO event_documents VALUES (?1,?2,?3,?4,?5,?6)")?;
     for e in &c.events {

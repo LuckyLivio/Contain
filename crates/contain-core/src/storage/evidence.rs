@@ -112,6 +112,7 @@ pub fn load(connection: &Connection, capture: &mut Capture, full: bool) -> Resul
                     ancestor_pid: row.get(13)?,
                     session_id: row.get(14)?,
                     rule: serde_json::from_str(&row.get::<_, String>(15)?)?,
+                    observation: None,
                 },
                 success: row.get(16)?,
                 state_validated: row.get(17)?,

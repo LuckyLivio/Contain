@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
+mod clock;
 mod reliability;
 mod ticks;
+pub use clock::*;
 pub use reliability::*;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,6 +140,40 @@ pub struct AttributionEvidence {
     pub ancestor_pid: Option<u32>,
     pub session_id: Option<String>,
     pub rule: AttributionRule,
+    /// Per-resource controlled observation; absent in captures made by older versions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observation: Option<StateObservation>,
+}
+
+/// A read observation is separate from the actor evidence. Wall-clock bounds are
+/// diagnostic only and must never be compared with converted ETW timestamps to
+/// infer an interval without writes.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct StateObservation {
+    pub method: String,
+    pub timestamp_domain: String,
+    #[serde(with = "ticks::optional")]
+    pub started_ticks: Option<u64>,
+    #[serde(with = "ticks::optional")]
+    pub finished_ticks: Option<u64>,
+    pub baseline_identity: Option<String>,
+    pub identity: Option<String>,
+    pub baseline_hash: Option<String>,
+    pub observed_hash: Option<String>,
+    pub baseline_stable: bool,
+    pub content_stable: bool,
+    pub path_pinned: bool,
+    pub write_delete_excluded: bool,
+    pub held_through_trace_stop: bool,
+    pub final_source_complete: bool,
+    /// Stronger than no reported loss: every relevant mutation kind and path
+    /// must be covered. The current production file decoder cannot establish it.
+    pub mutation_coverage_complete: bool,
+    /// Monotonic elapsed time measured at sealing, not an ETW clock comparison.
+    pub exclusion_duration_ns: Option<u64>,
+    pub retained_handles: Option<usize>,
+    pub failure: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -165,6 +201,10 @@ pub struct SystemEvent {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct BackendReport {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handoff: Option<crate::ingest::HandoffStats>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clock: Option<TraceClockMetadata>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initial_identity_snapshot: Option<InitialIdentitySnapshot>,
     #[serde(default)]
@@ -194,6 +234,8 @@ pub struct BackendReport {
 impl BackendReport {
     pub fn has_loss(&self) -> bool {
         self.dropped_events > 0
+            || self.handoff.as_ref().is_some_and(|h| h.dropped() > 0 || h.pending > 0
+                || !h.receiver_finished || !h.writer_finished)
             // Storage finalization may fail without losing an individual row.
             // Suppress promotion without inventing a dropped-event count.
             || self.stream.as_ref().is_some_and(|s| s.error.is_some())

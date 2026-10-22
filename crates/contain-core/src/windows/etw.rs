@@ -20,7 +20,9 @@ use windows_sys::Win32::System::Diagnostics::Etw::EVENT_TRACE_CONTROL_STOP;
 
 const FILE_PROVIDER: &str = "edd08927-9cc4-4e65-b970-c2560fb5c289";
 const REGISTRY_PROVIDER: &str = "70eb4f03-c1de-4f73-a051-33d13d5413bd";
-const QUEUE_CAPACITY: usize = 8192;
+// Half the original queue budget; the other half is the bounded persistence
+// handoff. Splitting ownership does not enlarge the queued-record budget.
+const QUEUE_CAPACITY: usize = 4096;
 const OBJECT_CAPACITY: usize = 16384;
 pub(crate) const FILE_EVENT_IDS: &[u16] = &[12, 14, 16, 24, 26, 27, 30];
 
@@ -79,6 +81,7 @@ pub struct EtwSource {
     consumer: Option<JoinHandle<Result<(), String>>>,
     name: String,
     rx: Receiver<(SystemEvent, Instant)>,
+    receiver_detached: bool,
     metrics: Arc<Metrics>,
     dropped: Arc<AtomicU64>,
     errors: Arc<AtomicU64>,
@@ -87,7 +90,67 @@ pub struct EtwSource {
     report: BackendReport,
 }
 
+pub(crate) struct EtwReceiver {
+    rx: Receiver<(SystemEvent, Instant)>,
+    metrics: Arc<Metrics>,
+}
+
+impl EtwReceiver {
+    pub(crate) fn drain(&self) -> Vec<SystemEvent> {
+        crate::profile::drain();
+        let _timer = crate::profile::timer("capture_queue_take");
+        self.rx
+            .try_iter()
+            .take(crate::storage::stream::PAGE)
+            .map(|(event, at)| {
+                self.metrics.dequeued(at);
+                event
+            })
+            .collect()
+    }
+}
+
 impl EtwSource {
+    /// Unit-test injection only. It provides no ETW loss or clock evidence.
+    #[cfg(test)]
+    pub(crate) fn synthetic(events: Vec<SystemEvent>) -> Self {
+        assert!(events.len() <= QUEUE_CAPACITY);
+        let mut source = Self::start(&[], None, false);
+        let (tx, rx) = mpsc::sync_channel(QUEUE_CAPACITY);
+        source.rx = rx;
+        for event in events {
+            let pending = source.metrics.entering();
+            tx.send((event, Instant::now())).unwrap();
+            source.metrics.admitted(pending);
+            source.received.fetch_add(1, Ordering::Relaxed);
+        }
+        source
+    }
+    pub(crate) fn take_receiver(&mut self) -> EtwReceiver {
+        assert!(
+            !self.receiver_detached,
+            "capture receiver may only be detached once"
+        );
+        self.receiver_detached = true;
+        let (_, empty) = mpsc::sync_channel(1);
+        EtwReceiver {
+            rx: std::mem::replace(&mut self.rx, empty),
+            metrics: self.metrics.clone(),
+        }
+    }
+
+    pub(crate) fn queue_probe(
+        &self,
+    ) -> impl Fn() -> crate::profile::QueueSnapshot + Send + Clone + 'static {
+        let metrics = self.metrics.clone();
+        move || metrics.queue_snapshot()
+    }
+
+    /// After the detached receiver joins, refresh queue counters without issuing
+    /// another STOP or adding cumulative Windows loss counters a second time.
+    pub(crate) fn final_report(&mut self) -> BackendReport {
+        self.stop_with(|_| {})
+    }
     pub fn lifecycle_active(&self) -> bool {
         self.report.etw_process == "active"
     }
@@ -111,6 +174,7 @@ impl EtwSource {
             consumer: None,
             name: name.clone(),
             rx,
+            receiver_detached: false,
             metrics: metrics.clone(),
             dropped: dropped.clone(),
             errors: errors.clone(),
@@ -124,6 +188,9 @@ impl EtwSource {
             source.report.etw_registry = "disabled".into();
             return source;
         }
+        let mut clock = super::clock::metadata();
+        super::clock::observe(&mut clock, "trace_start_requested");
+        source.report.clock = Some(clock);
         let devices = native::device_map();
         let probe_id = uuid::Uuid::new_v4();
         let probe = match native::TraceProbe::register(probe_id.as_u128()) {
@@ -262,6 +329,8 @@ impl EtwSource {
                     source.report.warnings.push(format!(
                         "ETW provider/consumer readiness failed: Win32 {code}; using snapshots."
                     ));
+                } else if let Some(clock) = &mut source.report.clock {
+                    super::clock::observe(clock, "consumer_ready");
                 }
             }
             Err(error) => {
@@ -280,6 +349,9 @@ impl EtwSource {
 
 impl EventSource for EtwSource {
     fn drain(&mut self) -> Vec<SystemEvent> {
+        if self.receiver_detached {
+            return Vec::new();
+        }
         crate::profile::drain();
         let _clock = crate::profile::timer("capture_queue_take");
         self.rx
@@ -417,6 +489,9 @@ impl EtwSource {
 
     pub fn stop_with(&mut self, mut sink: impl FnMut(Vec<SystemEvent>)) -> BackendReport {
         if let Some(trace) = self.trace.take() {
+            if let Some(clock) = &mut self.report.clock {
+                super::clock::observe(clock, "trace_stop_requested");
+            }
             let mut trace = Some(trace);
             let name = self.name.clone();
             // ControlTrace STOP may itself wait while final buffers are delivered.
@@ -457,6 +532,9 @@ impl EtwSource {
             }
             sink(self.drain());
             drop(trace);
+            if let Some(clock) = &mut self.report.clock {
+                super::clock::observe(clock, "consumer_stopped");
+            }
         }
         // Producer and ProcessTrace have ended; drain every remaining bounded page.
         loop {
@@ -472,7 +550,18 @@ impl EtwSource {
         self.report.decode_errors = self.errors.load(Ordering::Relaxed);
         self.report.registry_path_gaps = self.registry_path_gaps.load(Ordering::Relaxed);
         if let Some(decoder) = &self.decoder {
-            let decoder = decoder.lock().unwrap();
+            let decoder = match decoder.lock() {
+                Ok(decoder) => decoder,
+                Err(poison) => {
+                    self.report.decode_errors = self.report.decode_errors.max(1);
+                    let warning =
+                        "ETW decoder panicked; source continuity is unverified".to_string();
+                    if !self.report.warnings.contains(&warning) {
+                        self.report.warnings.push(warning);
+                    }
+                    poison.into_inner()
+                }
+            };
             if decoder.file_time_regressions > 0 {
                 let warning = format!(
                     "{} file records arrived before the file context watermark; rejected ambiguous object/IRP reuse and suppressed application promotion.",

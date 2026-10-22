@@ -164,6 +164,97 @@ pub fn compose_files(files: &mut [FileChange], events: &mut [SystemEvent], compl
     }
 }
 
+/// Production snapshot composition requires a per-resource observation sealed
+/// after source shutdown. `compose_files` remains the lower-level policy helper.
+pub fn compose_file_observed(
+    file: &mut FileChange,
+    events: &mut [SystemEvent],
+    complete: bool,
+    observation: Option<StateObservation>,
+) {
+    let read_proven = observation.as_ref().is_some_and(|read| {
+        read.method == "deny_write_delete_read_handle"
+            && read.baseline_stable
+            && read.content_stable
+            && read.path_pinned
+            && read.write_delete_excluded
+            && read.held_through_trace_stop
+            && read.final_source_complete
+            && read.identity.is_some()
+            && read.identity == read.baseline_identity
+            && read.baseline_hash.is_some()
+            && read.baseline_hash == file.before_hash
+            && read.observed_hash.is_some()
+            && read.observed_hash == file.after_hash
+            && read.failure.is_none()
+    });
+    let path = normalize_path(&file.path, &[]);
+    let mutations: Vec<_> = events
+        .iter()
+        .filter(|event| {
+            event.event_type == "file"
+                && normalize_path(&event.resource, &[]) == path
+                && event.success != Some(false)
+                && matches!(
+                    event.operation.as_str(),
+                    "write_requested" | "delete_requested" | "rename_requested" | "create_new_file"
+                )
+        })
+        .collect();
+    // An ETW open generation is not a physical file ID. Requiring one consistent
+    // generation is an extra refusal rule; it does not turn the two identifiers
+    // into equivalents or justify rename/replacement ownership.
+    let generation = mutations
+        .first()
+        .and_then(|e| e.raw.object_generation.as_ref());
+    let object = mutations.first().and_then(|e| e.raw.file_object.as_ref());
+    let file_keys: std::collections::HashSet<_> = mutations
+        .iter()
+        .filter_map(|e| e.raw.file_key.as_ref())
+        .collect();
+    let writes_proven = !mutations.is_empty()
+        && generation.is_some_and(|g| !g.is_empty())
+        && object.is_some_and(|o| !o.is_empty() && o != "0000000000000000")
+        && file_keys.len() <= 1
+        && mutations.iter().all(|event| {
+            event.operation == "write_requested"
+                && event.success == Some(true)
+                && event.confidence == Confidence::High
+                && event.raw.resource_resolved
+                && event.raw.object_generation.as_ref() == generation
+                && event.raw.file_object.as_ref() == object
+        });
+    let mutation_coverage = observation
+        .as_ref()
+        .is_some_and(|read| read.mutation_coverage_complete);
+    let covered = complete
+        && mutation_coverage
+        && file.operation == "modified"
+        && read_proven
+        && writes_proven;
+    compose_files(std::slice::from_mut(file), events, covered);
+    if covered && file.confidence == Confidence::High {
+        file.reason = "A stable baseline and a read handle denying writes/deletes identify the same physical file; all recorded mutations are successful verified installer-family writes in one open generation. The file and its ancestor paths remained pinned through trace stop and complete drain. This active observation temporarily blocks writes/deletes; it explains the observed modification, not exclusive ownership of every byte or permission to delete.".into();
+    } else {
+        file.reason = if !complete {
+            "Final trace/drain coverage is incomplete; source actor evidence is retained but the observed state remains Unknown."
+        } else if !mutation_coverage {
+            "Stable file reads do not establish complete mutation coverage: open/truncate disposition and unresolved file paths are not fully represented. Source actor evidence and read observations are retained, but final state attribution remains Unknown."
+        } else if !read_proven {
+            "A stable baseline, pinned physical file, and write/delete exclusion through final trace drain were not all established; source actor evidence is retained."
+        } else {
+            "The controlled state cannot be explained by one consistent generation of successful installer-family writes: creation, deletion, rename, replacement, unknown completion, or another writer requires Unknown."
+        }.into();
+    }
+    if let Some(observation) = observation {
+        file.evidence.push(AttributionEvidence {
+            source: EvidenceSource::Snapshot,
+            observation: Some(observation),
+            ..Default::default()
+        });
+    }
+}
+
 pub fn compose_registry(
     changes: &mut [RegistryChange],
     events: &mut [SystemEvent],
@@ -232,6 +323,26 @@ pub fn compose_registry(
     }
 }
 
+pub fn compose_registry_observed(
+    change: &mut RegistryChange,
+    events: &mut [SystemEvent],
+    nt_root: Option<&str>,
+    observation: Option<StateObservation>,
+) {
+    // Even two matching reads have an ABA gap. Until a source-domain interval or
+    // an exclusion mechanism is proven, retain actor evidence without promoting
+    // the final value. File leases cannot be applied to registry values.
+    compose_registry(std::slice::from_mut(change), events, nt_root, false);
+    change.reason = "The final registry value was observed without writer exclusion; concurrent write/restore and clock-domain uncertainty are not excluded. Source actor evidence is retained, but final value ownership remains Unknown.".into();
+    if let Some(observation) = observation {
+        change.evidence.push(AttributionEvidence {
+            source: EvidenceSource::Snapshot,
+            observation: Some(observation),
+            ..Default::default()
+        });
+    }
+}
+
 pub fn inventory_evidence(
     command: &str,
     source: EvidenceSource,
@@ -268,6 +379,161 @@ pub fn inventory_evidence(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn observed_write() -> (FileChange, SystemEvent, StateObservation) {
+        let file = FileChange {
+            path: "C:\\App\\data".into(),
+            operation: "modified".into(),
+            before_hash: Some("before".into()),
+            after_hash: Some("after".into()),
+            ..Default::default()
+        };
+        let mut event = event(Some(2), Some(100));
+        event.operation = "write_requested".into();
+        event.confidence = Confidence::High;
+        event.success = Some(true);
+        event.raw.resource_resolved = true;
+        event.raw.object_generation = Some("generation-1".into());
+        event.raw.file_object = Some("object-1".into());
+        let observation = StateObservation {
+            method: "deny_write_delete_read_handle".into(),
+            baseline_identity: Some("physical-file-1".into()),
+            identity: Some("physical-file-1".into()),
+            baseline_hash: file.before_hash.clone(),
+            observed_hash: file.after_hash.clone(),
+            baseline_stable: true,
+            content_stable: true,
+            path_pinned: true,
+            write_delete_excluded: true,
+            held_through_trace_stop: true,
+            final_source_complete: true,
+            // A complete controlled model is a policy test, not a claim about
+            // coverage provided by the current production ETW decoder.
+            mutation_coverage_complete: true,
+            ..Default::default()
+        };
+        (file, event, observation)
+    }
+
+    #[test]
+    fn observed_snapshot_requires_resource_proof_without_erasing_source_evidence() {
+        let (mut file, event, _) = observed_write();
+        let mut events = [event];
+        compose_file_observed(&mut file, &mut events, true, None);
+        assert_eq!(file.confidence, Confidence::Unknown);
+        assert!(!events[0].state_validated);
+        assert_eq!(events[0].confidence, Confidence::High);
+        assert_eq!(file.evidence[0].pid, Some(2));
+    }
+
+    #[test]
+    fn observed_snapshot_rejects_unfinished_unstable_replaced_or_uncovered_reads() {
+        for case in 0..11 {
+            let (mut file, event, mut observation) = observed_write();
+            match case {
+                0 => observation.held_through_trace_stop = false,
+                1 => observation.baseline_stable = false,
+                2 => observation.content_stable = false,
+                3 => observation.path_pinned = false,
+                4 => observation.write_delete_excluded = false,
+                5 => observation.identity = Some("replacement".into()),
+                6 => observation.identity = None,
+                7 => observation.final_source_complete = false,
+                8 => observation.observed_hash = Some("other-read".into()),
+                9 => observation.baseline_hash = Some("other-before".into()),
+                10 => observation.mutation_coverage_complete = false,
+                _ => unreachable!(),
+            }
+            let mut events = [event];
+            compose_file_observed(&mut file, &mut events, true, Some(observation));
+            assert_eq!(file.confidence, Confidence::Unknown, "case {case}");
+            assert!(!events[0].state_validated);
+            assert_eq!(events[0].confidence, Confidence::High);
+        }
+    }
+
+    #[test]
+    fn observed_snapshot_rejects_unknown_completion_and_object_generation_conflicts() {
+        for case in 0..7 {
+            let (mut file, event, observation) = observed_write();
+            let mut event = event;
+            let mut other = event.clone();
+            match case {
+                0 => other.success = None,
+                1 => other.raw.object_generation = Some("different-generation".into()),
+                2 => other.raw.object_generation = None,
+                3 => other.operation = "rename_requested".into(),
+                4 => other.operation = "delete_requested".into(),
+                5 => other.confidence = Confidence::Unknown,
+                6 => {
+                    event.raw.file_key = Some("file-key-a".into());
+                    other.raw.file_key = Some("file-key-b".into());
+                }
+                _ => unreachable!(),
+            }
+            let mut events = [other, event];
+            compose_file_observed(&mut file, &mut events, true, Some(observation));
+            assert_eq!(file.confidence, Confidence::Unknown, "case {case}");
+            assert!(events.iter().all(|e| !e.state_validated));
+            assert_eq!(events[1].confidence, Confidence::High);
+            assert_eq!(
+                events[0].confidence,
+                if case == 5 {
+                    Confidence::Unknown
+                } else {
+                    Confidence::High
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn complete_controlled_model_is_usable_but_final_loss_revokes_only_state() {
+        let (mut file, event, observation) = observed_write();
+        let mut events = [event];
+        compose_file_observed(&mut file, &mut events, true, Some(observation.clone()));
+        assert_eq!(file.confidence, Confidence::High);
+        assert!(events[0].state_validated);
+        assert_eq!(
+            file.evidence.last().unwrap().observation,
+            Some(observation.clone())
+        );
+        compose_file_observed(&mut file, &mut events, false, Some(observation));
+        assert_eq!(file.confidence, Confidence::Unknown);
+        assert!(!events[0].state_validated);
+        assert_eq!(events[0].confidence, Confidence::High);
+    }
+
+    #[test]
+    fn registry_unlocked_observation_never_promotes_value_or_erases_source_actor() {
+        let mut change = RegistryChange {
+            name: "value".into(),
+            operation: "modified".into(),
+            ..Default::default()
+        };
+        let mut source = event(Some(2), Some(100));
+        source.event_type = "registry".into();
+        source.resource = "root\\value".into();
+        source.operation = "set_value".into();
+        source.confidence = Confidence::High;
+        source.success = Some(true);
+        source.raw.resource_resolved = true;
+        let mut events = [source];
+        compose_registry_observed(
+            &mut change,
+            &mut events,
+            Some("root"),
+            Some(StateObservation {
+                method: "registry_value_double_read_unlocked".into(),
+                ..Default::default()
+            }),
+        );
+        assert_eq!(change.confidence, Confidence::Unknown);
+        assert_eq!(events[0].confidence, Confidence::High);
+        assert!(!events[0].state_validated);
+        assert_eq!(change.evidence[0].pid, Some(2));
+        assert!(change.evidence[1].observation.is_some());
+    }
     fn process(pid: u32, birth: u64, confidence: Confidence) -> ProcessRecord {
         ProcessRecord {
             pid,

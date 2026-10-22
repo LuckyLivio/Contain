@@ -3,6 +3,8 @@ use super::*;
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct RawEvidence {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clock: Option<SourceClock>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registry_fields: Option<Box<RegistryFields>>,
     pub event_id: Option<u16>,
     pub thread_id: Option<u32>,

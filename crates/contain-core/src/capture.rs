@@ -4,7 +4,6 @@ use crate::storage::{Storage, stream::RawBuffer};
 use crate::{
     attribution, filesystem, inventory,
     model::*,
-    monitor::EventSource,
     process::ProcessObserver,
     registry,
     windows::{etw::EtwSource, native},
@@ -70,7 +69,6 @@ fn install_inner(
     db.validate_capture_location(&watch_roots)?;
     let mut warnings = Vec::new();
     let before_inventory = inventory::snapshot();
-    let before_files = filesystem::snapshot(&roots)?;
     let before_registry = options
         .registry_key
         .as_deref()
@@ -124,127 +122,137 @@ fn install_inner(
     let initial_identities = source.take_initial_identities();
     let lifecycle_receiver =
         crate::hotpath::Variant::from_env().lifecycle_receiver() && source.lifecycle_active();
-    let installer_clock = Instant::now();
-    let started_at = native::timestamp(native::now_ticks());
-    let mut child = Command::new(&installer)
-        .args(&options.args)
-        .spawn()
-        .with_context(|| format!("launching {}", installer.display()))?;
-    let identity =
-        native::identity_from_handle(child.as_handle(), child.id()).unwrap_or_else(|| {
-            warnings.push(
-                "Installer creation time query failed; descendant attribution is disabled.".into(),
+    let receive_clock = Instant::now();
+    let (observations, mut backend, stream) =
+        crate::ingest::record_while(&mut source, db, journal, |live| {
+            // Baseline reads now occur inside the active trace, before launch.
+            // The dedicated receiver remains active during both snapshots.
+            let before_files = filesystem::baseline_snapshot(&roots)?;
+            let installer_clock = Instant::now();
+            let started_at = native::timestamp(native::now_ticks());
+            let mut child = Command::new(&installer)
+                .args(&options.args)
+                .spawn()
+                .with_context(|| format!("launching {}", installer.display()))?;
+            let identity = native::identity_from_handle(child.as_handle(), child.id())
+                .unwrap_or_else(|| {
+                    warnings.push(
+                        "Installer creation time query failed; descendant attribution is disabled."
+                            .into(),
+                    );
+                    native::ProcessIdentity {
+                        pid: child.id(),
+                        creation_time: 0,
+                        image: installer.to_string_lossy().into_owned(),
+                    }
+                });
+            let root_pid = identity.pid;
+            let root_birth = identity.creation_time;
+            let mut process_observer = ProcessObserver::new(identity, &id);
+            let mut poll_at = Instant::now();
+            let exit_code = loop {
+                if !lifecycle_receiver && Instant::now() >= poll_at {
+                    measured!("capture_process_poll", process_observer.poll());
+                    poll_at = Instant::now() + Duration::from_millis(30);
+                }
+                if let Some(status) = child.try_wait()? {
+                    break status.code();
+                }
+                thread::sleep(Duration::from_millis(1));
+            };
+            phases.insert(
+                "installer_root".into(),
+                installer_clock.elapsed().as_millis() as u64,
             );
-            native::ProcessIdentity {
-                pid: child.id(),
-                creation_time: 0,
-                image: installer.to_string_lossy().into_owned(),
+            let exited_at = native::now_ticks();
+            live.reset_activity();
+            let drain_start = Instant::now();
+            let mut drain_timed_out = false;
+            loop {
+                if !lifecycle_receiver && Instant::now() >= poll_at {
+                    measured!("capture_process_poll", process_observer.poll());
+                    poll_at = Instant::now() + Duration::from_millis(30);
+                }
+                let descendants_live = live.descendants(
+                    process_observer.records(),
+                    (root_pid, root_birth),
+                    &id,
+                    lifecycle_receiver,
+                );
+                match crate::drain::decide(
+                    drain_start.elapsed().as_millis() as u64,
+                    live.quiet_ms(),
+                    descendants_live,
+                    options.settle_ms.max(if options.etw { 1200 } else { 0 }),
+                    options.max_drain_ms,
+                ) {
+                    crate::drain::Decision::Timeout => {
+                        drain_timed_out = true;
+                        break;
+                    }
+                    crate::drain::Decision::Quiet => break,
+                    crate::drain::Decision::Wait => {}
+                }
+                thread::sleep(Duration::from_millis(1));
             }
-        });
-    let root_pid = identity.pid;
-    let mut process_observer = ProcessObserver::new(identity, &id);
-    let mut live_cache = LifetimeCache::default();
-    let mut poll_at = Instant::now();
-    let exit_code = loop {
-        if !lifecycle_receiver && Instant::now() >= poll_at {
-            measured!("capture_process_poll", process_observer.poll());
-            poll_at = Instant::now() + Duration::from_millis(30);
-        }
-        let incoming = source.drain();
-        let full_page = incoming.len() == crate::storage::stream::PAGE;
-        for e in &incoming {
-            measured!("capture_lifetime_ingest", live_cache.ingest(e));
-        }
-        journal.append(db, incoming);
-        if let Some(status) = child.try_wait()? {
-            break status.code();
-        }
-        if !full_page {
-            thread::sleep(Duration::from_millis(1));
-        }
-    };
-    phases.insert(
-        "installer_root".into(),
-        installer_clock.elapsed().as_millis() as u64,
+            phases.insert(
+                "descendant_quiet_drain".into(),
+                drain_start.elapsed().as_millis() as u64,
+            );
+            let after_clock = Instant::now();
+            let observed = filesystem::observed_snapshot(&roots)?;
+            phases.insert(
+                "after_file_snapshot_hash".into(),
+                after_clock.elapsed().as_millis() as u64,
+            );
+            let after_registry = options
+                .registry_key
+                .as_deref()
+                .map(registry::observed_snapshot)
+                .transpose()?;
+            Ok((
+                before_files,
+                observed,
+                after_registry,
+                process_observer,
+                root_pid,
+                root_birth,
+                exit_code,
+                exited_at,
+                started_at,
+                drain_timed_out,
+            ))
+        })?;
+    let (
+        before_files,
+        observed,
+        after_registry,
+        process_observer,
+        root_pid,
+        root_birth,
+        exit_code,
+        exited_at,
+        started_at,
+        drain_timed_out,
+    ) = observations;
+    let after_files = observed.finish(
+        &before_files,
+        backend.source_intact()
+            && stream.failed == 0
+            && stream.quota_dropped == 0
+            && stream.error.is_none()
+            && !drain_timed_out,
     );
-    let exited_at = native::now_ticks();
-    let root_birth = process_observer
-        .records()
-        .iter()
-        .find(|p| p.pid == root_pid)
-        .and_then(|p| p.creation_time)
-        .unwrap_or(0);
-    let mut cache = live_cache;
-    for p in process_observer.records() {
-        cache.seed(p);
+    if let Some(handoff) = &backend.handoff {
+        phases.insert(
+            "etw_stop_and_queue_drain".into(),
+            handoff.stop_and_drain_ns / 1_000_000,
+        );
     }
-    let mut last_activity = Instant::now();
-    let drain_start = Instant::now();
-    let mut drain_timed_out = false;
-    loop {
-        if !lifecycle_receiver && Instant::now() >= poll_at {
-            measured!("capture_process_poll", process_observer.poll());
-            poll_at = Instant::now() + Duration::from_millis(30);
-        }
-        for p in process_observer.records() {
-            cache.seed(p);
-        }
-        let incoming = source.drain();
-        let full_page = incoming.len() == crate::storage::stream::PAGE;
-        for e in &incoming {
-            measured!("lifetime_ingest", cache.ingest(e));
-            if e.event_type == "file" || (e.event_type == "registry" && e.raw.resource_resolved) {
-                last_activity = Instant::now();
-            }
-        }
-        journal.append(db, incoming);
-        measured!("lifetime_attach", cache.attach((root_pid, root_birth), &id));
-        let descendants_live = if lifecycle_receiver {
-            cache.descendants_pending((root_pid, root_birth))
-        } else {
-            cache
-                .processes
-                .values()
-                .filter(|p| p.pid != root_pid && p.confidence == Confidence::High)
-                .any(|p| {
-                    measured!("capture_descendant_query", native::process_identity(p.pid))
-                        .is_some_and(|live| Some(live.creation_time) == p.creation_time)
-                })
-        };
-        match crate::drain::decide(
-            drain_start.elapsed().as_millis() as u64,
-            last_activity.elapsed().as_millis() as u64,
-            descendants_live,
-            options.settle_ms.max(if options.etw { 1200 } else { 0 }),
-            options.max_drain_ms,
-        ) {
-            crate::drain::Decision::Timeout => {
-                drain_timed_out = true;
-                break;
-            }
-            crate::drain::Decision::Quiet => break,
-            crate::drain::Decision::Wait => {}
-        }
-        if !full_page {
-            thread::sleep(Duration::from_millis(1));
-        }
-    }
-    let stop_clock = Instant::now();
-    let mut backend = source.stop_with(|incoming| journal.append(db, incoming));
-    let trace_stopped = Instant::now();
-    phases.insert(
-        "etw_stop_and_queue_drain".into(),
-        stop_clock.elapsed().as_millis() as u64,
-    );
-    phases.insert(
-        "descendant_quiet_drain".into(),
-        drain_start.elapsed().as_millis() as u64,
-    );
     profile::add(
         "capture_receive_wall",
-        installer_clock.elapsed().as_nanos() as u64,
+        receive_clock.elapsed().as_nanos() as u64,
     );
-    let stream = journal.finish(db)?;
     if let Some(checkpoint) = &stream.checkpoint {
         phases.insert(
             "post_raw_checkpoint".into(),
@@ -274,7 +282,6 @@ fn install_inner(
     {
         root.ended_at = Some(exited_at);
     }
-    drop(cache);
     let mut cache = LifetimeCache::default();
     for (p, at) in initial_identities {
         cache.seed_snapshot(p, at);
@@ -417,12 +424,6 @@ fn install_inner(
         association_clock.elapsed().as_millis() as u64,
     );
     drop(cache);
-    let after_clock = Instant::now();
-    let after_files = filesystem::snapshot(&roots)?;
-    phases.insert(
-        "after_file_snapshot_hash".into(),
-        after_clock.elapsed().as_millis() as u64,
-    );
     let correlation_clock = Instant::now();
     let state_association_timer = profile::timer("post_state_association");
     let operations = crate::correlation::correlate(&mut [], &before_files, &after_files);
@@ -439,21 +440,16 @@ fn install_inner(
         }
     }
     let mut files = filesystem::diff(&before_files, &after_files, &seen);
-    let after_registry = options
-        .registry_key
-        .as_deref()
-        .map(registry::snapshot)
-        .transpose()?;
-    let snapshots_finished = Instant::now();
+    let registry_observations = after_registry.as_ref().map(|s| &s.observations);
     let mut registry = match (
         options.registry_key.as_deref(),
         before_registry,
-        after_registry,
+        after_registry.as_ref(),
     ) {
-        (Some(key), Some(before), Some(after)) => registry::diff(key, &before, &after),
+        (Some(key), Some(before), Some(after)) => registry::diff(key, &before, &after.values),
         _ => Vec::new(),
     };
-    let complete = state_coverage_intact(&backend, trace_stopped, snapshots_finished);
+    let complete = backend.source_intact() && !drain_timed_out && notification_gaps == 0;
     // Persist exactly the observations validated by composition, for both files
     // and registry values. One post-stop transaction retains the existing
     // per-resource bound instead of accumulating a full-session event vector.
@@ -461,10 +457,15 @@ fn install_inner(
         for file in &mut files {
             match db.resource_events(&id, &file.path)? {
                 Some(mut events) => {
-                    attribution::compose_files(std::slice::from_mut(file), &mut events, complete);
+                    let proof =
+                        filesystem::change_observation(&before_files, &after_files, &file.path);
+                    attribution::compose_file_observed(file, &mut events, complete, proof);
                     db.persist_state_validation(&id, &events)?;
                 }
                 None => {
+                    let proof =
+                        filesystem::change_observation(&before_files, &after_files, &file.path);
+                    attribution::compose_file_observed(file, &mut [], false, proof);
                     backend.context_losses += 1;
                     if let Some(p) = &mut backend.pipeline {
                         p.context_evictions += 1;
@@ -476,19 +477,26 @@ fn install_inner(
                 }
             }
         }
-        if let Some(root) = &nt_root {
-            for change in &mut registry {
+        for change in &mut registry {
+            let proof = Some(registry::change_observation(change, registry_observations));
+            if let Some(root) = &nt_root {
                 match db.resource_events(&id, &format!("{root}\\{}", change.name))? {
                     Some(mut events) => {
-                        attribution::compose_registry(
-                            std::slice::from_mut(change),
+                        attribution::compose_registry_observed(
+                            change,
                             &mut events,
                             nt_root.as_deref(),
-                            complete && backend.registry_path_gaps == 0,
+                            proof,
                         );
                         db.persist_state_validation(&id, &events)?;
                     }
                     None => {
+                        attribution::compose_registry_observed(
+                            change,
+                            &mut [],
+                            nt_root.as_deref(),
+                            proof,
+                        );
                         backend.context_losses += 1;
                         if let Some(p) = &mut backend.pipeline {
                             p.context_evictions += 1;
@@ -499,20 +507,15 @@ fn install_inner(
                         );
                     }
                 }
+            } else {
+                // A missing SID prevents ETW resource lookup, not preservation
+                // of the independently observed value/read limitation.
+                attribution::compose_registry_observed(change, &mut [], None, proof);
             }
         }
         Ok(())
     })?;
-    if snapshots_finished > trace_stopped {
-        let reason = "Final state was sampled after ETW stopped; earlier source activity does not prove who wrote this state.";
-        for file in &mut files {
-            file.reason = reason.into();
-        }
-        for change in &mut registry {
-            change.reason = reason.into();
-        }
-        warnings.push(reason.into());
-    }
+    warnings.push("File observations use bounded temporary read leases where available; they describe observed hashes and identities, not complete mutation coverage or ownership. Final file and registry state attribution remains Unknown where mutation coverage or read/clock proof is incomplete; verified source actors remain separate.".into());
     phases.insert(
         "correlation_attribution".into(),
         correlation_clock.elapsed().as_millis() as u64,
@@ -580,15 +583,25 @@ fn install_inner(
     crate::timeline::complete(&mut capture, exited_at);
     crate::reliability::finish(&mut capture);
     add_stats(&mut capture.stats, &raw_stats);
-    if capture.backend.has_loss() {
+    if !capture.backend.source_intact() {
         capture.stats.high_confidence_events = 0;
         for f in &mut capture.files {
             f.confidence = Confidence::Unknown;
             f.reason = "Session continuity unverified; final promotion suppressed".into();
+            for evidence in &mut f.evidence {
+                if let Some(read) = &mut evidence.observation {
+                    read.final_source_complete = false;
+                }
+            }
         }
         for r in &mut capture.registry {
             r.confidence = Confidence::Unknown;
             r.reason = "Session continuity unverified; final promotion suppressed".into();
+            for evidence in &mut r.evidence {
+                if let Some(read) = &mut evidence.observation {
+                    read.final_source_complete = false;
+                }
+            }
         }
     }
     measured!("post_summary_write", db.save(&capture))?;
@@ -617,13 +630,14 @@ fn suppress(e: &mut SystemEvent) {
     }
 }
 
+#[cfg(test)]
 fn state_coverage_intact(
     backend: &BackendReport,
     trace_stopped: Instant,
     snapshots_finished: Instant,
 ) -> bool {
-    // Zero loss counters describe the trace interval only. The current pipeline
-    // deliberately snapshots after stopping; its blind interval cannot establish
+    // Preserve the historical counterexample: a snapshot taken after stopping
+    // has a blind interval even with zero losses. Those counters cannot establish
     // final-state authorship, even when an earlier same-path event has a known actor.
     backend.source_intact() && snapshots_finished <= trace_stopped
 }

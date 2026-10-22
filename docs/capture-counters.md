@@ -16,7 +16,7 @@ An absent `backend.pipeline` means ETW counters were unavailable/disabled.
 | events_received (legacy backend) | decoded observation admission attempts, not total callbacks |
 | enqueued / queue_overflow / enqueue_disconnected | admission success / full queue rejection / disconnected consumer rejection, records |
 | dequeued / queue_pending | records taken from queue / still queued or in enqueue reservation |
-| queue_high_water | conservative occupancy high-water from successful enqueue reservation, bounded at 8192; concurrent dequeue can make this an upper estimate |
+| queue_high_water | conservative callback-queue occupancy high-water from successful enqueue reservation, bounded at 4096 in the stabilization candidate (8192 in earlier versions); concurrent dequeue can make this an upper estimate |
 | queue_max_delay_ns / elapsed_ns.queue_delay | max / sum from enqueue timestamp to dequeue; no source-to-callback latency claim |
 | context_evictions | context insertion refusals or association quota losses, context entries; **not** missed syscall count |
 | retention_dropped | raw records not retained because of the byte/record-size quota |
@@ -42,6 +42,28 @@ dequeued = stream.accepted
 stream.accepted = stream.persisted + stream.failed + stream.quota_dropped
 ```
 
+The `dequeued = stream.accepted` line applies to the old direct consumer. When
+additive `backend.handoff` is present, replace that one line with:
+
+```
+dequeued = handoff.initial_accepted + handoff.received
+handoff.received = handoff.submitted + handoff.overflow + handoff.oversized
+                 + handoff.disconnected + handoff.serialize_failed
+handoff.submitted = handoff.drained + handoff.pending
+stream.accepted = handoff.initial_accepted + handoff.drained
+```
+
+`initial_accepted` counts pre-launch identity initialization's already-dequeued
+journal records. Handoff drops are counted in `backend.dropped_events`, separately
+from callback-queue and upstream ETW losses. Successful shutdown requires both
+finished flags true, both queues pending zero, and all conservation equations.
+Acceptance still requires every loss/failure/quota counter zero; balanced losses
+are not a pass. Handoff high-water records/encoded bytes must not exceed their
+reported 4096-record/16-MiB capacities. These are queued-payload budgets, not total
+process memory. `stop_and_drain_ns` includes source STOP, final receiver drain,
+writer join and final raw/checkpoint work. Failure to finish may leave only the
+last committed unfinished run metadata; unavailable final counters are not zero.
+
 v0.3.1 `backend.dropped_events` adds only raw record losses (enqueue rejection,
 quota and persistence). `backend.context_losses` is separate, in context entries;
 both independently suppress promotion. Historic v0.3 and early diagnostic revisions
@@ -54,8 +76,11 @@ Unknown counters count observations, not independent fixture operations.
 Timing fields distinguish before snapshot/inventory, provider readiness, root
 installer lifetime, descendant/quiet drain, ETW stop and drain, after hash/snapshot,
 paged lifetime/attribution/persistence, state correlation, after inventory and final
-commit. Root installer time excludes initial inventory; descendant drain includes
-the nested ETW stop duration. Raw-persistence time overlaps root/drain. Callback
+commit. Root installer time excludes initial inventory. In the stabilization
+candidate descendant/quiet drain excludes the following snapshot and STOP, and
+`capture_receive_wall` includes the active baseline/final reads plus STOP/drain.
+These changed internal boundaries cannot be used as historical speedups.
+Raw-persistence time overlaps root/drain. Callback
 categories can overlap (lifecycle construction includes enqueue); mutex wait is
 measured separately. Never sum all of these as end-to-end elapsed time. The benchmark
 measures separate external CLI start-through-exit wall time, including the final

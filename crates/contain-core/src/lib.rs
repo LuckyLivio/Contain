@@ -4,6 +4,7 @@ pub mod cleanup;
 pub mod correlation;
 pub mod doctor;
 pub mod filesystem;
+pub mod ingest;
 pub mod inventory;
 pub mod lifetime;
 pub mod model;

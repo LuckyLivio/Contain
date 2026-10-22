@@ -211,6 +211,7 @@ impl Storage {
             }
             capture.quality.level = crate::model::QualityLevel::Incomplete;
             capture.stats.high_confidence_events = 0;
+            stream::suppress_unfinished_state_evidence(self, &mut capture)?;
             for file in &mut capture.files {
                 file.confidence = Confidence::Unknown;
             }

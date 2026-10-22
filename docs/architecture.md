@@ -3,12 +3,14 @@
 ## Capture and evidence flow
 
 ```text
-CLI -> baseline snapshots + read-only inventories
+CLI -> baseline registry + read-only inventories
     -> ETW session with confirmed provider configuration and consumer callback readiness
+    -> start scoped receiver/writer -> baseline file observations
     -> launch installer through owned handle
-    -> bounded owned-record queue -> continuous SQLite raw-journal batches
+    -> bounded callback queue -> receiver/lifetimes -> bounded writer handoff -> SQLite batches
     -> process/thread lifetimes and scoped resource operations
-    -> root exit -> bounded descendant/quiet drain -> stop/drain ETW
+    -> root exit -> bounded descendant/quiet drain -> final resource observations
+    -> stop ETW -> drain receiver -> close/drain/join writer -> seal/release file reads
     -> paged lifetime resolution -> raw event attribution and persistence
     -> IRP completion + stable file ID endpoint correlation
     -> state diff + confidence dimensions + quality/statistics
@@ -36,8 +38,13 @@ Its syscall journal is an external oracle used only by verification scripts.
 
 Process identity is `(PID, creation FILETIME)`, never PID alone. Resolve at event
 time; ambiguous PID/TID reuse remains Unknown. Retain original birth ancestry after
-exit. All source and snapshot times use UTC FILETIME ticks. JSON uses decimal
-strings; SQLite uses 64-bit integers. Snapshot time means observation, not mutation.
+exit. Legacy event times remain converted FILETIME ticks. The QPC-based ETW session
+currently uses a ProcessTrace consumer without RAW_TIMESTAMP, so the delivered
+header is not original QPC. Optional clock metadata retains that fact, the exact
+signed header, and bracketed QPC/precise-FILETIME observations; it does not invert
+the conversion. Independent fixture QPC bounds are separate. JSON uses decimal
+strings; SQLite uses 64-bit integers. Snapshot wall time is diagnostic observation,
+not a mutation timestamp or a proven common-clock ETW interval.
 Stable `(ticks, sequence, id)` order does not imply causality at equal timestamps.
 Deadline decisions use monotonic time.
 
@@ -72,10 +79,20 @@ Edges persist relationship, confidence and reason. `explain` walks incoming acto
 ancestry and lists operations referencing the selected event. A visited-node set
 bounds graph traversal. Source evidence and snapshot operations remain distinct.
 
-Final snapshots currently occur after ETW stop. Their final-state ownership stays
-Unknown because that interval is not observed; earlier attributed mutations remain
-separate source facts. Inventory targets identify configuration relationships, not
-writers. See the [v0.4 audit and measurements](validation-v0.4.md).
+Final resource reads now occur while ETW and the receiver run. Successful file
+read handles deny write/delete and pin ancestors until final stop/drain; at most
+256 file+directory handles are retained. Failed leases use the ordinary shared
+read and preserve a failure reason. This actively restricts concurrent access;
+it is neither a passive nor a globally atomic snapshot, and has no hard hold-time
+bound. Per-file hold duration, hash, identity, and sealing status are retained.
+
+These facts still do not prove complete mutation coverage: an open can truncate
+without a WriteFile record, and unresolved file contexts can be filtered. Production
+`mutation_coverage_complete` remains false and final file-state ownership Unknown.
+Registry unlocked double reads cannot exclude write/restore ABA, so final values
+also remain Unknown. Earlier valid source actor evidence is not erased. Deleted
+resources retain baseline-only/absence-unproven evidence. Inventory targets identify
+configuration relationships, not writers. See [validation](validation-v0.4.md).
 
 ## Boundaries
 
@@ -89,6 +106,22 @@ uploads synthetic fixture verification artifacts only.
 Queues and caches are bounded, producer callbacks never block on a full application
 channel, and persistence is batched. [Performance](performance.md) documents exact
 limits. Snapshots and every working byte are not globally capped.
+
+The callback queue and writer handoff each hold at most 4096 records (8192 queued
+in total, matching the old single-queue count). The handoff additionally charges
+at most 16 MiB of encoded JSON and rejects records over 256 KiB; encoding is counted
+without a second payload allocation, but adds receiver CPU work. This is not a
+total heap bound: in-flight receiver/writer pages are at most 256 records each,
+the raw batch remains 256 records/1 MiB, and lifecycle/decoder/snapshot caches are
+separate. SQLite never runs on the receiver; foreground process API queries run
+outside its lifecycle lock. Initial identity setup remains synchronous before
+installer launch; bounded lifetime attachment still takes that lock.
+
+STOP completes before normal receiver termination. Empty final drain closes the
+handoff; the writer consumes all pages, flushes its partial tail, then finalizes
+the existing checkpoint policy. A 100-ms idle tick preserves partial-batch flushes.
+Errors/unwinds close and join workers, and never publish a completed capture.
+Thread-local profiles merge only after join using the same monotonic epoch.
 
 No Job Object assignment, GUI, automated classification, driver, automatic elevation or actual cleanup.
 `remove --dry-run` preserves the prior rules. See ADRs for [identity](adr/0002-process-identity.md),
