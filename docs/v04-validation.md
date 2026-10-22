@@ -6,9 +6,8 @@ not satisfy the ETW release gate. No vendor installer has been run in this work.
 
 ## Current environment boundary
 
-The read-only preflight on 2026-10-22 recorded Windows build 26300, AMD64, an
-ASUS ROG Strix G18 physical-machine model and a non-elevated token. Hypervisor
-presence was true, but `Get-VM`, `Get-VMSnapshot`, `WindowsSandbox.exe`, `vmrun.exe`
+The read-only preflight on 2026-10-22 recorded a Windows host and a non-elevated
+token. Detailed host inventory is retained locally. Hypervisor presence was true, but `Get-VM`, `Get-VMSnapshot`, `WindowsSandbox.exe`, `vmrun.exe`
 and `VBoxManage.exe` were unavailable on PATH. No disposable guest, recoverable
 checkpoint or independent reference trace was established. This is insufficient
 for third-party installation tests; it is not a statement that virtualization is

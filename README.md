@@ -102,7 +102,7 @@ Inspect summarizes capture quality and counters; `--verbose` and `explain` show 
 
 - `remove` requires `--dry-run`; there is no deletion executor, uninstaller execution, or rollback.
 - User data stays `USER_DATA`. A High-attributed cache may be `REVIEW`; unknown or changed files remain `UNKNOWN`. Nothing is marked `SAFE` for deletion.
-- No automatic elevation, driver, service installation, Defender changes, AI classification, or GUI.
+- No automatic elevation, driver, service installation, Defender changes, automated classification, or GUI.
 - No account, telemetry, or uploads in the application. Databases/manifests contain local paths and possibly registry/configuration data; review them before sharing.
 - ETW providers produce system-wide activity; scoped records and verified installer lifecycle/unresolved-object evidence are retained; other resources are discarded. The scanner skips reparse points. Contain does not sandbox the installer you launch.
 

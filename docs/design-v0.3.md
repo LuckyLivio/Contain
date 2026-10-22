@@ -13,4 +13,4 @@ Baseline: a85e17e; working tree clean and existing Windows CI successful on 2026
 7. Fixture writes per-process ground truth, including short-lived/detached children, rename chains, failure and unrelated file/registry noise. Compare observation/actor attribution with zero false claims; Unknown is allowed and counted separately from missed observations.
 8. Reproducible small CI and configurable 10k-file stress workflow measure timing, peak process memory, database bytes and event throughput. Only measured environment results enter compatibility/performance docs.
 
-Safety remains: no GUI, AI, driver, job restrictions, elevation, general deletion executor, telemetry or cloud capture storage. Fixture cleanup remains limited to its marked direct TEMP child and matching test key.
+Safety remains: no GUI, automated classification, driver, job restrictions, elevation, general deletion executor, telemetry or cloud capture storage. Fixture cleanup remains limited to its marked direct TEMP child and matching test key.

@@ -12,7 +12,7 @@
   },
   "environment": {
     "schema_version": 1,
-    "logical_processors": 4,
+    "logical_processors": null,
     "snapshot_only": false,
     "baseline_variant": null,
     "candidate_variant": null,
@@ -35,8 +35,8 @@
     "candidate_commit": "07e2e86da54d6cdb5cbd638bf3b9c34a643a53ee",
     "baseline_lock_sha256": "7C4F7EC780A80A7D93D6FA5661FEB855768E0BA44A19A1095993E229E7CFF8AE",
     "candidate_lock_sha256": "7C4F7EC780A80A7D93D6FA5661FEB855768E0BA44A19A1095993E229E7CFF8AE",
-    "windows_build": 26100,
-    "logical_processors": 4,
+    "windows_build": null,
+    "logical_processors": null,
     "elevated": true,
     "rustc_version": "rustc 1.99.1 (58cf8f9c3 2026-10-13)"
   },
@@ -11281,5 +11281,13 @@
         }
       }
     }
-  ]
+  ],
+  "public_redaction": {
+    "fields": [
+      "$.environment.logical_processors",
+      "$.provenance.windows_build",
+      "$.provenance.logical_processors"
+    ],
+    "meaning": "Withheld host metadata and historical branch labels are null, not zero. Original artifact digests refer to retained local pre-redaction evidence. Measured workload results and failed attempts are unchanged."
+  }
 }

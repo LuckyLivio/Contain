@@ -6,8 +6,8 @@ the benchmark records the actual token test.
 
 | Environment | Process | File ETW | Registry | Services | Tasks |
 | --- | --- | --- | --- | --- | --- |
-| Local Windows 11, 10.0.26200.0, non-admin, NTFS | Owned handle and polling; short-lived actor may be missed | Access denied; automatic fallback verified | Scoped HKCU snapshot; Unknown actor | Read-only query succeeded | Read-only query succeeded |
-| GitHub windows-latest, Windows Server 2025 build 26100, elevated stress token, NTFS | ETW lifecycle and polling; short-lived and detached fixture verified | Live scoped events and successful IRP completions verified | Some paths recovered through object context; remaining path gaps visible | Read-only inventory query succeeded | Read-only inventory query succeeded |
+| Local Windows 11, non-admin, NTFS | Owned handle and polling; short-lived actor may be missed | Access denied; automatic fallback verified | Scoped HKCU snapshot; Unknown actor | Read-only query succeeded | Read-only query succeeded |
+| GitHub windows-latest, Windows Server 2025, elevated stress token, NTFS | ETW lifecycle and polling; short-lived and detached fixture verified | Live scoped events and successful IRP completions verified | Some paths recovered through object context; remaining path gaps visible | Read-only inventory query succeeded | Read-only inventory query succeeded |
 
 Evidence: [fixture CI](https://github.com/LuckyLivio/Contain/actions/runs/36542048919),
 [local benchmark](examples/benchmark-win11-fallback-v3.json), and

@@ -72,7 +72,7 @@ See SQLite's [WAL durability discussion](https://www.sqlite.org/wal.html) and
 Run through the existing dispatcher:
 
 ```powershell
-gh workflow run pipeline.yml --ref codex/deferred-checkpoint -f query_phase=checkpoint
+gh workflow run pipeline.yml --ref livio/deferred-checkpoint -f query_phase=checkpoint
 ```
 
 Reliability and speed are separate outcomes. Stress capture wall time includes ETW
@@ -117,7 +117,7 @@ file hashes were verified. A second audit independently unioned the overflow
 counter intervals and matched the reported commit/flush counts. No profile batches
 or queue spans were omitted.
 
-Runner: elevated Windows 10.0.26100, NTFS, 4 logical processors, Rust 1.99.0,
+Runner: elevated Windows, NTFS, Rust 1.99.0,
 release `--locked`. Both arms share the same source, lockfile and fixture binary;
 background load and disk/cache scheduling remain uncontrolled. These are three
 paired stress samples, not a general performance guarantee.

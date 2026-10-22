@@ -11,10 +11,10 @@
       "baseline_commit": "f8037e90658cdf46aab93d397508036ebc7c22ee",
       "profile": "release --locked",
       "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-pc-windows-msvc\nrelease: 1.98.1\nLLVM version: 22.1.8",
-      "os": "Microsoft Windows NT 10.0.26100.0",
+      "os": "Windows",
       "elevated": true,
       "filesystem": "NTFS",
-      "logical_processors": 4,
+      "logical_processors": null,
       "candidate_lock_sha256": "7C4F7EC780A80A7D93D6FA5661FEB855768E0BA44A19A1095993E229E7CFF8AE",
       "baseline_lock_sha256": "0D1F8E631F086ADE1CBB1A6D944A52243EEC29D6466EDED73E8D3B7B70C66E27",
       "fixture_sha256": "D99707DBCAA278854F0996BC9FB92C3D20529EB0DE41D62F9DBB16B89BFF5F63",
@@ -2620,10 +2620,10 @@
       "baseline_commit": "f8037e90658cdf46aab93d397508036ebc7c22ee",
       "profile": "release --locked",
       "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-pc-windows-msvc\nrelease: 1.98.1\nLLVM version: 22.1.8",
-      "os": "Microsoft Windows NT 10.0.26100.0",
+      "os": "Windows",
       "elevated": true,
       "filesystem": "NTFS",
-      "logical_processors": 4,
+      "logical_processors": null,
       "candidate_lock_sha256": "7C4F7EC780A80A7D93D6FA5661FEB855768E0BA44A19A1095993E229E7CFF8AE",
       "baseline_lock_sha256": "0D1F8E631F086ADE1CBB1A6D944A52243EEC29D6466EDED73E8D3B7B70C66E27",
       "fixture_sha256": "D99707DBCAA278854F0996BC9FB92C3D20529EB0DE41D62F9DBB16B89BFF5F63",
@@ -59191,5 +59191,14 @@
       "commit": "e04b91d3f4bed4d552c5b62f53c84e0e50ff270e"
     }
   ],
-  "small_fixture_log": "small-release/reliability.json"
+  "small_fixture_log": "small-release/reliability.json",
+  "public_redaction": {
+    "fields": [
+      "$.comparisons[0].os (exact host version)",
+      "$.comparisons[0].logical_processors",
+      "$.comparisons[1].os (exact host version)",
+      "$.comparisons[1].logical_processors"
+    ],
+    "meaning": "Withheld host metadata and historical branch labels are null, not zero. Original artifact digests refer to retained local pre-redaction evidence. Measured workload results and failed attempts are unchanged."
+  }
 }

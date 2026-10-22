@@ -143,8 +143,8 @@ authorized elevated runner, not the non-elevated local desktop.
 ## Final same-run comparison
 
 [Run 36576076223](https://github.com/LuckyLivio/Contain/actions/runs/36576076223)
-measured **0d54a35**, not the later reporting commits. Windows build 26100, four
-logical processors, elevated token, NTFS, Rust 1.98.1, release --locked. All four
+measured **0d54a35**, not the later reporting commits. Windows,
+elevated token, NTFS, Rust 1.98.1, release --locked. All four
 versions ran on that same runner, in forward/reverse/forward order for each scale.
 The common fixture executable SHA256 was
 `D99707DBCAA278854F0996BC9FB92C3D20529EB0DE41D62F9DBB16B89BFF5F63`;

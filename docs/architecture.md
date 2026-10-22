@@ -90,7 +90,7 @@ Queues and caches are bounded, producer callbacks never block on a full applicat
 channel, and persistence is batched. [Performance](performance.md) documents exact
 limits. Snapshots and every working byte are not globally capped.
 
-No Job Object assignment, GUI, AI, driver, automatic elevation or actual cleanup.
+No Job Object assignment, GUI, automated classification, driver, automatic elevation or actual cleanup.
 `remove --dry-run` preserves the prior rules. See ADRs for [identity](adr/0002-process-identity.md),
 [file operations](adr/0003-file-operation-correlation.md),
 [registry](adr/0004-registry-path-resolution.md) and [jobs/drain](adr/0005-job-objects.md).

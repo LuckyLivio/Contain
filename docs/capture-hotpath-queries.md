@@ -273,8 +273,8 @@ passed; that is a separate run, not a replacement for this failure.
 Actual binary/configuration: **`d60f6ae6dfec312935b71cdcd07c8a874b4a7d5d`, D3**.
 [Run 36589638546](https://github.com/LuckyLivio/Contain/actions/runs/36589638546)
 completed the predeclared ten small attempts, three alternating D0/D3 1000 pairs,
-then three alternating D0/D3 10000 pairs on one elevated Windows 26100 / NTFS /
-four-logical-processor runner. Runtime SQLite **3.50.2**, release `--locked`.
+then three alternating D0/D3 10000 pairs on one elevated Windows / NTFS /
+runner. Runtime SQLite **3.50.2**, release `--locked`.
 The workflow is **failed**, correctly, at the original 10000 gate. No retries.
 Report commits after this SHA are not further tested binaries.
 

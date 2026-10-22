@@ -37,7 +37,7 @@
         "profile": "release --locked",
         "elevated": true,
         "filesystem": "NTFS",
-        "logical_processors": 4,
+        "logical_processors": null,
         "fixture_sha256": "06A0F7EFBFD05145F65D44731CB7AB83899CB97C1FE30F348D75365157598C7C",
         "scorer_sha256": "AA20DC9B8103C6E79ED3D96B00F6B0219E76D9771F2749A58FFEE79A56689AB7",
         "candidate_lock_sha256": "7C4F7EC780A80A7D93D6FA5661FEB855768E0BA44A19A1095993E229E7CFF8AE",
@@ -58,7 +58,7 @@
         "profile": "release --locked",
         "elevated": true,
         "filesystem": "NTFS",
-        "logical_processors": 4,
+        "logical_processors": null,
         "fixture_sha256": "06A0F7EFBFD05145F65D44731CB7AB83899CB97C1FE30F348D75365157598C7C",
         "scorer_sha256": "AA20DC9B8103C6E79ED3D96B00F6B0219E76D9771F2749A58FFEE79A56689AB7",
         "candidate_lock_sha256": "7C4F7EC780A80A7D93D6FA5661FEB855768E0BA44A19A1095993E229E7CFF8AE",
@@ -6437,5 +6437,12 @@
         "recorded_overflows_outside_flush_windows": 0
       }
     }
-  ]
+  ],
+  "public_redaction": {
+    "fields": [
+      "$.manifests[0].metadata.logical_processors",
+      "$.manifests[1].metadata.logical_processors"
+    ],
+    "meaning": "Withheld host metadata and historical branch labels are null, not zero. Original artifact digests refer to retained local pre-redaction evidence. Measured workload results and failed attempts are unchanged."
+  }
 }

@@ -1,5 +1,52 @@
 # v0.4 development validation
 
+## Main-flow stabilization: verified starting point (2026-10-23)
+
+This section supersedes earlier working-tree statements for the current task;
+historical measurements below remain unchanged. Starting branch was
+the development branch (historical name withheld), HEAD `a072072ad805880290fd1f47f67fba6828d2c24e`,
+package 0.3.1. The only existing changes were untracked `docs/preview.md`,
+`scripts/build-preview.py`, and `ui/`; they remain user-owned and are excluded.
+There was no repository AGENTS.md. This task keeps the version and does not push,
+merge, tag, elevate, change security settings, or run third-party installers.
+
+The local Windows host used PowerShell 7.6.5, Rust/Cargo 1.98.1 and Python 3.12.7
+with a non-administrator token. Detailed host inventory is retained locally.
+`doctor` again reported ETW access denied (0x80070005). A recoverable isolated
+Windows guest has not been established. Existing prior hosted ETW results are
+evidence to audit, not a new baseline/candidate run for this task.
+
+Before edits, `cargo fmt --all -- --check`, `cargo test --workspace --locked`,
+`cargo clippy --workspace --all-targets --locked -- -D warnings`, and
+`cargo build --workspace --release --locked` passed. Tests: 93 core + 2 fixture,
+3 opt-in experiments ignored. The shell required prepending the already installed
+`$env:USERPROFILE\.cargo\bin` to PATH; no tools or dependencies were upgraded.
+Exact environment/status, logs, executable hashes and the renewed doctor result
+are retained privately in `target/stabilization/raw/baseline/`. Unmodified release
+executables were copied to `target/stabilization/baseline-bin/` before edits.
+
+The final historical ETW matrix (run 39812655516, production 880b450) confirms
+100-file 3/3 passes per arm, 1,000-file baseline 2/3 versus candidate 1/3, and
+10,000-file 0/3 per arm. All six 10,000-file attempts overflowed the application
+queue; four also lost upstream ETW events. The 1,000-file failures lost 221/241
+candidate and 805 baseline application records, with zero reported upstream loss.
+These failures are not being rescored or relabelled as fixed.
+
+The same raw profiles show two receiver blockers: process polling and raw SQLite
+transactions. Failed 1,000-file candidate poll maxima were 280.541/206.968 ms,
+versus commit maxima 42.703/40.618 ms. Candidate 10,000-file poll totals were
+5.731/4.436/4.218 s and commit totals 1.670/1.142/0.999 s. These are elapsed spans,
+including scheduler delay, not isolated CPU or physical I/O. The retained public
+projection strips queue-span stage labels; unioned overflow-counter intervals
+cover 89.14%, 1.86%, and 4.56% of the three 1,000-file losses. They cannot be
+relabeled as checkpoint-only losses. The reproducible all-18-attempt numeric
+audit is `target/stabilization/consumer-stall-audit.json`, with its source hash.
+
+Clock mismatches and state-coverage gaps are separate correctness/protocol issues.
+The historical samples lack original ETW QPC, so their sub-millisecond boundary
+failures cannot be repaired by fitted offsets. The old ~86x result measures
+synthetic evidence readback only; it does not measure capture throughput.
+
 Status: **development; v0.4.0 release gates are not satisfied**. Package version
 remains 0.3.1. This report separates historical elevated ETW measurements, local
 fallback measurements, synthetic storage experiments, and unexecuted installer
@@ -7,13 +54,13 @@ validation. No third-party installer or real uninstaller runs on the host.
 
 ## Baseline and environment
 
-Baseline: `codex/deferred-checkpoint`,
+Baseline: the development branch (historical name withheld),
 `7c5a5b2b534d235f4db6c472c2c34a60e8be66ee`. On 2026-10-22 the working tree had
 untracked `docs/preview.md`, `scripts/build-preview.py` and `ui/`; these are
 pre-existing work and are excluded from this change's commits.
 
-Local environment: Windows 11 Pro x64 build 26300, NTFS, 24 logical processors,
-33,690,267,648 bytes physical RAM; ordinary non-elevated token. Rust/Cargo 1.98.1,
+Local environment: Windows x64, NTFS; ordinary non-elevated token. Detailed
+host inventory is retained locally. Rust/Cargo 1.98.1,
 MSVC target, PowerShell 7.6.5, Python 3.12.7. No CONTAIN experiment overrides were
 set. Cargo was installed but absent from the terminal PATH; commands below add
 the existing installation to the process PATH. This is a tooling issue, not a
@@ -250,7 +297,7 @@ uses `scripts/v04-matrix.py` with the parameters above, then `v04-public.py` and
 
 The first paired workflow, [39811449654](https://github.com/LuckyLivio/Contain/actions/runs/39811449654),
 compared `7c5a5b2` with `07e2e86` on one elevated Windows Server 2025 runner
-(build 26100, four logical CPUs, Rust 1.99.1, matching locked dependencies).
+(Rust 1.99.1, matching locked dependencies; detailed host inventory retained locally).
 File/process ETW were active; registry was not requested for this file stress
 experiment. All 18 attempts completed and published complete evidence before the
 unchanged gate failed. There were no harness or measurement errors.
@@ -389,7 +436,7 @@ requirements and an explicit list of unverifiable/out-of-scope cases.
 
 Release remains **blocked**, package version **0.3.1**, with no v0.4.0 tag. CLI
 commands, JSON schema 3 and existing database schema 4 remain compatible. Local
-development commits are synchronized to `codex/deferred-checkpoint`; no merge or
+development commits are synchronized to the development branch (historical name withheld); no merge or
 release is implied by that synchronization.
 
 Priority work toward v0.5 (or before any v0.4 release) is:

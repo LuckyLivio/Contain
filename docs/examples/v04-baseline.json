@@ -1,29 +1,18 @@
 {
   "baseline_commit": "7c5a5b2b534d235f4db6c472c2c34a60e8be66ee",
-  "branch": "codex/deferred-checkpoint",
-  "timestamp": "2026-10-22T23:49:26.6878323+08:00",
+  "branch": null,
+  "timestamp": null,
   "environment": {
-    "timestamp": "2026-10-22T23:49:26.6878323+08:00",
-    "branch": "codex/deferred-checkpoint",
+    "timestamp": null,
+    "branch": null,
     "commit": "7c5a5b2b534d235f4db6c472c2c34a60e8be66ee",
     "status": [
       "?? docs/preview.md",
       "?? scripts/build-preview.py",
       "?? ui/"
     ],
-    "os": {
-      "Caption": "Microsoft Windows 11 专业版",
-      "Version": "10.0.26300",
-      "BuildNumber": "26300",
-      "OSArchitecture": "64 位",
-      "TotalVisibleMemorySize": 32900652
-    },
-    "computer": {
-      "Manufacturer": "ASUSTeK COMPUTER INC.",
-      "Model": "ROG Strix G18 G815LW_G815LW",
-      "NumberOfLogicalProcessors": 24,
-      "TotalPhysicalMemory": 33690267648
-    },
+    "os": null,
+    "computer": null,
     "admin": false,
     "powershell": "7.6.5",
     "rust": [
@@ -37,11 +26,7 @@
     ],
     "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
     "python": "Python 3.12.7",
-    "disk": {
-      "FileSystem": "NTFS",
-      "Size": 375809634304,
-      "SizeRemaining": 187713249280
-    },
+    "disk": null,
     "experiment_environment": []
   },
   "sha256": [
@@ -131,5 +116,17 @@
     },
     "error": "0x80070005"
   },
-  "release_gate": "not_met"
+  "release_gate": "not_met",
+  "public_redaction": {
+    "fields": [
+      "$.branch",
+      "$.timestamp",
+      "$.environment.timestamp",
+      "$.environment.branch",
+      "$.environment.os",
+      "$.environment.computer",
+      "$.environment.disk"
+    ],
+    "meaning": "Withheld host metadata and historical branch labels are null, not zero. Original artifact digests refer to retained local pre-redaction evidence. Measured workload results and failed attempts are unchanged."
+  }
 }

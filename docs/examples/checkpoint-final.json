@@ -91,10 +91,10 @@
         "completed_attempts": 6,
         "profile": "release --locked",
         "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.0\nLLVM version: 23.1.1",
-        "os": "Microsoft Windows NT 10.0.26100.0",
+        "os": "Windows",
         "elevated": true,
         "filesystem": "NTFS",
-        "logical_processors": 4,
+        "logical_processors": null,
         "fixture_sha256": "F1265558FF64522BB20235B0A382EDD58DC454079C6FE8A92C71FC03A7DDD0F4",
         "scorer_sha256": "AA20DC9B8103C6E79ED3D96B00F6B0219E76D9771F2749A58FFEE79A56689AB7",
         "candidate_lock_sha256": "7C4F7EC780A80A7D93D6FA5661FEB855768E0BA44A19A1095993E229E7CFF8AE",
@@ -132,10 +132,10 @@
         "candidate_variant": "D3",
         "profile": "release --locked",
         "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.0\nLLVM version: 23.1.1",
-        "os": "Microsoft Windows NT 10.0.26100.0",
+        "os": "Windows",
         "elevated": true,
         "filesystem": "NTFS",
-        "logical_processors": 4,
+        "logical_processors": null,
         "fixture_sha256": "F1265558FF64522BB20235B0A382EDD58DC454079C6FE8A92C71FC03A7DDD0F4",
         "scorer_sha256": "AA20DC9B8103C6E79ED3D96B00F6B0219E76D9771F2749A58FFEE79A56689AB7",
         "candidate_lock_sha256": "7C4F7EC780A80A7D93D6FA5661FEB855768E0BA44A19A1095993E229E7CFF8AE",
@@ -166,10 +166,10 @@
         "completed_attempts": 6,
         "profile": "release --locked",
         "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.0\nLLVM version: 23.1.1",
-        "os": "Microsoft Windows NT 10.0.26100.0",
+        "os": "Windows",
         "elevated": true,
         "filesystem": "NTFS",
-        "logical_processors": 4,
+        "logical_processors": null,
         "fixture_sha256": "F1265558FF64522BB20235B0A382EDD58DC454079C6FE8A92C71FC03A7DDD0F4",
         "scorer_sha256": "AA20DC9B8103C6E79ED3D96B00F6B0219E76D9771F2749A58FFEE79A56689AB7",
         "candidate_lock_sha256": "7C4F7EC780A80A7D93D6FA5661FEB855768E0BA44A19A1095993E229E7CFF8AE",
@@ -207,10 +207,10 @@
         "candidate_variant": "D3",
         "profile": "release --locked",
         "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.0\nLLVM version: 23.1.1",
-        "os": "Microsoft Windows NT 10.0.26100.0",
+        "os": "Windows",
         "elevated": true,
         "filesystem": "NTFS",
-        "logical_processors": 4,
+        "logical_processors": null,
         "fixture_sha256": "F1265558FF64522BB20235B0A382EDD58DC454079C6FE8A92C71FC03A7DDD0F4",
         "scorer_sha256": "AA20DC9B8103C6E79ED3D96B00F6B0219E76D9771F2749A58FFEE79A56689AB7",
         "candidate_lock_sha256": "7C4F7EC780A80A7D93D6FA5661FEB855768E0BA44A19A1095993E229E7CFF8AE",
@@ -7369,5 +7369,18 @@
       },
       "issues": []
     }
-  ]
+  ],
+  "public_redaction": {
+    "fields": [
+      "$.manifests[2].metadata.os (exact host version)",
+      "$.manifests[2].metadata.logical_processors",
+      "$.manifests[3].metadata.os (exact host version)",
+      "$.manifests[3].metadata.logical_processors",
+      "$.manifests[4].metadata.os (exact host version)",
+      "$.manifests[4].metadata.logical_processors",
+      "$.manifests[5].metadata.os (exact host version)",
+      "$.manifests[5].metadata.logical_processors"
+    ],
+    "meaning": "Withheld host metadata and historical branch labels are null, not zero. Original artifact digests refer to retained local pre-redaction evidence. Measured workload results and failed attempts are unchanged."
+  }
 }

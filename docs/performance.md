@@ -14,7 +14,7 @@ The script cleans only these fixtures through the guarded fixture cleanup mode.
 
 ## Local measured baseline (2026-09-29)
 
-Windows 11 build 26200, non-admin, NTFS, Rust debug, snapshot mode. One sequential
+Windows, non-admin, NTFS, Rust debug, snapshot mode. One sequential
 baseline/capture pair; no repeated-trial average or statistical speed claim.
 Source revision and full data: [benchmark JSON](examples/benchmark-win11-fallback-v3.json).
 
@@ -40,7 +40,7 @@ includes missed operations. False attribution was zero in this bounded workload.
 ## ETW stress result (2026-09-29)
 
 [Actual manual Actions run](https://github.com/LuckyLivio/Contain/actions/runs/36542627758),
-Windows Server 2025 build 26100, elevated token, NTFS, debug.
+Windows Server 2025, elevated token, NTFS, debug.
 [Complete benchmark JSON](examples/benchmark-server2025-etw-v3.json).
 
 | Measurement | Actual result |
@@ -158,7 +158,7 @@ multi-worker scale is 100 files, not 1000 or 10000.
 [full machine-readable comparison](examples/comparison-release-v031-final.json),
 [raw capture/truth/score artifact](https://github.com/LuckyLivio/Contain/actions/runs/36555457090/artifacts/11027707469).
 Baseline `f8037e90658cdf46aab93d397508036ebc7c22ee`; candidate `fabfc168a4ef7497625d91b18e6a06295d011053`.
-Same Windows Server 2025 build 26100 / NTFS / elevated 4-CPU runner,
+Same Windows Server 2025 / NTFS / elevated runner,
 Rust 1.98.1, release --locked, common fixture/scorer, three alternating pairs per
 scale. All 169 external dependency lock entries are identical. Hashes and complete
 environment metadata are in the JSON. Background load and caches are uncontrolled;
