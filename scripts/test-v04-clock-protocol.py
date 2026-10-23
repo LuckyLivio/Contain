@@ -100,7 +100,7 @@ class ClockProtocolTests(unittest.TestCase):
         original = copy.deepcopy(self.capture)
         result = CLOCK.analyze(self.capture, [self.truth], raw_clock_bytes=raw)
         self.assertEqual(result["status"], "diagnostic_ready")
-        self.assertEqual(result["protocol_revision"], "contain-clock-observability-2")
+        self.assertEqual(result["protocol_revision"], "contain-clock-observability-3")
         self.assertEqual(result["raw_companion"]["start_time_observation"], dict(
             primary="0", companion="0", status="unavailable_at_realtime_open",
             available=False, used_as_clock_origin=False))
@@ -371,6 +371,99 @@ class ClockProtocolTests(unittest.TestCase):
         self.truth["clock"]["qpc_frequency"] = "10000000"
         self.event["evidence"].pop("process_creation_time")
         self.assertEqual(self.analyze()["status"], "unavailable")
+
+    def test_unknown_actor_context_does_not_hide_unaffected_exact_candidate(self):
+        for changes in ({"tick": 99}, {"tick": 201}, {"resource": "C:\\fixture\\other"},
+                        {"operation": "delete_requested"}):
+            with self.subTest(changes=changes):
+                context = copy.deepcopy(self.event)
+                context.update(id="unknown-context", confidence="Unknown", evidence={})
+                context.update({name: value for name, value in changes.items() if name != "tick"})
+                tick = changes.get("tick", 150)
+                context["raw"]["clock"].update(raw_qpc=str(tick), header_timestamp=str(tick))
+                self.capture["events"] = [self.event, context]
+                before = copy.deepcopy(self.capture)
+                result = self.analyze()
+                self.assertEqual(result["status"], "diagnostic_ready")
+                self.assertEqual(result["truth_rows"][0]["event_ids"], ["source"])
+                self.assertEqual(result["source_events_with_raw_qpc"], 2)
+                self.assertEqual(result["source_events_with_raw_qpc_and_identity"], 1)
+                self.assertEqual(result["source_actor_unknown_events"], [dict(
+                    event_id="unknown-context", event_type="file", operation=context["operation"],
+                    resource=context["resource"], original_qpc=str(tick), status="Unknown",
+                    reason="actor_identity_unavailable")])
+                self.assertEqual(self.capture, before)
+                self.assertIsNone(result["release_gate"])
+
+    def test_overlapping_unknown_actor_blocks_even_a_verified_candidate(self):
+        for tick in (100, 150, 200):
+            with self.subTest(tick=tick):
+                context = copy.deepcopy(self.event)
+                context.update(id="unknown-context", evidence={})
+                context["raw"]["clock"].update(raw_qpc=str(tick), header_timestamp=str(tick))
+                self.capture["events"] = [self.event, context]
+                result = self.analyze()
+                self.assertEqual(result["status"], "unavailable")
+                self.assertEqual(result["truth_rows"][0]["status"], "unavailable")
+                self.assertEqual(result["truth_rows"][0]["reason"], "actor_identity_unavailable")
+                self.assertEqual(result["truth_rows"][0]["actor_unknown_event_ids"], ["unknown-context"])
+                self.assertEqual(result["truth_rows"][0]["event_ids"], [])
+
+    def test_unknown_actor_row_is_localized_without_guessing_from_header_pid(self):
+        other_truth = copy.deepcopy(self.truth)
+        other_truth.update(resource="C:\\fixture\\other", role="unrelated")
+        other_truth["clock"]["sequence"] = 2
+        other_event = copy.deepcopy(self.event)
+        other_event.update(id="unknown-other", resource=other_truth["resource"], evidence={})
+        other_event["raw"]["clock"]["record_identity"] = dict(process_id=self.truth["pid"])
+        self.capture["events"].append(other_event)
+        result = self.analyze([self.truth, other_truth])
+        self.assertEqual(result["status"], "unavailable")
+        self.assertEqual(result["counts"], {"unique_interval_candidate": 1, "unavailable": 1})
+        self.assertEqual(result["truth_rows"][0]["event_ids"], ["source"])
+        self.assertEqual(result["truth_rows"][1]["reason"], "actor_identity_unavailable")
+        self.assertEqual(result["truth_rows"][1]["actor_unknown_event_ids"], ["unknown-other"])
+        self.assertEqual(result["truth_rows"][1]["event_ids"], [])
+
+    def test_missing_original_qpc_on_unrelated_unknown_actor_remains_global(self):
+        context = copy.deepcopy(self.event)
+        context.update(id="unknown-context", resource="C:\\fixture\\other", evidence={})
+        context["raw"]["clock"].pop("raw_qpc")
+        self.capture["events"].append(context)
+        result = self.analyze()
+        self.assertEqual(result["status"], "unavailable")
+        self.assertEqual(result["truth_rows"][0]["reason"], "source_original_clock_unavailable")
+        self.assertEqual(result["truth_rows"][0]["event_ids"], [])
+        self.assertEqual(result["source_events_without_raw_qpc"], 1)
+        self.assertEqual(result["source_events_with_raw_qpc"], 1)
+
+    def test_exact_companion_link_keeps_missing_actor_unknown(self):
+        raw = self.companion_bytes(self.companion())
+        self.event["evidence"].pop("process_creation_time")
+        before = copy.deepcopy(self.capture)
+        result = CLOCK.analyze(self.capture, [self.truth], raw_clock_bytes=raw)
+        self.assertEqual(result["raw_companion"]["status"], "exact_original_key_links_available")
+        self.assertEqual(result["raw_companion"]["event_links"][0]["original_qpc"], "150")
+        self.assertEqual(result["source_actor_unknown_events"][0]["original_qpc"], "150")
+        self.assertEqual(result["source_actor_unknown_events"][0]["status"], "Unknown")
+        self.assertEqual(result["status"], "unavailable")
+        self.assertEqual(result["truth_rows"][0]["reason"], "actor_identity_unavailable")
+        self.assertEqual(result["truth_rows"][0]["event_ids"], [])
+        self.assertEqual(self.capture, before)
+
+    def test_actor_blocked_row_still_counts_in_cross_row_candidate_ambiguity(self):
+        other_truth = copy.deepcopy(self.truth)
+        other_truth["clock"].update(sequence=2, start_qpc="140")
+        other_truth["clock"]["before"].update(qpc_before="130", qpc_after="139")
+        context = copy.deepcopy(self.event)
+        context.update(id="unknown-context", evidence={})
+        context["raw"]["clock"].update(raw_qpc="120", header_timestamp="120")
+        self.capture["events"].append(context)
+        result = self.analyze([self.truth, other_truth])
+        self.assertEqual(result["status"], "unavailable")
+        self.assertEqual(result["truth_rows"][0]["reason"], "actor_identity_unavailable")
+        self.assertEqual(result["truth_rows"][0]["event_ids"], [])
+        self.assertEqual(result["truth_rows"][1]["status"], "ambiguous_interval_candidates")
 
     def test_raw_header_mismatch_rejects_fabricated_conversion(self):
         self.event["raw"]["clock"]["header_timestamp"] = "100150"

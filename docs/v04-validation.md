@@ -97,9 +97,11 @@ attempt; replacement fails that attempt and retains its fixture. The same opt-in
 QPC fixture is used for both arms. Ordinary ETW captures keep their original
 `score.json` and strict `gate`, with `clock-diagnostic.json` written separately.
 Stabilization additionally records `legacy_acceptance_pass` and an explicit
-`stabilization_gate`. Its status is currently **blocked**: original ETW QPC,
-same-machine/same-boot provenance and a validated provider emission-time contract
-are still missing. Even `diagnostic_ready` cannot satisfy that new gate. There is
+`stabilization_gate`. Its status is currently **blocked**. The administrator
+diagnostic now supplies original ETW QPC for its retained source events, but still
+has unresolved actor rows. The formal paired inputs, same-machine/same-boot
+provenance and a validated provider emission-time contract remain unverified.
+Even `diagnostic_ready` cannot satisfy that new gate. There is
 no override or automatic fallback that can turn it green.
 
 When a new capture supplies `backend.handoff`, its counters must be nonnegative
@@ -275,7 +277,43 @@ same administrator sample with revision 2 still returns `unavailable` for all
 Its 3,819/3,819 main-chain accounting is a separate result. The old report is not
 replaced or converted into a pass. Local re-evaluation and before/after regression
 logs are retained in `target/stabilization/raw-clock-stabilization/`; the formal
-32-attempt protocol and new administrator diagnostic remain pending.
+32-attempt protocol remains pending.
+
+### Unknown-actor clock protocol correction
+
+Revision `contain-clock-observability-3` separates original-clock completeness from
+actor completeness. The new administrator clock-on sample has exact original-QPC
+links for all 35 eligible file/registry records, but 14 lack a verified actor
+instance. Revision 2 made any such record invalidate every independent operation,
+including operations with a complete identity and an exact interval match. Eleven
+of the 14 records have system-process header PIDs outside the corresponding
+operation intervals or on control files; three have an unrelated fixture's header
+PID inside two unrelated write intervals. A header PID does not supply the missing
+thread/process lifetime, and these records remain Unknown. Their timing alone
+does not prove deferred writeback or an actor.
+
+Revision 3 retains each identity-deficient event's ID, operation, resource and
+original QPC as Unknown. It blocks a truth row whenever such a record has the same
+operation and resource within the exact independently measured QPC interval,
+including both endpoints. That row has `reason=actor_identity_unavailable` and no
+positive `event_ids`, even when an otherwise valid candidate overlaps it. Records
+outside those three matching dimensions cannot invalidate an unrelated row.
+Blocked rows still participate in cross-row candidate ambiguity checks.
+Missing original QPC, header metadata, calibration, hash integrity, loss accounting
+or companion completion still invalidates the full diagnostic. No PID-only identity,
+truth-derived birth time, offset or tolerance is introduced. Any unavailable row
+keeps the overall result unavailable; attribution and release gates are unchanged.
+
+The same revision was applied to both preserved input sets. The historical capacity
+failure still has 21/21 unavailable rows. The new sample has 17 unique interval
+candidates, two rows unavailable due to actor identity, and two with no in-interval
+source (the intentionally failed delete and the NoiseOnly registry write). Its
+overall result remains `unavailable`, exit 2. All 14 unknown-actor source records
+remain reported. Input hashes match the original diagnostics; new reports are
+`previous-run-protocol-3-final.json` and `admin-pair-clock-on-protocol-3-final.json` under the
+same local artifact directory. Neither original report was overwritten. This is
+a protocol-only reassessment of existing evidence, not a new administrator run,
+an attribution pass, or formal 32-attempt acceptance.
 
 The independent fixture additionally writes `clock-marker-PID.jsonl` when clock
 logging is enabled. It times the initial registry open, with success/error and QPC
@@ -381,11 +419,12 @@ python scripts/v04-clock-protocol.py --capture target/v04/clock-paired/TRIAL/cap
 Run the diagnostic identically for every baseline and candidate attempt, including
 failed attempts with readable inputs. It never reads or rewrites a score, refuses
 to overwrite an output, records input hashes, and preserves every truth row.
-Historical journals, fallback captures, converted source headers, missing actor
-birth or raw QPC, frequency mismatch, or an operation outside the measured trace
-window cannot satisfy the original-QPC check. The current baseline **and** new
-candidate remain `unavailable`, exit 2, because neither records original ETW QPC.
-This is the expected honest result; running non-elevated does not fix that gap.
+Historical journals, fallback captures, converted source headers without exact
+companion links, missing raw QPC, frequency mismatch, or an operation outside the
+measured trace window cannot satisfy the original-QPC check. A missing actor birth
+blocks matching operation/resource intervals as described above. Earlier baseline
+and candidate samples without original QPC remain `unavailable`, exit 2; the newer
+companion evidence does not repair those historical inputs.
 
 Future raw timestamp capture must first retain actual trace-header metadata and
 establish same-machine/same-boot provenance independently. Merely setting JSON

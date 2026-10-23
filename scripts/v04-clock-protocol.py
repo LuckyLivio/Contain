@@ -19,7 +19,7 @@ RAW_TIMESTAMP = 0x1000
 SUPPORTED = {"write_requested", "rename_requested", "delete_requested", "set_value"}
 COMPANION_PROTOCOL = "contain-raw-clock-companion-1"
 COMPANION_BINARY_PROTOCOL = "contain-raw-clock-companion-2"
-PROTOCOL_REVISION = "contain-clock-observability-2"
+PROTOCOL_REVISION = "contain-clock-observability-3"
 BINARY_ROW = struct.Struct("<QQq16sHBBBBHQII")
 BINARY_DISK_LIMIT = 128 * 1024 * 1024
 BINARY_METADATA_LIMIT = 64 * 1024
@@ -513,6 +513,9 @@ def analyze(capture, truth, sid="", raw_clock_bytes=None, raw_clock_path=None):
               if event.get("event_type") in {"file", "registry"} and event.get("operation") in SUPPORTED]
     report["source_event_count"] = len(events)
     valid_events = []
+    unknown_actor_events = []
+    missing_qpc = 0
+    report["source_actor_unknown_events"] = []
     for event in events:
         try:
             raw = event["raw"]["clock"]
@@ -522,12 +525,24 @@ def analyze(capture, truth, sid="", raw_clock_bytes=None, raw_clock_path=None):
                 qpc = integer(raw["raw_qpc"])
                 if raw["timestamp_domain"] != "qpc" or integer(raw["header_timestamp"]) != qpc:
                     raise ValueError("not original QPC")
-            actor = identity(event, True)
-            valid_events.append((event, qpc, actor))
         except (KeyError, TypeError, ValueError):
             source_ready = False
+            missing_qpc += 1
+            continue
+        try:
+            actor = identity(event, True)
+        except (KeyError, TypeError, ValueError):
+            unknown_actor_events.append((event, qpc))
+            report["source_actor_unknown_events"].append(dict(
+                event_id=event.get("id"), event_type=event.get("event_type"),
+                operation=event.get("operation"), resource=event.get("resource"),
+                original_qpc=str(qpc), status="Unknown", reason="actor_identity_unavailable"))
+        else:
+            valid_events.append((event, qpc, actor))
     if len(valid_events) != len(events):
         report["source_reasons"].append("source_original_qpc_or_actor_missing")
+    report["source_events_with_raw_qpc"] = len(events) - missing_qpc
+    report["source_events_without_raw_qpc"] = missing_qpc
     report["source_events_with_raw_qpc_and_identity"] = len(valid_events)
     used_sequences = set()
     row_candidates = []
@@ -566,12 +581,19 @@ def analyze(capture, truth, sid="", raw_clock_bytes=None, raw_clock_path=None):
                 diagnostic["status"] = "unsupported"
             else:
                 paths = {normalize(row.get(name), sid) for name in ("resource", "destination")} - {""}
+                unknown = [event["id"] for event, tick in unknown_actor_events
+                           if start <= tick <= end and event.get("operation") == row["operation"]
+                           and normalize(event.get("resource"), sid) in paths]
+                # Blocked rows still count when checking cross-row event ambiguity.
                 candidates = [event["id"] for event, tick, actor in valid_events
                               if start <= tick <= end and actor == identity(row)
                               and event.get("operation") == row["operation"]
                               and normalize(event.get("resource"), sid) in paths]
-                diagnostic["status"] = "no_in_interval_source" if not candidates else "interval_candidates"
-                diagnostic["event_ids"] = candidates
+                if unknown:
+                    diagnostic.update(reason="actor_identity_unavailable", actor_unknown_event_ids=unknown)
+                else:
+                    diagnostic["status"] = "no_in_interval_source" if not candidates else "interval_candidates"
+                    diagnostic["event_ids"] = candidates
         except KeyError:
             diagnostic["reason"] = "independent_clock_or_identity_missing"
         except (TypeError, ValueError) as error:
@@ -589,6 +611,7 @@ def analyze(capture, truth, sid="", raw_clock_bytes=None, raw_clock_path=None):
     report["counts"] = dict(counts)
     report["status"] = "invalid" if invalid else "unavailable" if not source_ready or counts["unavailable"] else "diagnostic_ready"
     report["definition"] = ("Timing compatibility is not causal attribution or a release pass. Missing original QPC stays unavailable. "
+                            "Missing actor identity is retained as Unknown and blocks every matching operation/resource/QPC interval. "
                             "Same-machine, same-boot capture and fixture provenance must be independently established. "
                             "FILETIME samples diagnose clocks only; no inverse conversion or tolerance is used.")
     return report
