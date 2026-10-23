@@ -92,13 +92,121 @@ per-record PID/path/payload to reconstruct them. Neither “1,427 target misses�
 “all unrelated background events” is supported. Zero `decode_errors` also did not
 count property getters whose failures became empty strings.
 
+### Targeted follow-up: confirmed interference fixed; new clock path awaits live audit
+
+The follow-up started from `fd25e8d7b614f73659760b807bf85dc5cc43325d` on
+the development branch (historical name withheld). The untracked UI/preview work remains untouched.
+The administrator-run archive above is unchanged and does not describe the new
+code's execution. There is no new 32-attempt result, no release, and no version bump.
+
+The independent process/pipe-barrier experiment reproduced a real read-induced
+workload failure. Eight operations were run three times per arm in the same
+post-hash/pre-release window, with a fresh after-release control for each:
+
+| Arm, same workload | Operation success | Win32 sharing violations | Final results matching control |
+| --- | --- | --- | --- |
+| No monitor | 24/24 | 0 | 24/24 |
+| Original baseline a072072 | 24/24 | 0 | 24/24 |
+| Prior candidate fd25e8d | 6/24 | 18 (error 32) | 9/24 |
+| Candidate with shared-read repair only | 24/24 | 0 | 24/24 |
+
+Retained restrictive file/ancestor handles caused the failures. Production reads
+now share read/write/delete and release handles after same-handle hashing and
+identity checks. The code no longer claims a retained stability lease or pinned
+namespace. Final ownership remains Unknown; earlier valid source-event evidence
+is preserved. Brief reads still have ordinary Windows sharing interactions, and
+this experiment does not establish natural-overlap probability or whole-CLI/ETW
+noninterference. All 288 operation records, including all 18 failures and controls,
+remain under `target/interference/{before,after}`. Exact source/harness/binary hashes,
+error cases and commands are in [the existing protocol](v04-validation.md#read-interference-controls)
+and [numeric evidence](examples/read-interference.json). This is a correctness
+repair, not a capture-throughput improvement.
+
+The raw-clock implementation leaves the primary FILETIME stream and frozen scorer
+unchanged. A small ferrisetw patch exposes actual OpenTrace headers and an opt-in
+same-session RAW_TIMESTAMP consumer. Both consumers must pass readiness before
+launch; only unique EventKey plus complete descriptor/PID/TID pairs join. It uses
+16,842,752 bytes of record/serialization backing storage and a 128-MiB sidecar
+limit; this excludes total process/OS memory. Missing keys, saturation, startup,
+STOP, write and partial-artifact failures remain explicit. STOP failure now closes
+the companion before joining; failed OpenTrace unregisters callback state.
+The initial header is not a final consumer loss sample, and BootTime is not used
+as proof of same-boot provenance. Successful live EventKey/header/QPC matching is
+**not yet verified** by the current session's restricted token.
+
+Registry diagnostics retain bounded raw names and parse/context failure reasons
+after existing filters. Independent initial-key-open markers are separate from
+the original 21 oracle rows. These support the next NoiseOnly investigation;
+they do not retrospectively identify the missing historical payloads or turn an
+unresolved record into a resolved resource. The demo now retains build/source and
+pre/post executable observations, refuses nonempty result directories, and checks
+actual file and registry source events. It selects executable paths from this
+Cargo invocation's compiler artifacts, avoiding stale default-directory binaries
+when an administrator shell has custom Cargo output/target settings. Missing or
+ambiguous artifacts abort launch. Existing historical identity gaps stay null.
+
+Executed follow-up validation:
+
+- Workspace Rust: **144 passed** (136 core, 3 noise fixture, 5 installer fixture),
+  3 explicitly ignored. Zero-test CLI/doc targets do not add passes.
+- All 12 `scripts/test-*.py` files invoked explicitly: **99 passed**, including 25
+  clock protocol cases. The earlier discovery invocation matched zero tests and
+  remains logged; it is not a successful validation run.
+- Local ferrisetw unit tests: **12 passed**. Failure-first OpenTrace/context and
+  interference evidence is retained; no live trace claim follows from unit tests.
+- Workspace/vendor formatting, workspace Clippy `-D warnings`, and locked release
+  build passed. The dependency still emits four inherited ferrisetw warnings;
+  dependency lint caps mean this is not a warning-free dependency-tree claim.
+- PowerShell parsing, scorer regressions and provenance-helper checks passed.
+  A restricted-token CLI probe exited 1 without launching the installer or leaving
+  its UUID session running. This proves refusal on failure, not successful ETW.
+
+Raw validation logs are under `target/stabilization/raw/` (`followup-rust-final.log`,
+`followup-python-reviewed.log`, `followup-clippy-final.log`, `followup-release-final.log`,
+and `clock/`). The measured interference overlay has its own immutable source
+hashes; do not relabel it as the integrated candidate's full workload result.
+
+Reproduce the integrated checks from the repository (the release build alone is
+not an acceptance test):
+
+```powershell
+cargo fmt --all -- --check
+cargo test --workspace --locked --target-dir target/stabilization/clock-build
+cargo clippy --workspace --all-targets --locked --target-dir target/stabilization/clock-build -- -D warnings
+Get-ChildItem scripts/test-*.py | Sort-Object Name | ForEach-Object { python $_.FullName; if ($LASTEXITCODE) { throw $_.Name } }
+./scripts/test-demo-provenance.ps1
+cargo build --workspace --release --locked --target-dir target/stabilization/clock-build
+```
+
+The remaining minimal step is the documented [administrator raw-clock small
+diagnostic](v04-validation.md#current-raw-clock-diagnostic-entry-still-requires-elevated-live-validation)
+using the existing harmless fixture and keeping all artifacts. It must establish
+actual header/key availability, independent timing and post-repair fixture behavior.
+Only then can baseline/candidate inputs and the unchanged 32-attempt paired
+protocol be frozen for acceptance. Historical 1,000/10,000 failures remain failures.
+Final-state ownership and safe deletion are still unproven: this work does not
+establish a basis for a safe removal executor.
+
+Local commits: `6df0de7` archives the administrator evidence; `3e4d9dc` repairs
+read interference; `38261b5efd808a440bf553c4eee71a88b853e2b5` implements the clock,
+registry diagnostics and execution-identity repairs. A retained development build
+is at `target/stabilization/followup-38261b5-bin/`, including a source archive,
+pre/post-build input inventory, actual Cargo artifact paths and SHA-256 manifest.
+Its `contain.exe` SHA-256 is
+`3a708479ad606141f6b55b57639e6c6b0fd4b80ff621e10d0c2b4b747b97199e`.
+The final artifact-selection build log and identity are
+`target/stabilization/raw/followup-build-artifacts-reviewed.log` and
+`followup-build-identity-reviewed.json`. This checkpoint explicitly has
+`acceptance_frozen=false` and `live_raw_clock_verified=false`; it must not replace
+the historical demo's missing executed-image identity. No push was performed.
+
 The following sections retain the pre-diagnostic measurements and their original
 conditions. They must not be relabelled as results of subsequent clock or file-read
 changes.
 
 ## Main-flow stabilization: verified starting point (2026-10-23)
 
-This section supersedes earlier working-tree statements for the current task;
+This section records the earlier stabilization entry point;
 historical measurements below remain unchanged. Starting branch was
 the development branch (historical name withheld), HEAD `a072072ad805880290fd1f47f67fba6828d2c24e`,
 package 0.3.1. The only existing changes were untracked `docs/preview.md`,
