@@ -79,12 +79,12 @@ Edges persist relationship, confidence and reason. `explain` walks incoming acto
 ancestry and lists operations referencing the selected event. A visited-node set
 bounds graph traversal. Source evidence and snapshot operations remain distinct.
 
-Final resource reads now occur while ETW and the receiver run. Successful file
-read handles deny write/delete and pin ancestors until final stop/drain; at most
-256 file+directory handles are retained. Failed leases use the ordinary shared
-read and preserve a failure reason. This actively restricts concurrent access;
-it is neither a passive nor a globally atomic snapshot, and has no hard hold-time
-bound. Per-file hold duration, hash, identity, and sealing status are retained.
+Final resource reads occur while ETW and the receiver run. Production uses shared
+file handles and retains no file or ancestor exclusion handles through stop/drain.
+It records hashes, file identities and the reason stability remains unproven.
+The bounded exclusive-read mechanism remains test-only; it is not the production
+observation method. Shared reads preserve concurrent write/delete sharing, but
+neither provide an atomic snapshot nor exclude replacement or write/restore races.
 
 These facts still do not prove complete mutation coverage: an open can truncate
 without a WriteFile record, and unresolved file contexts can be filtered. Production

@@ -1,5 +1,84 @@
 # v0.4 development validation
 
+## Current evidence gaps and exploratory scope (2026-10-24)
+
+Starting source and verified remote development HEAD: `e72d88c410f8ec69b8e17f7ccc193a6cb9c972d4`.
+The most recent live runtime remains clean `86a6b59`, version **0.3.1**.
+The development token is not elevated. Existing administrator captures are valid
+real ETW observations; the new work below is not another capture or formal acceptance.
+The original workspace and UI/preview files are preserved. A fresh clean build
+of `e72d88c` and its complete input/executable identities are retained locally.
+Its freshly executed Check passed 161 Rust tests (4 explicit skips), 131 Python
+tests, formatting, Clippy, PowerShell regressions and the deterministic fuzz seed.
+Doctests contain zero tests. These checks do not establish live capture coverage.
+
+### Per-operation audit of the retained clock-on diagnostic
+
+The table retains all 21 independent rows from
+`admin-pair-20261023-231230-468d9d12/clock-on`. Fixture-relative names replace
+private paths. **B** means independently established same-machine/same-boot
+provenance is absent; **E** means provider emission timing has not been validated
+as a general syscall/completion contract. Both are global prerequisites, not
+evidence that the recorded QPC numbers themselves are corrupt. A unique interval
+candidate is not proof of final-state ownership or successful operation completion.
+
+| Row / role | Operation and expected result | Source observed | Resource resolved | Actor instance | Exact raw-clock link | Remaining requirement |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 short | write short.txt; success | Yes | Yes | Verified | Yes; unique interval candidate | B, E |
+| 2 grandchild | write user-notes.txt; success | Yes | Yes | Verified | Yes; unique interval candidate | B, E |
+| 3 grandchild | write transient.txt; success | Yes | Yes | Verified | Yes; unique interval candidate | B, E |
+| 4 grandchild | delete transient.txt; success | Yes | Yes | Verified | Yes; unique interval candidate | B, E |
+| 5 grandchild | set GrandchildObserved; success | Yes | Yes | Verified | Yes; unique interval candidate | B, E |
+| 6 parent | write locked.txt; success | Yes | Yes | Verified | Yes; unique interval candidate | B, E |
+| 7 parent | delete locked.txt; failure, error 32 | Open request; no qualified delete request/completion | Open path resolved | Open actor verified | Open links within call; no qualified delete match | Failed deletion request/outcome not fully observed; B, E |
+| 8 parent | write app.bin; success | Yes | Yes | Verified | Yes; unique interval candidate | B, E |
+| 9 parent | write settings.txt; success | Yes | Yes | Verified | Yes; unique interval candidate | B, E |
+| 10 parent | write shared.txt; success | Yes | Yes | Verified | Yes; unique interval candidate | B, E |
+| 11 parent | rename rename-me.txt; success | Yes | Yes | Verified | Yes; unique interval candidate | B, E |
+| 12 parent | rename intermediate.txt; success | Yes | Yes | Verified | Yes; unique interval candidate | B, E |
+| 13 parent | delete delete-me.txt; success | Yes | Yes | Verified | Yes; unique interval candidate | B, E |
+| 14 parent | set Installed; success | Yes | Yes | Verified | Yes; unique interval candidate | B, E |
+| 15 detached | write detached.txt; success | Yes | Yes | Verified | Yes; unique interval candidate | B, E |
+| 16 unrelated | write unrelated.txt; success | Request/completion retained | Yes | Missing event-time process/thread interval | Yes; interval evidence retained | Actor identity; B, E |
+| 17 unrelated | write shared.txt; success | Requests/completions retained | Yes | Missing event-time process/thread interval | Yes; interval evidence retained | Actor identity; B, E |
+| 18 unrelated | set NoiseOnly; success | Successful set-value persisted | No absolute key/object context | Process birth verified | Yes; within call, not a full-resource match | Resource identity; B, E |
+| 19 child | write index.bin; success | Yes | Yes | Verified | Yes; unique interval candidate | B, E |
+| 20 child | set Installed; success | Yes | Yes | Verified | Yes; unique interval candidate | B, E |
+| 21 child | set ChildObserved; success | Yes | Yes | Verified | Yes; unique interval candidate | B, E |
+
+The extended audit links all **460 persisted primary records** to the raw archive
+by exact EventKey and complete descriptor, including the NoiseOnly set-value
+record. This is broader than the earlier 35 eligible final-view source records;
+the denominators must not be combined. NoiseOnly has status 0 and a ValueName,
+but `nonabsolute_key_name_and_no_object_context` prevents an absolute-key match.
+It is retained in raw storage and excluded from the resolved final scope. Actor
+initialization cannot recover that missing resource identity. The earlier 1,427
+global registry path gaps retain their historical scoped analysis below; they
+are not 1,427 target misses or a count from this newer capture.
+
+The failed delete has an in-call open request with unresolved success, but no
+qualified deletion evidence. No deletion was promoted, and locked.txt remains
+in the final observation with state ownership Unknown. **No false success** is
+verified here; **complete failed-request observability** is not. The failed call
+stays outside the 20-success denominator. Legacy results remain 17/17 successful
+target calls observed/correct, 19/20 supported successful calls observed, 17/20
+valid attribution, 3/20 Unknown and 0/20 wrong attribution. No sample or threshold
+changed. Protocol 3 remains 17 candidates, 2 actor-unavailable rows and 2 without
+a qualified in-interval source, overall unavailable. The older capacity-failed
+sample remains unavailable; no historical identity is reconstructed.
+
+Read-only audit inputs, hashes, exact event IDs, every row and original outcomes
+are retained in `target/stabilization/evidence-load-20261024/per-operation-gaps-private.json`.
+The same directory holds the fresh baseline build, Check and seven-sample synthetic
+benchmark records. Full paths, raw clocks, host data and databases remain private.
+
+Next scope: bounded startup identity handoff and independently measured clock
+provenance, followed by **exploratory**, separately labelled 1,000/10,000-file
+baseline/candidate and clock-on/off attempts. These do not require declaring the
+small diagnostic passed and do not count toward the formal 32 attempts. Formal
+inputs are not frozen, historical large-scale failures remain, and no release or
+real deletion capability is authorized by this work.
+
 ## Integrated candidate and bounded companion (2026-10-23)
 
 The clean runtime candidate tested live is `86a6b596aea28f30ea3afca4c4a65465172431b6`,
