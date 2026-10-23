@@ -17,8 +17,10 @@ missing tools: `./scripts/quality.ps1 -Mode Setup`.
 1. Read root `AGENTS.md`, then run `./scripts/quality.ps1 -Mode Check` after core
    changes. It fails immediately on any gate failure; nextest never retries a
    failure. Doctests run separately because nextest does not run them. The three
-   explicitly ignored tests are disk-backed storage performance experiments;
-   report their omission and run them when investigating readback/storage costs.
+   legacy ignored tests are disk-backed storage performance experiments. The
+   additional ignored raw-clock spool test exercises the historical callback
+   volume through the finite writer; run it explicitly for companion changes.
+   Report omissions and run storage experiments when investigating readback costs.
 2. Run `-Mode Coverage` for core behavior changes. Read both the whole-workspace
    report and affected source regions in `target/quality/coverage-html`. Do not
    interpret instrumented unit tests as live Windows provider validation. Use

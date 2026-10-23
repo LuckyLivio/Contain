@@ -185,21 +185,55 @@ abort launch; STOP failure closes the raw consumer before joining and marks the
 tail incomplete. Missing keys, duplicates, capacity refusal, persistence errors
 and partial artifacts stay visible. Default capture queues are not enlarged.
 
-The optional sidecar has a fixed 262,144-row capacity. The measured row size is
-64 bytes: 16,777,216 bytes backing storage plus a 65,536-byte serialization buffer,
-within a 32-MiB payload budget; JSON has a 128-MiB disk limit. These are not total
-process/OS memory limits. This bound was chosen against the observed 194,368
-callbacks in the small demo, not validated at 1,000/10,000 files. Extra callbacks,
-EventKey extended data, memory and post-STOP serialization have overhead. Do not
-pool diagnostic-on and diagnostic-off performance results; a saturated diagnostic
-remains unavailable, not a fast passing run. The sidecar is private system-wide
-clock evidence, not a public artifact.
+The original protocol-1 sidecar retained at most 262,144 rows until STOP and then
+serialized verbose JSON. The administrator run delivered 896,972 callbacks, so
+634,828 capacity refusals are retained as a failed diagnostic; they are not
+primary queue loss. Raising that lifetime cap alone would also exceed its
+128-MiB JSON allowance for this workload.
+
+Protocol 2 keeps all records from the same three providers, including unrelated
+noise and context. A preallocated pool of 32 chunks, each 4,096 fixed 64-byte rows,
+feeds a separate writer using nonblocking submission. The callback never waits
+for disk and never allocates another chunk when the pool is full. Row storage is
+8 MiB, with a separate 1-MiB writer stack, within the existing 32-MiB payload
+budget. These bounds do not include the primary collector or OS buffers.
+
+The JSON manifest now references its sibling `<manifest>.rows.bin`. The binary
+wire layout is explicitly little-endian: sequence u64, original event key u64,
+signed QPC i64, provider u128, id u16, version/channel/level/opcode u8 each, task
+u16, keyword u64, PID u32, TID u32. The unchanged 128-MiB combined disk budget
+reserves 64 KiB for metadata and permits 2,096,128 rows. Thus 896,972 callbacks
+require 57,406,208 payload bytes, without a lifetime-sized in-memory collection.
+This capacity calculation is not proof of sustained live write throughput.
+
+Queue exhaustion, disk quota exhaustion, writer closure, partial writes, pending
+records and failed or timed-out drains remain separate visible failures. Data
+and metadata writers each wait at most 30 seconds plus a one-second cancellation
+grace; an unresponsive writer is marked incomplete and cannot supply a committed
+hash. Metadata serialization is capped at 64 KiB; its seek, truncate, write and
+sync run in the cancellable worker, including startup failure records. Final
+callback counters are copied after draining; `stats_final_available=false` cannot
+pass the audit. Metadata commit failure cannot be reported as `written=true`.
+Startup and OS filesystem calls are not a hard real-time guarantee. Longer
+system-wide workloads can still exceed the finite quota and must fail visibly.
+Extra EventKey data and the writer's own I/O create overhead, including possible
+system-wide callbacks even though output is outside watched roots.
+
+Do not pool diagnostic-on and diagnostic-off results. `demo.ps1 -OutputDirectory`
+records parent CPU, memory and logical I/O alongside wall time and DB/WAL samples;
+missing measurements are null. I/O transfer counters are not physical disk usage.
+The sidecar, binary payload, database and console logs remain private.
 
 `v04-clock-protocol.py --raw-clock SIDECAR` validates its SHA-256, byte count,
 session, actual headers, bounds, counter partitions and termination. Links require
 the unique ETW EventKey **and** identical provider, descriptor, PID and TID.
 Missing, duplicated, inconsistent or zero qualifying links are unavailable.
 Original QPC and primary FILETIME remain distinct in the diagnostic report.
+The protocol-2 reader streams the entire bounded payload and checks every key
+for duplicates, including unmatched noise, before linking primary records. Its
+offline key sort has a finite 2,096,128-key bound; it is outside the capture's
+32-MiB budget. A producer-side duplicate count of null is never treated as zero.
+Protocol-1 evidence remains readable under the same revised clock protocol.
 [Microsoft documents EventKey as an event-instance identifier](https://learn.microsoft.com/windows/win32/api/evntrace/ns-evntrace-enable_trace_parameters).
 Synthetic non-provider metadata is counted separately, not relabelled as lost
 target operations. The OpenTrace header is an initial sample, not final loss

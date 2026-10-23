@@ -103,9 +103,19 @@ try {
             $runIdentity | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath $identityPath -Encoding utf8
         }
         $captureClock=[Diagnostics.Stopwatch]::StartNew()
-        & $contain @arguments
+        if ($OutputDirectory) {
+            $captureCommandPath=Join-Path $OutputDirectory 'capture-command.json'
+            ConvertTo-Json -InputObject (@($contain)+$arguments) | Set-Content -LiteralPath $captureCommandPath -Encoding utf8
+            python "$PSScriptRoot/demo-measure.py" --command $captureCommandPath --output $OutputDirectory --database $db
+            $captureExit=$LASTEXITCODE
+            Get-Content -LiteralPath (Join-Path $OutputDirectory 'capture.stdout.log')
+            Get-Content -LiteralPath (Join-Path $OutputDirectory 'capture.stderr.log') | Write-Output
+        } else {
+            & $contain @arguments
+            $captureExit=$LASTEXITCODE
+        }
         $captureClock.Stop()
-        if ($LASTEXITCODE -ne 0) { throw 'capture failed' }
+        if ($captureExit -ne 0) { throw 'capture failed; any process measurements and logs were retained' }
         if (-not $unrelated.WaitForExit(10000)) { throw 'independent fixture timed out' }
         if ($unrelated.ExitCode -ne 0) { throw 'independent fixture failed' }
         $deadline=[DateTime]::UtcNow.AddSeconds(15)
@@ -124,7 +134,6 @@ try {
         $score = & "$PSScriptRoot/score-fixture.ps1" -Capture $manifest -Root $truthRoot
         if ($OutputDirectory) {
             New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
-            [ordered]@{elapsed_seconds=$captureClock.Elapsed.TotalSeconds;sqlite_bytes=(Get-Item -LiteralPath $db).Length;measurement='Contain process wall through DB close; excludes fixture build, oracle export and scoring.'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDirectory 'measurement.json') -Encoding utf8
             $document | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'capture.json') -Encoding utf8
             $score | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'reliability.json') -Encoding utf8
             Copy-Item -LiteralPath (Join-Path $truthRoot 'ground-truth.json') -Destination $OutputDirectory

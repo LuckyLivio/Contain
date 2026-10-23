@@ -1,14 +1,13 @@
-//! Opt-in original-clock evidence. Separate consumer, finite fixed-size memory,
-//! bounded sidecar, no changes to the primary FILETIME stream or attribution.
+//! Opt-in original-clock evidence. Fixed callback buffers feed a bounded disk
+//! writer; no changes to the primary FILETIME stream or attribution.
 use super::header;
 use crate::windows::native;
 use ferrisetw::trace::{FileTrace, TraceHeader, TraceTrait};
-use serde::ser::SerializeStruct;
-use serde::{Serialize, Serializer};
-use sha2::Digest;
+use serde::Serialize;
+mod spool;
 use std::{
     fs::{File, OpenOptions},
-    io::{self, BufWriter, Seek, SeekFrom, Write},
+    io::{self, Write},
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
@@ -18,14 +17,13 @@ use std::{
 };
 
 pub const ENV: &str = "CONTAIN_ETW_RAW_CLOCK_PATH";
-const RECORD_CAPACITY: usize = 262_144;
 const MEMORY_BUDGET: usize = 32 * 1024 * 1024;
 const DISK_BUDGET: usize = 128 * 1024 * 1024;
-const PROTOCOL: &str = "contain-raw-clock-companion-1";
+const PROTOCOL: &str = "contain-raw-clock-companion-2";
+const METADATA_BUDGET: usize = 64 * 1024;
 const SERIALIZATION_BUFFER: usize = 64 * 1024;
 
-// No owned variable-length callback payloads. Vec backing storage is allocated
-// once; later records cannot enlarge it. Serialization occurs after STOP/join.
+// The wire layout is explicit: Rust padding/endian choices never reach disk.
 #[derive(Clone, Copy)]
 struct Row {
     sequence: u64,
@@ -42,28 +40,6 @@ struct Row {
     process_id: u32,
     thread_id: u32,
 }
-impl Serialize for Row {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut value = serializer.serialize_struct("RawClockRecord", 13)?;
-        value.serialize_field("sequence", &self.sequence)?;
-        value.serialize_field("event_key", &format!("{:016x}", self.event_key))?;
-        value.serialize_field("header_timestamp", &self.timestamp.to_string())?;
-        value.serialize_field(
-            "provider",
-            &uuid::Uuid::from_u128(self.provider).to_string(),
-        )?;
-        value.serialize_field("event_id", &self.event_id)?;
-        value.serialize_field("version", &self.version)?;
-        value.serialize_field("channel", &self.channel)?;
-        value.serialize_field("level", &self.level)?;
-        value.serialize_field("opcode", &self.opcode)?;
-        value.serialize_field("task", &self.task)?;
-        value.serialize_field("keyword", &format!("{:016x}", self.keyword))?;
-        value.serialize_field("process_id", &self.process_id)?;
-        value.serialize_field("thread_id", &self.thread_id)?;
-        value.end()
-    }
-}
 
 #[derive(Clone, Default, Serialize)]
 struct Stats {
@@ -74,7 +50,7 @@ struct Stats {
     missing_event_key: u64,
     invalid_timestamp: u64,
     capacity_dropped: u64,
-    duplicate_event_keys: u64,
+    duplicate_event_keys: Option<u64>,
     record_capacity: usize,
     byte_capacity: usize,
     bytes: usize,
@@ -82,28 +58,33 @@ struct Stats {
     allocated_record_bytes: usize,
     disk_byte_capacity: usize,
     serialization_buffer_bytes: usize,
+    accepted: u64,
+    queued: u64,
+    queue_dropped: u64,
+    quota_dropped: u64,
+    writer_closed_dropped: u64,
+    not_persisted: u64,
+    writer_memory_bytes: usize,
 }
 struct Recorder {
-    rows: Vec<Row>,
+    producer: spool::Producer,
     stats: Stats,
 }
 impl Recorder {
-    fn new(capacity: usize) -> Self {
-        assert!(
-            capacity <= RECORD_CAPACITY
-                && capacity * size_of::<Row>() + SERIALIZATION_BUFFER <= MEMORY_BUDGET
-        );
-        let rows = Vec::with_capacity(capacity);
-        let stats = Stats {
-            record_capacity: capacity,
-            byte_capacity: MEMORY_BUDGET,
-            fixed_record_size: size_of::<Row>(),
-            allocated_record_bytes: rows.capacity() * size_of::<Row>(),
-            disk_byte_capacity: DISK_BUDGET,
-            serialization_buffer_bytes: SERIALIZATION_BUFFER,
-            ..Default::default()
-        };
-        Self { rows, stats }
+    fn new(producer: spool::Producer) -> Self {
+        Self {
+            producer,
+            stats: Stats {
+                record_capacity: spool::ROW_BUDGET,
+                byte_capacity: MEMORY_BUDGET,
+                fixed_record_size: spool::ROW_BYTES,
+                allocated_record_bytes: spool::ALLOCATED_BYTES,
+                writer_memory_bytes: spool::WRITER_MEMORY_BYTES,
+                disk_byte_capacity: DISK_BUDGET,
+                serialization_buffer_bytes: SERIALIZATION_BUFFER,
+                ..Default::default()
+            },
+        }
     }
     fn push(&mut self, key: Option<u64>, mut row: Row) {
         self.stats.received += 1;
@@ -117,7 +98,7 @@ impl Recorder {
             self.stats.filtered_nonprimary += 1;
             return;
         }
-        let Some(key) = key else {
+        let Some(key) = key.filter(|key| *key != 0) else {
             self.stats.missing_event_key += 1;
             return;
         };
@@ -125,46 +106,61 @@ impl Recorder {
         if row.timestamp <= 0 {
             self.stats.invalid_timestamp += 1;
         }
-        if self.rows.len() >= self.stats.record_capacity {
-            self.stats.capacity_dropped += 1;
-            return;
-        }
-        self.rows.push(row);
-        self.stats.stored += 1;
-        self.stats.bytes = self.rows.len() * size_of::<Row>();
+        self.producer.push(row);
     }
-    fn finish(&mut self) {
-        // In-place ordering is only diagnostic serialization. Sequence retains
-        // raw-consumer delivery order; primary events are never reordered.
-        self.rows.sort_unstable_by_key(|row| row.event_key);
-        self.stats.duplicate_event_keys = self
-            .rows
-            .windows(2)
-            .filter(|pair| pair[0].event_key == pair[1].event_key)
-            .count() as u64;
+    fn seal(&mut self) {
+        self.producer.close();
+        self.refresh();
+    }
+    fn refresh(&mut self) {
+        self.stats.accepted = self.producer.accepted;
+        self.stats.queued = self.producer.queued;
+        self.stats.queue_dropped = self.producer.queue_dropped;
+        self.stats.quota_dropped = self.producer.quota_dropped;
+        self.stats.writer_closed_dropped = self.producer.writer_closed_dropped;
+        self.stats.capacity_dropped = self.stats.queue_dropped + self.stats.quota_dropped;
+    }
+    fn finalized(&mut self, outcome: &spool::Outcome) {
+        self.refresh();
+        self.stats.stored = outcome.records;
+        self.stats.bytes = outcome.bytes as usize;
+        self.stats.not_persisted = self.stats.accepted.saturating_sub(outcome.records);
+        // All-key duplicate validation is performed by the independent bounded
+        // binary reader. Absence of a producer-side check is never reported as 0.
+        self.stats.duplicate_event_keys = None;
     }
 }
 
-struct LimitedWriter<'a> {
-    file: &'a mut File,
-    bytes: usize,
-    hash: blake3::Hasher,
-    sha256: sha2::Sha256,
-    budget: usize,
+fn finalized_stats(recorder: &Mutex<Recorder>, outcome: &spool::Outcome) -> Stats {
+    let mut recorder = recorder
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    recorder.finalized(outcome);
+    // Return only an owned copy. A timed-out consumer can still enter a callback;
+    // it must never wait on the metadata writer while this mutex is held.
+    recorder.stats.clone()
 }
-impl Write for LimitedWriter<'_> {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        if self.bytes.saturating_add(bytes.len()) > self.budget {
-            return Err(io::Error::other("raw clock sidecar disk budget exhausted"));
+
+struct BoundedMetadata {
+    bytes: Vec<u8>,
+}
+impl BoundedMetadata {
+    fn new() -> Self {
+        Self {
+            bytes: Vec::with_capacity(METADATA_BUDGET),
         }
-        let count = self.file.write(bytes)?;
-        self.bytes += count;
-        self.hash.update(&bytes[..count]);
-        self.sha256.update(&bytes[..count]);
-        Ok(count)
+    }
+}
+impl Write for BoundedMetadata {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if self.bytes.len().saturating_add(bytes.len()) > METADATA_BUDGET {
+            return Err(io::Error::other("raw clock metadata budget exhausted"));
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(bytes.len())
     }
     fn flush(&mut self) -> io::Result<()> {
-        self.file.flush()
+        Ok(())
     }
 }
 
@@ -214,7 +210,9 @@ pub(crate) struct Companion {
     recorder: Arc<Mutex<Recorder>>,
     ready: Arc<AtomicBool>,
     path: PathBuf,
-    file: File,
+    file: Option<File>,
+    rows_path: PathBuf,
+    writer: Option<spool::Worker>,
     session: String,
     actual: TraceHeader,
 }
@@ -223,9 +221,25 @@ impl Companion {
         let path = std::env::var_os(ENV).ok_or("raw clock destination missing")?;
         let (path, mut file) = reserve(Path::new(&path), roots)?;
         // Retain an explicit incomplete artifact even if startup fails or exits.
-        serde_json::to_writer(&mut file, &serde_json::json!({"schema_version":1,"protocol":PROTOCOL,"session_name":session,"ready":false,"stopped":false,"errors":["startup incomplete"],"records":[]})).map_err(|e| e.to_string())?;
-        file.sync_all().map_err(|e| e.to_string())?;
-        let recorder = Arc::new(Mutex::new(Recorder::new(RECORD_CAPACITY)));
+        persist_startup_metadata(
+            &file,
+            &serde_json::json!({"schema_version":2,"protocol":PROTOCOL,"session_name":session,"ready":false,"stopped":false,"errors":["startup incomplete"],"records":[]}),
+        )?;
+        let rows_path = path.with_file_name(format!(
+            "{}.rows.bin",
+            path.file_name().unwrap().to_string_lossy()
+        ));
+        let (rows_path, rows_file) = reserve(&rows_path, roots)
+            .map_err(|error| retain_startup_failure(&mut file, session, None, error))?;
+        let (producer, writer) = spool::start(rows_file).map_err(|error| {
+            retain_startup_failure(
+                &mut file,
+                session,
+                None,
+                format!("raw clock writer startup: {error}"),
+            )
+        })?;
+        let recorder = Arc::new(Mutex::new(Recorder::new(producer)));
         let sink = recorder.clone();
         let ready = Arc::new(AtomicBool::new(false));
         let signal = ready.clone();
@@ -295,7 +309,9 @@ impl Companion {
             recorder,
             ready,
             path,
-            file,
+            file: Some(file),
+            rows_path,
+            writer: Some(writer),
             session: session.into(),
             actual,
         })
@@ -329,13 +345,37 @@ impl Companion {
             .recorder
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        recorder.finish();
-        if recorder.stats.missing_event_key > 0
-            || recorder.stats.invalid_timestamp > 0
-            || recorder.stats.capacity_dropped > 0
-            || recorder.stats.duplicate_event_keys > 0
+        recorder.seal();
+        drop(recorder);
+        let outcome = self
+            .writer
+            .take()
+            .unwrap()
+            .finish(std::time::Duration::from_secs(30));
+        let stats = finalized_stats(&self.recorder, &outcome);
+        let stats_final_available = stopped && outcome.finished;
+        if let Some(error) = &outcome.error {
+            errors.push(error.clone());
+        }
+        if !outcome.drained {
+            errors.push("raw clock writer did not complete its drain".into());
+        }
+        let binary = serde_json::json!({
+            "file_name":self.rows_path.file_name().unwrap().to_string_lossy(),
+            "format":"contain-raw-clock-le64-1", "record_size":spool::ROW_BYTES,
+            "records":outcome.records, "bytes":outcome.bytes,
+            "sha256":outcome.sha256, "blake3":outcome.blake3,
+            "complete":stats_final_available && outcome.drained && stats.not_persisted == 0,
+            "metadata_byte_capacity":METADATA_BUDGET,
+            "byte_capacity":spool::ROW_BUDGET * spool::ROW_BYTES,
+        });
+        if stats.missing_event_key > 0
+            || stats.invalid_timestamp > 0
+            || stats.capacity_dropped > 0
+            || stats.not_persisted > 0
+            || stats.writer_closed_dropped > 0
         {
-            errors.push(format!("raw clock evidence incomplete or ambiguous: missing_key={}, invalid_timestamp={}, capacity_dropped={}, duplicate_key={}", recorder.stats.missing_event_key, recorder.stats.invalid_timestamp, recorder.stats.capacity_dropped, recorder.stats.duplicate_event_keys));
+            errors.push(format!("raw clock evidence incomplete or ambiguous: missing_key={}, invalid_timestamp={}, capacity_dropped={}, not_persisted={}, writer_closed_dropped={}", stats.missing_event_key, stats.invalid_timestamp, stats.capacity_dropped, stats.not_persisted, stats.writer_closed_dropped));
         }
         #[derive(Serialize)]
         struct Document<'a> {
@@ -348,12 +388,14 @@ impl Companion {
             producer_stopped: bool,
             header_sample_phase: &'static str,
             consumer_loss_counters_available: bool,
+            stats_final_available: bool,
             stats: &'a Stats,
             errors: &'a [String],
-            records: &'a [Row],
+            binary: &'a serde_json::Value,
+            writer: &'a spool::Outcome,
         }
         let document = Document {
-            schema_version: 1,
+            schema_version: 2,
             protocol: PROTOCOL,
             session_name: &self.session,
             header: header(self.actual),
@@ -362,44 +404,57 @@ impl Companion {
             producer_stopped,
             header_sample_phase: "open_before_process_trace",
             consumer_loss_counters_available: false,
-            stats: &recorder.stats,
+            stats_final_available,
+            stats: &stats,
             errors: &errors,
-            records: &recorder.rows,
+            binary: &binary,
+            writer: &outcome,
         };
-        let mut writer = LimitedWriter {
-            file: &mut self.file,
-            bytes: 0,
-            hash: blake3::Hasher::new(),
-            sha256: sha2::Sha256::new(),
-            budget: DISK_BUDGET,
+        // Bound serialization before transferring file ownership to the writer.
+        // No seek, truncate, write or sync operation runs on this caller thread.
+        let mut metadata = BoundedMetadata::new();
+        let result = serde_json::to_writer(&mut metadata, &document)
+            .map_err(|error| error.to_string())
+            .and_then(|()| {
+                spool::metadata(self.file.take().unwrap(), metadata.bytes)
+                    .map_err(|error| format!("raw clock metadata writer startup: {error}"))
+            });
+        let metadata_writer = match result {
+            Ok(writer) => writer.finish(std::time::Duration::from_secs(30)),
+            Err(error) => spool::Outcome {
+                error: Some(error),
+                ..Default::default()
+            },
         };
-        let result = (|| -> Result<(), String> {
-            writer
-                .file
-                .seek(SeekFrom::Start(0))
-                .map_err(|e| e.to_string())?;
-            writer.file.set_len(0).map_err(|e| e.to_string())?;
-            {
-                let mut buffer = BufWriter::with_capacity(SERIALIZATION_BUFFER, &mut writer);
-                serde_json::to_writer(&mut buffer, &document).map_err(|e| e.to_string())?;
-                buffer.flush().map_err(|e| e.to_string())?;
-            }
-            writer.file.sync_all().map_err(|e| e.to_string())?;
-            Ok(())
-        })();
-        let bytes = writer.bytes;
-        let hash = writer.hash.finalize().to_hex().to_string();
-        let sha256 = format!("{:x}", writer.sha256.finalize());
-        let written = result.is_ok();
-        if let Err(error) = result {
+        let written = metadata_writer.finished
+            && metadata_writer.drained
+            && !metadata_writer.timed_out
+            && metadata_writer.error.is_none();
+        if !written {
             errors.push(format!(
-                "raw clock sidecar persistence failed; partial artifact retained: {error}"
+                "raw clock sidecar persistence incomplete; artifact retained: {}",
+                metadata_writer
+                    .error
+                    .as_deref()
+                    .unwrap_or("metadata writer did not finish")
             ));
         }
+        let bytes = metadata_writer.bytes;
+        let hash = &metadata_writer.blake3;
+        let sha256 = &metadata_writer.sha256;
+        let metadata_persistence = serde_json::json!({
+            "bytes":metadata_writer.bytes, "write_calls":metadata_writer.write_calls,
+            "write_elapsed_ns":metadata_writer.write_elapsed_ns,
+            "drain_elapsed_ns":metadata_writer.drain_elapsed_ns,
+            "finished":metadata_writer.finished, "drained":metadata_writer.drained,
+            "timed_out":metadata_writer.timed_out,
+            "cancel_requested":metadata_writer.cancel_requested,
+            "cancel_error":metadata_writer.cancel_error, "error":metadata_writer.error,
+        });
         serde_json::json!({"protocol":PROTOCOL,"session_name":self.session,"path":self.path,"header":header(self.actual),"ready":ready,"stopped":stopped,"producer_stopped":producer_stopped,
-            "header_sample_phase":"open_before_process_trace","consumer_loss_counters_available":false,
+            "header_sample_phase":"open_before_process_trace","consumer_loss_counters_available":false,"stats_final_available":stats_final_available,
             "loss_scope":"Only exact-key coverage of retained primary records can be checked; no consumer-wide loss-rate claim",
-            "stats":recorder.stats,"errors":errors,"written":written,"file_bytes":bytes,"blake3":hash,"sha256":sha256})
+            "stats":stats,"binary":binary,"writer":outcome,"metadata_writer":metadata_persistence,"errors":errors,"written":written,"file_bytes":bytes,"blake3":hash,"sha256":sha256})
     }
 }
 
@@ -409,23 +464,33 @@ fn retain_startup_failure(
     actual: Option<TraceHeader>,
     error: String,
 ) -> String {
-    let result = (|| -> Result<(), String> {
-        file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
-        file.set_len(0).map_err(|e| e.to_string())?;
-        serde_json::to_writer(
-            &mut *file,
-            &serde_json::json!({"schema_version":1,"protocol":PROTOCOL,"session_name":session,
+    let result = persist_startup_metadata(
+        file,
+        &serde_json::json!({"schema_version":2,"protocol":PROTOCOL,"session_name":session,
             "header":actual.map(header),"ready":false,"stopped":false,"producer_stopped":false,
             "errors":[error],"records":[]}),
-        )
-        .map_err(|e| e.to_string())?;
-        file.sync_all().map_err(|e| e.to_string())
-    })();
+    );
     match result {
         Ok(()) => error,
         Err(persistence) => {
             format!("{error}; retaining startup failure also failed: {persistence}")
         }
+    }
+}
+
+fn persist_startup_metadata(file: &File, document: &impl Serialize) -> Result<(), String> {
+    let mut bytes = BoundedMetadata::new();
+    serde_json::to_writer(&mut bytes, document).map_err(|error| error.to_string())?;
+    let clone = file.try_clone().map_err(|error| error.to_string())?;
+    let outcome = spool::metadata(clone, bytes.bytes)
+        .map_err(|error| error.to_string())?
+        .finish(std::time::Duration::from_secs(30));
+    if outcome.finished && outcome.drained && !outcome.timed_out && outcome.error.is_none() {
+        Ok(())
+    } else {
+        Err(outcome
+            .error
+            .unwrap_or_else(|| "startup metadata persistence incomplete".into()))
     }
 }
 
@@ -440,6 +505,24 @@ fn finish_consumer(
     let mut close = Some(close);
     if !producer_stopped {
         close.take().unwrap()();
+    }
+    let started = std::time::Instant::now();
+    while !consumer.is_finished() && started.elapsed() < std::time::Duration::from_secs(30) {
+        thread::sleep(std::time::Duration::from_millis(1));
+    }
+    if !consumer.is_finished() {
+        if let Some(close) = close.take() {
+            close();
+        }
+        let grace = std::time::Instant::now();
+        while !consumer.is_finished() && grace.elapsed() < std::time::Duration::from_secs(1) {
+            thread::sleep(std::time::Duration::from_millis(1));
+        }
+        // ProcessTrace/driver non-response must not cause an unbounded join.
+        if consumer.is_finished() {
+            let _ = consumer.join();
+        }
+        return Err("raw clock consumer drain deadline exceeded; tail incomplete".into());
     }
     let result = consumer.join();
     if let Some(close) = close {
@@ -456,8 +539,13 @@ impl Drop for Companion {
         // producer shutdown belongs to EtwSource and its UUID session.
         self.trace.take();
         if let Some(consumer) = self.consumer.take() {
-            let _ = consumer.join();
+            let _ = finish_consumer(consumer, false, || {});
         }
+        self.recorder
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .seal();
+        self.writer.take();
     }
 }
 
@@ -530,7 +618,7 @@ mod tests {
         })
         .unwrap();
     }
-    fn row(timestamp: i64) -> Row {
+    pub(super) fn row(timestamp: i64) -> Row {
         Row {
             sequence: 0,
             event_key: 0,
@@ -590,50 +678,52 @@ mod tests {
         }
     }
     #[test]
-    fn unrelated_trace_metadata_is_not_misreported_as_a_missing_primary_key() {
-        let mut recorder = Recorder::new(3);
+    fn all_source_providers_are_retained_and_invalid_input_remains_visible() {
+        let path = std::env::temp_dir().join(format!(
+            "contain-clock-records-{}.bin",
+            uuid::Uuid::new_v4()
+        ));
+        let (_, file) = reserve(&path, &[]).unwrap();
+        let (producer, worker) = spool::start(file).unwrap();
+        let mut recorder = Recorder::new(producer);
         recorder.push(
             None,
             Row {
                 provider: 0,
-                ..row(10)
+                ..row(1)
             },
         );
-        assert_eq!(recorder.stats.received, 1);
-        assert_eq!(recorder.stats.missing_event_key, 0);
-        assert_eq!(recorder.stats.filtered_nonprimary, 1);
-        assert!(recorder.rows.is_empty());
-    }
-    #[test]
-    fn original_records_are_bounded_and_missing_duplicate_invalid_keys_are_explicit() {
-        let mut recorder = Recorder::new(3);
-        recorder.push(Some(9), row(134_350_000_000_000_017));
         recorder.push(None, row(2));
-        recorder.push(Some(9), row(3));
-        recorder.push(Some(10), row(-1));
-        recorder.push(Some(11), row(5));
-        recorder.finish();
-        assert_eq!(recorder.stats.received, 5);
-        assert_eq!(recorder.stats.stored, 3);
+        recorder.push(Some(9), row(134_350_000_000_000_017));
+        recorder.push(Some(9), row(-1));
+        recorder.push(
+            Some(10),
+            Row {
+                provider: 0x22fb2cd6_0e7b_422b_a0c7_2fad1fd0e716,
+                ..row(3)
+            },
+        );
+        recorder.push(
+            Some(11),
+            Row {
+                provider: 0x70eb4f03_c1de_4f73_a051_33d13d5413bd,
+                ..row(4)
+            },
+        );
+        recorder.seal();
+        let outcome = worker.finish(std::time::Duration::from_secs(5));
+        recorder.finalized(&outcome);
+        assert!(outcome.drained);
+        assert_eq!(recorder.stats.received, 6);
+        assert_eq!(recorder.stats.filtered_nonprimary, 1);
         assert_eq!(recorder.stats.missing_event_key, 1);
         assert_eq!(recorder.stats.invalid_timestamp, 1);
-        assert_eq!(recorder.stats.capacity_dropped, 1);
-        assert_eq!(
-            recorder.stats.received,
-            recorder.stats.filtered_nonprimary
-                + recorder.stats.stored
-                + recorder.stats.missing_event_key
-                + recorder.stats.capacity_dropped
-        );
-        assert_eq!(recorder.stats.duplicate_event_keys, 1);
-        assert_eq!(recorder.stats.bytes, 3 * size_of::<Row>());
-        assert!(RECORD_CAPACITY * size_of::<Row>() <= MEMORY_BUDGET);
-        let value =
-            serde_json::to_value(recorder.rows.iter().find(|row| row.sequence == 1).unwrap())
-                .unwrap();
-        assert_eq!(value["header_timestamp"], "134350000000000017");
-        assert_eq!(value["event_key"], "0000000000000009");
-        assert_eq!(value["keyword"], "ffffffffffffffff");
+        assert_eq!(recorder.stats.stored, 4);
+        assert_eq!(recorder.stats.duplicate_event_keys, None);
+        assert_eq!(recorder.stats.not_persisted, 0);
+        assert_eq!(recorder.stats.capacity_dropped, 0);
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), 4 * 64);
+        std::fs::remove_file(path).unwrap();
     }
     #[test]
     fn sidecar_never_overwrites_or_writes_inside_watched_roots_or_aliases() {
@@ -659,26 +749,69 @@ mod tests {
     }
     #[test]
     fn disk_quota_preserves_partial_evidence_and_hashes_only_written_bytes() {
+        let mut metadata = BoundedMetadata::new();
+        metadata
+            .write_all(&vec![b'a'; METADATA_BUDGET - 1])
+            .unwrap();
+        assert!(metadata.write_all(b"bc").is_err());
+        assert_eq!(metadata.bytes.len(), METADATA_BUDGET - 1);
         let path =
             std::env::temp_dir().join(format!("contain-clock-limit-{}.json", uuid::Uuid::new_v4()));
         let (_, mut file) = reserve(&path, &[]).unwrap();
-        let mut writer = LimitedWriter {
-            file: &mut file,
-            bytes: 0,
-            hash: blake3::Hasher::new(),
-            sha256: sha2::Sha256::new(),
-            budget: 4,
-        };
-        writer.write_all(b"abc").unwrap();
-        assert!(writer.write_all(b"de").is_err());
-        assert_eq!(writer.bytes, 3);
+        file.write_all(&[b'x'; 256]).unwrap();
+        let result = spool::metadata(file, b"abc".to_vec())
+            .unwrap()
+            .finish(std::time::Duration::from_secs(5));
+        assert!(result.finished && result.drained);
+        assert_eq!(result.bytes, 3);
         assert_eq!(
-            format!("{:x}", writer.sha256.finalize()),
+            result.sha256.unwrap(),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
-        file.sync_all().unwrap();
-        drop(file);
         assert_eq!(std::fs::read(&path).unwrap(), b"abc");
+        std::fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn callbacks_after_seal_are_counted_when_terminal_stats_are_read() {
+        let path =
+            std::env::temp_dir().join(format!("contain-clock-late-{}.bin", uuid::Uuid::new_v4()));
+        let (_, file) = reserve(&path, &[]).unwrap();
+        let (producer, worker) = spool::start(file).unwrap();
+        let mut recorder = Recorder::new(producer);
+        recorder.push(Some(1), row(1));
+        recorder.seal();
+        recorder.push(Some(2), row(2));
+        assert_eq!(recorder.stats.writer_closed_dropped, 0);
+        let outcome = worker.finish(std::time::Duration::from_secs(5));
+        recorder.finalized(&outcome);
+        assert_eq!(recorder.stats.writer_closed_dropped, 1);
+        assert_eq!(recorder.stats.received, 2);
+        assert_eq!(recorder.stats.stored, 1);
+        assert_eq!(
+            recorder.stats.received,
+            recorder.stats.accepted + recorder.stats.writer_closed_dropped
+        );
+        std::fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn finalized_stats_release_callback_lock_before_metadata_persistence() {
+        let path =
+            std::env::temp_dir().join(format!("contain-clock-lock-{}.bin", uuid::Uuid::new_v4()));
+        let (_, file) = reserve(&path, &[]).unwrap();
+        let (producer, worker) = spool::start(file).unwrap();
+        let recorder = Mutex::new(Recorder::new(producer));
+        recorder.lock().unwrap().seal();
+        let outcome = worker.finish(std::time::Duration::from_secs(5));
+        let snapshot = finalized_stats(&recorder, &outcome);
+        // Persistence may retain this snapshot for its whole deadline. The live
+        // recorder remains immediately available to late callbacks meanwhile.
+        let mut callback = recorder
+            .try_lock()
+            .expect("metadata snapshot must not retain callback lock");
+        callback.push(Some(1), row(1));
+        assert_eq!(snapshot.received, 0);
+        assert_eq!(callback.stats.received, 1);
+        assert_eq!(callback.producer.writer_closed_dropped, 1);
         std::fs::remove_file(path).unwrap();
     }
 }

@@ -8,14 +8,24 @@ from collections import Counter
 from fractions import Fraction
 import hashlib
 import json
+import os
 from pathlib import Path
+import stat
+import struct
 import uuid
 
 
 RAW_TIMESTAMP = 0x1000
 SUPPORTED = {"write_requested", "rename_requested", "delete_requested", "set_value"}
 COMPANION_PROTOCOL = "contain-raw-clock-companion-1"
+COMPANION_BINARY_PROTOCOL = "contain-raw-clock-companion-2"
 PROTOCOL_REVISION = "contain-clock-observability-2"
+BINARY_ROW = struct.Struct("<QQq16sHBBBBHQII")
+BINARY_DISK_LIMIT = 128 * 1024 * 1024
+BINARY_METADATA_LIMIT = 64 * 1024
+BINARY_RECORD_LIMIT = (BINARY_DISK_LIMIT - BINARY_METADATA_LIMIT) // BINARY_ROW.size
+BINARY_PROVIDERS = {0xedd089279cc44e65b970c2560fb5c289, 0x22fb2cd60e7b422ba0c72fad1fd0e716,
+                    0x70eb4f03c1de4f73a05133d13d5413bd}
 IDENTITY_WIDTHS = dict(event_id=16, version=8, channel=8, level=8, opcode=8,
                        task=16, process_id=32, thread_id=32)
 
@@ -92,20 +102,149 @@ def event_key(value):
     return value
 
 
-def companion_links(capture, raw_bytes):
+def checked_local_file(path):
+    """Reject redirection before opening a private diagnostic artifact."""
+    path = Path(path).absolute()
+    for item in (path, *path.parents):
+        info = item.lstat()
+        if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+            raise ValueError("raw_companion_binary_redirected_path")
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise ValueError("raw_companion_binary_not_single_regular_file")
+    return path, info
+
+
+def binary_record_index(document, raw_bytes, raw_clock_path, wanted):
+    """Scan all records; only retained primary keys get descriptor objects.
+
+    At most 2,096,128 integer keys are held for an in-place duplicate sort, plus
+    the primary-key index and one 256-KiB read block. No truth rows select input.
+    """
+    if raw_clock_path is None:
+        raise ValueError("raw_companion_binary_path_required")
+    stats, binary, writer = (document[name] for name in ("stats", "binary", "writer"))
+    required = ("received", "stored", "missing_event_key", "invalid_timestamp", "capacity_dropped",
+                "record_capacity", "byte_capacity", "bytes", "fixed_record_size", "allocated_record_bytes",
+                "disk_byte_capacity", "filtered_nonprimary", "readiness_probe_records", "serialization_buffer_bytes",
+                "accepted", "queued", "queue_dropped", "quota_dropped", "writer_closed_dropped", "not_persisted",
+                "writer_memory_bytes")
+    if any(type(stats.get(name)) is not int or not 0 <= stats[name] < 1 << 64 for name in required):
+        raise ValueError("raw_companion_invalid_counters")
+    if stats.get("duplicate_event_keys", "missing") is not None:
+        raise ValueError("raw_companion_binary_duplicate_check_not_deferred")
+    if any(stats[name] != 0 for name in ("missing_event_key", "invalid_timestamp", "capacity_dropped",
+                                       "queue_dropped", "quota_dropped", "writer_closed_dropped", "not_persisted")):
+        raise ValueError("raw_companion_loss_or_ambiguity")
+    if (stats["received"] != sum(stats[name] for name in ("filtered_nonprimary", "missing_event_key", "accepted",
+                                                       "queue_dropped", "quota_dropped", "writer_closed_dropped"))
+            or stats["accepted"] != stats["stored"] + stats["not_persisted"]
+            or stats["queued"] != stats["accepted"] or stats["readiness_probe_records"] == 0
+            or stats["capacity_dropped"] != stats["queue_dropped"] + stats["quota_dropped"]):
+        raise ValueError("raw_companion_record_count_mismatch")
+    if (not isinstance(binary, dict) or binary.get("format") != "contain-raw-clock-le64-1"
+            or any(type(binary.get(name)) is not int or binary[name] < 0
+                   for name in ("record_size", "records", "bytes", "metadata_byte_capacity", "byte_capacity"))):
+        raise ValueError("raw_companion_binary_format_invalid")
+    if (not isinstance(writer, dict) or any(type(writer.get(name)) is not int or not 0 <= writer[name] < 1 << 64
+            for name in ("bytes", "records", "partial_record_bytes", "write_calls", "written_chunks",
+                         "queue_high_water_chunks", "write_elapsed_ns", "drain_elapsed_ns"))):
+        raise ValueError("raw_companion_binary_writer_counters_invalid")
+    if (binary.get("complete") is not True or writer.get("drained") is not True or writer.get("finished") is not True
+            or writer.get("timed_out") is not False or writer.get("cancel_requested") is not False
+            or writer.get("cancel_error", "missing") is not None or writer.get("error", "missing") is not None
+            or writer["partial_record_bytes"] != 0):
+        raise ValueError("raw_companion_binary_writer_incomplete")
+    size, count = binary["bytes"], binary["records"]
+    if (binary["record_size"] != BINARY_ROW.size or stats["fixed_record_size"] != BINARY_ROW.size
+            or count != stats["stored"] or count != writer["records"]
+            or size != count * BINARY_ROW.size or size != stats["bytes"] or size != writer["bytes"]
+            or not 0 < stats["record_capacity"] <= BINARY_RECORD_LIMIT or count > stats["record_capacity"]
+            or binary["byte_capacity"] != stats["record_capacity"] * BINARY_ROW.size
+            or not 0 < len(raw_bytes) <= binary["metadata_byte_capacity"] <= BINARY_METADATA_LIMIT
+            or binary["byte_capacity"] + binary["metadata_byte_capacity"] > stats["disk_byte_capacity"]
+            or not size + len(raw_bytes) <= stats["disk_byte_capacity"] <= BINARY_DISK_LIMIT
+            or not 0 < stats["allocated_record_bytes"] <= stats["writer_memory_bytes"]
+            or not 0 < stats["serialization_buffer_bytes"]
+            or stats["writer_memory_bytes"] + stats["serialization_buffer_bytes"] > stats["byte_capacity"]
+            or stats["byte_capacity"] > 32 * 1024 * 1024 or writer["queue_high_water_chunks"] > 32
+            or (count > 0 and (writer["write_calls"] == 0 or writer["written_chunks"] == 0))):
+        raise ValueError("raw_companion_budget_inconsistent")
+    digest = binary.get("sha256")
+    if (not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest)
+            or writer.get("sha256") != digest or writer.get("blake3") != binary.get("blake3")):
+        raise ValueError("raw_companion_binary_digest_invalid")
+    metadata_path, metadata_info = checked_local_file(raw_clock_path)
+    name = binary.get("file_name")
+    if (not isinstance(name, str) or name != metadata_path.name + ".rows.bin"
+            or any(c in name for c in '/\\:\x00<>"|?*') or name.endswith((".", " "))
+            or metadata_path.name.endswith((".", " "))):
+        raise ValueError("raw_companion_binary_file_name_invalid")
+    with metadata_path.open("rb") as metadata_file:
+        if (not os.path.samestat(metadata_info, os.fstat(metadata_file.fileno()))
+                or metadata_file.read(BINARY_METADATA_LIMIT + 1) != raw_bytes):
+            raise ValueError("raw_companion_binary_manifest_changed")
+    binary_path, binary_info = checked_local_file(metadata_path.parent / name)
+    if binary_info.st_size != size:
+        raise ValueError("raw_companion_binary_size_mismatch")
+    all_keys, index, previous, processed = [], {}, 0, 0
+    hasher = hashlib.sha256()
+    with binary_path.open("rb") as source:
+        if not os.path.samestat(binary_info, os.fstat(source.fileno())):
+            raise ValueError("raw_companion_binary_changed_during_open")
+        while chunk := source.read(BINARY_ROW.size * 4096):
+            if len(chunk) % BINARY_ROW.size or processed + len(chunk) > size:
+                raise ValueError("raw_companion_binary_truncated_or_overbudget")
+            processed += len(chunk)
+            hasher.update(chunk)
+            for sequence, key, tick, provider_bytes, event_id, version, channel, level, opcode, task, keyword, pid, tid in BINARY_ROW.iter_unpack(chunk):
+                provider = int.from_bytes(provider_bytes, "little")
+                if not previous < sequence <= stats["received"] or key == 0 or not 0 < tick < 1 << 63:
+                    raise ValueError("raw_companion_duplicate_key_sequence_or_invalid_qpc")
+                if provider not in BINARY_PROVIDERS:
+                    raise ValueError("raw_companion_binary_unexpected_provider")
+                previous = sequence
+                all_keys.append(key)
+                if key in wanted:
+                    index[f"{key:016x}"] = (tick, dict(provider=str(uuid.UUID(int=provider)), event_id=event_id,
+                        version=version, channel=channel, level=level, opcode=opcode, task=task,
+                        keyword=f"{keyword:016x}", process_id=pid, thread_id=tid))
+        final_info = os.fstat(source.fileno())
+    if (processed != size or len(all_keys) != count or hasher.hexdigest() != digest
+            or final_info.st_size != binary_info.st_size or final_info.st_mtime_ns != binary_info.st_mtime_ns):
+        raise ValueError("raw_companion_binary_digest_size_or_file_changed")
+    _, closed_info = checked_local_file(binary_path)
+    if not os.path.samestat(binary_info, closed_info):
+        raise ValueError("raw_companion_binary_changed_during_read")
+    all_keys.sort()
+    if any(all_keys[i - 1] == all_keys[i] for i in range(1, len(all_keys))):
+        raise ValueError("raw_companion_duplicate_key_sequence_or_invalid_qpc")
+    return index, count, dict(sha256_verified=True, record_count=count, bytes=processed,
+                             duplicate_event_keys=0, duplicate_check_scope="all_binary_records",
+                             indexed_primary_keys=len(index), primary_key_candidates=len(wanted),
+                             global_key_count=len(all_keys), maximum_record_count=BINARY_RECORD_LIMIT)
+
+
+def companion_links(capture, raw_bytes, raw_clock_path=None):
     """Exact original-key links only. No payload/timestamp similarity matching."""
     diagnostic = dict(status="unavailable", reasons=[], sha256_verified=False,
                       linked_events=0, primary_events_without_link=None)
     links = {}
     try:
+        if len(raw_bytes) > BINARY_DISK_LIMIT:
+            raise ValueError("raw_companion_document_overbudget")
         document = json.loads(raw_bytes.decode("utf-8-sig"))
         metadata = capture["backend"]["clock"]
         summary = metadata["raw_companion"]
         primary_header = metadata["trace_header"]
-        header, stats, records = (document[name] for name in ("header", "stats", "records"))
-        if type(document.get("schema_version")) is not int or document["schema_version"] != 1 or document.get("protocol") != COMPANION_PROTOCOL:
+        header, stats = (document[name] for name in ("header", "stats"))
+        version = document.get("schema_version")
+        protocols = {1: COMPANION_PROTOCOL, 2: COMPANION_BINARY_PROTOCOL}
+        if type(version) is not int or version not in protocols or document.get("protocol") != protocols[version]:
             raise ValueError("raw_companion_schema_unsupported")
-        if summary.get("protocol") != COMPANION_PROTOCOL or summary.get("written") is not True:
+        if version == 2 and len(raw_bytes) > BINARY_METADATA_LIMIT:
+            raise ValueError("raw_companion_binary_manifest_overbudget")
+        if summary.get("protocol") != protocols[version] or summary.get("written") is not True:
             raise ValueError("raw_companion_not_committed")
         digest = hashlib.sha256(raw_bytes).hexdigest()
         if summary.get("sha256") != digest or type(summary.get("file_bytes")) is not int or summary["file_bytes"] != len(raw_bytes):
@@ -116,6 +255,27 @@ def companion_links(capture, raw_bytes):
         if any(document.get(name) != summary.get(name) for name in ("header", "stats", "errors", "ready", "stopped",
                                                                    "producer_stopped", "header_sample_phase", "consumer_loss_counters_available")):
             raise ValueError("raw_companion_summary_mismatch")
+        if version == 2:
+            # JSON booleans and integers are distinct evidence, even though
+            # Python's equality considers True == 1 and False == 0.
+            summary_fields = ("header", "stats", "errors", "ready", "stopped", "producer_stopped",
+                              "header_sample_phase", "consumer_loss_counters_available",
+                              "binary", "writer", "stats_final_available")
+            if any(json.dumps(document.get(name), sort_keys=True, allow_nan=False) !=
+                   json.dumps(summary.get(name), sort_keys=True, allow_nan=False) for name in summary_fields):
+                raise ValueError("raw_companion_binary_summary_mismatch")
+        if version == 2 and document.get("stats_final_available") is not True:
+            raise ValueError("raw_companion_binary_final_stats_unavailable")
+        if version == 2:
+            persistence = summary.get("metadata_writer")
+            if (not isinstance(persistence, dict)
+                    or any(type(persistence.get(name)) is not int or not 0 <= persistence[name] < 1 << 64
+                           for name in ("bytes", "write_calls", "write_elapsed_ns", "drain_elapsed_ns"))
+                    or persistence["bytes"] != len(raw_bytes) or persistence["write_calls"] == 0
+                    or persistence.get("finished") is not True or persistence.get("drained") is not True
+                    or persistence.get("timed_out") is not False or persistence.get("cancel_requested") is not False
+                    or persistence.get("error", "missing") is not None or persistence.get("cancel_error", "missing") is not None):
+                raise ValueError("raw_companion_metadata_writer_incomplete")
         if (document.get("ready") is not True or document.get("stopped") is not True
                 or document.get("producer_stopped") is not True or document.get("errors") != []):
             raise ValueError("raw_companion_incomplete")
@@ -126,6 +286,8 @@ def companion_links(capture, raw_bytes):
             raise ValueError("raw_companion_consumer_mode_invalid")
         if type(header.get("reserved_flags")) is not int or header["reserved_flags"] != 1:
             raise ValueError("raw_companion_clock_type_not_qpc")
+        if type(primary_header.get("reserved_flags")) is not int or primary_header["reserved_flags"] != 1:
+            raise ValueError("primary_actual_clock_type_not_qpc")
         primary_mode = primary_header.get("process_trace_mode")
         if (type(primary_mode) is not int or primary_mode != metadata.get("process_trace_mode")
                 or not 0 <= primary_mode <= 0xFFFFFFFF
@@ -160,36 +322,45 @@ def companion_links(capture, raw_bytes):
         for name in ("events_lost", "buffers_lost"):
             if type(header.get(name)) is not int or header[name] != 0:
                 raise ValueError("raw_companion_header_reports_loss")
-        required_stats = ("received", "stored", "missing_event_key", "invalid_timestamp", "capacity_dropped",
-                          "duplicate_event_keys", "record_capacity", "byte_capacity", "bytes", "fixed_record_size",
-                          "allocated_record_bytes", "disk_byte_capacity", "filtered_nonprimary",
-                          "readiness_probe_records", "serialization_buffer_bytes")
-        if any(type(stats.get(name)) is not int or stats[name] < 0 for name in required_stats):
-            raise ValueError("raw_companion_invalid_counters")
-        if any(stats[name] != 0 for name in ("missing_event_key", "invalid_timestamp", "capacity_dropped", "duplicate_event_keys")):
-            raise ValueError("raw_companion_loss_or_ambiguity")
-        if (not isinstance(records, list) or stats["received"] != stats["stored"] + stats["filtered_nonprimary"]
-                or stats["stored"] != len(records) or stats["readiness_probe_records"] == 0):
-            raise ValueError("raw_companion_record_count_mismatch")
-        if not (0 < stats["record_capacity"] and 0 < stats["fixed_record_size"] and len(records) <= stats["record_capacity"]
-                and stats["bytes"] == len(records) * stats["fixed_record_size"]
-                and stats["bytes"] <= stats["allocated_record_bytes"] <= stats["byte_capacity"]
-                and stats["record_capacity"] * stats["fixed_record_size"] <= stats["allocated_record_bytes"]
-                and stats["allocated_record_bytes"] + stats["serialization_buffer_bytes"] <= stats["byte_capacity"]
-                and len(raw_bytes) <= stats["disk_byte_capacity"]):
-            raise ValueError("raw_companion_budget_inconsistent")
-        index, sequences = {}, set()
-        for row in records:
-            key = event_key(row["event_key"])
-            sequence, tick = integer(row["sequence"]), integer(row["header_timestamp"])
-            if key in index or sequence in sequences or not 0 < sequence <= stats["received"] or not 0 < tick < 1 << 63:
-                raise ValueError("raw_companion_duplicate_key_sequence_or_invalid_qpc")
-            sequences.add(sequence)
-            index[key] = (tick, record_identity(row))
         primary_keys = Counter(event.get("raw", {}).get("clock", {}).get("event_key")
                                for event in capture.get("events", []) if event.get("raw", {}).get("clock"))
         if any(count != 1 for key, count in primary_keys.items() if key is not None):
             raise ValueError("primary_event_key_ambiguous")
+        if version == 2:
+            wanted = {int(event_key(key), 16) for key in primary_keys if key is not None}
+            if len(wanted) > BINARY_RECORD_LIMIT:
+                raise ValueError("raw_companion_primary_key_budget_exceeded")
+            index, record_count, binary_diagnostic = binary_record_index(document, raw_bytes, raw_clock_path, wanted)
+            diagnostic["binary"] = binary_diagnostic
+        else:
+            records = document["records"]
+            required_stats = ("received", "stored", "missing_event_key", "invalid_timestamp", "capacity_dropped",
+                              "duplicate_event_keys", "record_capacity", "byte_capacity", "bytes", "fixed_record_size",
+                              "allocated_record_bytes", "disk_byte_capacity", "filtered_nonprimary",
+                              "readiness_probe_records", "serialization_buffer_bytes")
+            if any(type(stats.get(name)) is not int or stats[name] < 0 for name in required_stats):
+                raise ValueError("raw_companion_invalid_counters")
+            if any(stats[name] != 0 for name in ("missing_event_key", "invalid_timestamp", "capacity_dropped", "duplicate_event_keys")):
+                raise ValueError("raw_companion_loss_or_ambiguity")
+            if (not isinstance(records, list) or stats["received"] != stats["stored"] + stats["filtered_nonprimary"]
+                    or stats["stored"] != len(records) or stats["readiness_probe_records"] == 0):
+                raise ValueError("raw_companion_record_count_mismatch")
+            if not (0 < stats["record_capacity"] and 0 < stats["fixed_record_size"] and len(records) <= stats["record_capacity"]
+                    and stats["bytes"] == len(records) * stats["fixed_record_size"]
+                    and stats["bytes"] <= stats["allocated_record_bytes"] <= stats["byte_capacity"]
+                    and stats["record_capacity"] * stats["fixed_record_size"] <= stats["allocated_record_bytes"]
+                    and stats["allocated_record_bytes"] + stats["serialization_buffer_bytes"] <= stats["byte_capacity"]
+                    and len(raw_bytes) <= stats["disk_byte_capacity"]):
+                raise ValueError("raw_companion_budget_inconsistent")
+            index, sequences = {}, set()
+            for row in records:
+                key = event_key(row["event_key"])
+                sequence, tick = integer(row["sequence"]), integer(row["header_timestamp"])
+                if key in index or sequence in sequences or not 0 < sequence <= stats["received"] or not 0 < tick < 1 << 63:
+                    raise ValueError("raw_companion_duplicate_key_sequence_or_invalid_qpc")
+                sequences.add(sequence)
+                index[key] = (tick, record_identity(row))
+            record_count = len(records)
         for event in capture.get("events", []):
             if event.get("event_type") not in {"file", "registry"} or event.get("operation") not in SUPPORTED:
                 continue
@@ -207,7 +378,7 @@ def companion_links(capture, raw_bytes):
             raise ValueError("no_original_source_clock_links")
         diagnostic.update(status="exact_original_key_links_available", linked_events=len(links),
                           primary_events_without_link=0,
-                          raw_record_count=len(records), qpc_frequency=str(frequency),
+                          raw_record_count=record_count, qpc_frequency=str(frequency),
                           consumer_loss_counters_available=False,
                           unsupported_boot_time_fields=dict(primary=primary_header["boot_time"], companion=header["boot_time"],
                                                             equal=primary_header["boot_time"] == header["boot_time"], proves_same_boot=False),
@@ -216,7 +387,7 @@ def companion_links(capture, raw_bytes):
                                             original_qpc=str(links[event["id"]]),
                                             delivered_filetime=event["raw"]["clock"]["header_timestamp"])
                                        for event in capture.get("events", []) if event["id"] in links])
-    except (KeyError, TypeError, ValueError, AttributeError) as error:
+    except (KeyError, TypeError, ValueError, AttributeError, OSError) as error:
         diagnostic["reasons"].append(str(error))
         links = {}
     return links, diagnostic
@@ -272,7 +443,7 @@ def marker_diagnostics(capture, markers):
     return result
 
 
-def analyze(capture, truth, sid="", raw_clock_bytes=None):
+def analyze(capture, truth, sid="", raw_clock_bytes=None, raw_clock_path=None):
     if not isinstance(truth, list) or not truth:
         raise ValueError("nonempty independent truth list required")
     if not isinstance(capture, dict) or not isinstance(capture.get("backend", {}), dict):
@@ -288,7 +459,7 @@ def analyze(capture, truth, sid="", raw_clock_bytes=None):
     linked_qpc = {}
     companion_ready = False
     if raw_clock_bytes is not None:
-        linked_qpc, report["raw_companion"] = companion_links(capture, raw_clock_bytes)
+        linked_qpc, report["raw_companion"] = companion_links(capture, raw_clock_bytes, raw_clock_path)
         companion_ready = report["raw_companion"]["status"] == "exact_original_key_links_available"
     source_ready = isinstance(metadata, dict)
     if not source_ready:
@@ -443,8 +614,11 @@ def main():
     else:
         truth = [json.loads(line) for source in sources
                  for line in source.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
-    raw_clock_bytes = args.raw_clock.read_bytes() if args.raw_clock else None
-    result = analyze(capture, truth, args.sid, raw_clock_bytes)
+    raw_clock_bytes = None
+    if args.raw_clock:
+        with args.raw_clock.open("rb") as raw_source:
+            raw_clock_bytes = raw_source.read(BINARY_DISK_LIMIT + 1)
+    result = analyze(capture, truth, args.sid, raw_clock_bytes, args.raw_clock)
     result["input_sha256"] = dict(capture=hashlib.sha256(args.capture.read_bytes()).hexdigest(),
                                  truth=[hashlib.sha256(source.read_bytes()).hexdigest() for source in sources])
     if raw_clock_bytes is not None:

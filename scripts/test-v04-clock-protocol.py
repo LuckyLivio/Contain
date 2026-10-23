@@ -2,11 +2,15 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
+import struct
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
+import uuid
 
 
 SPEC = importlib.util.spec_from_file_location("clock_protocol", Path(__file__).with_name("v04-clock-protocol.py"))
@@ -248,6 +252,16 @@ class ClockProtocolTests(unittest.TestCase):
         self.capture["backend"]["clock"]["trace_header"]["process_trace_mode"] = 0x10001100
         self.assertEqual(CLOCK.analyze(self.capture, [self.truth], raw_clock_bytes=self.companion_bytes(document))["status"], "unavailable")
 
+    def test_primary_header_clock_selector_preserves_native_integer_type(self):
+        for invalid in (True, 1.0, "1", None, 0, -1):
+            with self.subTest(invalid=invalid):
+                document = self.companion()
+                self.capture["backend"]["clock"]["trace_header"]["reserved_flags"] = invalid
+                result = CLOCK.analyze(self.capture, [self.truth], raw_clock_bytes=self.companion_bytes(document))
+                self.assertEqual(result["status"], "unavailable")
+                self.assertIn("primary_actual_clock_type_not_qpc", result["raw_companion"]["reasons"])
+                self.assertEqual(result["truth_rows"][0]["event_ids"], [])
+
     def test_companion_metadata_filter_gaps_and_unpopulated_boot_time_are_not_invented_loss(self):
         document = self.companion()
         document["stats"].update(filtered_nonprimary=2, received=3)
@@ -411,6 +425,223 @@ class ClockProtocolTests(unittest.TestCase):
                                       "--truth", str(truth), "--output", str(capture)], capture_output=True)
             self.assertNotEqual(process.returncode, 0)
             self.assertEqual(capture.read_bytes(), original)
+
+
+class BinaryClockProtocolTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = ClockProtocolTests()
+        self.fixture.setUp()
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.path = Path(self.temporary.name) / "raw-clock.json"
+        self.capture = self.fixture.capture
+        self.truth = self.fixture.truth
+
+    def document(self):
+        document = self.fixture.companion()
+        document.update(schema_version=2, protocol=CLOCK.COMPANION_BINARY_PROTOCOL, stats_final_available=True)
+        document.pop("records")
+        self.descriptor = self.fixture.event["raw"]["clock"]["record_identity"]
+        self.descriptor["provider"] = "edd08927-9cc4-4e65-b970-c2560fb5c289"
+        document["header"]["start_time"] = "0"
+        self.capture["backend"]["clock"]["trace_header"]["start_time"] = "0"
+        return document
+
+    def row(self, sequence=1, key=1, tick=150, **changes):
+        descriptor = dict(self.descriptor, **changes)
+        return (struct.pack("<QQq", sequence, key, tick)
+                + uuid.UUID(descriptor["provider"]).int.to_bytes(16, "little")
+                + struct.pack("<HBBBBHQII", *(descriptor[name] for name in
+                    ("event_id", "version", "channel", "level", "opcode", "task")),
+                    int(descriptor["keyword"], 16), descriptor["process_id"], descriptor["thread_id"]))
+
+    def prepare(self, document, data, received=None):
+        count = len(data) // 64
+        received = count if received is None else received
+        document["stats"].update(received=received, stored=count, duplicate_event_keys=None,
+            record_capacity=2096128, byte_capacity=33554432, bytes=len(data), fixed_record_size=64,
+            allocated_record_bytes=8388608, disk_byte_capacity=134217728, serialization_buffer_bytes=65536,
+            filtered_nonprimary=received-count, accepted=count, queued=count, queue_dropped=0,
+            quota_dropped=0, writer_closed_dropped=0, not_persisted=0, writer_memory_bytes=9437184)
+        digest = hashlib.sha256(data).hexdigest()
+        document["binary"] = dict(file_name=self.path.name + ".rows.bin", format="contain-raw-clock-le64-1",
+            record_size=64, records=count, bytes=len(data), sha256=digest, blake3=None, complete=True,
+            metadata_byte_capacity=65536, byte_capacity=134152192)
+        document["writer"] = dict(bytes=len(data), records=count, partial_record_bytes=0, write_calls=1,
+            written_chunks=1, queue_high_water_chunks=1, write_elapsed_ns=1, drain_elapsed_ns=1,
+            drained=True, finished=True, timed_out=False, cancel_requested=False, cancel_error=None, error=None,
+            sha256=digest, blake3=None)
+        self.path.with_name(document["binary"]["file_name"]).write_bytes(data)
+
+    def manifest(self, document):
+        raw = json.dumps(document).encode()
+        self.path.write_bytes(raw)
+        self.capture["backend"]["clock"]["raw_companion"] = dict(copy.deepcopy(document),
+            written=True, file_bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest(),
+            metadata_writer=dict(bytes=len(raw), write_calls=1, write_elapsed_ns=1, drain_elapsed_ns=1,
+                finished=True, drained=True, timed_out=False, cancel_requested=False, cancel_error=None, error=None))
+        return raw
+
+    def analyze(self, document):
+        return CLOCK.analyze(self.capture, [self.truth], raw_clock_bytes=self.manifest(document), raw_clock_path=self.path)
+
+    def test_binary_exact_descriptor_links_and_all_noise_records_are_checked(self):
+        document = self.document()
+        self.prepare(document, self.row(key=2) + self.row(sequence=2, key=1) + self.row(sequence=4, key=3), received=4)
+        result = self.analyze(document)
+        self.assertEqual(result["status"], "diagnostic_ready")
+        self.assertEqual(result["truth_rows"][0]["event_ids"], ["source"])
+        binary = result["raw_companion"]["binary"]
+        self.assertEqual(binary["record_count"], 3)
+        self.assertEqual(binary["global_key_count"], 3)
+        self.assertEqual(binary["indexed_primary_keys"], 1)
+        self.assertEqual(binary["duplicate_event_keys"], 0)
+        self.assertEqual(binary["duplicate_check_scope"], "all_binary_records")
+        self.assertTrue(binary["sha256_verified"])
+        self.assertIsNone(document["stats"]["duplicate_event_keys"])
+        self.assertFalse(result["raw_companion"]["start_time_observation"]["available"])
+
+    def test_binary_duplicate_noise_keys_fail_even_when_primary_is_unique(self):
+        document = self.document()
+        self.prepare(document, self.row() + self.row(sequence=2, key=2) + self.row(sequence=3, key=2))
+        result = self.analyze(document)
+        self.assertEqual(result["status"], "unavailable")
+        self.assertIn("raw_companion_duplicate_key_sequence_or_invalid_qpc", result["raw_companion"]["reasons"])
+        self.assertIsNone(result["raw_companion"]["primary_events_without_link"])
+
+    def test_binary_invalid_noise_wire_fields_are_not_ignored(self):
+        cases = [dict(sequence=2, key=0), dict(sequence=1, key=2), dict(sequence=2, key=2, tick=0),
+                 dict(sequence=2, key=2, tick=-1), dict(sequence=2, key=2, provider="11111111-1111-1111-1111-111111111111")]
+        for changes in cases:
+            with self.subTest(changes=changes):
+                document = self.document()
+                self.prepare(document, self.row() + self.row(**changes))
+                result = self.analyze(document)
+                self.assertEqual(result["status"], "unavailable")
+                self.assertEqual(result["truth_rows"][0]["event_ids"], [])
+
+    def test_binary_missing_or_wrong_primary_descriptor_never_uses_payload_similarity(self):
+        for changes in (dict(key=2), dict(process_id=8), dict(event_id=17), dict(keyword="0000000000000020")):
+            with self.subTest(changes=changes):
+                document = self.document()
+                self.prepare(document, self.row(**changes))
+                result = self.analyze(document)
+                self.assertEqual(result["status"], "unavailable")
+                self.assertEqual(result["truth_rows"][0]["event_ids"], [])
+
+    def test_binary_hash_length_and_partial_record_cannot_be_hidden(self):
+        for corrupt in ("hash", "truncated", "extra", "partial"):
+            with self.subTest(corrupt=corrupt):
+                document = self.document()
+                data = self.row()
+                self.prepare(document, data)
+                if corrupt == "partial":
+                    self.prepare(document, data + b"x")
+                else:
+                    changed = (data[:-1] if corrupt == "truncated" else data + b"x" if corrupt == "extra" else data[:-1] + b"x")
+                    self.path.with_name(document["binary"]["file_name"]).write_bytes(changed)
+                result = self.analyze(document)
+                self.assertEqual(result["status"], "unavailable")
+                self.assertEqual(result["truth_rows"][0]["event_ids"], [])
+
+    def test_binary_quota_pending_failure_and_unmeasured_duplicate_claim_remain_fatal(self):
+        cases = [("stats", "quota_dropped", 1), ("stats", "queue_dropped", 1),
+                 ("stats", "writer_closed_dropped", 1), ("stats", "not_persisted", 1),
+                 ("stats", "queued", 0), ("stats", "received", True), ("stats", "duplicate_event_keys", 0),
+                 ("writer", "drained", False), ("writer", "timed_out", True),
+                 ("writer", "finished", False),
+                 ("writer", "cancel_requested", True), ("writer", "cancel_error", 5),
+                 ("writer", "error", "disk failure"), ("writer", "partial_record_bytes", 1),
+                 ("binary", "complete", False), ("binary", "record_size", True),
+                 ("binary", "byte_capacity", 134217728), ("binary", "metadata_byte_capacity", 65537)]
+        for section, field, value in cases:
+            with self.subTest(section=section, field=field):
+                document = self.document()
+                self.prepare(document, self.row())
+                document[section][field] = value
+                self.assertEqual(self.analyze(document)["status"], "unavailable")
+
+    def test_binary_final_stats_cannot_be_assumed_from_zero_counters(self):
+        for flag in (None, False, 1, "true"):
+            with self.subTest(flag=flag):
+                document = self.document()
+                self.prepare(document, self.row())
+                if flag is None:
+                    document.pop("stats_final_available")
+                else:
+                    document["stats_final_available"] = flag
+                result = self.analyze(document)
+                self.assertEqual(result["status"], "unavailable")
+                self.assertIn("raw_companion_binary_final_stats_unavailable", result["raw_companion"]["reasons"])
+
+    def test_binary_summary_must_preserve_boolean_and_integer_types(self):
+        for section, field, value in (("stats", "received", True), ("writer", "finished", 1),
+                                      (None, "stats_final_available", 1), (None, "ready", 1)):
+            with self.subTest(section=section, field=field):
+                document = self.document()
+                self.prepare(document, self.row())
+                raw = self.manifest(document)
+                summary = self.capture["backend"]["clock"]["raw_companion"]
+                target = summary[section] if section else summary
+                target[field] = value
+                result = CLOCK.analyze(self.capture, [self.truth], raw_clock_bytes=raw, raw_clock_path=self.path)
+                self.assertEqual(result["status"], "unavailable")
+                self.assertIn("raw_companion_binary_summary_mismatch", result["raw_companion"]["reasons"])
+
+    def test_binary_written_claim_cannot_hide_unfinished_metadata_persistence(self):
+        for field, value in (("bytes", 0), ("write_calls", 0), ("finished", False), ("drained", False),
+                             ("timed_out", True), ("cancel_requested", True), ("cancel_error", 5),
+                             ("error", "sync failed"), ("write_elapsed_ns", True), ("finished", 1)):
+            with self.subTest(field=field, value=value):
+                document = self.document()
+                self.prepare(document, self.row())
+                raw = self.manifest(document)
+                self.capture["backend"]["clock"]["raw_companion"]["metadata_writer"][field] = value
+                result = CLOCK.analyze(self.capture, [self.truth], raw_clock_bytes=raw, raw_clock_path=self.path)
+                self.assertEqual(result["status"], "unavailable")
+                self.assertIn("raw_companion_metadata_writer_incomplete", result["raw_companion"]["reasons"])
+
+    def test_binary_requires_manifest_path_and_exact_safe_sibling_name(self):
+        document = self.document()
+        self.prepare(document, self.row())
+        raw = self.manifest(document)
+        result = CLOCK.analyze(self.capture, [self.truth], raw_clock_bytes=raw)
+        self.assertIn("raw_companion_binary_path_required", result["raw_companion"]["reasons"])
+        for name in ("../other.bin", r"C:\other.bin", self.path.name + ".rows.bin.",
+                     self.path.name + ".rows.bin:stream", "other.rows.bin"):
+            with self.subTest(name=name):
+                document["binary"]["file_name"] = name
+                self.assertEqual(self.analyze(document)["status"], "unavailable")
+
+    def test_binary_reparse_and_hardlink_paths_are_rejected(self):
+        document = self.document()
+        self.prepare(document, self.row())
+        raw = self.manifest(document)
+        native_lstat = Path.lstat
+        def redirected(path):
+            info = native_lstat(path)
+            result = mock.Mock(st_mode=info.st_mode, st_file_attributes=0x400)
+            return result
+        with mock.patch.object(Path, "lstat", redirected):
+            result = CLOCK.analyze(self.capture, [self.truth], raw_clock_bytes=raw, raw_clock_path=self.path)
+        self.assertIn("raw_companion_binary_redirected_path", result["raw_companion"]["reasons"])
+        binary = self.path.with_name(document["binary"]["file_name"])
+        os.link(binary, binary.with_name("alias.bin"))
+        self.assertEqual(self.analyze(document)["status"], "unavailable")
+
+    def test_binary_cli_resolves_only_committed_sibling_artifact(self):
+        document = self.document()
+        self.prepare(document, self.row())
+        self.manifest(document)
+        capture, truth, output = (self.path.with_name(name) for name in ("capture.json", "truth.json", "diagnostic.json"))
+        capture.write_text(json.dumps(self.capture))
+        truth.write_text(json.dumps([self.truth]))
+        process = subprocess.run([sys.executable, str(Path(CLOCK.__file__)), "--capture", str(capture),
+            "--truth", str(truth), "--raw-clock", str(self.path), "--output", str(output)], capture_output=True)
+        self.assertEqual(process.returncode, 0, process.stderr)
+        result = json.loads(output.read_text())
+        self.assertEqual(result["status"], "diagnostic_ready")
+        self.assertIsNone(result["release_gate"])
 
 
 if __name__ == "__main__":
