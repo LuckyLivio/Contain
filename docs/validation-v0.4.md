@@ -1,5 +1,90 @@
 # v0.4 development validation
 
+## Raw-clock administrator diagnostic audited (2026-10-23)
+
+`etw-raw-20261023-212829-782` is a second, actually executed administrator-window
+ETW run. **Its raw-clock diagnostic failed**; this is not a permission-blocked or
+snapshot-only attempt. The original score and clock report reproduce exactly
+under the recorded scripts. No score, timestamp, tolerance or gate was changed.
+
+The execution identity records source HEAD `239e841` **plus uncommitted runtime
+changes**. It is not an execution of that clean commit or the retained development
+checkpoint. Recorded input inventories agree before/after build, executable hashes
+agree before/after execution, and Cargo artifact paths match. Current bytes are
+corroboration, not a replacement for those contemporaneous observations. Full
+identity records, database, journals and raw sidecar remain local.
+
+| Scope and denominator | Result |
+| --- | --- |
+| Primary receive / persist | 3,819 / 3,819; all 15 audited accounting, drain and database checks pass |
+| Reported primary loss | ETW event/buffer loss, queue overflow/drop and write failures are 0; this is not a raw-consumer loss-rate claim |
+| Raw companion | 896,972 callbacks; 262,144 stored; **634,828 refused at the fixed capacity** |
+| Other raw counters | Missing key, invalid timestamp and duplicate key counters 0; no unbounded buffer or new threshold introduced |
+| Exact original-key plus full-descriptor links | 22/24 eligible retained file/registry source events; 2 missing, 0 descriptor mismatches |
+| Successful target operations, unchanged scorer | 17/17 observed and correctly attributed; audited wrong attribution 0 |
+| Target calls with exact original QPC evidence | 16/17; all 16 lie within the independent recorded interval; detached operation lacks retained raw evidence |
+| Full clock protocol | All 21 truth rows unavailable; exit 2; diagnostic is **failed** |
+| View consistency | 382 events/explanations, 14 file states, 4 registry states agree |
+| Fixture failure | Only the intended locked-file delete fails, with error 32 |
+| Measured capture wall / final database | 14.8218355 seconds / 12,738,560 bytes |
+
+Partial exact links demonstrate that original QPC can reach the diagnostic, but
+do not establish complete clock coverage or acceptance. The finite companion
+retains system-wide enabled-provider callbacks while the primary stream persists
+scope-filtered evidence; these denominators must not be compared as loss. The
+capacity refusal is a confirmed limitation of the diagnostic path. No throughput
+improvement is claimed from comparing this dirty-tree sample with older runs.
+
+Both actual OpenTrace headers contain `StartTime="0"`. That field is unavailable
+in this sample and does not satisfy the current protocol's positive-start check;
+the capacity failure currently short-circuits the later check. The Windows
+[header contract](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/ns-evntrace-trace_logfile_header)
+defines it as the session start time, but this audit does not infer an absent
+timestamp or relax the check. Original QPC is distinct from the default
+[ProcessTrace-converted timestamp](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/ns-evntrace-event_trace_logfilew).
+Initial header counters are not final raw-consumer loss statistics.
+
+NoiseOnly now has a retained `ValueName` and an exact original-key/QPC link, but
+`KeyName` is empty, base-name properties are absent and object context cannot
+resolve its absolute parent key. The independent initial-open marker establishes
+an open before trace startup; it does not prove the full resource for this object.
+The row remains unmatched/Unknown in the unchanged path-based scorer. Of 21,420
+global registry path gaps, 336 unresolved records are retained (302 without a
+verified absolute base, 17 without process identity and 17 without object context).
+The other 21,084 have no retained per-record identity/resource, so neither target
+loss nor unrelated-background scope can be assigned to all of them.
+
+All nine run artifacts and the database remain unchanged under SHA-256 checks.
+Read-only audit code and the complete private findings are under
+`target/sync-audit/raw-212829-audit.py` and `raw-212829-audit.json`; location/identity
+details stay in the separate private report. No new live capture or remote test
+was started for this audit. Capacity handling and unavailable header semantics
+need a scoped repair and another real diagnostic before formal acceptance inputs
+can be frozen. The 32-attempt protocol, historical scale failures, and version
+0.3.1 remain unchanged.
+
+Checks executed for this audit/publication stage: all 12 `scripts/test-*.py`
+modules passed (99 tests), `scripts/test-demo-provenance.ps1` and
+`scripts/test-score.ps1` passed, and `cargo fmt --all -- --check` passed. Runtime,
+test and script blobs are unchanged by publication preparation. The Rust test,
+Clippy, coverage and live ETW suites were not rerun in this documentation stage;
+earlier results are not relabeled as new executions.
+
+### Publication scope
+
+The unpublished development sequence was reviewed at every historical blob and
+prepared with host inventory withheld, historical branch labels redacted and
+project-focused wording. Runtime code, tests, scripts, measured outcomes and
+failed samples are unchanged by that preparation. The original local commits,
+source artifacts and a private old-to-new commit map remain available; recorded
+source IDs still identify the original measured inputs. Withheld JSON values are
+null, not zero; generalized platform labels use `Windows`. Both carry an explicit
+redaction note. Public development uses
+`livio/deferred-checkpoint`; see [synchronization rules](../CONTRIBUTING.md#development-synchronization).
+Previously published ancestry is not rewritten by this cleanup. Historical text
+and other branches/default-branch contents therefore remain a separate boundary;
+this report does not claim complete historical removal.
+
 ## Administrator-run ETW diagnostic received and audited (2026-10-23)
 
 **A real small ETW diagnostic has now run successfully in the user's administrator
