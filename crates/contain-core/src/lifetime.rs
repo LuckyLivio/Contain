@@ -593,6 +593,86 @@ mod tests {
         c.seed(record(5, 150, Some(300)));
         assert!(c.resolve(5, 200).is_none());
     }
+
+    #[test]
+    fn reordered_process_and_thread_reuse_preserves_event_time_actor_identity() {
+        fn permutations(
+            order: &mut [usize; 6],
+            offset: usize,
+            check: &mut impl FnMut(&[usize; 6]),
+        ) {
+            if offset == order.len() {
+                check(order);
+                return;
+            }
+            for next in offset..order.len() {
+                order.swap(offset, next);
+                permutations(order, offset + 1, check);
+                order.swap(offset, next);
+            }
+        }
+
+        let mut old_start = lifecycle("process_start", 2, Some(100), 100);
+        old_start.evidence.parent_pid = Some(1);
+        let mut reused_start = lifecycle("process_start", 2, Some(300), 300);
+        reused_start.evidence.parent_pid = Some(99);
+        let callbacks = [
+            old_start,
+            lifecycle("process_stop", 2, Some(100), 200),
+            reused_start,
+            lifecycle("thread_start", 2, None, 110),
+            lifecycle("thread_stop", 2, None, 190),
+            lifecycle("thread_start", 2, None, 310),
+        ];
+        let mut checked = 0;
+        permutations(&mut [0, 1, 2, 3, 4, 5], 0, &mut |order| {
+            let mut cache = LifetimeCache::default();
+            let mut root = record(1, 10, None);
+            root.confidence = Confidence::Certain;
+            root.evidence.source = EvidenceSource::ProcessApi;
+            root.evidence.rule = AttributionRule::InstallerPid;
+            cache.seed(root);
+            for &index in order {
+                cache.ingest(&callbacks[index]);
+                cache.attach((1, 10), "session");
+            }
+            let processes: Vec<_> = cache.processes.values().cloned().collect();
+            assert_eq!(cache.processes[&(2, 100)].confidence, Confidence::High);
+            assert_eq!(cache.processes[&(2, 300)].confidence, Confidence::Unknown);
+            for (at, expected_birth, expected_confidence) in [
+                (109, None, Confidence::Unknown),
+                (110, Some(100), Confidence::High),
+                (150, Some(100), Confidence::High),
+                (190, Some(100), Confidence::High),
+                (191, None, Confidence::Unknown),
+                (250, None, Confidence::Unknown),
+                (309, None, Confidence::Unknown),
+                (310, Some(300), Confidence::Unknown),
+                (350, Some(300), Confidence::Unknown),
+            ] {
+                let mut event = file_event(at);
+                cache.resolve_event(&mut event);
+                crate::attribution::attribute(&mut event, &processes, "session");
+                assert_eq!(
+                    event.evidence.process_creation_time, expected_birth,
+                    "callback order {order:?}, event time {at}"
+                );
+                assert_eq!(
+                    event.confidence, expected_confidence,
+                    "callback order {order:?}, event time {at}"
+                );
+                assert_eq!(
+                    event.evidence.session_id.as_deref(),
+                    expected_birth
+                        .filter(|_| expected_confidence == Confidence::High)
+                        .map(|_| "session")
+                );
+            }
+            checked += 1;
+        });
+        assert_eq!(checked, 720);
+    }
+
     #[test]
     fn exited_parent_preserves_detached_birth_ancestry() {
         let mut c = LifetimeCache::default();

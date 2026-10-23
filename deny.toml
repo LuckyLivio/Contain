@@ -1,0 +1,34 @@
+# Contain is a Windows program. Check every feature and dev dependency in its
+# supported graph; do not imply that Unix-only dependencies were audited here.
+[graph]
+targets = ["x86_64-pc-windows-msvc"]
+all-features = true
+
+[advisories]
+db-urls = ["https://github.com/RustSec/advisory-db"]
+yanked = "deny"
+unmaintained = "all"
+unsound = "all"
+# Deliberately no advisory ignores. Review and fix dependency findings.
+
+[licenses]
+confidence-threshold = 0.93
+# Audited against the checked-in Windows dependency graph. notify requires CC0;
+# unicode-ident also requires Unicode-3.0; foldhash requires Zlib. Other dual
+# licensed dependencies can use their MIT or Apache-2.0 option.
+allow = ["Apache-2.0", "MIT", "CC0-1.0", "Unicode-3.0", "Zlib"]
+# Fuzz-only libFuzzer code declares (MIT OR Apache-2.0) AND NCSA. Accept that
+# permissive notice-preserving license only for the reviewed locked version.
+exceptions = [{ crate = "libfuzzer-sys@0.4.13", allow = ["NCSA"] }]
+
+[bans]
+# Windows bindings currently resolve several major/minor families. Report them
+# for review without pretending they can be unified by a version override.
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

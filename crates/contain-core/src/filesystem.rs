@@ -774,4 +774,76 @@ mod tests {
         };
         assert!(diff(&before, &after, &HashSet::new()).is_empty());
     }
+
+    #[test]
+    fn unreadable_baseline_does_not_turn_an_existing_file_into_a_creation() {
+        let path = r"C:\root\blocked\existing.txt";
+        let before = Snapshot {
+            unreadable: HashSet::from([r"C:\root\blocked".into()]),
+            ..Default::default()
+        };
+        let after = Snapshot {
+            files: BTreeMap::from([(
+                path.into(),
+                FileState {
+                    hash: "observed-after".into(),
+                    size: 14,
+                    identity: Some("existing-file".into()),
+                },
+            )]),
+            ..Default::default()
+        };
+        // Notifications establish no missing baseline, even when the file was seen.
+        let seen = HashSet::from([PathBuf::from(path)]);
+        assert!(diff(&before, &after, &seen).is_empty());
+    }
+
+    #[test]
+    fn unreadable_coverage_stops_at_directory_components_and_preserves_sibling_changes() {
+        let masked = r"C:\root\blocked\file.txt";
+        let sibling = r"C:\root\blocked-sibling\file.txt";
+        let other = r"C:\root\other\file.txt";
+        for unreadable_before in [false, true] {
+            let state = |hash: &str| FileState {
+                hash: hash.into(),
+                size: 1,
+                identity: None,
+            };
+            let mut before = Snapshot {
+                files: BTreeMap::from([
+                    (masked.into(), state("before")),
+                    (sibling.into(), state("before")),
+                    (other.into(), state("before")),
+                ]),
+                ..Default::default()
+            };
+            let mut after = Snapshot {
+                files: BTreeMap::from([
+                    (masked.into(), state("after")),
+                    (sibling.into(), state("after")),
+                ]),
+                ..Default::default()
+            };
+            let unreadable = if unreadable_before {
+                &mut before.unreadable
+            } else {
+                &mut after.unreadable
+            };
+            unreadable.insert(r"C:\root\blocked".into());
+            let changes = diff(&before, &after, &HashSet::new());
+            assert_eq!(changes.len(), 2, "unreadable_before={unreadable_before}");
+            assert_eq!(changes[0].path, sibling);
+            assert_eq!(changes[0].operation, "modified");
+            assert_eq!(changes[0].before_hash.as_deref(), Some("before"));
+            assert_eq!(changes[0].after_hash.as_deref(), Some("after"));
+            assert_eq!(changes[1].path, other);
+            assert_eq!(changes[1].operation, "deleted");
+            assert!(
+                changes
+                    .iter()
+                    .all(|change| change.confidence == Confidence::Unknown)
+            );
+            assert!(changes.iter().all(|change| change.evidence.is_empty()));
+        }
+    }
 }

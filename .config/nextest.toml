@@ -1,0 +1,12 @@
+[profile.default]
+# A flaky failure remains a failure; investigate it before retrying manually.
+retries = 0
+
+[profile.ci]
+retries = 0
+fail-fast = false
+failure-output = "immediate-final"
+slow-timeout = { period = "60s", terminate-after = 3 }
+
+[profile.ci.junit]
+path = "junit.xml"

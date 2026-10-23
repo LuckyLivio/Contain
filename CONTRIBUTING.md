@@ -3,7 +3,7 @@
 ## Development synchronization
 
 The owner authorizes ordinary reviewed fast-forward pushes for this project to
-`LuckyLivio/Contain`, branch `livio/deferred-checkpoint`. After each coherent stage:
+`LuckyLivio/Contain`, branch `fix/raw-clock-stabilization`. After each coherent stage:
 run relevant checks, commit explicitly selected files, push that development
 branch, and verify its remote SHA. Live validation need not be complete before
 synchronizing development work; commit messages and reports must identify failed
@@ -29,6 +29,14 @@ elevation, deletion, external resources or additional remote test dispatches.
 Issues and pull requests are welcome. Please first read [the architecture](docs/architecture.md), especially the attribution evidence model. Keep observed changes separate from claims of application ownership. Avoid privileged code and system cleanup in ordinary tests.
 
 On Windows with the stable Rust toolchain and Visual Studio C++ build tools:
+
+The local quality entrypoint is `./scripts/quality.ps1 -Mode Check`. Select
+additional checks by changed behavior in `AGENTS.md` and the
+[project quality instructions](.agents/skills/contain-rust-quality/SKILL.md).
+Inspect existing tools before using the explicit `-Mode Setup` command, which
+installs only missing prerequisites. Keep [synthetic benchmark results and real
+ETW validation](docs/quality-benchmarks.md) separate. Run checks on the exact
+integrated source revision; results from a different branch are historical only.
 
 ```powershell
 cargo fmt --all -- --check

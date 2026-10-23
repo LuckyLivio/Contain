@@ -151,6 +151,112 @@ mod tests {
             assert_eq!(operations[0].raw_events.len(), 3);
         }
     }
+
+    #[test]
+    fn duplicate_completions_are_ambiguous_even_when_statuses_agree_or_arrive_first() {
+        for statuses in [
+            [Some(true), Some(true)],
+            [Some(false), Some(false)],
+            [Some(true), Some(false)],
+            [Some(false), Some(true)],
+            [None, Some(true)],
+            [Some(true), None],
+            [None, Some(false)],
+            [Some(false), None],
+            [None, None],
+        ] {
+            for order in [
+                [0, 1, 2],
+                [0, 2, 1],
+                [1, 0, 2],
+                [1, 2, 0],
+                [2, 0, 1],
+                [2, 1, 0],
+            ] {
+                let request = SystemEvent {
+                    id: "request".into(),
+                    event_type: "file".into(),
+                    operation: "delete_requested".into(),
+                    // A repeated correlation pass must also revoke a provisional result.
+                    success: Some(true),
+                    raw: RawEvidence {
+                        status: Some(0),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                };
+                let completion = |index: usize| SystemEvent {
+                    id: format!("completion-{index}"),
+                    event_type: "completion".into(),
+                    success: statuses[index],
+                    raw: RawEvidence {
+                        related_event: Some("request".into()),
+                        status: statuses[index].map(|success| if success { 0 } else { 0xc0000022 }),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                };
+                let input = [request.clone(), completion(0), completion(1)];
+                let mut events = order.map(|index| input[index].clone());
+                let operations = correlate(&mut events, &Snapshot::default(), &Snapshot::default());
+                let request = events.iter().find(|e| e.id == "request").unwrap();
+                assert_eq!(request.success, None, "{statuses:?}/{order:?}");
+                assert_eq!(request.raw.status, None);
+                assert_eq!(operations.len(), 1);
+                assert_eq!(operations[0].operation, "DeleteRequested");
+                assert_eq!(operations[0].success, None);
+                let mut references = operations[0].raw_events.clone();
+                references.sort();
+                assert_eq!(references, ["completion-0", "completion-1", "request"]);
+            }
+        }
+    }
+
+    #[test]
+    fn ambiguous_snapshot_identities_never_choose_a_rename_endpoint() {
+        for duplicate_before in [false, true] {
+            let state = FileState {
+                hash: "same-content".into(),
+                identity: Some("shared-file-identity".into()),
+                ..Default::default()
+            };
+            let mut before = Snapshot::default();
+            let mut after = Snapshot::default();
+            before.files.insert("old".into(), state.clone());
+            after.files.insert("new".into(), state.clone());
+            if duplicate_before {
+                before.files.insert("old-alias".into(), state);
+            } else {
+                after.files.insert("new-alias".into(), state);
+            }
+            let operations = correlate(&mut [], &before, &after);
+            assert!(operations.is_empty(), "duplicate_before={duplicate_before}");
+        }
+    }
+
+    #[test]
+    fn identical_content_does_not_hide_snapshot_replacement_or_invent_an_actor() {
+        let mut before = Snapshot::default();
+        let mut after = Snapshot::default();
+        for (snapshot, identity) in [(&mut before, "old-id"), (&mut after, "new-id")] {
+            snapshot.files.insert(
+                "same-path".into(),
+                FileState {
+                    hash: "identical-content".into(),
+                    size: 17,
+                    identity: Some(identity.into()),
+                },
+            );
+        }
+        let operations = correlate(&mut [], &before, &after);
+        assert_eq!(operations.len(), 1);
+        assert_eq!(operations[0].operation, "Replaced");
+        assert_eq!(operations[0].confidence, Confidence::Unknown);
+        assert_eq!(operations[0].resource_identity.as_deref(), Some("new-id"));
+        assert!(operations[0].raw_events.is_empty());
+        assert!(operations[0].previous_path.is_none());
+    }
+
     #[test]
     fn rename_uses_identity_not_hash_and_replacement_is_separate() {
         let mut a = Snapshot::default();

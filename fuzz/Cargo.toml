@@ -1,0 +1,42 @@
+[package]
+name = "contain-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license = "Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+members = ["."]
+
+[dependencies]
+contain-core = { path = "../crates/contain-core", version = "0.3.1" }
+libfuzzer-sys = "0.4"
+serde_json = "1"
+
+# A standalone workspace must retain the production decoder's local patch.
+[patch.crates-io]
+ferrisetw = { path = "../vendor/ferrisetw" }
+
+[[bin]]
+name = "event_json"
+path = "fuzz_targets/event_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lifetime_sequences"
+path = "fuzz_targets/lifetime_sequences.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "completion_correlation"
+path = "fuzz_targets/completion_correlation.rs"
+test = false
+doc = false
+bench = false

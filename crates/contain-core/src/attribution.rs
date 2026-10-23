@@ -650,6 +650,133 @@ mod tests {
             assert_eq!(files[0].confidence, Confidence::Unknown);
         }
     }
+
+    #[test]
+    fn file_conflict_decisions_use_event_time_and_preserve_actor_evidence_in_either_order() {
+        for conflict_time in [199, 200, 201] {
+            // Unknown actors and unresolved paths remain conflicting evidence,
+            // even if their operations precede the supporting installer write.
+            for conflict_kind in ["verified", "unrelated", "unresolved"] {
+                for reversed in [false, true] {
+                    let mut write = event(Some(2), Some(100));
+                    write.id = "support".into();
+                    write.operation = "write_requested".into();
+                    write.success = Some(true);
+                    write.raw.resource_resolved = true;
+                    attribute(&mut write, &[process(2, 100, Confidence::High)], "s");
+                    let mut conflict = write.clone();
+                    conflict.id = "conflict".into();
+                    conflict.operation = "delete_requested".into();
+                    conflict.timestamp_ticks = conflict_time;
+                    if conflict_kind == "unrelated" {
+                        conflict.evidence = event(Some(99), Some(100)).evidence;
+                        attribute(&mut conflict, &[process(2, 100, Confidence::High)], "s");
+                    } else if conflict_kind == "unresolved" {
+                        conflict.raw.resource_resolved = false;
+                    }
+                    let mut files = [FileChange {
+                        path: write.resource.clone(),
+                        operation: "modified".into(),
+                        ..Default::default()
+                    }];
+                    let mut events = [write, conflict];
+                    if reversed {
+                        events.reverse();
+                    }
+                    let source_evidence: Vec<_> = events
+                        .iter()
+                        .map(|e| (e.confidence, serde_json::to_value(&e.evidence).unwrap()))
+                        .collect();
+                    compose_files(&mut files, &mut events, true);
+                    let promoted = conflict_time < 200 && conflict_kind == "verified";
+                    assert_eq!(
+                        files[0].confidence,
+                        if promoted {
+                            Confidence::High
+                        } else {
+                            Confidence::Unknown
+                        },
+                        "{conflict_time}/{conflict_kind}/{reversed}"
+                    );
+                    assert_eq!(files[0].evidence.len(), 2);
+                    for (index, e) in events.iter().enumerate() {
+                        assert_eq!(e.state_validated, promoted && e.id == "support");
+                        assert_eq!(e.confidence, source_evidence[index].0);
+                        assert_eq!(
+                            serde_json::to_value(&e.evidence).unwrap(),
+                            source_evidence[index].1
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn registry_conflict_decisions_use_event_time_and_preserve_actor_evidence_in_either_order() {
+        for conflict_time in [199, 200, 201] {
+            for conflict_kind in ["verified", "unrelated", "unresolved"] {
+                for reversed in [false, true] {
+                    let mut write = event(Some(2), Some(100));
+                    write.id = "support".into();
+                    write.event_type = "registry".into();
+                    write.evidence.source = EvidenceSource::EtwRegistry;
+                    write.resource = "root\\value".into();
+                    write.operation = "set_value".into();
+                    write.success = Some(true);
+                    write.raw.resource_resolved = true;
+                    attribute(&mut write, &[process(2, 100, Confidence::High)], "s");
+                    let mut conflict = write.clone();
+                    conflict.id = "conflict".into();
+                    conflict.operation = "delete_value".into();
+                    conflict.timestamp_ticks = conflict_time;
+                    if conflict_kind == "unrelated" {
+                        conflict.evidence = AttributionEvidence {
+                            source: EvidenceSource::EtwRegistry,
+                            ..event(Some(99), Some(100)).evidence
+                        };
+                        attribute(&mut conflict, &[process(2, 100, Confidence::High)], "s");
+                    } else if conflict_kind == "unresolved" {
+                        conflict.raw.resource_resolved = false;
+                    }
+                    let mut changes = [RegistryChange {
+                        name: "value".into(),
+                        operation: "modified".into(),
+                        ..Default::default()
+                    }];
+                    let mut events = [write, conflict];
+                    if reversed {
+                        events.reverse();
+                    }
+                    let source_evidence: Vec<_> = events
+                        .iter()
+                        .map(|e| (e.confidence, serde_json::to_value(&e.evidence).unwrap()))
+                        .collect();
+                    compose_registry(&mut changes, &mut events, Some("root"), true);
+                    let promoted = conflict_time < 200 && conflict_kind == "verified";
+                    assert_eq!(
+                        changes[0].confidence,
+                        if promoted {
+                            Confidence::High
+                        } else {
+                            Confidence::Unknown
+                        },
+                        "{conflict_time}/{conflict_kind}/{reversed}"
+                    );
+                    assert_eq!(changes[0].evidence.len(), 2);
+                    for (index, e) in events.iter().enumerate() {
+                        assert_eq!(e.state_validated, promoted && e.id == "support");
+                        assert_eq!(e.confidence, source_evidence[index].0);
+                        assert_eq!(
+                            serde_json::to_value(&e.evidence).unwrap(),
+                            source_evidence[index].1
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn registry_creation_and_deletion_use_value_mutations_only() {
         for (change, operation) in [("created", "set_value"), ("deleted", "delete_value")] {

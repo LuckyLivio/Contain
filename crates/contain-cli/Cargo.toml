@@ -13,7 +13,7 @@ path = "src/main.rs"
 anyhow.workspace = true
 chrono.workspace = true
 clap.workspace = true
-contain-core = { path = "../contain-core" }
+contain-core = { version = "0.3.1", path = "../contain-core" }
 serde_json.workspace = true
 serde.workspace = true
 tracing-subscriber.workspace = true
