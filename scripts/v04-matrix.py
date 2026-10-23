@@ -130,7 +130,8 @@ def stabilization_gate(legacy_gate, diagnostic):
     # A diagnostic-ready clock comparison is not an empirically validated
     # provider emission contract. There is deliberately no CLI override.
     checks = dict(legacy_strict_gate=legacy_gate["pass"],
-                  original_clock_diagnostic=diagnostic.get("status") == "diagnostic_ready",
+                  original_clock_diagnostic=(diagnostic.get("status") == "diagnostic_ready"
+                      and diagnostic.get("validation_readiness", {}).get("status") == "ready"),
                   same_machine_boot_provenance=False,
                   provider_timing_contract_validated=False)
     return dict({"pass": False}, protocol="v04-stabilization-1", status="blocked", checks=checks,
@@ -210,36 +211,57 @@ def backup_database(source, destination):
             original.backup(copied)
 
 
-def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, seed_index=0):
+def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, seed_index=0,
+              *, raw_clock_enabled=None, fixture_clock_enabled=None):
     directory.mkdir()
     executable = args.baseline if mode == "baseline" else args.candidate
     root = Path(tempfile.gettempdir()) / ("contain-demo-v04-" + uuid.uuid4().hex)
     truth_root = root.with_name(root.name + "-truth")
     database = directory / "capture.db"
     name = "V04-" + uuid.uuid4().hex
+    if raw_clock_enabled is None:
+        raw_clock_enabled = bool(getattr(args, "stabilization", False))
+    if fixture_clock_enabled is None:
+        fixture_clock_enabled = (raw_clock_enabled or getattr(args, "stabilization", False)
+                                 or os.environ.get("CONTAIN_FIXTURE_CLOCK") == "1")
+    raw_clock_path = directory / "raw-clock.json" if raw_clock_enabled else None
     record = dict(mode=mode, files=files, workers=workers, noise_files=noise_count, trial=trial, seed_index=seed_index,
                   seed_database=str(seed) if seed else None, status="started", acceptance_pass=False,
                   fixture_root=str(root), truth_root=str(truth_root), app=name,
                   expected_target_operations=target_operations(files, workers), expected_noise_operations=noise_count * 3)
+    record.update(stage="prepare_fixture", raw_clock_enabled=raw_clock_enabled,
+                  raw_clock_path=str(raw_clock_path) if raw_clock_path else None,
+                  fixture_clock_enabled=fixture_clock_enabled, clock_diagnostic_pass=None,
+                  elapsed_seconds=None, parent_cpu_seconds=None, parent_cpu_percent_machine_average=None,
+                  parent_peak_working_set_bytes=None, parent_sampled_peak_private_bytes=None, parent_io=None,
+                  database_initial_bytes=None, sqlite_bytes=None, sampled_db_peak_bytes=None,
+                  sampled_wal_peak_bytes=None, filesystem_samples=0, metric_errors=[])
     if getattr(args, "stabilization", False):
         record.update(protocol="v04-stabilization-1", source_revision=getattr(args, mode + "_revision"),
                       source_revision_provenance="operator_declared_not_build_attestation", stability_trials=args.stability_trials)
     write_json(directory / "measurement.json", record)
     noise = process = metrics = start = None
-    db_peak = wal_peak = 0
+    db_peak = wal_peak = None
     environment = os.environ.copy()
     # Freeze experimental settings explicitly, so inherited developer state does
     # not silently change either arm. The report records these choices.
-    for key in ("CONTAIN_PROFILE_PATH", "CONTAIN_HOTPATH_VARIANT", "CONTAIN_CHECKPOINT_VARIANT", "CONTAIN_WAL_BUDGET_BYTES", "CONTAIN_ETW_EVENT_ID_FILTER"):
+    for key in ("CONTAIN_PROFILE_PATH", "CONTAIN_HOTPATH_VARIANT", "CONTAIN_CHECKPOINT_VARIANT", "CONTAIN_WAL_BUDGET_BYTES", "CONTAIN_ETW_EVENT_ID_FILTER",
+                "CONTAIN_ETW_RAW_CLOCK_PATH", "CONTAIN_FIXTURE_CLOCK", "CONTAIN_FIXTURE_TRUTH"):
         environment.pop(key, None)
     environment["CONTAIN_PROFILE_PATH"] = str(directory / "profile.json")
     environment["CONTAIN_FIXTURE_TRUTH"] = str(truth_root)
-    if getattr(args, "stabilization", False):
+    if fixture_clock_enabled:
         environment["CONTAIN_FIXTURE_CLOCK"] = "1"
+    if raw_clock_path:
+        environment["CONTAIN_ETW_RAW_CLOCK_PATH"] = str(raw_clock_path)
     variant = args.baseline_variant if mode == "baseline" else args.candidate_variant
     if variant:
         environment["CONTAIN_HOTPATH_VARIANT"] = variant
     try:
+        if type(raw_clock_enabled) is not bool or type(fixture_clock_enabled) is not bool:
+            raise ValueError("clock selections must be explicit booleans")
+        if raw_clock_enabled and (getattr(args, "snapshot_only", False) or not fixture_clock_enabled):
+            raise ValueError("raw-clock capture requires real ETW and independent fixture clock records")
         if getattr(args, "frozen_hashes", None):
             record["binary_hash_before"] = frozen_binaries(args)
             if not record["binary_hash_before"]["match"]:
@@ -251,6 +273,7 @@ def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, s
             backup_database(seed, database)
         record["database_initial_bytes"] = sampled_size(database)
         if noise_count:
+            record["stage"] = "noise_readiness"
             with (directory / "noise.stdout.txt").open("wb") as stdout, (directory / "noise.stderr.txt").open("wb") as stderr:
                 noise = subprocess.Popen([str(args.fixture), "--root", str(root), "--role", "noise", "--files", str(noise_count)],
                                          stdout=stdout, stderr=stderr, env=environment, creationflags=subprocess.CREATE_NO_WINDOW)
@@ -264,16 +287,17 @@ def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, s
             command.append("--no-etw")
         command += ["--", "--root", str(root), "--role", "stress", "--files", str(files), "--workers", str(workers)]
         record["command"] = command
+        record["stage"] = "capture"
         write_json(directory / "measurement.json", record)
         start = time.perf_counter()
         with (directory / "capture.stdout.txt").open("wb") as stdout, (directory / "capture.stderr.txt").open("wb") as stderr:
             process = subprocess.Popen(command, stdout=stdout, stderr=stderr, env=environment, creationflags=subprocess.CREATE_NO_WINDOW)
         metrics = ProcessMetrics(process.pid)
-        db_peak = wal_peak = 0
         while process.poll() is None:
             metrics.sample()
-            db_peak = max(db_peak, sampled_size(database))
-            wal_peak = max(wal_peak, sampled_size(Path(str(database) + "-wal")))
+            db_peak = max(db_peak or 0, sampled_size(database))
+            wal_peak = max(wal_peak or 0, sampled_size(Path(str(database) + "-wal")))
+            record["filesystem_samples"] += 1
             if time.perf_counter() - start > args.timeout:
                 process.kill()
                 process.wait()
@@ -292,6 +316,7 @@ def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, s
             raise RuntimeError(f"capture exit {process.returncode}")
         if noise and noise.wait(timeout=30):
             raise RuntimeError("independent noise failed")
+        record["stage"] = "export"
         with (directory / "capture.json").open("wb") as stdout, (directory / "export.stderr.txt").open("wb") as stderr:
             subprocess.run([str(executable), "--db", str(database), "inspect", name, "--json"],
                            stdout=stdout, stderr=stderr, check=True, timeout=args.timeout, creationflags=subprocess.CREATE_NO_WINDOW)
@@ -299,25 +324,44 @@ def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, s
         truth = [json.loads(line) for source in sorted(truth_root.glob("ground-truth-*.jsonl"))
                  for line in source.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
         write_json(directory / "ground-truth.json", truth)
+        record["stage"] = "legacy_score"
         score = ORACLE.score(capture, truth, args.sid)
         write_json(directory / "score.json", score)
         record.update(stats=capture["stats"], backend=capture["backend"], quality=capture["quality"],
                       score={key: value for key, value in score.items() if key != "rows"})
         record["gate"] = quality_gate(capture, score, files, workers, noise_count, args.snapshot_only)
         record["acceptance_pass"] = record["gate"]["pass"]
+        record["legacy_acceptance_pass"] = record["gate"]["pass"]
         if not args.snapshot_only:
-            diagnostic = CLOCK.analyze(capture, truth, args.sid)
+            record["stage"] = "clock_diagnostic"
+            raw_clock_bytes = None
+            if raw_clock_path:
+                with raw_clock_path.open("rb") as source:
+                    raw_clock_bytes = source.read(CLOCK.BINARY_DISK_LIMIT + 1)
+            diagnostic = CLOCK.analyze(capture, truth, args.sid, raw_clock_bytes, raw_clock_path)
             diagnostic["input_sha256"] = dict(capture=sha(directory / "capture.json"), truth=sha(directory / "ground-truth.json"))
+            if raw_clock_bytes is not None:
+                diagnostic["input_sha256"]["raw_clock"] = hashlib.sha256(raw_clock_bytes).hexdigest()
+            marker_files = sorted(truth_root.glob("clock-marker-*.jsonl"))
+            markers = [json.loads(line) for source in marker_files
+                       for line in source.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
+            diagnostic["control_markers"] = CLOCK.marker_diagnostics(capture, markers)
+            diagnostic["input_sha256"]["control_markers"] = [sha(source) for source in marker_files]
             diagnostic["script_sha256"] = sha(CLOCK_SCRIPT)
             write_json(directory / "clock-diagnostic.json", diagnostic)
             record["clock_diagnostic_status"] = diagnostic["status"]
+            record["clock_diagnostic_pass"] = (diagnostic["status"] == "diagnostic_ready"
+                and diagnostic.get("validation_readiness", {}).get("status") == "ready")
             if getattr(args, "stabilization", False):
                 record["legacy_acceptance_pass"] = record["gate"]["pass"]
                 record["stabilization_gate"] = stabilization_gate(record["gate"], diagnostic)
                 record["acceptance_pass"] = record["stabilization_gate"]["pass"]
         record["status"] = "completed"
+        record["stage"] = "completed"
     except (OSError, ValueError, KeyError, RuntimeError, sqlite3.Error, subprocess.SubprocessError) as error:
         record["status"] = "failed"
+        record["failed_stage"] = record["stage"]
+        record["acceptance_pass"] = False
         record["harness_error"] = str(error)
     finally:
         if process and process.poll() is None:
@@ -328,9 +372,9 @@ def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, s
             metrics.sample()
             record.update(metrics.values)
             record["metric_errors"] = sorted(metrics.errors)
-            if "elapsed_seconds" not in record and start is not None:
+            if record["elapsed_seconds"] is None and start is not None:
                 record["elapsed_seconds"] = time.perf_counter() - start
-            if "parent_cpu_seconds" in record and record.get("elapsed_seconds"):
+            if record.get("parent_cpu_seconds") is not None and record.get("elapsed_seconds"):
                 record["parent_cpu_percent_machine_average"] = record["parent_cpu_seconds"] / record["elapsed_seconds"] / (os.cpu_count() or 1) * 100
             record.update(sampled_db_peak_bytes=db_peak, sampled_wal_peak_bytes=wal_peak)
             metrics.close()
@@ -349,7 +393,7 @@ def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, s
         if truth_root.exists():
             journal_directory = directory / "truth-journals"
             journal_directory.mkdir(exist_ok=True)
-            for journal in truth_root.glob("ground-truth-*.jsonl"):
+            for journal in itertools.chain(truth_root.glob("ground-truth-*.jsonl"), truth_root.glob("clock-marker-*.jsonl")):
                 shutil.copy2(journal, journal_directory / journal.name)
         if record["status"] == "completed" and not args.keep_fixtures:
             # The fixture verifies direct TEMP child, exact marker and no reparse

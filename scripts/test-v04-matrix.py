@@ -253,6 +253,125 @@ class MatrixTests(unittest.TestCase):
             self.assertEqual(record["expected_target_operations"], 2500)
             self.assertTrue(Path(record["fixture_root"]).is_dir())
 
+    def test_clock_off_does_not_inherit_a_shared_raw_path_and_missing_metrics_are_null(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            args = SimpleNamespace(baseline=root / "baseline.exe", candidate=root / "candidate.exe", fixture=root / "fixture.exe",
+                                   baseline_variant=None, candidate_variant=None, keep_fixtures=True, snapshot_only=False, timeout=600)
+            with mock.patch.object(MATRIX.tempfile, "gettempdir", return_value=temporary), \
+                 mock.patch.dict(MATRIX.os.environ, {"CONTAIN_ETW_RAW_CLOCK_PATH": "inherited-shared.json", "CONTAIN_FIXTURE_CLOCK": "1"}), \
+                 mock.patch.object(MATRIX.subprocess, "Popen", side_effect=OSError("injected launch failure")) as launch, \
+                 mock.patch.object(MATRIX.subprocess, "CREATE_NO_WINDOW", 0, create=True):
+                record = MATRIX.run_trial(args, root / "attempt", "candidate", 1000, 4, 0, 1, None)
+            self.assertFalse("CONTAIN_ETW_RAW_CLOCK_PATH" in launch.call_args.kwargs["env"])
+            self.assertFalse(record["raw_clock_enabled"])
+            self.assertIsNone(record["parent_cpu_seconds"])
+            self.assertIsNone(record["parent_io"])
+            self.assertIsNone(record["sampled_db_peak_bytes"])
+            self.assertEqual(record["status"], "failed")
+
+    def test_clock_on_uses_attempt_path_and_archives_markers_when_launch_fails(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            args = SimpleNamespace(baseline=root / "baseline.exe", candidate=root / "candidate.exe", fixture=root / "fixture.exe",
+                                   baseline_variant=None, candidate_variant=None, keep_fixtures=True, snapshot_only=False, timeout=600)
+            def fail(command, **kwargs):
+                truth = Path(kwargs["env"]["CONTAIN_FIXTURE_TRUTH"])
+                (truth / "clock-marker-1.jsonl").write_text('{"marker":true}\n')
+                (truth / "ground-truth-1.jsonl").write_text('{"operation":"write_requested"}\n')
+                raise OSError("injected launch failure")
+            with mock.patch.object(MATRIX.tempfile, "gettempdir", return_value=temporary), \
+                 mock.patch.dict(MATRIX.os.environ, {"CONTAIN_ETW_RAW_CLOCK_PATH": "inherited-shared.json"}), \
+                 mock.patch.object(MATRIX.subprocess, "Popen", side_effect=fail) as launch, \
+                 mock.patch.object(MATRIX.subprocess, "CREATE_NO_WINDOW", 0, create=True):
+                record = MATRIX.run_trial(args, root / "attempt", "candidate", 1000, 4, 0, 1, None, raw_clock_enabled=True)
+            environment = launch.call_args.kwargs["env"]
+            self.assertEqual(environment["CONTAIN_ETW_RAW_CLOCK_PATH"], str(root / "attempt/raw-clock.json"))
+            self.assertEqual(environment["CONTAIN_FIXTURE_CLOCK"], "1")
+            self.assertTrue((root / "attempt/truth-journals/clock-marker-1.jsonl").is_file())
+            self.assertTrue((root / "attempt/truth-journals/ground-truth-1.jsonl").is_file())
+            self.assertEqual(record["failed_stage"], "capture")
+
+    def test_clock_analysis_receives_the_attempt_sidecar_and_marker_inputs(self):
+        class Process:
+            pid = 1
+            returncode = 0
+            def poll(self):
+                return self.returncode
+        class Measurements:
+            values = {}
+            errors = {"OpenProcess:5"}
+            def __init__(self, pid):
+                pass
+            def sample(self):
+                pass
+            def close(self):
+                pass
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            args = SimpleNamespace(baseline=root / "baseline.exe", candidate=root / "candidate.exe", fixture=root / "fixture.exe",
+                                   baseline_variant=None, candidate_variant=None, keep_fixtures=True, snapshot_only=False, timeout=600, sid="")
+            capture, score = data()
+            capture["quality"] = {}
+            score["groups"]["noise_success"]["expected"] = 0
+            def launch(command, **kwargs):
+                truth = Path(kwargs["env"]["CONTAIN_FIXTURE_TRUTH"])
+                (truth / "ground-truth-1.jsonl").write_text('{"operation":"write_requested"}\n')
+                (truth / "clock-marker-1.jsonl").write_text('{"marker":true}\n')
+                Path(kwargs["env"]["CONTAIN_ETW_RAW_CLOCK_PATH"]).write_bytes(b'{"raw":"fixture"}')
+                return Process()
+            def export(command, **kwargs):
+                kwargs["stdout"].write(json.dumps({"data": capture}).encode())
+            with mock.patch.object(MATRIX.tempfile, "gettempdir", return_value=temporary), \
+                 mock.patch.object(MATRIX.subprocess, "Popen", side_effect=launch), \
+                 mock.patch.object(MATRIX.subprocess, "run", side_effect=export), \
+                 mock.patch.object(MATRIX.subprocess, "CREATE_NO_WINDOW", 0, create=True), \
+                 mock.patch.object(MATRIX, "ProcessMetrics", Measurements), \
+                 mock.patch.object(MATRIX.ORACLE, "score", return_value=score), \
+                 mock.patch.object(MATRIX.CLOCK, "analyze", return_value={"status": "diagnostic_ready", "validation_readiness": {"status": "requirements_unmet"}}) as analyze, \
+                 mock.patch.object(MATRIX.CLOCK, "marker_diagnostics", return_value={"status": "measured"}) as markers:
+                record = MATRIX.run_trial(args, root / "attempt", "candidate", 1000, 4, 0, 1, None,
+                                          raw_clock_enabled=True, fixture_clock_enabled=True)
+            self.assertEqual(analyze.call_args.args[3:], (b'{"raw":"fixture"}', root / "attempt/raw-clock.json"))
+            self.assertEqual(markers.call_args.args[1], [{"marker": True}])
+            diagnostic = json.loads((root / "attempt/clock-diagnostic.json").read_text())
+            self.assertEqual(diagnostic["input_sha256"]["raw_clock"], MATRIX.sha(root / "attempt/raw-clock.json"))
+            self.assertEqual(len(diagnostic["input_sha256"]["control_markers"]), 1)
+            self.assertIsNone(record["parent_cpu_seconds"])
+            self.assertEqual(record["metric_errors"], ["OpenProcess:5"])
+            self.assertTrue(record["legacy_acceptance_pass"])
+            self.assertFalse(record["clock_diagnostic_pass"])
+
+    def test_clock_read_failure_retains_legacy_score_but_cannot_leave_acceptance_true(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            args = SimpleNamespace(baseline=root / "baseline.exe", candidate=root / "candidate.exe", fixture=root / "fixture.exe",
+                                   baseline_variant=None, candidate_variant=None, keep_fixtures=True, snapshot_only=False, timeout=600, sid="")
+            capture, score = data()
+            capture["quality"] = {}
+            score["groups"]["noise_success"]["expected"] = 0
+            def launch(command, **kwargs):
+                truth = Path(kwargs["env"]["CONTAIN_FIXTURE_TRUTH"])
+                (truth / "ground-truth-1.jsonl").write_text('{"operation":"write_requested"}\n')
+                return SimpleNamespace(pid=1, returncode=0, poll=lambda: 0)
+            def export(command, **kwargs):
+                kwargs["stdout"].write(json.dumps({"data": capture}).encode())
+            metrics = SimpleNamespace(values={}, errors=set(), sample=lambda: None, close=lambda: None)
+            with mock.patch.object(MATRIX.tempfile, "gettempdir", return_value=temporary), \
+                 mock.patch.object(MATRIX.subprocess, "Popen", side_effect=launch), \
+                 mock.patch.object(MATRIX.subprocess, "run", side_effect=export), \
+                 mock.patch.object(MATRIX.subprocess, "CREATE_NO_WINDOW", 0, create=True), \
+                 mock.patch.object(MATRIX, "ProcessMetrics", return_value=metrics), \
+                 mock.patch.object(MATRIX.ORACLE, "score", return_value=score):
+                record = MATRIX.run_trial(args, root / "attempt", "candidate", 1000, 4, 0, 1, None,
+                                          raw_clock_enabled=True, fixture_clock_enabled=True)
+            self.assertEqual(record["status"], "failed")
+            self.assertEqual(record["failed_stage"], "clock_diagnostic")
+            self.assertTrue(record["legacy_acceptance_pass"])
+            self.assertFalse(record["acceptance_pass"])
+            self.assertTrue((root / "attempt/score.json").is_file())
+            self.assertTrue((root / "attempt/truth-journals/ground-truth-1.jsonl").is_file())
+
     def test_seed_backup_includes_committed_wal_and_does_not_modify_source(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

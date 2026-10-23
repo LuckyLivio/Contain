@@ -79,6 +79,13 @@ small diagnostic passed and do not count toward the formal 32 attempts. Formal
 inputs are not frozen, historical large-scale failures remain, and no release or
 real deletion capability is authorized by this work.
 
+The existing matrix entry now clears inherited raw paths, assigns each enabled
+attempt its own sidecar, passes that exact file and independent control markers
+to the clock diagnostic, and archives both journals on failure. Missing process
+measurements remain null; a diagnostic exception cannot leave acceptance true.
+All 20 matrix regressions passed, including four new failure-path cases. This
+repairs the test entry only; no new live load result is claimed.
+
 ## Integrated candidate and bounded companion (2026-10-23)
 
 The clean runtime candidate tested live is `86a6b596aea28f30ea3afca4c4a65465172431b6`,
