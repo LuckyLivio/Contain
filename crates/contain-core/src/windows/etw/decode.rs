@@ -1,6 +1,105 @@
 use super::*;
 use crate::model::RawEvidence;
-use ferrisetw::parser::Parser;
+use ferrisetw::parser::{Parser, ParserError};
+
+const REGISTRY_DIAGNOSTIC_FIELD_BYTES: usize = 4096;
+
+fn diagnostic_parse<T>(
+    name: &str,
+    result: Result<T, ParserError>,
+    diagnostics: &mut crate::model::RegistryFieldDiagnostics,
+) -> Option<T> {
+    match result {
+        Ok(value) => Some(value),
+        Err(error) => {
+            let label = match error {
+                ParserError::NotFound => "not_found",
+                ParserError::InvalidType => "invalid_type",
+                ParserError::ParseError => "parse_error",
+                ParserError::LengthMismatch => "length_mismatch",
+                ParserError::PropertyError(_) => "property_error",
+                ParserError::Utf8Error(_) => "utf8_error",
+                ParserError::SliceError(_) => "slice_error",
+                ParserError::SddlNativeError(_) => "sddl_error",
+                ParserError::TdhNativeError(_) => "tdh_error",
+            };
+            diagnostics.parse_errors.insert(name.into(), label.into());
+            None
+        }
+    }
+}
+
+fn bounded_registry_field(
+    name: &str,
+    mut value: String,
+    diagnostics: &mut crate::model::RegistryFieldDiagnostics,
+) -> String {
+    if value.len() > REGISTRY_DIAGNOSTIC_FIELD_BYTES {
+        let mut end = REGISTRY_DIAGNOSTIC_FIELD_BYTES;
+        while !value.is_char_boundary(end) {
+            end -= 1;
+        }
+        value.truncate(end);
+        diagnostics.truncated_fields.push(name.into());
+    }
+    value
+}
+
+// Called only after the existing scope/open-close filters. Diagnostic parsing
+// cannot turn an unresolved resource into a resolved one or change admission.
+fn retained_registry_fields(
+    metrics: &Metrics,
+    parser: &Parser<'_, '_>,
+    version: u8,
+    key_name: Result<String, ParserError>,
+    context_owner_available: bool,
+    gap_reason: Option<&str>,
+) -> Box<crate::model::RegistryFields> {
+    let mut diagnostics = crate::model::RegistryFieldDiagnostics {
+        context_owner_available,
+        path_gap_reason: gap_reason.map(str::to_owned),
+        ..Default::default()
+    };
+    let base_object = diagnostic_parse(
+        "BaseObject",
+        measured!(metrics, Properties, parser.try_parse::<u64>("BaseObject")),
+        &mut diagnostics,
+    )
+    .map(|object| format!("{object:016x}"));
+    let mut text = |name, result| {
+        diagnostic_parse(name, result, &mut diagnostics)
+            .map(|value| bounded_registry_field(name, value, &mut diagnostics))
+    };
+    let key_name = text("KeyName", key_name).unwrap_or_default();
+    let base_name = text(
+        "BaseName",
+        measured!(metrics, Properties, parser.try_parse::<String>("BaseName")),
+    )
+    .unwrap_or_default();
+    let relative_name = text(
+        "RelativeName",
+        measured!(
+            metrics,
+            Properties,
+            parser.try_parse::<String>("RelativeName")
+        ),
+    )
+    .unwrap_or_default();
+    let value_name = text(
+        "ValueName",
+        measured!(metrics, Properties, parser.try_parse::<String>("ValueName")),
+    );
+    Box::new(crate::model::RegistryFields {
+        provider: REGISTRY_PROVIDER.into(),
+        version,
+        base_object,
+        key_name,
+        base_name,
+        relative_name,
+        value_name,
+        diagnostics: Some(diagnostics),
+    })
+}
 
 fn pointer(metrics: &Metrics, parser: &Parser<'_, '_>, name: &str) -> Option<String> {
     measured!(metrics, Properties, parser.try_parse::<u64>(name))
@@ -109,7 +208,7 @@ impl Decoder {
                 ..Default::default()
             },
             raw: RawEvidence {
-                clock: Some(super::super::clock::record_header(record.raw_timestamp())),
+                clock: Some(super::super::clock::record(record)),
                 event_id: Some(id),
                 thread_id: measured!(self.metrics, Properties, p.try_parse::<u32>("ThreadID")).ok(),
                 process_key: pointer(&self.metrics, &p, "ProcessSequenceNumber"),
@@ -163,7 +262,7 @@ impl Decoder {
                     status.and_then(status_success),
                 );
                 e.raw = RawEvidence {
-                    clock: Some(super::super::clock::record_header(record.raw_timestamp())),
+                    clock: Some(super::super::clock::record(record)),
                     event_id: Some(id),
                     irp,
                     status,
@@ -243,7 +342,7 @@ impl Decoder {
             None,
         );
         e.raw = RawEvidence {
-            clock: Some(super::super::clock::record_header(record.raw_timestamp())),
+            clock: Some(super::super::clock::record(record)),
             event_id: Some(id),
             thread_id: tid,
             header_pid: Some(record.process_id()),
@@ -302,27 +401,11 @@ impl Decoder {
             measured!(self.metrics, Properties, p.try_parse::<u64>("KeyObject")).unwrap_or(0);
         let status = measured!(self.metrics, Properties, p.try_parse::<u32>("Status")).ok();
         let success = status.and_then(status_success);
-        let mut key = measured!(self.metrics, Properties, p.try_parse::<String>("KeyName"))
-            .unwrap_or_default()
-            .to_lowercase();
-        let fields = self.deferred_registry.then(|| {
-            Box::new(crate::model::RegistryFields {
-                provider: REGISTRY_PROVIDER.into(),
-                version: record.version(),
-                base_object: pointer(&self.metrics, &p, "BaseObject"),
-                key_name: key.clone(),
-                base_name: measured!(self.metrics, Properties, p.try_parse::<String>("BaseName"))
-                    .unwrap_or_default(),
-                relative_name: measured!(
-                    self.metrics,
-                    Properties,
-                    p.try_parse::<String>("RelativeName")
-                )
-                .unwrap_or_default(),
-                value_name: measured!(self.metrics, Properties, p.try_parse::<String>("ValueName"))
-                    .ok(),
-            })
-        });
+        let key_name = measured!(self.metrics, Properties, p.try_parse::<String>("KeyName"));
+        let mut key = key_name
+            .as_ref()
+            .map(|name| name.to_lowercase())
+            .unwrap_or_default();
         let context_clock = self.metrics.timer(Time::Context);
         let previous_drops = self.registry_context.dropped;
         let context_owner = writer.as_ref().filter(|w| {
@@ -391,6 +474,23 @@ impl Decoder {
         if matches!(id, 2 | 13) && (!self.deferred_registry || context_owner.is_some()) {
             return;
         }
+        let gap_reason = (!resolved).then_some(if writer.is_none() {
+            "process_identity_unavailable"
+        } else if context_owner.is_none() {
+            "event_time_context_rejected"
+        } else if matches!(id, 1 | 2) {
+            "open_path_has_no_verified_absolute_base"
+        } else {
+            "nonabsolute_key_name_and_no_object_context"
+        });
+        let fields = retained_registry_fields(
+            &self.metrics,
+            &p,
+            record.version(),
+            key_name,
+            context_owner.is_some(),
+            gap_reason,
+        );
         if resolved
             && let Ok(value) =
                 measured!(self.metrics, Properties, p.try_parse::<String>("ValueName"))
@@ -420,10 +520,10 @@ impl Decoder {
         e.raw = RawEvidence {
             event_id: Some(id),
             header_pid: Some(pid),
-            clock: Some(super::super::clock::record_header(record.raw_timestamp())),
+            clock: Some(super::super::clock::record(record)),
             registry_object: Some(format!("{object:016x}")),
             object_generation: generation,
-            registry_fields: fields,
+            registry_fields: Some(fields),
             process_key: if self.deferred_registry {
                 record
                     .extended_data()
@@ -451,6 +551,72 @@ impl Decoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn registry_diagnostics_distinguish_absent_parse_failure_and_bounded_text() {
+        let mut diagnostics = crate::model::RegistryFieldDiagnostics::default();
+        assert!(
+            diagnostic_parse::<String>("KeyName", Err(ParserError::NotFound), &mut diagnostics)
+                .is_none()
+        );
+        assert!(
+            diagnostic_parse::<String>(
+                "ValueName",
+                Err(ParserError::InvalidType),
+                &mut diagnostics
+            )
+            .is_none()
+        );
+        assert_eq!(diagnostics.parse_errors["KeyName"], "not_found");
+        assert_eq!(diagnostics.parse_errors["ValueName"], "invalid_type");
+        let text = format!("{}中", "x".repeat(REGISTRY_DIAGNOSTIC_FIELD_BYTES - 1));
+        let bounded = bounded_registry_field("RelativeName", text, &mut diagnostics);
+        assert_eq!(bounded.len(), REGISTRY_DIAGNOSTIC_FIELD_BYTES - 1);
+        assert_eq!(diagnostics.truncated_fields, ["RelativeName"]);
+        assert_eq!(
+            diagnostic_parse("BaseName", Ok(String::new()), &mut diagnostics),
+            Some(String::new())
+        );
+        assert!(!diagnostics.parse_errors.contains_key("BaseName"));
+    }
+
+    #[test]
+    fn registry_diagnostic_names_never_supply_resource_or_actor_evidence() {
+        let mut event = SystemEvent {
+            event_type: "registry".into(),
+            operation: "set_value".into(),
+            resource: "<unresolved registry object>".into(),
+            evidence: AttributionEvidence {
+                source: EvidenceSource::EtwRegistry,
+                pid: Some(7),
+                process_creation_time: Some(10),
+                ..Default::default()
+            },
+            raw: RawEvidence {
+                registry_fields: Some(Box::new(crate::model::RegistryFields {
+                    key_name: "\\registry\\user\\sid\\software\\fixture".into(),
+                    value_name: Some("NoiseOnly".into()),
+                    diagnostics: Some(crate::model::RegistryFieldDiagnostics {
+                        context_owner_available: true,
+                        path_gap_reason: Some("nonabsolute_key_name_and_no_object_context".into()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        crate::attribution::attribute(&mut event, &[], "session");
+        assert_eq!(event.confidence, crate::model::Confidence::Unknown);
+        assert!(!event.raw.resource_resolved);
+        assert_eq!(event.resource, "<unresolved registry object>");
+        assert!(event.evidence.session_id.is_none());
+        let old = serde_json::json!({"provider":"test","version":0,"base_object":null,
+            "key_name":"","base_name":"","relative_name":"","value_name":null});
+        let fields: crate::model::RegistryFields = serde_json::from_value(old).unwrap();
+        assert!(fields.diagnostics.is_none());
+    }
 
     #[test]
     fn delayed_file_record_cannot_reuse_newer_object_or_irp_context() {

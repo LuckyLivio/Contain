@@ -102,7 +102,7 @@ fn run() -> Result<()> {
         return Ok(());
     }
     let truth = truth::Truth::new(&root, &format!("{:?}", args.role).to_lowercase())?;
-    let (key, _) = RegKey::predef(HKEY_CURRENT_USER).create_subkey(&key_path)?;
+    let key = truth.open_key(&key_path)?;
     if matches!(args.role, Role::Unrelated) {
         let deadline = Instant::now() + Duration::from_secs(60);
         while !root.join(".fixture-go").is_file() {

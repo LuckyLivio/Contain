@@ -325,6 +325,30 @@ impl Storage {
         }
         result
     }
+    pub(crate) fn validate_diagnostic_location(&self, diagnostic: &std::path::Path) -> Result<()> {
+        if let Some(database) = self.connection.path().filter(|p| *p != ":memory:") {
+            let diagnostic = std::path::absolute(diagnostic)?;
+            let filename = diagnostic
+                .file_name()
+                .context("diagnostic filename required")?;
+            let diagnostic = diagnostic
+                .parent()
+                .context("diagnostic parent required")?
+                .canonicalize()?
+                .join(filename);
+            let diagnostic =
+                crate::windows::native::normalize_path(&diagnostic.to_string_lossy(), &[]);
+            let database = std::fs::canonicalize(database)?;
+            let database = crate::windows::native::normalize_path(&database.to_string_lossy(), &[]);
+            anyhow::ensure!(
+                !["", "-wal", "-shm"]
+                    .iter()
+                    .any(|suffix| diagnostic == format!("{database}{suffix}")),
+                "Raw clock sidecar must not replace the capture database, WAL or SHM"
+            );
+        }
+        Ok(())
+    }
     pub fn validate_capture_location(&self, roots: &[String]) -> Result<()> {
         if let Some(path) = self.connection.path().filter(|p| *p != ":memory:") {
             let path = std::fs::canonicalize(path)?;
@@ -762,6 +786,30 @@ pub(super) fn save_documents(tx: &Connection, c: &Capture) -> Result<()> {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn diagnostic_sidecar_cannot_target_database_or_sqlite_sidecars() {
+        let directory = std::env::temp_dir().join(format!(
+            "contain-diagnostic-location-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        let database = directory.join("capture.db");
+        let db = Storage::open(&database).unwrap();
+        for suffix in ["", "-wal", "-shm"] {
+            let path = directory.join(format!("CAPTURE.DB{suffix}"));
+            assert!(db.validate_diagnostic_location(&path).is_err());
+        }
+        assert!(
+            db.validate_diagnostic_location(&directory.join("clock.json"))
+                .is_ok()
+        );
+        assert!(
+            db.validate_diagnostic_location(&directory.join("missing/clock.json"))
+                .is_err()
+        );
+        drop(db);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
     use super::*;
     fn capture() -> Capture {
         Capture {

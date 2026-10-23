@@ -163,7 +163,101 @@ retain separate denominators. ETW event loss, ETW buffer loss and application dr
 counts remain separate, and missing counters remain null. Positive raw duplicates
 do not increase syscall recall. Consistent CLI output is not independent truth.
 
-## Independent clock protocol, version 1
+## Current raw-clock diagnostic entry (still requires elevated live validation)
+
+The user-run administrator demo `etw-small-20261023-202449` is valid real ETW
+evidence under the original scorer; see [its archive and limitations](validation-v0.4.md).
+It predates the following code and has no original-QPC sidecar. Its old score is
+not changed. Its clock diagnostic still returns unavailable for all 21 truth rows.
+
+The local ferrisetw 1.2.0 patch exposes the numeric header returned by successful
+OpenTraceW and a consumer-only subscription API. The default consumer remains
+Windows-converted FILETIME. The actual primary header is saved additively in
+`backend.clock.trace_header`; old DB/JSON remain readable. No boot-time formula,
+calibration fit or FILETIME-to-QPC inversion is used. See the patch's
+[upstream identity and interface notes](../vendor/ferrisetw/CONTAIN-PATCH.md).
+
+Only an explicit absolute `CONTAIN_ETW_RAW_CLOCK_PATH` enables a second consumer
+of the **same session**, with `RAW_TIMESTAMP`. Both consumers must receive the
+readiness probe before the installer launches. The companion reserves a new file;
+it refuses overwrite, watched roots and the capture DB/WAL/SHM. Startup errors
+abort launch; STOP failure closes the raw consumer before joining and marks the
+tail incomplete. Missing keys, duplicates, capacity refusal, persistence errors
+and partial artifacts stay visible. Default capture queues are not enlarged.
+
+The optional sidecar has a fixed 262,144-row capacity. The measured row size is
+64 bytes: 16,777,216 bytes backing storage plus a 65,536-byte serialization buffer,
+within a 32-MiB payload budget; JSON has a 128-MiB disk limit. These are not total
+process/OS memory limits. This bound was chosen against the observed 194,368
+callbacks in the small demo, not validated at 1,000/10,000 files. Extra callbacks,
+EventKey extended data, memory and post-STOP serialization have overhead. Do not
+pool diagnostic-on and diagnostic-off performance results; a saturated diagnostic
+remains unavailable, not a fast passing run. The sidecar is private system-wide
+clock evidence, not a public artifact.
+
+`v04-clock-protocol.py --raw-clock SIDECAR` validates its SHA-256, byte count,
+session, actual headers, bounds, counter partitions and termination. Links require
+the unique ETW EventKey **and** identical provider, descriptor, PID and TID.
+Missing, duplicated, inconsistent or zero qualifying links are unavailable.
+Original QPC and primary FILETIME remain distinct in the diagnostic report.
+[Microsoft documents EventKey as an event-instance identifier](https://learn.microsoft.com/windows/win32/api/evntrace/ns-evntrace-enable_trace_parameters).
+Synthetic non-provider metadata is counted separately, not relabelled as lost
+target operations. The OpenTrace header is an initial sample, not final loss
+statistics: `consumer_loss_counters_available=false` remains explicit. Exact links
+establish clock coverage only for retained primary events; they do not establish
+consumer-wide completeness or a loss rate. BootTime is retained without using it
+as boot provenance; [it is only supported for Global Logger](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/ns-evntrace-trace_logfile_header).
+Same-machine/same-boot provenance and provider emission semantics still need live
+verification. `diagnostic_ready` never means attribution or release acceptance.
+
+The independent fixture additionally writes `clock-marker-PID.jsonl` when clock
+logging is enabled. It times the initial registry open, with success/error and QPC
+brackets, before waiting for the launch marker. `--marker-root` reports its relation
+to trace readiness separately; the 21 original scoring rows are unchanged. Default
+registry source records now retain four bounded raw-name fields (4,096 UTF-8 bytes
+each), parse failures and context-resolution reasons **after existing filtering**.
+These diagnostics do not resolve paths, promote Unknown, or recover the historical
+1,412 filtered context records.
+
+For the next administrator-window diagnostic, start in the repository and use a
+new output directory. Clear any old companion setting before probing. After all
+three providers are active, run only the existing harmless fixture:
+
+```powershell
+$oldClock=$env:CONTAIN_FIXTURE_CLOCK
+$oldRawClock=$env:CONTAIN_ETW_RAW_CLOCK_PATH
+try {
+    Remove-Item Env:CONTAIN_ETW_RAW_CLOCK_PATH -ErrorAction SilentlyContinue
+    $d=(& ./target/stabilization/candidate-bin/contain.exe doctor --json | ConvertFrom-Json).data
+    if ($d.etw_file -ne 'active' -or $d.etw_process -ne 'active' -or $d.etw_registry -ne 'active') { throw 'ETW is not ready' }
+    $out=Join-Path (Get-Location) ('target/stabilization/etw-raw-' + (Get-Date -Format yyyyMMdd-HHmmss))
+    New-Item -ItemType Directory -Path $out | Out-Null
+    $env:CONTAIN_FIXTURE_CLOCK='1'
+    $env:CONTAIN_ETW_RAW_CLOCK_PATH=Join-Path $out 'raw-clock.json'
+    ./scripts/demo.ps1 -Release -RequireEtw -KeepArtifacts -OutputDirectory $out
+} finally {
+    $env:CONTAIN_FIXTURE_CLOCK=$oldClock
+    $env:CONTAIN_ETW_RAW_CLOCK_PATH=$oldRawClock
+}
+```
+
+This performs no elevation, remote dispatch or third-party install. The updated
+demo records source inputs before/after build, compiler/build command and log,
+executable paths reported by that Cargo build (including custom target directories),
+hashes before/after execution, fixture/data paths,
+and failure state in `run-identity.json`. These observations are not cryptographic
+loaded-image attestation. Nonempty output directories are refused. It requires
+all three providers plus actual file and registry source events, retains the old
+score, checks views, and writes a separate clock diagnostic. `-KeepArtifacts` is
+essential to retain the DB and raw journals on failure. Neither this run nor the
+read-interference experiment below replaces the 32-attempt protocol above. Do not
+start those paired trials until this new diagnostic has been audited and exact
+baseline/candidate inputs frozen; no acceptance thresholds have been lowered.
+Capture stdout/stderr still goes to the terminal; save a terminal transcript
+alongside the result directory if a complete console record is needed. Keep any
+transcript outside the initially empty output directory.
+
+## Original converted-only clock protocol, version 1 (historical)
 
 This is an observability protocol, **not a replacement score or a release gate**.
 The seven historical interval mismatches and their original strict scores remain
@@ -398,16 +492,19 @@ if (Test-Path -LiteralPath $experimentRoot) { throw 'Choose a new experiment dir
 New-Item -ItemType Directory -Path $experimentRoot | Out-Null
 git archive a072072ad805880290fd1f47f67fba6828d2c24e --output "$experimentRoot\baseline.tar"
 git archive fd25e8d7b614f73659760b807bf85dc5cc43325d --output "$experimentRoot\candidate.tar"
+git archive 3e4d9dce40121035d61687ce26f4875182740279 --output "$experimentRoot\measured-inputs.tar" crates/contain-core/examples/read_interference.rs crates/contain-core/src/filesystem.rs
+New-Item -ItemType Directory -Path "$experimentRoot\measured-inputs" | Out-Null
+tar -xf "$experimentRoot\measured-inputs.tar" -C "$experimentRoot\measured-inputs"
 foreach ($name in @('baseline', 'before', 'after')) {
     $sourceDir = Join-Path $experimentRoot $name
     New-Item -ItemType Directory -Path $sourceDir | Out-Null
     $archive = if ($name -eq 'baseline') { 'baseline.tar' } else { 'candidate.tar' }
     tar -xf (Join-Path $experimentRoot $archive) -C $sourceDir
     New-Item -ItemType Directory -Path "$sourceDir\crates\contain-core\examples" -Force | Out-Null
-    Copy-Item crates/contain-core/examples/read_interference.rs "$sourceDir\crates\contain-core\examples\read_interference.rs"
+    Copy-Item "$experimentRoot\measured-inputs\crates\contain-core\examples\read_interference.rs" "$sourceDir\crates\contain-core\examples\read_interference.rs"
 }
-Copy-Item crates/contain-core/src/filesystem.rs "$experimentRoot\after\crates\contain-core\src\filesystem.rs"
-Get-FileHash crates/contain-core/examples/read_interference.rs, "$experimentRoot\after\crates\contain-core\src\filesystem.rs" -Algorithm SHA256
+Copy-Item "$experimentRoot\measured-inputs\crates\contain-core\src\filesystem.rs" "$experimentRoot\after\crates\contain-core\src\filesystem.rs"
+Get-FileHash "$experimentRoot\measured-inputs\crates\contain-core\examples\read_interference.rs", "$experimentRoot\after\crates\contain-core\src\filesystem.rs" -Algorithm SHA256
 & $cargoExe build --locked --manifest-path "$experimentRoot\baseline\Cargo.toml" -p contain-core --example read_interference --target-dir "$experimentRoot\build"
 if ($LASTEXITCODE -ne 0) { throw 'Baseline build failed' }
 Copy-Item "$experimentRoot\build\debug\examples\read_interference.exe" "$experimentRoot\baseline.exe"

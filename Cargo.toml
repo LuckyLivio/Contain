@@ -1,6 +1,10 @@
 [workspace]
 members = ["crates/contain-core", "crates/contain-cli", "examples/test-installer"]
 resolver = "2"
+exclude = ["vendor/ferrisetw"]
+
+[patch.crates-io]
+ferrisetw = { path = "vendor/ferrisetw" }
 
 [workspace.package]
 version = "0.3.1"
@@ -17,6 +21,7 @@ notify = "8"
 rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 sysinfo = "0.37"
 uuid = { version = "1", features = ["v4"] }
 walkdir = "2"

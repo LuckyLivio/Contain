@@ -1,5 +1,8 @@
 //! Auditable clock samples. No FILETIME-to-QPC inversion or timestamp correction.
-use crate::model::{ClockCalibration, SourceClock, TraceClockMetadata};
+use crate::model::{
+    ClockCalibration, ClockRecordIdentity, OpenTraceHeader, SourceClock, TraceClockMetadata,
+};
+pub mod companion;
 use windows_sys::Win32::{
     Foundation::FILETIME,
     System::{
@@ -51,7 +54,74 @@ pub fn record_header(header: i64) -> SourceClock {
         header_timestamp: header.to_string(),
         timestamp_domain: "filetime_100ns".into(),
         raw_qpc: None,
+        event_key: None,
+        record_identity: None,
     }
+}
+
+pub fn record(record: &ferrisetw::EventRecord) -> SourceClock {
+    let mut clock = record_header(record.raw_timestamp());
+    // The primary consumer is deliberately still converted by ProcessTrace.
+    // A key is only an exact link to an independent raw companion record.
+    if let Some(key) = record.event_key() {
+        clock.event_key = Some(format!("{key:016x}"));
+        clock.record_identity = Some(ClockRecordIdentity {
+            provider: uuid::Uuid::from_u128(record.provider_id().to_u128()).to_string(),
+            event_id: record.event_id(),
+            version: record.version(),
+            channel: record.channel(),
+            level: record.level(),
+            opcode: record.opcode(),
+            task: record.task(),
+            keyword: format!("{:016x}", record.keyword()),
+            process_id: record.process_id(),
+            thread_id: record.thread_id(),
+        });
+    }
+    clock
+}
+
+pub fn header(header: ferrisetw::trace::TraceHeader) -> OpenTraceHeader {
+    OpenTraceHeader {
+        process_trace_mode: header.process_trace_mode,
+        reserved_flags: header.reserved_flags,
+        perf_frequency: header.perf_frequency.to_string(),
+        start_time: header.start_time.to_string(),
+        boot_time: header.boot_time.to_string(),
+        end_time: header.end_time.to_string(),
+        buffer_size: header.buffer_size,
+        log_file_mode: header.log_file_mode,
+        pointer_size: header.pointer_size,
+        events_lost: header.events_lost,
+        buffers_lost: header.buffers_lost,
+        timer_resolution: header.timer_resolution,
+        number_of_processors: header.number_of_processors,
+        provider_version: header.provider_version,
+    }
+}
+
+pub fn opened(metadata: &mut TraceClockMetadata, actual: Option<ferrisetw::trace::TraceHeader>) {
+    let Some(actual) = actual else {
+        metadata
+            .errors
+            .push("OpenTrace did not expose a header".into());
+        return;
+    };
+    metadata.configuration_source = "OpenTraceW_output_ferrisetw_1.2.0_contain_patch".into();
+    metadata.trace_header_available = true;
+    metadata.process_trace_mode = actual.process_trace_mode;
+    metadata.client_context = actual.reserved_flags;
+    metadata.clock_type = match actual.reserved_flags {
+        1 => "qpc",
+        2 => "system_time",
+        3 => "cpu_cycles",
+        _ => "unknown",
+    }
+    .into();
+    metadata.qpc_frequency = u64::try_from(actual.perf_frequency)
+        .ok()
+        .filter(|value| *value > 0);
+    metadata.trace_header = Some(header(actual));
 }
 
 pub fn metadata() -> TraceClockMetadata {
@@ -64,6 +134,8 @@ pub fn metadata() -> TraceClockMetadata {
         delivered_timestamp_domain: "filetime_100ns".into(),
         raw_qpc_available: false,
         trace_header_available: false,
+        trace_header: None,
+        raw_companion: None,
         qpc_frequency: None,
         calibrations: Vec::new(),
         errors: Vec::new(),

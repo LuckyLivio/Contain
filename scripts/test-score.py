@@ -31,6 +31,17 @@ class OracleTests(unittest.TestCase):
         self.assertEqual(oracle.score(self.c,[self.t,noise])["false_positive_target_events"],0)
     def test_snapshot_cannot_observe_a_transient_syscall(self):
         self.e["event_type"]="file_state";r=oracle.score(self.c,[self.t]);self.assertEqual(r["observed"],0)
+    def test_registry_diagnostic_names_cannot_satisfy_unresolved_noise_resource(self):
+        self.t.update(role="unrelated", operation="set_value", resource="HKCU\\Software\\fixture\\NoiseOnly")
+        self.e.update(event_type="registry", operation="set_value", resource="<unresolved registry object>", confidence="Unknown")
+        before=oracle.score(self.c,[self.t])
+        self.e["raw"]={"resource_resolved":False,"registry_fields":{
+            "key_name":"\\registry\\user\\sid\\Software\\fixture", "value_name":"NoiseOnly",
+            "diagnostics":{"context_owner_available":True,"path_gap_reason":"nonabsolute_key_name_and_no_object_context"}}}
+        after=oracle.score(self.c,[self.t])
+        self.assertEqual(before,after)
+        self.assertEqual(after["groups"]["noise_success"]["unobserved"],1)
+        self.assertIsNone(after["rows"][0]["attribution"])
     def test_control_exclusions_are_exact_and_never_override_instrumented_noise(self):
         self.e["resource"]="C:\\root\\nested\\.fixture-go"
         self.assertEqual(oracle.score(self.c,[self.t])["false_positive_target_events"],1)

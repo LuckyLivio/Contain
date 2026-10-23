@@ -23,6 +23,7 @@ use windows_sys::Win32::{
 struct ClockProtocol {
     frequency: u64,
     sequence: Cell<u64>,
+    marker_sequence: Cell<u64>,
 }
 
 fn qpc() -> Result<u64> {
@@ -59,6 +60,7 @@ impl ClockProtocol {
         Ok(Self {
             frequency: frequency as u64,
             sequence: Cell::new(0),
+            marker_sequence: Cell::new(0),
         })
     }
 }
@@ -73,6 +75,7 @@ pub fn ticks() -> u64 {
 }
 pub struct Truth {
     journal: RefCell<File>,
+    marker_journal: Option<RefCell<File>>,
     role: String,
     birth: u64,
     clock: Option<ClockProtocol>,
@@ -108,15 +111,71 @@ impl Truth {
             .create(true)
             .append(true)
             .open(journal_root.join(format!("ground-truth-{}.jsonl", std::process::id())))?;
+        let clock = if std::env::var_os("CONTAIN_FIXTURE_CLOCK").is_some_and(|v| v == "1") {
+            Some(ClockProtocol::new()?)
+        } else {
+            None
+        };
+        // Separate filename and sequence: these control markers must never be
+        // mistaken for the frozen oracle's 21 instrumented operation rows.
+        let marker_journal = clock
+            .as_ref()
+            .map(|_| {
+                OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(journal_root.join(format!("clock-marker-{}.jsonl", std::process::id())))
+                    .map(RefCell::new)
+            })
+            .transpose()?;
         Ok(Self {
             journal: RefCell::new(journal),
+            marker_journal,
             role: role.into(),
             birth,
-            clock: if std::env::var_os("CONTAIN_FIXTURE_CLOCK").is_some_and(|v| v == "1") {
-                Some(ClockProtocol::new()?)
-            } else {
-                None
-            },
+            clock,
+        })
+    }
+    fn diagnostic_marker<T>(
+        &self,
+        marker: &str,
+        resource: &str,
+        run: impl FnOnce() -> std::io::Result<T>,
+    ) -> Result<T> {
+        let Some(clock) = &self.clock else {
+            return Ok(run()?);
+        };
+        let journal = self
+            .marker_journal
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("independent marker journal missing"))?;
+        let before = calibration()?;
+        // SAFETY: GetCurrentThreadId has no preconditions.
+        let thread_id = unsafe { GetCurrentThreadId() };
+        let start = qpc()?;
+        let result = run();
+        let end = qpc()?;
+        let after = calibration()?;
+        anyhow::ensure!(end >= start, "independent marker QPC regressed");
+        let sequence = clock.marker_sequence.get() + 1;
+        clock.marker_sequence.set(sequence);
+        let entry = json!({"schema_version":1,"kind":"fixture_control_marker","marker":marker,
+            "role":self.role,"pid":std::process::id(),"creation_time":self.birth.to_string(),
+            "resource":resource,"success":result.is_ok(),"error":result.as_ref().err().and_then(|e|e.raw_os_error()),
+            "clock":{"schema_version":1,"qpc_frequency":clock.frequency.to_string(),"sequence":sequence,
+                "thread_id":thread_id,"start_qpc":start.to_string(),"end_qpc":end.to_string(),"before":before,"after":after}});
+        let mut line = serde_json::to_vec(&entry)?;
+        line.push(b'\n');
+        journal.borrow_mut().write_all(&line)?;
+        Ok(result?)
+    }
+    /// Times the pre-wait handle acquisition independently of Contain. No new
+    /// oracle row, workload operation, or inferred registry ownership is added.
+    pub fn open_key(&self, path: &str) -> Result<winreg::RegKey> {
+        self.diagnostic_marker("initial_registry_open", &format!("HKCU\\{path}"), || {
+            winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
+                .create_subkey(path)
+                .map(|(key, _)| key)
         })
     }
     pub fn record<T>(
@@ -220,6 +279,7 @@ mod tests {
         (
             Truth {
                 journal: RefCell::new(file),
+                marker_journal: None,
                 role: "test".into(),
                 birth: 1,
                 clock,
@@ -242,6 +302,52 @@ mod tests {
         assert!(row["end_ticks"].is_string());
         assert_eq!(row["success"], true);
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn control_marker_is_separate_from_frozen_oracle_and_retains_failed_call() {
+        let (mut truth, path) = journal(Some(ClockProtocol::new().unwrap()));
+        let marker_path = path.with_extension("marker.jsonl");
+        truth.marker_journal = Some(RefCell::new(
+            OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&marker_path)
+                .unwrap(),
+        ));
+        assert!(
+            truth
+                .diagnostic_marker("initial_registry_open", "HKCU\\fixture", || Err::<(), _>(
+                    std::io::Error::from_raw_os_error(5)
+                ))
+                .is_err()
+        );
+        truth
+            .record("write_requested", "fixture", None, || Ok(()))
+            .unwrap();
+        drop(truth);
+        let rows: Vec<serde_json::Value> = std::fs::read_to_string(&path)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["clock"]["sequence"], 1);
+        let marker: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&marker_path).unwrap()).unwrap();
+        assert_eq!(marker["kind"], "fixture_control_marker");
+        assert_eq!(marker["success"], false);
+        assert_eq!(marker["error"], 5);
+        let tick = |name| {
+            marker["clock"][name]
+                .as_str()
+                .unwrap()
+                .parse::<u64>()
+                .unwrap()
+        };
+        assert!(tick("start_qpc") <= tick("end_qpc"));
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_file(marker_path).unwrap();
     }
 
     #[test]

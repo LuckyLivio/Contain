@@ -149,7 +149,7 @@ fn worker(root: &Path, case: &str) -> Result<()> {
     std::io::stdout().flush()?;
     let mut signal = [0];
     std::io::stdin().read_exact(&mut signal)?;
-    ensure!(signal == [b'G'], "invalid barrier signal");
+    ensure!(signal == *b"G", "invalid barrier signal");
     let clock = Instant::now();
     let result = perform(case, root, existing.as_mut());
     println!(

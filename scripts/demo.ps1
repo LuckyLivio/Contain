@@ -3,30 +3,79 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($RequireEtw -and $SnapshotOnly) { throw 'Choose RequireEtw or SnapshotOnly, not both.' }
 $cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
-if (-not (Test-Path -LiteralPath $cargo)) { $cargo = 'cargo' }
+if (-not (Test-Path -LiteralPath $cargo)) { $cargo = (Get-Command cargo -ErrorAction Stop).Source }
 Push-Location (Join-Path $PSScriptRoot '..')
+. "$PSScriptRoot/demo-provenance.ps1"
+$previousTruth=$env:CONTAIN_FIXTURE_TRUTH
+$runIdentity=$null
+$identityPath=$null
 function Assert-JsonContract([string]$text) {
     if (Get-Command Test-Json -ErrorAction SilentlyContinue) {
         if (-not (Test-Json -Json $text -SchemaFile './docs/schema/cli-v3.schema.json')) { throw 'JSON schema validation failed' }
     }
 }
 try {
-    $buildArgs=@("build","--workspace","--locked");if($Release){$buildArgs+="--release"}
-    & $cargo @buildArgs
-    if ($LASTEXITCODE -ne 0) { throw 'cargo build failed' }
+    $buildArgs=@("build","--workspace","--locked","--message-format=json-render-diagnostics");if($Release){$buildArgs+="--release"}
+    if ($OutputDirectory) {
+        $OutputDirectory=[IO.Path]::GetFullPath($OutputDirectory)
+        if ((Test-Path -LiteralPath $OutputDirectory) -and @(Get-ChildItem -LiteralPath $OutputDirectory -Force).Count -gt 0) { throw 'OutputDirectory must be empty; historical evidence will not be overwritten' }
+        New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+        $identityPath=Join-Path $OutputDirectory 'run-identity.json'
+        $rustc=Join-Path (Split-Path $cargo) 'rustc.exe'
+        if (-not (Test-Path -LiteralPath $rustc)) { $rustc='rustc' }
+        $runIdentity=[ordered]@{
+            schema_version=1; status='building'; started_at_utc=[DateTime]::UtcNow.ToString('o')
+            source_before_build=(Get-DemoSourceIdentity); source_after_build=$null
+            build_command=@($cargo)+$buildArgs; build_exit_code=$null
+            cargo_version=((& $cargo --version) -join "`n"); rustc_version=((& $rustc --version --verbose) -join "`n")
+            source_stable_during_build=$null; binary_before=@(); binary_after=$null
+            fixture_clock=$env:CONTAIN_FIXTURE_CLOCK; raw_clock_path=$env:CONTAIN_ETW_RAW_CLOCK_PATH
+            elevated=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+            interpretation='Contemporaneous build/source and pre/post executable observations, not a cryptographic loaded-image attestation. Existing historical runs without this record remain unidentified.'
+        }
+        $runIdentity | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath $identityPath -Encoding utf8
+    }
+    $buildOutput = [Collections.Generic.List[string]]::new()
+    $buildErrorPreference = $ErrorActionPreference
+    try {
+        # Windows PowerShell 5 converts redirected native stderr into error
+        # records. Keep diagnostics, then judge Cargo by its actual exit code.
+        $ErrorActionPreference = 'Continue'
+        if ($OutputDirectory) {
+            & $cargo @buildArgs 2>&1 | ForEach-Object -ErrorAction Stop {
+                $line = [string]$_; $buildOutput.Add($line); $line
+            } | Tee-Object -FilePath (Join-Path $OutputDirectory 'build.log') -ErrorAction Stop
+        } else {
+            & $cargo @buildArgs 2>&1 | ForEach-Object -ErrorAction Stop {
+                $line = [string]$_; $buildOutput.Add($line); $line
+            }
+        }
+        $buildExit=$LASTEXITCODE
+    } finally { $ErrorActionPreference = $buildErrorPreference }
+    if ($runIdentity) { $runIdentity.build_exit_code=$buildExit }
+    if ($buildExit -ne 0) { throw 'cargo build failed' }
+    $buildExecutables = Get-DemoBuildExecutables -BuildOutput $buildOutput.ToArray() -RegistryNoise:$RegistryNoise
     $name = 'contain-demo-' + [guid]::NewGuid().ToString('N')
     $root = Join-Path $env:TEMP $name
     $db = Join-Path $env:TEMP ($name + '.db')
     $truthRoot=Join-Path $env:TEMP ($name+'-truth')
     New-Item -ItemType Directory -Path $truthRoot | Out-Null
     [IO.File]::WriteAllText((Join-Path $truthRoot '.contain-demo-marker'),'Contain test fixture')
-    $previousTruth=$env:CONTAIN_FIXTURE_TRUTH
     $env:CONTAIN_FIXTURE_TRUTH=$truthRoot
     $key = 'Software\Contain\Demo\' + $name
     $registryPath = 'Registry::HKEY_CURRENT_USER\' + $key
-    $profile=if($Release){"release"}else{"debug"}
-    $contain = (Resolve-Path "./target/$profile/contain.exe").Path
-    $fixture = (Resolve-Path "./target/$profile/contain-test-installer.exe").Path
+    $contain = $buildExecutables['contain']
+    $fixture = $buildExecutables['contain-test-installer']
+    if ($runIdentity) {
+        $runIdentity.source_after_build=Get-DemoSourceIdentity
+        $runIdentity.source_stable_during_build=$runIdentity.source_before_build.runtime_tree_sha256 -ceq $runIdentity.source_after_build.runtime_tree_sha256
+        if (-not $runIdentity.source_stable_during_build) { throw 'Build inputs changed during build; refuse to launch fixture' }
+        $runIdentity.binary_before=@(Get-DemoBinaryIdentity $contain; Get-DemoBinaryIdentity $fixture)
+        if ($RegistryNoise) { $runIdentity.binary_before+=Get-DemoBinaryIdentity $buildExecutables['contain-registry-noise'] }
+        $runIdentity.status='running'
+        $runIdentity['fixture_root']=$root; $runIdentity['database']=$db; $runIdentity['truth_root']=$truthRoot
+        $runIdentity | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath $identityPath -Encoding utf8
+    }
     New-Item -ItemType Directory -Path $root | Out-Null
     [IO.File]::WriteAllText((Join-Path $root '.contain-demo-marker'), 'Contain test fixture')
     foreach ($file in @('settings.txt','rename-me.txt','delete-me.txt')) { [IO.File]::WriteAllText((Join-Path $root $file), 'baseline') }
@@ -36,7 +85,7 @@ try {
     $registryNoiseProcesses=@()
     try {
         if($RegistryNoise) {
-            $noiseBin=(Resolve-Path "./target/$profile/contain-registry-noise.exe").Path
+            $noiseBin=$buildExecutables['contain-registry-noise']
             foreach($phase in @('pre','launcher')) {
                 $registryNoiseProcesses += Start-Process -WindowStyle Hidden -FilePath $noiseBin -ArgumentList @('--root',('"'+$root+'"'),'--phase',$phase) -PassThru
             }
@@ -49,6 +98,10 @@ try {
         $arguments = @('--db',$db,'install',$fixture,'--name','TestFixture','--watch',$root,'--registry-key',$key)
         if ($SnapshotOnly) { $arguments += '--no-etw' }
         $arguments += @('--','--root',$root)
+        if ($runIdentity) {
+            $runIdentity['capture_command']=@($contain)+$arguments
+            $runIdentity | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath $identityPath -Encoding utf8
+        }
         $captureClock=[Diagnostics.Stopwatch]::StartNew()
         & $contain @arguments
         $captureClock.Stop()
@@ -79,6 +132,13 @@ try {
         $viewReport=if($OutputDirectory){Join-Path $OutputDirectory 'view-consistency.json'}else{$db+'.views.json'}
         python "$PSScriptRoot/v04-verify-views.py" --contain $contain --database $db --app TestFixture --output $viewReport
         if($LASTEXITCODE -ne 0){throw 'Cross-CLI evidence consistency failed; see view-consistency report'}
+        if ($OutputDirectory -and $env:CONTAIN_ETW_RAW_CLOCK_PATH) {
+            $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+            python "$PSScriptRoot/v04-clock-protocol.py" --capture (Join-Path $OutputDirectory 'capture.json') --truth (Join-Path $OutputDirectory 'ground-truth.json') --marker-root $truthRoot --raw-clock $env:CONTAIN_ETW_RAW_CLOCK_PATH --sid $sid --output (Join-Path $OutputDirectory 'clock-diagnostic.json')
+            $clockExit=$LASTEXITCODE
+            if ($runIdentity) { $runIdentity['clock_diagnostic_exit_code']=$clockExit }
+            if ($clockExit -ne 0) { throw 'Original QPC diagnostic is unavailable or invalid; original score and artifacts were retained' }
+        }
         if ($manifest.processes.Count -lt 3) { throw 'parent/child/grandchild were not all observed' }
         if (@($manifest.processes | Where-Object confidence -eq 'Certain').Count -ne 1) { throw 'installer must be Certain' }
         if (@($manifest.processes | Where-Object confidence -eq 'High').Count -lt 2) { throw 'child and grandchild must have verified ancestry' }
@@ -88,7 +148,10 @@ try {
         if (@($manifest.registry | Where-Object operation -eq 'modified').Count -lt 1) { throw 'registry update not captured' }
         $unrelatedChanges = @($manifest.files | Where-Object { $_.path -like '*\unrelated.txt' -or $_.path -like '*\shared.txt' })
         if ($unrelatedChanges.Count -lt 2 -or @($unrelatedChanges | Where-Object confidence -ne 'Unknown').Count -gt 0) { throw 'unrelated/mixed writer state was misattributed' }
-        if ($RequireEtw -and $manifest.backend.etw_file -ne 'active') { throw 'ETW was required but did not start' }
+        if ($RequireEtw) {
+            if ($manifest.backend.etw_file -ne 'active' -or $manifest.backend.etw_registry -ne 'active' -or $manifest.backend.etw_process -ne 'active') { throw 'ETW file, registry and process providers were required but not all active' }
+            if (@($manifest.events | Where-Object event_type -eq 'file').Count -eq 0 -or @($manifest.events | Where-Object event_type -eq 'registry').Count -eq 0) { throw 'ETW requires actual file and registry source events; provider activation alone is insufficient' }
+        }
         if ($manifest.backend.etw_file -eq 'active') {
             $highFiles = @($manifest.events | Where-Object { $_.event_type -eq 'file' -and $_.confidence -eq 'High' })
             $unknownFiles = @($manifest.events | Where-Object { $_.resource -like '*\unrelated.txt' -and $_.event_type -eq 'file' -and $_.confidence -eq 'Unknown' })
@@ -136,7 +199,13 @@ try {
             $json = $raw | ConvertFrom-Json
             if ($LASTEXITCODE -ne 0 -or $json.schema_version -ne 3 -or $json.kind -ne $command) { throw "$command JSON contract failed" }
         }
-        $raw = (& $contain doctor --json) -join "`n"
+        # The companion destination belongs to this capture, not a later probe.
+        # A second doctor must not attempt to reuse or overwrite that artifact.
+        $captureRawClock=$env:CONTAIN_ETW_RAW_CLOCK_PATH
+        try {
+            Remove-Item Env:CONTAIN_ETW_RAW_CLOCK_PATH -ErrorAction SilentlyContinue
+            $raw = (& $contain doctor --json) -join "`n"
+        } finally { $env:CONTAIN_ETW_RAW_CLOCK_PATH=$captureRawClock }
         Assert-JsonContract $raw
         $doctor = $raw | ConvertFrom-Json
         if ($LASTEXITCODE -ne 0 -or $doctor.kind -ne 'doctor' -or -not $doctor.data.process_observation) { throw 'doctor probe failed' }
@@ -147,6 +216,7 @@ try {
         $after = (Get-ChildItem -LiteralPath $root -File -Recurse | Get-FileHash | Sort-Object Path | ConvertTo-Json -Compress)
         if ($before -ne $after -or $registryBefore -ne (Get-ItemPropertyValue -LiteralPath $registryPath -Name Installed)) { throw 'dry-run changed fixture data' }
         Write-Output "DEMO VERIFIED: $($manifest.processes.Count) processes, $($manifest.files.Count) file states, $($manifest.registry.Count) registry states, $($manifest.events.Count) timeline events; readback, JSON and dry-run passed."
+        if ($runIdentity) { $runIdentity.status='completed' }
     } finally {
         foreach($noiseProcess in $registryNoiseProcesses) {
             # Bounded fixture exits itself. Do not terminate it to manufacture a passing test.
@@ -162,4 +232,19 @@ try {
             foreach ($suffix in @('','-wal','-shm','.views.json')) { $target=$db+$suffix; if(Test-Path -LiteralPath $target){ Remove-Item -LiteralPath $target -Force } }
         } else { Write-Output "Fixture: $root`nDatabase: $db`nTruth: $truthRoot" }
     }
-} finally { $env:CONTAIN_FIXTURE_TRUTH=$previousTruth; Pop-Location }
+} catch {
+    if ($runIdentity) { $runIdentity.status='failed'; $runIdentity['error']=$_.Exception.Message }
+    throw
+} finally {
+    try {
+        if ($runIdentity) {
+            $runIdentity['finished_at_utc']=[DateTime]::UtcNow.ToString('o')
+            if ($runIdentity.binary_before.Count -gt 0) {
+                $runIdentity.binary_after=Complete-DemoBinaryIdentity $runIdentity.binary_before
+                if (-not $runIdentity.binary_after.unchanged) { $runIdentity.status='binary_changed' }
+            }
+            $runIdentity | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath $identityPath -Encoding utf8
+            if ($runIdentity.status -eq 'binary_changed') { throw 'Executable changed or disappeared during demo; retained evidence cannot pass identity checks' }
+        }
+    } finally { $env:CONTAIN_FIXTURE_TRUTH=$previousTruth; Pop-Location }
+}

@@ -31,6 +31,18 @@ pub struct RegistryFields {
     pub base_name: String,
     pub relative_name: String,
     pub value_name: Option<String>,
+    /// Diagnostic copies only: never use truncated names to recover a resource.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<RegistryFieldDiagnostics>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RegistryFieldDiagnostics {
+    /// Fixed field/error labels, without arbitrary TDH error text or payloads.
+    pub parse_errors: std::collections::BTreeMap<String, String>,
+    pub truncated_fields: Vec<String>,
+    pub context_owner_available: bool,
+    pub path_gap_reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

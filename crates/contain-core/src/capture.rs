@@ -67,6 +67,14 @@ fn install_inner(
         .map(|p| p.to_string_lossy().into_owned())
         .collect();
     db.validate_capture_location(&watch_roots)?;
+    if let Some(path) = std::env::var_os("CONTAIN_ETW_RAW_CLOCK_PATH") {
+        if !options.etw {
+            anyhow::bail!(
+                "raw ETW clock diagnostics require ETW; snapshot-only is not a substitute"
+            );
+        }
+        db.validate_diagnostic_location(std::path::Path::new(&path))?;
+    }
     let mut warnings = Vec::new();
     let before_inventory = inventory::snapshot();
     let before_registry = options
@@ -114,6 +122,7 @@ fn install_inner(
     };
     let mut journal = RawBuffer::with_policy(db, &initial, options.evidence_quota_bytes, policy)?;
     let mut source = EtwSource::start(&watch_roots, nt_root.clone(), options.etw);
+    source.ensure_raw_clock_ready()?;
     phases.insert(
         "provider_readiness".into(),
         ready_clock.elapsed().as_millis() as u64,

@@ -277,7 +277,12 @@ impl Drop for TraceProbe {
 }
 
 /// ferrisetw enables providers asynchronously. Wait for configuration before launch.
-pub fn synchronize_providers(name: &str, registry: bool, filter_ids: bool) -> Result<(), u32> {
+pub fn synchronize_providers(
+    name: &str,
+    registry: bool,
+    filter_ids: bool,
+    event_keys: bool,
+) -> Result<(), u32> {
     use windows_sys::Win32::System::Diagnostics::Etw::*;
     // SAFETY: query our UUID session into aligned storage, then reapply exactly its provider
     // configuration with a bounded synchronous timeout. No global logger is modified.
@@ -315,6 +320,9 @@ pub fn synchronize_providers(name: &str, registry: bool, filter_ids: bool) -> Re
             } else {
                 0
             };
+            if event_keys {
+                params.EnableProperty |= EVENT_ENABLE_PROPERTY_EVENT_KEY;
+            }
             // ferrisetw owns the allocation and alignment of the variable-length
             // EVENT_FILTER_EVENT_ID payload. Both owner and descriptor stay alive
             // across synchronous EnableTraceEx2. Only numeric descriptor fields

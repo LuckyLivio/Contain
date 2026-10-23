@@ -75,6 +75,7 @@ fn make_event(
 }
 
 pub struct EtwSource {
+    raw_clock: Option<super::clock::companion::Companion>,
     decoder: Option<Arc<Mutex<Decoder>>>,
     initial_records: Vec<(crate::model::ProcessRecord, u64)>,
     trace: Option<UserTrace>,
@@ -111,6 +112,15 @@ impl EtwReceiver {
 }
 
 impl EtwSource {
+    pub fn ensure_raw_clock_ready(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !super::clock::companion::configured()
+                || self.raw_clock.as_ref().is_some_and(|raw| raw.ready()),
+            "Requested raw QPC companion is unavailable or failed readiness; installer was not launched. {:?}",
+            self.report.clock.as_ref().map(|clock| &clock.errors)
+        );
+        Ok(())
+    }
     /// Unit-test injection only. It provides no ETW loss or clock evidence.
     #[cfg(test)]
     pub(crate) fn synthetic(events: Vec<SystemEvent>) -> Self {
@@ -168,6 +178,7 @@ impl EtwSource {
         }
         let name = format!("Contain-{}", uuid::Uuid::new_v4());
         let mut source = Self {
+            raw_clock: None,
             decoder: None,
             initial_records: Vec::new(),
             trace: None,
@@ -206,6 +217,12 @@ impl EtwSource {
             }
         };
         let consumer_ready = Arc::new(AtomicBool::new(false));
+        let raw_clock_requested = super::clock::companion::configured();
+        let key_flags = if raw_clock_requested {
+            TraceFlags::EVENT_ENABLE_PROPERTY_EVENT_KEY
+        } else {
+            TraceFlags::empty()
+        };
         let callback_ready = consumer_ready.clone();
         let readiness_provider = Provider::by_guid(probe_id.to_string().as_str())
             .any(1)
@@ -217,7 +234,8 @@ impl EtwSource {
         let roots = roots
             .iter()
             .map(|p| native::normalize_path(p, &devices))
-            .collect();
+            .collect::<Vec<_>>();
+        let companion_roots = roots.clone();
         let registry_enabled = registry_root.is_some();
         let decoder = Arc::new(Mutex::new(Decoder {
             deferred_registry: registry_enabled
@@ -246,7 +264,7 @@ impl EtwSource {
         let mut file = Provider::by_guid(FILE_PROVIDER)
             .any(0x1ef0)
             .level(4)
-            .trace_flags(TraceFlags::EVENT_ENABLE_PROPERTY_PROCESS_START_KEY);
+            .trace_flags(TraceFlags::EVENT_ENABLE_PROPERTY_PROCESS_START_KEY | key_flags);
         if filter_ids {
             file = file.add_filter(EventFilter::ByEventIds(FILE_EVENT_IDS.to_vec()));
         }
@@ -259,6 +277,7 @@ impl EtwSource {
         let lifecycle = Provider::by_guid("22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716")
             .any(0x30)
             .level(5)
+            .trace_flags(key_flags)
             .add_callback(move |record, locator| {
                 dispatch(&lifecycle_decoder, record, locator, 1, Decoder::lifecycle);
             })
@@ -279,7 +298,7 @@ impl EtwSource {
             let registry = Provider::by_guid(REGISTRY_PROVIDER)
                 .any(0x7301)
                 .level(4)
-                .trace_flags(TraceFlags::EVENT_ENABLE_PROPERTY_PROCESS_START_KEY)
+                .trace_flags(TraceFlags::EVENT_ENABLE_PROPERTY_PROCESS_START_KEY | key_flags)
                 .add_callback(move |record, locator| {
                     dispatch(&decoder, record, locator, 2, Decoder::registry);
                 })
@@ -289,10 +308,43 @@ impl EtwSource {
         match builder.start() {
             Ok((trace, handle)) => {
                 tracing::info!(session = %name, registry = registry_enabled, "ETW session started");
+                if let Some(clock) = &mut source.report.clock {
+                    super::clock::opened(clock, trace.trace_header());
+                }
                 source.trace = Some(trace);
-                source.consumer = Some(thread::spawn(move || {
-                    UserTrace::process_from_handle(handle).map_err(|e| format!("{e:?}"))
-                }));
+                if raw_clock_requested {
+                    match super::clock::companion::Companion::open(
+                        &name,
+                        &companion_roots,
+                        probe_id.as_u128(),
+                    ) {
+                        Ok(raw) => source.raw_clock = Some(raw),
+                        Err(error) => {
+                            if let Some(clock) = &mut source.report.clock {
+                                clock.errors.push(error);
+                            }
+                        }
+                    }
+                }
+                source.consumer = match thread::Builder::new()
+                    .name("contain-etw-primary".into())
+                    .spawn(move || {
+                        UserTrace::process_from_handle(handle).map_err(|e| format!("{e:?}"))
+                    }) {
+                    Ok(consumer) => Some(consumer),
+                    Err(error) => {
+                        if let Some(clock) = &mut source.report.clock {
+                            clock
+                                .errors
+                                .push(format!("Primary consumer thread startup failed: {error}"));
+                        }
+                        source.stop();
+                        source.report.etw_file = "unavailable".into();
+                        source.report.etw_process = "unavailable".into();
+                        source.report.etw_registry = "unavailable".into();
+                        return source;
+                    }
+                };
                 source.report.etw_file = "active".into();
                 source.report.etw_process = "active".into();
                 source.report.etw_registry = if registry_enabled {
@@ -301,46 +353,87 @@ impl EtwSource {
                     "not_requested"
                 }
                 .into();
-                let ready = native::synchronize_providers(&name, registry_enabled, filter_ids)
-                    .and_then(|()| {
-                        let deadline =
-                            std::time::Instant::now() + std::time::Duration::from_secs(3);
-                        while !consumer_ready.load(Ordering::Acquire)
-                            && std::time::Instant::now() < deadline
-                        {
-                            probe.emit()?;
-                            native::control_trace(
+                let ready = native::synchronize_providers(
+                    &name,
+                    registry_enabled,
+                    filter_ids,
+                    raw_clock_requested,
+                )
+                .and_then(|()| {
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+                    while !(consumer_ready.load(Ordering::Acquire)
+                        && source
+                            .consumer
+                            .as_ref()
+                            .is_some_and(|consumer| !consumer.is_finished())
+                        && (!raw_clock_requested
+                            || source.raw_clock.as_ref().is_some_and(|raw| raw.ready())))
+                        && std::time::Instant::now() < deadline
+                    {
+                        probe.emit()?;
+                        native::control_trace(
                             &name,
                             windows_sys::Win32::System::Diagnostics::Etw::EVENT_TRACE_CONTROL_FLUSH,
                         )?;
-                            thread::sleep(std::time::Duration::from_millis(20));
-                        }
-                        if consumer_ready.load(Ordering::Acquire) {
-                            Ok(())
-                        } else {
-                            Err(1460)
-                        }
-                    });
+                        thread::sleep(std::time::Duration::from_millis(20));
+                    }
+                    if consumer_ready.load(Ordering::Acquire)
+                        && source
+                            .consumer
+                            .as_ref()
+                            .is_some_and(|consumer| !consumer.is_finished())
+                        && (!raw_clock_requested
+                            || source.raw_clock.as_ref().is_some_and(|raw| raw.ready()))
+                    {
+                        Ok(())
+                    } else {
+                        Err(1460)
+                    }
+                });
                 if let Err(code) = ready {
                     source.stop();
                     source.report.etw_file = "unavailable".into();
                     source.report.etw_process = "unavailable".into();
                     source.report.etw_registry = "unavailable".into();
-                    source.report.warnings.push(format!(
-                        "ETW provider/consumer readiness failed: Win32 {code}; using snapshots."
-                    ));
+                    let reason = format!("ETW provider/consumer readiness failed: Win32 {code}");
+                    if raw_clock_requested {
+                        if let Some(clock) = &mut source.report.clock {
+                            clock.errors.push(reason.clone());
+                        }
+                        source.report.warnings.push(format!(
+                            "{reason}; required raw clock diagnostic cannot launch the installer."
+                        ));
+                    } else {
+                        source
+                            .report
+                            .warnings
+                            .push(format!("{reason}; using snapshots."));
+                    }
                 } else if let Some(clock) = &mut source.report.clock {
                     super::clock::observe(clock, "consumer_ready");
                 }
             }
             Err(error) => {
-                tracing::warn!(session = %name, error = ?error, "ETW unavailable; using snapshot fallback");
+                if raw_clock_requested {
+                    tracing::warn!(session = %name, error = ?error, "ETW unavailable; required raw clock diagnostic will abort before installer launch");
+                    if let Some(clock) = &mut source.report.clock {
+                        clock
+                            .errors
+                            .push(format!("Primary ETW startup failed: {error:?}"));
+                    }
+                } else {
+                    tracing::warn!(session = %name, error = ?error, "ETW unavailable; using snapshot fallback");
+                }
                 // ferrisetw can fail after StartTrace during provider enablement; clean only our UUID session.
                 let _ = native::control_trace(&name, EVENT_TRACE_CONTROL_STOP);
                 source.report.etw_file = "unavailable".into();
                 source.report.etw_process = "unavailable".into();
                 source.report.etw_registry = "unavailable".into();
-                source.report.warnings.push(format!("ETW unavailable: {error:?}. Continuing with process sampling and snapshots; no elevation requested."));
+                source.report.warnings.push(if raw_clock_requested {
+                    format!("ETW unavailable: {error:?}. Required raw clock diagnostic cannot launch the installer; no elevation requested.")
+                } else {
+                    format!("ETW unavailable: {error:?}. Continuing with process sampling and snapshots; no elevation requested.")
+                });
             }
         }
         source
@@ -488,6 +581,7 @@ impl EtwSource {
     }
 
     pub fn stop_with(&mut self, mut sink: impl FnMut(Vec<SystemEvent>)) -> BackendReport {
+        let mut producer_stopped = false;
         if let Some(trace) = self.trace.take() {
             if let Some(clock) = &mut self.report.clock {
                 super::clock::observe(clock, "trace_stop_requested");
@@ -503,6 +597,7 @@ impl EtwSource {
             }
             match stop.join() {
                 Ok(Ok(lost)) => {
+                    producer_stopped = true;
                     self.report.etw_events_lost = Some(lost.events);
                     self.report.etw_buffers_lost = Some(lost.buffers);
                     if let Some(p) = &mut self.report.pipeline {
@@ -534,6 +629,19 @@ impl EtwSource {
             drop(trace);
             if let Some(clock) = &mut self.report.clock {
                 super::clock::observe(clock, "consumer_stopped");
+            }
+        }
+        if let Some(raw) = self.raw_clock.take() {
+            let summary = raw.finish(producer_stopped);
+            if summary["written"] != true
+                || summary["errors"]
+                    .as_array()
+                    .is_some_and(|errors| !errors.is_empty())
+            {
+                self.report.warnings.push("Original QPC companion incomplete; retained sidecar and clock diagnostics must be inspected".into());
+            }
+            if let Some(clock) = &mut self.report.clock {
+                clock.raw_companion = Some(summary);
             }
         }
         // Producer and ProcessTrace have ended; drain every remaining bounded page.
