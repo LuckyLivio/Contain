@@ -5,8 +5,11 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashSet};
 use std::fs::File;
 use std::fs::Metadata;
+#[cfg(test)]
 use std::fs::OpenOptions;
-use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+use std::os::windows::fs::MetadataExt;
+#[cfg(test)]
+use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::AsHandle;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -28,16 +31,18 @@ pub struct Snapshot {
     pub observations: BTreeMap<String, StateObservation>,
 }
 
-/// Includes ancestor-directory handles, not only files. A failed or exhausted
-/// lease never turns a readable resource into a missing snapshot entry.
+/// Bound for the test-only controlled-read mechanism. Production observations
+/// do not acquire exclusive leases while mutation coverage cannot be established.
 pub const OBSERVATION_HANDLE_LIMIT: usize = 256;
 
+#[cfg(test)]
 #[derive(Default)]
 struct ReadLeases {
     directories: BTreeMap<PathBuf, File>,
     files: BTreeMap<String, (File, Instant)>,
 }
 
+#[cfg(test)]
 impl ReadLeases {
     fn open(&mut self, path: &Path) -> Result<File> {
         use windows_sys::Win32::Storage::FileSystem::{
@@ -92,26 +97,34 @@ impl ReadLeases {
 
 pub struct ObservedSnapshot {
     snapshot: Snapshot,
+    #[cfg(test)]
     leases: ReadLeases,
 }
 
 impl ObservedSnapshot {
-    /// Call only after ETW stop, receiver drain, and writer finalization. Consumes
-    /// the leases immediately; subsequent changes cannot alter the recorded hash.
+    /// Call after ETW stop, receiver drain, and writer finalization to attach the
+    /// source outcome. Production reads hold no file or ancestor handles here.
     pub fn finish(mut self, before: &Snapshot, final_source_complete: bool) -> Snapshot {
+        #[cfg(test)]
         let retained_handles = self.leases.files.len() + self.leases.directories.len();
+        #[cfg(not(test))]
+        let retained_handles = 0;
         for (path, observation) in &mut self.snapshot.observations {
             let baseline = before.observations.get(path);
             observation.baseline_stable =
                 baseline.is_some_and(|b| b.content_stable && b.path_pinned);
             observation.baseline_identity = before.files.get(path).and_then(|f| f.identity.clone());
             observation.baseline_hash = before.files.get(path).map(|f| f.hash.clone());
-            observation.held_through_trace_stop = self.leases.files.contains_key(path);
+            #[cfg(test)]
+            {
+                observation.held_through_trace_stop = self.leases.files.contains_key(path);
+            }
             observation.final_source_complete = final_source_complete;
             // Unknown CreateFile disposition and filtered unresolved file paths
             // prevent a complete mutation account, even with zero reported loss.
             observation.mutation_coverage_complete = false;
             observation.retained_handles = Some(retained_handles);
+            #[cfg(test)]
             if let Some((_, started)) = self.leases.files.get(path) {
                 observation.exclusion_duration_ns =
                     Some(started.elapsed().as_nanos().min(u64::MAX as u128) as u64);
@@ -124,7 +137,9 @@ impl ObservedSnapshot {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ObservationMode {
     Shared,
+    #[cfg(test)]
     Baseline,
+    #[cfg(test)]
     Retained,
 }
 
@@ -157,18 +172,21 @@ pub fn snapshot(roots: &[PathBuf]) -> Result<Snapshot> {
     Ok(snapshot_inner(roots, ObservationMode::Shared)?.snapshot)
 }
 
-/// Run after trace readiness and before installer launch. Per-file read leases
-/// are released as soon as hashing finishes; unavailable leases fall back to the
-/// ordinary snapshot and cannot later justify a state promotion.
+/// Run after trace readiness and before installer launch. A shared read preserves
+/// the workload's write/delete sharing behavior, but cannot prove stable content.
 pub fn baseline_snapshot(roots: &[PathBuf]) -> Result<Snapshot> {
-    Ok(snapshot_inner(roots, ObservationMode::Baseline)?.snapshot)
+    Ok(observed_snapshot(roots)?.snapshot)
 }
 
-/// Active observation: deny new writes/deletes to successfully leased files and
-/// renames/deletes to pinned ancestors until `finish`. This is not a passive or
-/// globally atomic snapshot. All handles are bounded by OBSERVATION_HANDLE_LIMIT.
+/// Read through ordinary shared handles and retain diagnostic hashes/identities,
+/// not exclusion leases. Without complete mutation coverage, exclusive reads
+/// would interfere with the workload while providing no state attribution proof.
 pub fn observed_snapshot(roots: &[PathBuf]) -> Result<ObservedSnapshot> {
-    snapshot_inner(roots, ObservationMode::Retained)
+    let mut observed = snapshot_inner(roots, ObservationMode::Shared)?;
+    for read in observed.snapshot.observations.values_mut() {
+        read.failure = Some("Shared read without writer/path exclusion; content and namespace stability are unproven. Exclusive read leases are disabled because mutation coverage is incomplete.".into());
+    }
+    Ok(observed)
 }
 
 /// A missing after-entry cannot acquire an exclusion lease. Keep the baseline
@@ -196,8 +214,9 @@ pub fn change_observation(
     })
 }
 
-fn snapshot_inner(roots: &[PathBuf], mode: ObservationMode) -> Result<ObservedSnapshot> {
+fn snapshot_inner(roots: &[PathBuf], _mode: ObservationMode) -> Result<ObservedSnapshot> {
     let mut snapshot = Snapshot::default();
+    #[cfg(test)]
     let mut leases = ReadLeases::default();
     for root in roots {
         let skipped = RefCell::new(HashSet::new());
@@ -238,7 +257,10 @@ fn snapshot_inner(roots: &[PathBuf], mode: ObservationMode) -> Result<ObservedSn
                 ..Default::default()
             };
             let lease_started = Instant::now();
-            let controlled = if mode == ObservationMode::Shared {
+            #[cfg(not(test))]
+            let controlled: Option<File> = None;
+            #[cfg(test)]
+            let controlled = if _mode == ObservationMode::Shared {
                 None
             } else {
                 match leases.open(path) {
@@ -284,7 +306,8 @@ fn snapshot_inner(roots: &[PathBuf], mode: ObservationMode) -> Result<ObservedSn
                 observation.exclusion_duration_ns =
                     Some(lease_started.elapsed().as_nanos().min(u64::MAX as u128) as u64);
             }
-            if mode == ObservationMode::Retained && observation.content_stable {
+            #[cfg(test)]
+            if _mode == ObservationMode::Retained && observation.content_stable {
                 leases
                     .files
                     .insert(path_string.clone(), (file, lease_started));
@@ -303,7 +326,11 @@ fn snapshot_inner(roots: &[PathBuf], mode: ObservationMode) -> Result<ObservedSn
         }
         snapshot.unreadable.extend(skipped.into_inner());
     }
-    Ok(ObservedSnapshot { snapshot, leases })
+    Ok(ObservedSnapshot {
+        snapshot,
+        #[cfg(test)]
+        leases,
+    })
 }
 
 pub struct FileObserver {
@@ -412,6 +439,30 @@ pub fn diff(before: &Snapshot, after: &Snapshot, seen: &HashSet<PathBuf>) -> Vec
 mod tests {
     use super::*;
 
+    #[test]
+    fn production_read_does_not_block_writes_or_renames_for_unknown_state() {
+        let root = TestRoot::new();
+        let directory = root.0.join("directory");
+        std::fs::create_dir(&directory).unwrap();
+        let file = directory.join("file");
+        std::fs::write(&file, "before").unwrap();
+        let before = baseline_snapshot(std::slice::from_ref(&root.0)).unwrap();
+        let observed = observed_snapshot(std::slice::from_ref(&root.0)).unwrap();
+        // Keep the observation object alive, as capture does during STOP/drain.
+        std::fs::write(&file, "concurrent overwrite").unwrap();
+        std::fs::rename(&directory, root.0.join("renamed")).unwrap();
+        let after = observed.finish(&before, false);
+        assert!(after.observations.values().all(|read| !read.content_stable
+            && !read.path_pinned
+            && !read.write_delete_excluded
+            && !read.held_through_trace_stop
+            && !read.mutation_coverage_complete));
+        assert_eq!(
+            std::fs::read(root.0.join("renamed/file")).unwrap(),
+            b"concurrent overwrite"
+        );
+    }
+
     struct TestRoot(PathBuf);
     impl TestRoot {
         fn new() -> Self {
@@ -443,12 +494,15 @@ mod tests {
         std::fs::create_dir(&directory).unwrap();
         let file = directory.join("file");
         std::fs::write(&file, "before").unwrap();
-        let before = baseline_snapshot(std::slice::from_ref(&root.0)).unwrap();
+        let before = snapshot_inner(std::slice::from_ref(&root.0), ObservationMode::Baseline)
+            .unwrap()
+            .snapshot;
         let key = file.to_string_lossy().into_owned();
         assert!(before.observations[&key].content_stable);
         // Baseline leases must be gone before installer launch.
         std::fs::write(&file, "after").unwrap();
-        let observed = observed_snapshot(std::slice::from_ref(&root.0)).unwrap();
+        let observed =
+            snapshot_inner(std::slice::from_ref(&root.0), ObservationMode::Retained).unwrap();
         assert!(observed.snapshot.observations[&key].content_stable);
         assert!(std::fs::write(&file, "concurrent").is_err());
         assert!(std::fs::rename(&file, directory.join("replacement")).is_err());
@@ -475,8 +529,11 @@ mod tests {
         let path = root.0.join("file");
         std::fs::write(&path, "before").unwrap();
         let writer = OpenOptions::new().write(true).open(&path).unwrap();
-        let before = baseline_snapshot(std::slice::from_ref(&root.0)).unwrap();
-        let observed = observed_snapshot(std::slice::from_ref(&root.0)).unwrap();
+        let before = snapshot_inner(std::slice::from_ref(&root.0), ObservationMode::Baseline)
+            .unwrap()
+            .snapshot;
+        let observed =
+            snapshot_inner(std::slice::from_ref(&root.0), ObservationMode::Retained).unwrap();
         let after = observed.finish(&before, true);
         let key = path.to_string_lossy().into_owned();
         assert_eq!(before.files.len(), 1);
@@ -501,7 +558,8 @@ mod tests {
         for index in 0..300 {
             std::fs::write(root.0.join(format!("file-{index:03}")), "data").unwrap();
         }
-        let observed = observed_snapshot(std::slice::from_ref(&root.0)).unwrap();
+        let observed =
+            snapshot_inner(std::slice::from_ref(&root.0), ObservationMode::Retained).unwrap();
         assert_eq!(observed.snapshot.files.len(), 300);
         assert!(
             observed.leases.files.len() + observed.leases.directories.len()

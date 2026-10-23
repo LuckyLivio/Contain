@@ -84,9 +84,11 @@ Opt-in development experiments are tracked separately in the
 The [v0.4 development report](docs/validation-v0.4.md) records measured readback
 optimizations and attribution fixes. Release gates remain unmet; the package is
 still 0.3.1. The stabilization candidate separates receiving from SQLite and
-observes final resources while tracing. Optional successful file read leases
-temporarily restrict concurrent writes/deletes until stop/drain; they are not a
-global atomic snapshot. Uncovered open/truncate mutations and registry read races
+observes final resources while tracing. The administrator-run small ETW demo is
+now archived; it does not replace the 1,000/10,000-file acceptance runs. Controlled
+tests found that retained file read leases blocked legitimate operations, so the
+current candidate uses shared reads without retaining those restrictive handles.
+These reads are not a global atomic snapshot. Uncovered mutations and registry read races
 still prevent final-state ownership claims. Valid source actor evidence remains
 separate. The stabilization milestone is not yet accepted by live ETW validation.
 

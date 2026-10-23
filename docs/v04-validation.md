@@ -319,3 +319,112 @@ counters, fallback versus ETW acceptance, failed-attempt retention, committed-WA
 seed copying, scoped publication, view conflicts/missing ancestry and null metric
 semantics. They do not replace live Windows ETW, real installer or power-failure
 validation. Do not bump the release version while those required gates are unmet.
+
+
+## Read interference controls
+
+The retained final-read handles in `fd25e8d` changed the observed workload:
+18 of 24 independent worker operations failed with Win32 error **32** while the
+same operations succeeded without a reader and with the `a072072` shared reader.
+The failures were write-open, overwrite, truncate-on-open, file rename,
+replace-existing and parent-directory rename, each in all three trials. Fifteen
+failures also changed final bytes or namespace relative to their controls;
+write-open does not itself change bytes. Read-open and an already-open writer
+succeeded. All 24 separately initialized controls after releasing the candidate
+reader succeeded. This is a production interference defect, even though the
+candidate already kept final-state attribution Unknown.
+
+The repair uses shared reads for both production baseline and final snapshots.
+Hash and physical identity still come from the same open file where available;
+content stability, path stability, writer exclusion and retention through source
+stop are explicitly false, and no file or ancestor-directory handles survive the
+read. Mutation coverage remains incomplete, so this change promotes no final
+state. The old exclusive-handle mechanism remains only in controlled unit tests.
+
+| Direct API arm | Before: operation success | After: operation success | Before / after matching final states | After-release controls, before / after |
+|---|---:|---:|---:|---:|
+| No reader | 24/24 | 24/24 | 24/24 / 24/24 | 24/24 / 24/24 |
+| Baseline `a072072` shared read | 24/24 | 24/24 | 24/24 / 24/24 | 24/24 / 24/24 |
+| Candidate final-read API | 6/24 | 24/24 | 9/24 / 24/24 | 24/24 / 24/24 |
+
+These are local, non-elevated Windows **snapshot API controls**, with no ETW
+session or full `contain install`. Each phase recorded 144 operations including
+all controls; the original 18 failures remain in the 288-operation record. This
+is not a performance benchmark or an installation-accuracy result.
+
+The identical `crates/contain-core/examples/read_interference.rs` harness was
+built against baseline `a072072ad805880290fd1f47f67fba6828d2c24e`, candidate
+`fd25e8d7b614f73659760b807bf85dc5cc43325d`, and the latter archive with **only**
+this report's `filesystem.rs` shared-read change. Each operation runs in an
+independent worker process. A pipe barrier orders worker-ready, read-API-return,
+exactly one operation, worker-exit and reader release. An existing writer is
+opened before worker-ready in its dedicated case. No sleeps select successful
+overlap. Arm order rotates across three trials. The historical `leased` harness
+mode selects `observed_snapshot`; after the repair that API retains zero handles.
+
+The barrier deliberately tests the finite post-read, pre-release interval that
+production previously extended until trace stop/drain. It does not measure the
+probability of natural overlap, concurrent access during hashing, or every
+possible installer operation. A shared `File::open` can still affect requests for
+exclusive access during its brief read, as the baseline did. After-release
+controls use a fresh equivalent tree, so a successful rename/replacement is not
+retried against a different namespace. Every operation's numeric error, exact
+final bytes and relative namespace are retained independently of Contain's
+attribution.
+
+[The numeric archive](examples/read-interference.json) records source, harness,
+runner, binary and raw-result SHA-256 hashes, system/compiler, every arm/case
+count, all 18 failed operations and their exact final-state variants. The local
+raw records are `target/interference/{before,after}/results.json`, with per-trial
+stdout/stderr and untouched fixture trees. These local records are ignored by
+Git; the compact archive excludes personal paths. Isolated core regression was
+125 passed / 3 ignored, including all 9 filesystem tests; the harness and runner
+had 2 passing tests each. The new production regression first failed with error
+32 and then passed. Logs are `target/interference/production-isolated-{red,green}.log`,
+`isolated-core-final.log`, `harness-tests.log` and `runner-tests.log`. The earlier
+`production-interference-red.log` contains a concurrent integration compilation
+failure and is not the fail-first evidence.
+
+To reproduce, use an ordinary Windows terminal and a new output directory. The
+following builds isolated debug binaries; it does not overwrite `target/release`.
+Verify the harness and overlaid `filesystem.rs` SHA-256 against the numeric
+archive before interpreting results. Later code changes require a new experiment
+identity and cannot be substituted for this recorded patch.
+
+```powershell
+$cargoExe = "$env:USERPROFILE\.cargo\bin\cargo.exe"
+$experimentRoot = Join-Path (Get-Location) 'target\interference-reproduce'
+if (Test-Path -LiteralPath $experimentRoot) { throw 'Choose a new experiment directory' }
+New-Item -ItemType Directory -Path $experimentRoot | Out-Null
+git archive a072072ad805880290fd1f47f67fba6828d2c24e --output "$experimentRoot\baseline.tar"
+git archive fd25e8d7b614f73659760b807bf85dc5cc43325d --output "$experimentRoot\candidate.tar"
+foreach ($name in @('baseline', 'before', 'after')) {
+    $sourceDir = Join-Path $experimentRoot $name
+    New-Item -ItemType Directory -Path $sourceDir | Out-Null
+    $archive = if ($name -eq 'baseline') { 'baseline.tar' } else { 'candidate.tar' }
+    tar -xf (Join-Path $experimentRoot $archive) -C $sourceDir
+    New-Item -ItemType Directory -Path "$sourceDir\crates\contain-core\examples" -Force | Out-Null
+    Copy-Item crates/contain-core/examples/read_interference.rs "$sourceDir\crates\contain-core\examples\read_interference.rs"
+}
+Copy-Item crates/contain-core/src/filesystem.rs "$experimentRoot\after\crates\contain-core\src\filesystem.rs"
+Get-FileHash crates/contain-core/examples/read_interference.rs, "$experimentRoot\after\crates\contain-core\src\filesystem.rs" -Algorithm SHA256
+& $cargoExe build --locked --manifest-path "$experimentRoot\baseline\Cargo.toml" -p contain-core --example read_interference --target-dir "$experimentRoot\build"
+if ($LASTEXITCODE -ne 0) { throw 'Baseline build failed' }
+Copy-Item "$experimentRoot\build\debug\examples\read_interference.exe" "$experimentRoot\baseline.exe"
+foreach ($name in @('before', 'after')) {
+    & $cargoExe rustc --locked --manifest-path "$experimentRoot\$name\Cargo.toml" -p contain-core --example read_interference --target-dir "$experimentRoot\build" -- --cfg contain_candidate_observer
+    if ($LASTEXITCODE -ne 0) { throw "Candidate build failed: $name" }
+    Copy-Item "$experimentRoot\build\debug\examples\read_interference.exe" "$experimentRoot\$name.exe"
+}
+python scripts/read-interference.py --baseline "$experimentRoot\baseline.exe" --candidate "$experimentRoot\before.exe" --baseline-revision a072072ad805880290fd1f47f67fba6828d2c24e --candidate-revision fd25e8d7b614f73659760b807bf85dc5cc43325d --trials 3 --output "$experimentRoot\results-before"
+python scripts/read-interference.py --baseline "$experimentRoot\baseline.exe" --candidate "$experimentRoot\after.exe" --baseline-revision a072072ad805880290fd1f47f67fba6828d2c24e --candidate-revision fd25e8d7b614f73659760b807bf85dc5cc43325d-plus-filesystem-shared-read-fix --trials 3 --output "$experimentRoot\results-after"
+```
+
+The next validation must run the full CLI with ETW in an isolated, recoverable
+administrator Windows guest, retaining no-monitor/baseline/candidate controls
+and an independent worker oracle. Record actual read/operation overlap,
+operation errors and final bytes, event loss, complete drain and clock evidence.
+Retain failed operations and unchanged scoring rules. Until then this experiment
+establishes the retained-handle defect and its narrow repair only; live ETW
+interference, universal noninterference and vendor-installer validation remain
+unvalidated.

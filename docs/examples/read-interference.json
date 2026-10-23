@@ -1,0 +1,913 @@
+{
+  "schema": 1,
+  "scope": "direct_final_read_api_post_hash_pre_release_window",
+  "etw_started": false,
+  "whole_cli_validation": false,
+  "natural_overlap_probability_measured": false,
+  "system": "Windows",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "build_profile": "dev (debug)",
+  "same_harness_sha256": "9234c3ac5000840d43cd5e5d3072e26c657d77aa6b5bfab9c19b90f516014115",
+  "runner_sha256": "179858c14aed075556a4ebe0abb37dbd6fdf0a19baefed96794c651635372026",
+  "baseline_source": "a072072ad805880290fd1f47f67fba6828d2c24e",
+  "candidate_before_source": "fd25e8d7b614f73659760b807bf85dc5cc43325d",
+  "candidate_after_source": "fd25e8d7b614f73659760b807bf85dc5cc43325d with only filesystem.rs shared-read patch and identical harness",
+  "baseline_archive_sha256": "e94cc181a94b46402dad448c877cd3702cdbb0c429502a7a91aa8147f73a3b3d",
+  "candidate_before_archive_sha256": "e104e4171f5fb6480a2d09059eae8e3b2e840ba77cd3a291dcfbcd161d6e0020",
+  "baseline_filesystem_sha256": "823234f528415252a89cb5758a7c317d3fe8b48a29be937c061636bd35315650",
+  "candidate_before_filesystem_sha256": "60ba72843a7133856114d809ef742807fda3df0f312f760765044e8ac40349fd",
+  "candidate_after_filesystem_sha256": "3dcbab871bc919c740a651e314ae39d5f1be07e45373d257054163d1c3d5ce08",
+  "raw_results": {
+    "before": {
+      "path": "target/interference/before/results.json",
+      "sha256": "31614df8c48b9cc6693bb64492e2f4cf95aa15dc108ecbaa7cfcee7452b80241"
+    },
+    "after": {
+      "path": "target/interference/after/results.json",
+      "sha256": "ef01db734747281d1093eb6b7e1ff3aa47a6d1311a6f879c6bccecebaea8ffda"
+    }
+  },
+  "baseline_binary_sha256": "f89d6cc3f1db6beee7036808b3cab4b9ed0418a8b7fdbae8dda423e30c95c090",
+  "candidate_before_binary_sha256": "67498a738566fbb52ce1c71710dabfc38e99f6c34a12be95ded64de4370e8b46",
+  "candidate_after_binary_sha256": "6271b48e3216e4e0ae0dc0c7c22c381e5dff2dd8b58922774a25d397fa8b22f9",
+  "trials_per_arm": 3,
+  "operations_per_trial": 8,
+  "after_release_operations_per_trial": 8,
+  "total_recorded_operations_including_all_controls": 288,
+  "all_attempts_collected": true,
+  "binaries_unchanged": true,
+  "before_summary": [
+    {
+      "arm": "no_monitor",
+      "case": "read_open",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "no_monitor",
+      "case": "write_open",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "no_monitor",
+      "case": "overwrite",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "no_monitor",
+      "case": "truncate_open",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "no_monitor",
+      "case": "rename_file",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "no_monitor",
+      "case": "replace_file",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "no_monitor",
+      "case": "rename_parent",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "no_monitor",
+      "case": "preexisting_writer",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "baseline",
+      "case": "read_open",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "baseline",
+      "case": "write_open",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "baseline",
+      "case": "overwrite",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "baseline",
+      "case": "truncate_open",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "baseline",
+      "case": "rename_file",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "baseline",
+      "case": "replace_file",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "baseline",
+      "case": "rename_parent",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "baseline",
+      "case": "preexisting_writer",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "candidate",
+      "case": "read_open",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "candidate",
+      "case": "write_open",
+      "attempts": 3,
+      "success": 0,
+      "error_codes": {
+        "32": 3
+      },
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "candidate",
+      "case": "overwrite",
+      "attempts": 3,
+      "success": 0,
+      "error_codes": {
+        "32": 3
+      },
+      "after_release_success": 3,
+      "final_state_matches_control": 0
+    },
+    {
+      "arm": "candidate",
+      "case": "truncate_open",
+      "attempts": 3,
+      "success": 0,
+      "error_codes": {
+        "32": 3
+      },
+      "after_release_success": 3,
+      "final_state_matches_control": 0
+    },
+    {
+      "arm": "candidate",
+      "case": "rename_file",
+      "attempts": 3,
+      "success": 0,
+      "error_codes": {
+        "32": 3
+      },
+      "after_release_success": 3,
+      "final_state_matches_control": 0
+    },
+    {
+      "arm": "candidate",
+      "case": "replace_file",
+      "attempts": 3,
+      "success": 0,
+      "error_codes": {
+        "32": 3
+      },
+      "after_release_success": 3,
+      "final_state_matches_control": 0
+    },
+    {
+      "arm": "candidate",
+      "case": "rename_parent",
+      "attempts": 3,
+      "success": 0,
+      "error_codes": {
+        "32": 3
+      },
+      "after_release_success": 3,
+      "final_state_matches_control": 0
+    },
+    {
+      "arm": "candidate",
+      "case": "preexisting_writer",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    }
+  ],
+  "after_summary": [
+    {
+      "arm": "no_monitor",
+      "case": "read_open",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "no_monitor",
+      "case": "write_open",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "no_monitor",
+      "case": "overwrite",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "no_monitor",
+      "case": "truncate_open",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "no_monitor",
+      "case": "rename_file",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "no_monitor",
+      "case": "replace_file",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "no_monitor",
+      "case": "rename_parent",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "no_monitor",
+      "case": "preexisting_writer",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "baseline",
+      "case": "read_open",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "baseline",
+      "case": "write_open",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "baseline",
+      "case": "overwrite",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "baseline",
+      "case": "truncate_open",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "baseline",
+      "case": "rename_file",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "baseline",
+      "case": "replace_file",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "baseline",
+      "case": "rename_parent",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "baseline",
+      "case": "preexisting_writer",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "candidate",
+      "case": "read_open",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "candidate",
+      "case": "write_open",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "candidate",
+      "case": "overwrite",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "candidate",
+      "case": "truncate_open",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "candidate",
+      "case": "rename_file",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "candidate",
+      "case": "replace_file",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "candidate",
+      "case": "rename_parent",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    },
+    {
+      "arm": "candidate",
+      "case": "preexisting_writer",
+      "attempts": 3,
+      "success": 3,
+      "error_codes": {},
+      "after_release_success": 3,
+      "final_state_matches_control": 3
+    }
+  ],
+  "failed_operations": [
+    {
+      "arm": "candidate",
+      "trial": 1,
+      "case": "write_open",
+      "error_code": 32,
+      "attempts": 1,
+      "elapsed_ns": "486600",
+      "final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021",
+      "after_release_success": true,
+      "after_release_final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021"
+    },
+    {
+      "arm": "candidate",
+      "trial": 1,
+      "case": "overwrite",
+      "error_code": 32,
+      "attempts": 1,
+      "elapsed_ns": "503400",
+      "final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021",
+      "after_release_success": true,
+      "after_release_final_state_id": "52a6e1aacd5b55345a5e6a2a5ec7458542b7d282874fbde28bac27d387634aeb"
+    },
+    {
+      "arm": "candidate",
+      "trial": 1,
+      "case": "truncate_open",
+      "error_code": 32,
+      "attempts": 1,
+      "elapsed_ns": "469800",
+      "final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021",
+      "after_release_success": true,
+      "after_release_final_state_id": "07cabfa2f59989424c30271262a700be53d209db326f85137b405c875324186e"
+    },
+    {
+      "arm": "candidate",
+      "trial": 1,
+      "case": "rename_file",
+      "error_code": 32,
+      "attempts": 1,
+      "elapsed_ns": "543600",
+      "final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021",
+      "after_release_success": true,
+      "after_release_final_state_id": "3b20c38554816eb69e35ff2058050cb64b35dfcff28ec6792aaec3748b8415f9"
+    },
+    {
+      "arm": "candidate",
+      "trial": 1,
+      "case": "replace_file",
+      "error_code": 32,
+      "attempts": 1,
+      "elapsed_ns": "497900",
+      "final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021",
+      "after_release_success": true,
+      "after_release_final_state_id": "61889b6c7497b2907ec57b6e04e3336a401f9e78848d1144544e246f677cd181"
+    },
+    {
+      "arm": "candidate",
+      "trial": 1,
+      "case": "rename_parent",
+      "error_code": 32,
+      "attempts": 1,
+      "elapsed_ns": "499000",
+      "final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021",
+      "after_release_success": true,
+      "after_release_final_state_id": "42499fd1682565f89d7db687a6fe40e2f5fc04d30d5d72b774c84475d02bad45"
+    },
+    {
+      "arm": "candidate",
+      "trial": 2,
+      "case": "write_open",
+      "error_code": 32,
+      "attempts": 1,
+      "elapsed_ns": "483300",
+      "final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021",
+      "after_release_success": true,
+      "after_release_final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021"
+    },
+    {
+      "arm": "candidate",
+      "trial": 2,
+      "case": "overwrite",
+      "error_code": 32,
+      "attempts": 1,
+      "elapsed_ns": "589100",
+      "final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021",
+      "after_release_success": true,
+      "after_release_final_state_id": "52a6e1aacd5b55345a5e6a2a5ec7458542b7d282874fbde28bac27d387634aeb"
+    },
+    {
+      "arm": "candidate",
+      "trial": 2,
+      "case": "truncate_open",
+      "error_code": 32,
+      "attempts": 1,
+      "elapsed_ns": "488000",
+      "final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021",
+      "after_release_success": true,
+      "after_release_final_state_id": "07cabfa2f59989424c30271262a700be53d209db326f85137b405c875324186e"
+    },
+    {
+      "arm": "candidate",
+      "trial": 2,
+      "case": "rename_file",
+      "error_code": 32,
+      "attempts": 1,
+      "elapsed_ns": "482200",
+      "final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021",
+      "after_release_success": true,
+      "after_release_final_state_id": "3b20c38554816eb69e35ff2058050cb64b35dfcff28ec6792aaec3748b8415f9"
+    },
+    {
+      "arm": "candidate",
+      "trial": 2,
+      "case": "replace_file",
+      "error_code": 32,
+      "attempts": 1,
+      "elapsed_ns": "507600",
+      "final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021",
+      "after_release_success": true,
+      "after_release_final_state_id": "61889b6c7497b2907ec57b6e04e3336a401f9e78848d1144544e246f677cd181"
+    },
+    {
+      "arm": "candidate",
+      "trial": 2,
+      "case": "rename_parent",
+      "error_code": 32,
+      "attempts": 1,
+      "elapsed_ns": "501800",
+      "final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021",
+      "after_release_success": true,
+      "after_release_final_state_id": "42499fd1682565f89d7db687a6fe40e2f5fc04d30d5d72b774c84475d02bad45"
+    },
+    {
+      "arm": "candidate",
+      "trial": 3,
+      "case": "write_open",
+      "error_code": 32,
+      "attempts": 1,
+      "elapsed_ns": "450900",
+      "final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021",
+      "after_release_success": true,
+      "after_release_final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021"
+    },
+    {
+      "arm": "candidate",
+      "trial": 3,
+      "case": "overwrite",
+      "error_code": 32,
+      "attempts": 1,
+      "elapsed_ns": "547600",
+      "final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021",
+      "after_release_success": true,
+      "after_release_final_state_id": "52a6e1aacd5b55345a5e6a2a5ec7458542b7d282874fbde28bac27d387634aeb"
+    },
+    {
+      "arm": "candidate",
+      "trial": 3,
+      "case": "truncate_open",
+      "error_code": 32,
+      "attempts": 1,
+      "elapsed_ns": "423300",
+      "final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021",
+      "after_release_success": true,
+      "after_release_final_state_id": "07cabfa2f59989424c30271262a700be53d209db326f85137b405c875324186e"
+    },
+    {
+      "arm": "candidate",
+      "trial": 3,
+      "case": "rename_file",
+      "error_code": 32,
+      "attempts": 1,
+      "elapsed_ns": "526100",
+      "final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021",
+      "after_release_success": true,
+      "after_release_final_state_id": "3b20c38554816eb69e35ff2058050cb64b35dfcff28ec6792aaec3748b8415f9"
+    },
+    {
+      "arm": "candidate",
+      "trial": 3,
+      "case": "replace_file",
+      "error_code": 32,
+      "attempts": 1,
+      "elapsed_ns": "567300",
+      "final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021",
+      "after_release_success": true,
+      "after_release_final_state_id": "61889b6c7497b2907ec57b6e04e3336a401f9e78848d1144544e246f677cd181"
+    },
+    {
+      "arm": "candidate",
+      "trial": 3,
+      "case": "rename_parent",
+      "error_code": 32,
+      "attempts": 1,
+      "elapsed_ns": "463500",
+      "final_state_id": "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021",
+      "after_release_success": true,
+      "after_release_final_state_id": "42499fd1682565f89d7db687a6fe40e2f5fc04d30d5d72b774c84475d02bad45"
+    }
+  ],
+  "final_state_catalog": {
+    "3a7c276d22ad24da2cc6e9951441156011abd788f848151fb027877a7d9dd021": {
+      "bytes_encoding": "hex",
+      "resources": [
+        {
+          "bytes": "6f726967696e616c20636f6e74656e74",
+          "exists": true,
+          "read_error_code": null,
+          "resource": "directory/target.bin"
+        },
+        {
+          "bytes": null,
+          "exists": false,
+          "read_error_code": 2,
+          "resource": "directory/renamed.bin"
+        },
+        {
+          "bytes": "7265706c6163656d656e7420636f6e74656e74",
+          "exists": true,
+          "read_error_code": null,
+          "resource": "directory/replacement.bin"
+        },
+        {
+          "bytes": null,
+          "exists": false,
+          "read_error_code": 3,
+          "resource": "renamed-directory/target.bin"
+        },
+        {
+          "bytes": null,
+          "exists": false,
+          "read_error_code": 3,
+          "resource": "renamed-directory/replacement.bin"
+        }
+      ]
+    },
+    "52a6e1aacd5b55345a5e6a2a5ec7458542b7d282874fbde28bac27d387634aeb": {
+      "bytes_encoding": "hex",
+      "resources": [
+        {
+          "bytes": "6f7665727772697474656e20636f6e74656e74",
+          "exists": true,
+          "read_error_code": null,
+          "resource": "directory/target.bin"
+        },
+        {
+          "bytes": null,
+          "exists": false,
+          "read_error_code": 2,
+          "resource": "directory/renamed.bin"
+        },
+        {
+          "bytes": "7265706c6163656d656e7420636f6e74656e74",
+          "exists": true,
+          "read_error_code": null,
+          "resource": "directory/replacement.bin"
+        },
+        {
+          "bytes": null,
+          "exists": false,
+          "read_error_code": 3,
+          "resource": "renamed-directory/target.bin"
+        },
+        {
+          "bytes": null,
+          "exists": false,
+          "read_error_code": 3,
+          "resource": "renamed-directory/replacement.bin"
+        }
+      ]
+    },
+    "07cabfa2f59989424c30271262a700be53d209db326f85137b405c875324186e": {
+      "bytes_encoding": "hex",
+      "resources": [
+        {
+          "bytes": "",
+          "exists": true,
+          "read_error_code": null,
+          "resource": "directory/target.bin"
+        },
+        {
+          "bytes": null,
+          "exists": false,
+          "read_error_code": 2,
+          "resource": "directory/renamed.bin"
+        },
+        {
+          "bytes": "7265706c6163656d656e7420636f6e74656e74",
+          "exists": true,
+          "read_error_code": null,
+          "resource": "directory/replacement.bin"
+        },
+        {
+          "bytes": null,
+          "exists": false,
+          "read_error_code": 3,
+          "resource": "renamed-directory/target.bin"
+        },
+        {
+          "bytes": null,
+          "exists": false,
+          "read_error_code": 3,
+          "resource": "renamed-directory/replacement.bin"
+        }
+      ]
+    },
+    "3b20c38554816eb69e35ff2058050cb64b35dfcff28ec6792aaec3748b8415f9": {
+      "bytes_encoding": "hex",
+      "resources": [
+        {
+          "bytes": null,
+          "exists": false,
+          "read_error_code": 2,
+          "resource": "directory/target.bin"
+        },
+        {
+          "bytes": "6f726967696e616c20636f6e74656e74",
+          "exists": true,
+          "read_error_code": null,
+          "resource": "directory/renamed.bin"
+        },
+        {
+          "bytes": "7265706c6163656d656e7420636f6e74656e74",
+          "exists": true,
+          "read_error_code": null,
+          "resource": "directory/replacement.bin"
+        },
+        {
+          "bytes": null,
+          "exists": false,
+          "read_error_code": 3,
+          "resource": "renamed-directory/target.bin"
+        },
+        {
+          "bytes": null,
+          "exists": false,
+          "read_error_code": 3,
+          "resource": "renamed-directory/replacement.bin"
+        }
+      ]
+    },
+    "61889b6c7497b2907ec57b6e04e3336a401f9e78848d1144544e246f677cd181": {
+      "bytes_encoding": "hex",
+      "resources": [
+        {
+          "bytes": "7265706c6163656d656e7420636f6e74656e74",
+          "exists": true,
+          "read_error_code": null,
+          "resource": "directory/target.bin"
+        },
+        {
+          "bytes": null,
+          "exists": false,
+          "read_error_code": 2,
+          "resource": "directory/renamed.bin"
+        },
+        {
+          "bytes": null,
+          "exists": false,
+          "read_error_code": 2,
+          "resource": "directory/replacement.bin"
+        },
+        {
+          "bytes": null,
+          "exists": false,
+          "read_error_code": 3,
+          "resource": "renamed-directory/target.bin"
+        },
+        {
+          "bytes": null,
+          "exists": false,
+          "read_error_code": 3,
+          "resource": "renamed-directory/replacement.bin"
+        }
+      ]
+    },
+    "42499fd1682565f89d7db687a6fe40e2f5fc04d30d5d72b774c84475d02bad45": {
+      "bytes_encoding": "hex",
+      "resources": [
+        {
+          "bytes": null,
+          "exists": false,
+          "read_error_code": 3,
+          "resource": "directory/target.bin"
+        },
+        {
+          "bytes": null,
+          "exists": false,
+          "read_error_code": 3,
+          "resource": "directory/renamed.bin"
+        },
+        {
+          "bytes": null,
+          "exists": false,
+          "read_error_code": 3,
+          "resource": "directory/replacement.bin"
+        },
+        {
+          "bytes": "6f726967696e616c20636f6e74656e74",
+          "exists": true,
+          "read_error_code": null,
+          "resource": "renamed-directory/target.bin"
+        },
+        {
+          "bytes": "7265706c6163656d656e7420636f6e74656e74",
+          "exists": true,
+          "read_error_code": null,
+          "resource": "renamed-directory/replacement.bin"
+        }
+      ]
+    }
+  },
+  "limitations": [
+    "No ETW session or full Contain install ran.",
+    "Barrier fixes overlap after final-read API return and before release; no natural overlap frequency is measured.",
+    "Shared File::open can still affect requests for exclusive access during its brief actual read, as in the baseline.",
+    "After-release controls use a separately initialized equivalent tree, not retries against an already renamed or replaced target.",
+    "Mode leased in the historical runner selects observed_snapshot; the after implementation itself uses shared reads and holds zero handles."
+  ],
+  "public_redaction": {
+    "fields": [
+      "$.system",
+      "$.rustc (verbose platform details)"
+    ],
+    "meaning": "Withheld host metadata and historical branch labels are null, not zero. Original artifact digests refer to retained local pre-redaction evidence. Measured workload results and failed attempts are unchanged."
+  }
+}
