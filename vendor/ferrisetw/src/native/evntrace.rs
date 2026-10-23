@@ -2,7 +2,7 @@
 //!
 //! This module makes sure the calls are safe memory-wise, but does not attempt to ensure they are called in the right order.<br/>
 //! Thus, you should prefer using `UserTrace`s, `KernelTrace`s and `TraceBuilder`s, that will ensure these API are correctly used.
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::ffi::c_void;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
@@ -44,45 +44,57 @@ pub enum EvntraceNativeError {
 
 pub(crate) type EvntraceNativeResult<T> = Result<T, EvntraceNativeError>;
 
-/// When a trace is closing, it is possible that every past events have not been processed yet.
-/// These events will still be fed to the callback, **after** the trace has been closed
-/// (see `ERROR_CTX_CLOSE_PENDING` in https://learn.microsoft.com/en-us/windows/win32/api/evntrace/nf-evntrace-closetrace#remarks)
-/// Also, there is no way to tell which callback invocation is the last one.
-///
-/// But, we would like to free memory used by the callbacks when we're done!
-/// Since that is not possible, let's discard every callback run after we've called `CloseTrace`.
-/// That's the purpose of this set.
-///
-/// TODO: it _might_ be possible to know whether we've processed the last buffered event, as
-///       ControlTraceW(EVENT_TRACE_CONTROL_QUERY) _might_ tell us if the buffers are empty or not.
-///       In case the trace is in ERROR_CTX_CLOSE_PENDING state, we could call this after every
-///       callback so that we know when to actually free memory used by the (now useless) callback.
-///       Maybe also setting the BufferCallback in EVENT_TRACE_LOGFILEW may help us.
-///       That's <https://github.com/n4r1b/ferrisetw/issues/62>
-static UNIQUE_VALID_CONTEXTS: UniqueValidContexts = UniqueValidContexts::new();
-struct UniqueValidContexts(Lazy<Mutex<HashSet<u64>>>);
+// CloseTrace may leave buffered callbacks pending. Context is therefore an opaque,
+// never-reused token, not a pointer to trace-owned memory. Acquiring an Arc and
+// removing a registration share one lock; a callback already acquired at close
+// remains alive, while later callbacks cannot attach to a newly allocated trace.
+static CALLBACK_CONTEXTS: CallbackContexts = CallbackContexts::new();
+struct CallbackContexts(Lazy<Mutex<ContextState>>);
+#[derive(Default)]
+struct ContextState {
+    last_token: usize,
+    callbacks: HashMap<usize, Arc<CallbackData>>,
+    owners: HashMap<usize, usize>,
+}
+#[derive(Debug, PartialEq, Eq)]
 enum ContextError {
     AlreadyExist,
+    Exhausted,
 }
 
-impl UniqueValidContexts {
+impl CallbackContexts {
     pub const fn new() -> Self {
-        Self(Lazy::new(|| Mutex::new(HashSet::new())))
+        Self(Lazy::new(|| Mutex::new(ContextState::default())))
     }
-    /// Insert if it did not exist previously
-    fn insert(&self, ctx_ptr: *const c_void) -> Result<(), ContextError> {
-        match self.0.lock().unwrap().insert(ctx_ptr as u64) {
-            true => Ok(()),
-            false => Err(ContextError::AlreadyExist),
+    fn insert(&self, owner: usize, callback: &Arc<CallbackData>) -> Result<usize, ContextError> {
+        let mut state = self.0.lock().unwrap();
+        if state.owners.contains_key(&owner) {
+            return Err(ContextError::AlreadyExist);
         }
+        let token = state
+            .last_token
+            .checked_add(1)
+            .ok_or(ContextError::Exhausted)?;
+        state.callbacks.insert(token, Arc::clone(callback));
+        state.owners.insert(owner, token);
+        state.last_token = token;
+        Ok(token)
     }
 
-    fn remove(&self, ctx_ptr: *const c_void) {
-        self.0.lock().unwrap().remove(&(ctx_ptr as u64));
+    fn remove(&self, owner: usize) {
+        let removed = {
+            let mut state = self.0.lock().unwrap();
+            state
+                .owners
+                .remove(&owner)
+                .and_then(|token| state.callbacks.remove(&token))
+        };
+        // Dropping captured user state must not run while holding the registry lock.
+        drop(removed);
     }
 
-    pub fn is_valid(&self, ctx_ptr: *const c_void) -> bool {
-        self.0.lock().unwrap().contains(&(ctx_ptr as u64))
+    fn acquire(&self, token: usize) -> Option<Arc<CallbackData>> {
+        self.0.lock().unwrap().callbacks.get(&token).cloned()
     }
 }
 
@@ -95,26 +107,10 @@ extern "system" fn trace_callback_thunk(p_record: *mut Etw::EVENT_RECORD) {
         };
 
         if let Some(event_record) = record_from_ptr {
-            let p_user_context = event_record.user_context();
-            if !UNIQUE_VALID_CONTEXTS.is_valid(p_user_context) {
-                return;
-            }
-            let p_callback_data = p_user_context.cast::<Arc<CallbackData>>();
-            let callback_data = unsafe {
-                // Safety:
-                //  * the API of this create guarantees this points to a `CallbackData` already allocated and created
-                //  * we've just checked using UNIQUE_VALID_CONTEXTS that this `CallbackData` has not been dropped
-                //  * the API of this crate guarantees this `CallbackData` is not mutated from another thread during the trace:
-                //      * we're the only one to change CallbackData::events_handled (and that's an atomic, so it's fine)
-                //      * the list of Providers is a constant (may change in the future with #54)
-                //      * the schema_locator only has interior mutability
-                p_callback_data.as_ref()
-            };
-            if let Some(callback_data) = callback_data {
-                // The UserContext is owned by the `Trace` object. When it is dropped, so will the UserContext.
-                // We clone it now, so that the original Arc can be safely dropped at all times, but the callback data (including the closure captured context) will still be alive until the callback ends.
-                let cloned_arc = Arc::clone(callback_data);
-                cloned_arc.on_event(event_record);
+            if let Some(callback_data) =
+                CALLBACK_CONTEXTS.acquire(event_record.user_context() as usize)
+            {
+                callback_data.on_event(event_record);
             }
         }
     })) {
@@ -206,11 +202,17 @@ pub(crate) fn open_trace(
     let mut log_file =
         EventTraceLogfile::create(callback_data, subscription_source, trace_callback_thunk);
 
-    if let Err(ContextError::AlreadyExist) = UNIQUE_VALID_CONTEXTS.insert(log_file.context_ptr()) {
-        // That's probably possible to get multiple handles to the same trace, by opening them multiple times.
-        // But that's left as a future TODO. Making things right and safe is difficult enough with a single opening of the trace already.
-        return Err(EvntraceNativeError::AlreadyExist);
-    }
+    // The builder's context initially identifies this live owner. Windows only
+    // receives a fresh opaque token; it never receives that allocation address.
+    let owner = log_file.context_ptr() as usize;
+    let token = CALLBACK_CONTEXTS
+        .insert(owner, callback_data.as_ref())
+        .map_err(|error| match error {
+            ContextError::AlreadyExist => EvntraceNativeError::AlreadyExist,
+            ContextError::Exhausted => EvntraceNativeError::IoError(std::io::Error::other(
+                "ETW callback context token space exhausted",
+            )),
+        })?;
 
     let trace_handle = unsafe {
         // This function modifies the data pointed to by log_file.
@@ -218,13 +220,17 @@ pub(crate) fn open_trace(
         //
         // > On success, OpenTrace will update the structure with information from the opened file or session.
         // https://learn.microsoft.com/en-us/windows/win32/api/evntrace/nf-evntrace-opentracea
-        Etw::OpenTraceW(log_file.as_mut_ptr())
+        let native = log_file.as_mut_ptr();
+        // Context is copied unchanged into EVENT_RECORD.UserContext. It is an
+        // integer token encoded in the pointer-sized field, never dereferenced.
+        (*native).Context = token as *mut c_void;
+        Etw::OpenTraceW(native)
     };
 
     if filter_invalid_trace_handles(trace_handle).is_none() {
         let error = std::io::Error::last_os_error();
         // OpenTrace never installed a consumer, so no close_trace will follow.
-        UNIQUE_VALID_CONTEXTS.remove(log_file.context_ptr());
+        CALLBACK_CONTEXTS.remove(owner);
         Err(EvntraceNativeError::IoError(error))
     } else {
         callback_data.set_trace_header(log_file.trace_header());
@@ -368,9 +374,7 @@ pub(crate) fn close_trace(
     match filter_invalid_trace_handles(trace_handle) {
         None => Err(EvntraceNativeError::InvalidHandle),
         Some(handle) => {
-            // By contruction, only one Provider used this context in its callback. It is safe to remove it, it won't be used by anyone else.
-            UNIQUE_VALID_CONTEXTS
-                .remove(callback_data.as_ref() as *const Arc<CallbackData> as *const c_void);
+            CALLBACK_CONTEXTS.remove(callback_data.as_ref() as *const Arc<CallbackData> as usize);
 
             let status = unsafe { Etw::CloseTrace(handle) }.ok();
 
@@ -408,6 +412,131 @@ mod contain_context_tests {
     use super::*;
     use crate::trace::callback_data::CallbackDataFromFile;
 
+    fn callback_data() -> Arc<CallbackData> {
+        Arc::new(CallbackData::FromFile(CallbackDataFromFile::new(Box::new(
+            |_, _| {},
+        ))))
+    }
+
+    #[test]
+    fn acquired_callback_ownership_survives_close_then_releases() {
+        let contexts = CallbackContexts::new();
+        let data = callback_data();
+        let lifetime = Arc::downgrade(&data);
+        let token = contexts.insert(1, &data).unwrap();
+        let acquired = contexts.acquire(token).unwrap();
+        drop(data);
+        contexts.remove(1);
+        assert!(contexts.acquire(token).is_none());
+        assert!(lifetime.upgrade().is_some());
+        drop(acquired);
+        assert!(lifetime.upgrade().is_none());
+    }
+
+    #[test]
+    fn reused_owner_address_cannot_receive_callbacks_for_old_registration() {
+        let contexts = CallbackContexts::new();
+        let old = callback_data();
+        let replacement = callback_data();
+        let original = contexts.insert(7, &old).unwrap();
+        assert_eq!(
+            contexts.insert(7, &replacement),
+            Err(ContextError::AlreadyExist)
+        );
+        assert!(Arc::ptr_eq(&contexts.acquire(original).unwrap(), &old));
+        contexts.remove(7);
+        let new = contexts.insert(7, &replacement).unwrap();
+        assert!(new > original);
+        assert!(contexts.acquire(original).is_none());
+        assert!(contexts.acquire(0).is_none());
+        assert!(Arc::ptr_eq(&contexts.acquire(new).unwrap(), &replacement));
+    }
+
+    #[test]
+    fn token_exhaustion_never_wraps_or_reuses_a_closed_registration() {
+        let contexts = CallbackContexts::new();
+        contexts.0.lock().unwrap().last_token = usize::MAX - 1;
+        let data = callback_data();
+        let last = contexts.insert(1, &data).unwrap();
+        assert_eq!(last, usize::MAX);
+        assert_eq!(contexts.insert(2, &data), Err(ContextError::Exhausted));
+        contexts.remove(1);
+        assert_eq!(contexts.insert(1, &data), Err(ContextError::Exhausted));
+        let state = contexts.0.lock().unwrap();
+        assert!(state.callbacks.is_empty());
+        assert!(state.owners.is_empty());
+    }
+
+    #[test]
+    fn closing_during_dispatch_preserves_only_the_already_acquired_callback() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let contexts = Arc::new(CallbackContexts::new());
+        let completed = Arc::new(AtomicUsize::new(0));
+        let counter = completed.clone();
+        let (entered, started) = mpsc::sync_channel(1);
+        let (resume, released) = mpsc::sync_channel(1);
+        let released = Mutex::new(released);
+        let data = Arc::new(CallbackData::FromFile(CallbackDataFromFile::new(Box::new(
+            move |_, _| {
+                entered.send(()).unwrap();
+                released
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(2))
+                    .unwrap();
+                counter.fetch_add(1, Ordering::SeqCst);
+            },
+        ))));
+        let lifetime = Arc::downgrade(&data);
+        let token = contexts.insert(1, &data).unwrap();
+        let dispatch = contexts.clone();
+        let worker = std::thread::spawn(move || {
+            let acquired = dispatch.acquire(token).unwrap();
+            acquired.on_event(&EventRecord(Etw::EVENT_RECORD::default()));
+        });
+        started.recv_timeout(Duration::from_secs(2)).unwrap();
+        contexts.remove(1);
+        drop(data);
+        assert!(contexts.acquire(token).is_none());
+        assert!(lifetime.upgrade().is_some());
+        resume.send(()).unwrap();
+        worker.join().unwrap();
+        assert_eq!(completed.load(Ordering::SeqCst), 1);
+        assert!(lifetime.upgrade().is_none());
+    }
+
+    #[test]
+    fn callback_thunk_ignores_retired_tokens_and_dispatches_only_live_registration() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counter = calls.clone();
+        let data = Box::new(Arc::new(CallbackData::FromFile(CallbackDataFromFile::new(
+            Box::new(move |_, _| {
+                counter.fetch_add(1, Ordering::SeqCst);
+            }),
+        ))));
+        let owner = data.as_ref() as *const Arc<CallbackData> as usize;
+        let retired = CALLBACK_CONTEXTS.insert(owner, &data).unwrap();
+        CALLBACK_CONTEXTS.remove(owner);
+        let current = CALLBACK_CONTEXTS.insert(owner, &data).unwrap();
+        let mut record = Etw::EVENT_RECORD {
+            UserContext: retired as *mut c_void,
+            ..Default::default()
+        };
+        trace_callback_thunk(&mut record);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        record.UserContext = current as *mut c_void;
+        trace_callback_thunk(&mut record);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        CALLBACK_CONTEXTS.remove(owner);
+        trace_callback_thunk(&mut record);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
     #[test]
     fn failed_open_releases_callback_context_for_retry() {
         // No producer is created. Both attempts must report the native missing
@@ -430,7 +559,12 @@ mod contain_context_tests {
                 result
             );
         }
-        assert!(!UNIQUE_VALID_CONTEXTS
-            .is_valid(data.as_ref() as *const Arc<CallbackData> as *const c_void));
+        let owner = data.as_ref() as *const Arc<CallbackData> as usize;
+        assert!(!CALLBACK_CONTEXTS
+            .0
+            .lock()
+            .unwrap()
+            .owners
+            .contains_key(&owner));
     }
 }

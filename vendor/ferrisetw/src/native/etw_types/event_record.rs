@@ -72,7 +72,8 @@ impl EventRecord {
 
     /// The `UserContext` field from the wrapped `EVENT_RECORD`
     ///
-    /// In this crate, it is always populated to point to a valid [`CallbackData`](crate::trace::CallbackData)
+    /// This crate stores an opaque callback registration token here, never a
+    /// dereferenceable pointer. A closed registration can no longer be resolved.
     pub(crate) fn user_context(&self) -> *const std::ffi::c_void {
         self.0.UserContext as *const _
     }
