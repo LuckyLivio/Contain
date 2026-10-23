@@ -1,5 +1,162 @@
 # v0.4 development validation
 
+## Integrated candidate and bounded companion (2026-10-23)
+
+The clean runtime candidate tested live is `86a6b596aea28f30ea3afca4c4a65465172431b6`,
+version **0.3.1**, from the `fix/raw-clock-stabilization` development line and
+captured from a clean detached validation worktree. This is development progress,
+not a completed stabilization milestone or release. The public base `a0fb81f`
+and local quality commit `baf8db3` share ancestor `a072072`; neither was assumed
+to contain the other. Necessary quality deltas were reviewed file by file and
+reapplied in `32494f6`, without merging unpublished ancestry. The original
+workspace and its untracked UI/preview files remain untouched.
+
+`d422027` separately corrects the real-time StartTime protocol assumption.
+`69c9cb0` closes a native callback/CloseTrace ownership race: opaque registration
+tokens and reference acquisition under the removal lock prevent freed-context
+access and allocation-address reuse. `86a6b59` replaces the lifetime-sized raw
+vector with a finite asynchronous chunk writer, keeping all three providers and
+their unrelated context. The [protocol and bounds](v04-validation.md#raw-clock-diagnostic-entry)
+describe the fixed 8-MiB row pool, 1-MiB writer stack, unchanged 128-MiB disk
+budget, 64-byte wire format and explicit queue/quota/write/drain failures.
+No callback performs synchronous file writes; metadata waits also release the
+callback lock. Neither product commands nor attribution rules were broadened.
+
+### Fresh checks of the integrated source
+
+The following ran against clean `86a6b59`, with exact source identity checked
+before and after. Results from the original quality branch are not reused.
+
+| Check | Actual result and scope |
+| --- | --- |
+| Full quality Check | 161 Rust tests passed; 4 explicitly skipped; 125 Python tests in 14 suites passed; PowerShell scorer/provenance, formatting, Clippy and deterministic fuzz seeds passed |
+| Skipped tests | Three existing storage performance experiments; one large spool experiment executed separately below. Doctests contain zero tests |
+| Native dependency regressions | 17 passed, including dispatch/close, address reuse, exhausted token space and failed OpenTrace; tested at `69c9cb0`, identical vendor source at `86a6b59` |
+| Dependencies | Both locked graphs passed, shared-version drift 0; existing duplicate-version warnings and four vendor compiler warnings retained |
+| Coverage | 7,116/10,552 lines (67.44%), 597/831 functions (71.84%); original 66.5%/70% floors unchanged |
+| Affected coverage | companion 58.94% lines; spool 81.70%. Includes inline test code; actual Companion open/ready/finish/Drop and several exceptional OS branches remain unexercised by this suite |
+| Bounded guided fuzz | Existing three targets completed 30-second requested campaigns: 90,052 / 146,853 / 50,959 runs; no crash found. Normalized model inputs, not raw ETW |
+| Existing policy benchmark | Four cases, seven samples each, 20,000 inputs/sample. Median ns/item: JSON 1,319.640; lifetime 142.700; completion 263.920; registry context 290.755. No before/after speedup or live throughput claim |
+
+An explicit **paced synthetic** Rust writer test persisted and read back all
+896,972 rows in 57,406,208 bytes, with 219 writes, an 8-MiB row allocation and no
+discard or incomplete drain. Every sequence and the full SHA-256 were checked.
+The Python reader independently scanned the actual Rust payload and all keys,
+including unmatched context; no duplicate was found. One synthetic primary key
+matched its full descriptor. Producer pacing is deliberate in this storage test;
+it is not evidence that callbacks can sustain that rate. Saturation, partial
+writes, quota exhaustion, metadata failures and timeouts have separate regressions.
+
+Private logs and retained payloads are under
+`target/stabilization/raw-clock-stabilization/`; clean-worktree Check, Dependencies
+and Coverage artifacts are under that worktree's `target/quality/`, including
+`candidate-86a6-check-results.json`. Reproduce with `scripts/quality.ps1 -Mode`
+`Check`, `Dependencies`, `Coverage`, `Fuzz -FuzzSeconds 30`, and `Bench`. Run the
+large writer case explicitly with
+`cargo test -p contain-core paced_historical_callback_volume_fits_disk_quota_and_drains_every_record --release --locked -- --ignored --nocapture`.
+`CONTAIN_CLOCK_SPOOL_TEST_OUTPUT` optionally retains a new absolute output path.
+
+### New administrator pair: real collection, overall diagnostic still failed
+
+The user executed `admin-pair-20261023-231230-468d9d12` in the existing elevated
+window. Both arms recorded clean `86a6b59`, matching build-input inventories and
+unchanged pre/post executable hashes. The development session itself remains
+non-elevated. These are real file/registry/process ETW captures, not fallback.
+The contemporaneously recorded SHA-256 values are:
+`contain.exe` `44f5efd63bff1c0e4b05fff3f9cb44c1faae86d5e690616c506125d3b8f55f5e`;
+fixture `3aff34193d338b10282eda9693a667e9e0bd38f4f051203218176256b4a2b1eb`.
+Current-file hashes corroborate those records; they do not replace them or attest
+to the loaded image. The private identity audit verified each arm's 106 runtime
+inputs and 42 scripts and preserved all original pair artifacts and journals.
+Database backups were produced from private copies, passed SQLite quick_check and
+retained table counts; all original file hashes remained unchanged.
+
+| Same fixture, one attempt per arm | Clock off | Clock on |
+| --- | ---: | ---: |
+| Original demo result | Passed | Failed at the additional clock diagnostic |
+| Primary received / persisted | 1,147 / 1,147 | 460 / 460 |
+| Reported primary queue, handoff, write and ETW loss | 0 | 0 |
+| Successful target observed / correctly attributed | 17/17 / 17/17 | 17/17 / 17/17 |
+| Noise observed / independent successful noise | 2/3 | 2/3 |
+| Audited wrong attribution / supported successful calls | 0/20 | 0/20 |
+| Views and explanations checked | 363, consistent | 370, consistent |
+| Capture wall seconds | 13.251779 | 15.754381 |
+| Descendant quiet-drain milliseconds | 2,496 | 5,233 |
+| Parent CPU seconds | 3.078125 | 3.406250 |
+| Parent peak working set bytes | 22,806,528 | 27,435,008 |
+| Parent sampled private-memory peak bytes | 12,279,808 | 19,066,880 |
+| Parent logical read / write bytes | 14,056,748 / 13,584,378 | 7,294,252 / 15,063,004 |
+| Sampled DB / WAL peaks bytes | 3,997,696 / 7,539,632 | 1,568,768 / 5,623,832 |
+| Final database bytes | 3,997,696 | 2,777,088 |
+
+For each arm, overall observation is 19/20 supported successful calls (95%);
+valid attribution is 17/17 target calls, or 17/20 over target plus noise (85%).
+All three successful noise calls remain unresolved/unobserved, so Unknown is
+3/20 (15%). Supported raw positive precision is 17/17; this is a small fixture
+domain, not general installation accuracy. One intentionally failed delete remains
+separate. Event loss **rate** is unavailable: reported zero counts do not supply
+a complete enabled-provider denominator. Final state ownership remains limited.
+
+Clock-on retained **96,655/96,655** raw rows, 6,185,920 payload bytes, 24 write
+calls, peak one queued chunk, no queue/quota/closed-writer drops and no missing
+keys, partial records, timeout or write failure. Data write time was 2.4931 ms,
+final drain 2.8754 ms; the 1,958-byte metadata commit also completed. Independent
+SHA-256, full sequence and all-key duplicate checks passed. All 35 eligible
+retained source events linked by original key and full descriptor, with no missing
+link. Both actual OpenTrace StartTime fields were zero; revision 2 correctly
+retained them as unavailable and did not invent a clock origin.
+
+This live run is **below the old 262,144-row cap**, not a reproduction of the
+896,972-row historical load. The synthetic full-volume test removes the former
+inevitable lifetime-cap failure for that count, but live sustained load still
+needs measurement. The two arms differ in ambient traffic, main event count and
+active trace duration; their single wall/CPU/I/O differences do not isolate the
+companion's overhead. The quiet-drain stage alone differs by 2.737 seconds,
+exceeding the total wall-time difference. Parent counters exclude descendants/kernel buffers and are
+logical I/O, not physical disk traffic. Sampling reported no errors.
+
+The original clock report failed all 21 rows with
+`source_original_qpc_or_actor_missing`, despite complete raw links. Fourteen extra
+write records lacked verified actor instances: three have the unrelated fixture's
+header PID but no trusted birth identity; eleven have header PID 4, mostly outside
+the corresponding operation intervals. Neither observation proves their writer
+or a particular kernel write mechanism. All remain Unknown. Independent examination
+finds one exact verified-actor/QPC/path candidate for each of 17 successful target
+calls; the global actor-presence prerequisite incorrectly hides these usable facts.
+The three unrelated file records have no retained process/thread start intervals;
+only later stops are available. A later registry process query cannot prove those
+earlier file-thread identities. This is an evidence boundary, not a reason to
+backfill actors from the oracle, header PID or stop events.
+
+Protocol-only commit `6e3162b` introduces revision 3 with 48 focused clock tests
+passing. It retains all 14 unknown-actor records, localizes their impact to matching
+operation/resource/QPC intervals, preserves overlapping and cross-row ambiguity,
+and leaves original-QPC/metadata/calibration failures global. Applying the same
+revision to both preserved samples gives: historical sample 21 unavailable; new
+clock-on 17 unique interval candidates, two unavailable actor rows and two with
+no in-interval source (failed delete and NoiseOnly). **Both still exit 2**. No
+original report, input hash, legacy score or threshold changed. Production source
+is identical to `86a6b59`; this is reassessment of the same run, not another run.
+See [the protocol correction](v04-validation.md#unknown-actor-clock-protocol-correction).
+
+All failed attempts remain: two shell invocations failed before any capture, and
+`admin-pair-20261023-230813-87d8adaa` contains two configuration failures before
+ETW. A local launcher used a null environment assignment that became an empty
+checkpoint setting under the installed PowerShell. Explicit removal fixed the
+launcher; the original script and both failures were retained. Production code
+and acceptance thresholds were not changed to accommodate those failures.
+
+The new clock diagnostic has **not passed**. Formal acceptance inputs are not
+frozen and the 32-attempt protocol has not run. Historical 1,000/10,000-file
+failures remain failures. No third-party installer, deletion, elevated agent
+process, remote test, default-branch merge or release was added.
+
+The next decision needs an audited evidence policy for pre-existing thread/process
+coverage, plus verified same-boot provenance and provider emission semantics; it
+cannot be replaced by a larger queue or PID-only matching. The current evidence
+does not justify entering a real deletion loop. Full raw files and databases remain
+private; only the reviewed scoped aggregates above are published.
+
 ## Raw-clock administrator diagnostic audited (2026-10-23)
 
 `etw-raw-20261023-212829-782` is a second, actually executed administrator-window
@@ -36,7 +193,7 @@ capacity refusal is a confirmed limitation of the diagnostic path. No throughput
 improvement is claimed from comparing this dirty-tree sample with older runs.
 
 Both actual OpenTrace headers contain `StartTime="0"`. That field is unavailable
-in this sample and does not satisfy the current protocol's positive-start check;
+in this sample and did not satisfy the original protocol's positive-start check;
 the capacity failure currently short-circuits the later check. The Windows
 [header contract](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/ns-evntrace-trace_logfile_header)
 defines it as the session start time, but this audit does not infer an absent
