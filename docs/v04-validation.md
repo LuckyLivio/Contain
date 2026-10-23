@@ -163,7 +163,7 @@ retain separate denominators. ETW event loss, ETW buffer loss and application dr
 counts remain separate, and missing counters remain null. Positive raw duplicates
 do not increase syscall recall. Consistent CLI output is not independent truth.
 
-## Current raw-clock diagnostic entry (still requires elevated live validation)
+## Raw-clock diagnostic entry
 
 The user-run administrator demo `etw-small-20261023-202449` is valid real ETW
 evidence under the original scorer; see [its archive and limitations](validation-v0.4.md).
@@ -209,6 +209,39 @@ consumer-wide completeness or a loss rate. BootTime is retained without using it
 as boot provenance; [it is only supported for Global Logger](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/ns-evntrace-trace_logfile_header).
 Same-machine/same-boot provenance and provider emission semantics still need live
 verification. `diagnostic_ready` never means attribution or release acceptance.
+
+### Real-time StartTime protocol correction
+
+Clock diagnostic revision `contain-clock-observability-2` corrects the former
+requirement that both real-time OpenTrace headers contain a positive StartTime.
+The native wrapper copies `EVENT_TRACE_LOGFILEW.LogfileHeader.StartTime` immediately
+after successful OpenTraceW; it does not calculate or reinterpret the value.
+The user-run `etw-raw-20261023-212829-782` recorded zero in both headers at this
+`open_before_process_trace` phase. The [Windows header contract](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/ns-evntrace-trace_logfile_header)
+defines StartTime but does not promise a populated real-time value. Microsoft's
+[reference consumer](https://github.com/microsoft/perfview/blob/9cf2c8f74696e9f518b709e889c1a9a7d6423e27/src/TraceEvent/ETWTraceEventSource.cs#L470-L519)
+explicitly avoids the header-derived session times for real-time sessions. Its
+approximate wall-time fallback is **not** used here.
+
+The revised diagnostic retains exact zero and reports
+`start_time_observation.status=unavailable_at_realtime_open`, with
+`available=false` and `used_as_clock_origin=false`. Both fields must still be
+canonical decimal nonnegative i64 strings and equal. This applies only after the
+observed real-time/raw and primary consumer modes and header phase are checked.
+Original event keys plus every recorded descriptor field establish the links;
+QPC frequency and independently sampled ready/stop and operation brackets establish
+the measured interval relation. StartTime establishes neither. No clock origin,
+offset, tolerance or same-boot proof is manufactured. Existing loss, ambiguity,
+hash, session, budget and termination checks remain required; malformed time
+fields and incomplete calibration remain failures.
+
+The original diagnostic and artifacts remain unchanged. Re-evaluation of that
+same administrator sample with revision 2 still returns `unavailable` for all
+21 truth rows: the companion is incomplete after 634,828 capacity refusals.
+Its 3,819/3,819 main-chain accounting is a separate result. The old report is not
+replaced or converted into a pass. Local re-evaluation and before/after regression
+logs are retained in `target/stabilization/raw-clock-stabilization/`; the formal
+32-attempt protocol and new administrator diagnostic remain pending.
 
 The independent fixture additionally writes `clock-marker-PID.jsonl` when clock
 logging is enabled. It times the initial registry open, with success/error and QPC

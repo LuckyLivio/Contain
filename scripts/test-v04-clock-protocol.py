@@ -88,6 +88,80 @@ class ClockProtocolTests(unittest.TestCase):
         self.assertIsNone(result["raw_companion"]["primary_events_without_link"])
         self.assertEqual(result["truth_rows"][0]["event_ids"], [])
 
+    def test_zero_realtime_start_time_retains_exact_qpc_without_inventing_an_origin(self):
+        document = self.companion()
+        document["header"]["start_time"] = "0"
+        self.capture["backend"]["clock"]["trace_header"]["start_time"] = "0"
+        raw = self.companion_bytes(document)
+        original = copy.deepcopy(self.capture)
+        result = CLOCK.analyze(self.capture, [self.truth], raw_clock_bytes=raw)
+        self.assertEqual(result["status"], "diagnostic_ready")
+        self.assertEqual(result["protocol_revision"], "contain-clock-observability-2")
+        self.assertEqual(result["raw_companion"]["start_time_observation"], dict(
+            primary="0", companion="0", status="unavailable_at_realtime_open",
+            available=False, used_as_clock_origin=False))
+        self.assertEqual(result["truth_rows"][0]["event_ids"], ["source"])
+        self.assertEqual(result["raw_companion"]["event_links"][0]["original_qpc"], "150")
+        self.assertEqual(result["tolerance_qpc"], 0)
+        self.assertIsNone(result["release_gate"])
+        self.assertFalse(result["same_machine_boot_provenance_verified"])
+        self.assertEqual(self.capture, original)
+
+    def test_realtime_start_time_must_be_exact_nonnegative_decimal_i64(self):
+        for invalid in (True, 0, "", "-1", "00", " 0", "0.0", "\u0660", str(1 << 63)):
+            for side in ("primary", "companion"):
+                with self.subTest(invalid=invalid, side=side):
+                    document = self.companion()
+                    target = (document["header"] if side == "companion" else
+                              self.capture["backend"]["clock"]["trace_header"])
+                    target["start_time"] = invalid
+                    result = CLOCK.analyze(self.capture, [self.truth], raw_clock_bytes=self.companion_bytes(document))
+                    self.assertEqual(result["status"], "unavailable")
+                    self.assertIn("raw_companion_header_time_malformed", result["raw_companion"]["reasons"])
+        document = self.companion()
+        document["header"]["start_time"] = "0"
+        result = CLOCK.analyze(self.capture, [self.truth], raw_clock_bytes=self.companion_bytes(document))
+        self.assertIn("raw_companion_primary_header_mismatch", result["raw_companion"]["reasons"])
+
+    def test_zero_start_time_requires_realtime_modes_and_observed_open_phase(self):
+        for field, value in (("header_sample_phase", "after_process_trace"),
+                             ("header_sample_phase", None), ("consumer_loss_counters_available", True),
+                             ("process_trace_mode", 0x10001000), ("primary_mode", 0x10000000)):
+            with self.subTest(field=field, value=value):
+                document = self.companion()
+                document["header"]["start_time"] = "0"
+                primary = self.capture["backend"]["clock"]["trace_header"]
+                primary["start_time"] = "0"
+                if field == "process_trace_mode":
+                    document["header"][field] = value
+                elif field == "primary_mode":
+                    primary["process_trace_mode"] = value
+                    self.capture["backend"]["clock"]["process_trace_mode"] = value
+                else:
+                    document[field] = value
+                result = CLOCK.analyze(self.capture, [self.truth], raw_clock_bytes=self.companion_bytes(document))
+                self.assertEqual(result["status"], "unavailable")
+                self.assertEqual(result["truth_rows"][0]["event_ids"], [])
+
+    def test_zero_start_time_never_hides_capacity_loss_or_missing_calibration(self):
+        for failure in ("capacity", "calibration"):
+            with self.subTest(failure=failure):
+                document = self.companion()
+                document["header"]["start_time"] = "0"
+                self.capture["backend"]["clock"]["trace_header"]["start_time"] = "0"
+                if failure == "capacity":
+                    document["stats"]["capacity_dropped"] = 1
+                else:
+                    self.capture["backend"]["clock"]["calibrations"] = []
+                result = CLOCK.analyze(self.capture, [self.truth], raw_clock_bytes=self.companion_bytes(document))
+                self.assertEqual(result["status"], "unavailable")
+                self.assertEqual(result["truth_rows"][0]["event_ids"], [])
+                self.assertIsNone(result["release_gate"])
+                if failure == "capacity":
+                    self.assertIn("raw_companion_loss_or_ambiguity", result["raw_companion"]["reasons"])
+                else:
+                    self.assertIn("trace_calibration_unavailable_or_invalid", result["source_reasons"])
+
     def test_invalid_companion_keeps_unlinked_count_unknown(self):
         raw = self.companion_bytes(self.companion())
         for invalid in (b"{", raw + b" "):

@@ -15,6 +15,7 @@ import uuid
 RAW_TIMESTAMP = 0x1000
 SUPPORTED = {"write_requested", "rename_requested", "delete_requested", "set_value"}
 COMPANION_PROTOCOL = "contain-raw-clock-companion-1"
+PROTOCOL_REVISION = "contain-clock-observability-2"
 IDENTITY_WIDTHS = dict(event_id=16, version=8, channel=8, level=8, opcode=8,
                        task=16, process_id=32, thread_id=32)
 
@@ -133,11 +134,22 @@ def companion_links(capture, raw_bytes):
         frequency = integer(header["perf_frequency"])
         if not 0 < frequency < 1 << 63 or frequency != integer(metadata["qpc_frequency"]):
             raise ValueError("raw_companion_frequency_mismatch")
+        for sample in (header, primary_header):
+            start = sample["start_time"]
+            if (not isinstance(start, str) or not start.isascii() or not start.isdecimal()
+                    or str(int(start)) != start or not 0 <= int(start) < 1 << 63):
+                raise ValueError("raw_companion_header_time_malformed")
         for name in ("reserved_flags", "perf_frequency", "start_time"):
             if header[name] != primary_header[name]:
                 raise ValueError("raw_companion_primary_header_mismatch")
-        if not 0 < integer(header["start_time"]) < 1 << 63:
-            raise ValueError("raw_companion_header_time_unavailable")
+        # Real-time OpenTrace can leave StartTime unpopulated. These headers were
+        # sampled before ProcessTrace, not at finalization. Exact event-key QPC
+        # links and independently sampled QPC boundaries do not use this FILETIME
+        # as an origin. Retain zero as unavailable; never synthesize a wall time.
+        diagnostic["start_time_observation"] = dict(
+            primary=primary_header["start_time"], companion=header["start_time"],
+            status="unavailable_at_realtime_open" if header["start_time"] == "0" else "reported_at_realtime_open",
+            available=header["start_time"] != "0", used_as_clock_origin=False)
         # BootTime is only supported for Global Logger traces. Its value/equality
         # is not a prerequisite for an original-event-key link in this UUID session.
         for sample in (header, primary_header):
@@ -267,7 +279,8 @@ def analyze(capture, truth, sid="", raw_clock_bytes=None):
         raise ValueError("capture and backend must be objects")
     if not isinstance(capture.get("events", []), list) or not all(isinstance(row, dict) for row in truth + capture.get("events", [])):
         raise ValueError("source and independent rows must be objects")
-    report = dict(schema_version=1, purpose="independent_clock_observability", release_gate=None,
+    report = dict(schema_version=1, protocol_revision=PROTOCOL_REVISION,
+                  purpose="independent_clock_observability", release_gate=None,
                   same_machine_boot_provenance_verified=False,
                   attribution_scored=False, legacy_score_recomputed=False, tolerance_qpc=0,
                   source_reasons=[], truth_rows=[], source_event_count=0)
