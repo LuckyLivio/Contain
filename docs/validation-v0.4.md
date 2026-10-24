@@ -1,5 +1,169 @@
 # v0.4 development validation
 
+## Current stabilization status (2026-10-25)
+
+The starting local and verified remote development revision was `ef52caa`, which
+already included the per-operation audit and isolated matrix sidecars below.
+The reviewed runtime is `cada888122dba836ea6bc22b7ff09e5eeb607ec9`; candidate runtime
+and protocol together are frozen at `545ed3f91740786cf0d9df7c0efce4fe7e0e0e4a`.
+Inherited, uncommitted identity/provenance work was inventoried and reviewed before
+continuing it. The original workspace remains at `baf8db3` with its UI/preview
+files untouched. Version remains **0.3.1**. The last real runtime is still
+`86a6b59`; no new elevated capture has been executed in this development session.
+
+The retained **21-row table below remains the evidence checklist**, including the
+failed call. The 17 unique interval candidates, two missing actor intervals,
+NoiseOnly's missing absolute registry context, and failed deletion observability
+are different requirements. Successful-call denominators remain 17 target and
+20 target-plus-noise. Neither historical Unknown nor the 1,000/10,000-file failures
+are repaired by the new code or by a protocol-only reread.
+
+### Checks on the exact candidate
+
+All five existing quality modes were rerun in a clean detached `545ed3f` worktree,
+with the source still clean at the same revision afterward. These are local
+quality results, not administrator capture results.
+
+| Check | Result and limits |
+| --- | --- |
+| `scripts/quality.ps1 -Mode Check` | 182 Rust and 142 Python tests passed; formatting, Clippy, PowerShell checks and one fuzz-seed aggregate passed; no retries |
+| Omitted cases | Four explicit ignored experiments: three legacy storage benchmarks and the unchanged large spool experiment. Doctests contain zero tests |
+| `-Mode Coverage` | 7,742/11,212 lines (69.05%), 636/869 functions (73.19%); original floors unchanged; includes inline tests |
+| Affected coverage | Lifetime 96.21% lines, clock provenance 85.45%, native wrappers 51.47%, ETW wrapper 46.82%. Live provider startup/stop, several OS-query failures and enumeration-budget branches remain unexercised |
+| `-Mode Dependencies` | Both committed lockfile graphs passed; shared-version drift zero; existing duplicate-version and license-exception notices remain in full logs |
+| `-Mode Fuzz -FuzzSeconds 30` | Three existing targets completed 91,661 / 163,131 / 48,649 runs, each 31 elapsed seconds; no crash. The lifetime oracle covers process intervals; new thread-order behavior is covered by deterministic permutations, not claimed as fuzz coverage |
+
+The failing startup-default, missing-thread and reordered-stop regressions are
+retained alongside their successful reruns. The new six-order test failed before
+the stop-retention fix because an event after the new thread's stop still resolved
+an actor. Protocol malformed-object regressions similarly retained their failure
+before the guarded reader fix. No assertions, workload sizes or thresholds changed.
+The first inherited-tree Check stopped on formatting in a storage regression;
+its failure log is retained, and formatting changed no test assertion.
+Exact logs, source identity, test counts and hashes are in
+`target/stabilization/evidence-load-20261025/exact-545ed3f-quality-summary.json`.
+
+The existing release benchmark was rerun for clean `e72d88c` and `545ed3f` on
+the same host/toolchain: two warmups and seven samples of 20,000 work items per
+named case. All samples and p95 values remain in the private JSONs. The mixed
+changes below are not evidence of improved installation or capture throughput.
+These cases do not measure startup handle queries, retained thread-stop occupancy,
+TDH, queues, SQLite or sidecar I/O.
+
+| Synthetic median ns/work item | Baseline e72d88c | Candidate 545ed3f |
+| --- | ---: | ---: |
+| Exact-tick JSON parsing | 1,291.455 | 1,321.570 |
+| Process lifetime ingest/resolve, batches of 512 | 150.375 | 140.360 |
+| Completion correlation, batches of 512 | 240.810 | 246.555 |
+| Registry context open/get/close | 280.700 | 285.665 |
+
+### Reviewed runtime changes, not yet validated with live ETW
+
+Startup identity sampling now runs with an active lifecycle provider in the
+default configuration, independently of the optional registry experiment. It
+queries existing process/thread handles after trace readiness and before launching
+the installer. Simultaneously held handles, creation times and nonblocking exit
+checks bind a preexisting thread to an exact process instance. Eligibility requires
+the thread to predate the trace-start boundary; validity starts at that individual
+query's completion. Missing, short-lived, inaccessible or raced identities remain
+unresolved. Later starts/stops and PID/TID reuse can revoke the link. Historical
+stop-only records are never backfilled.
+
+The sampling budget remains 4,096 processes, at most 32,768 thread queries and
+two seconds of work checked between queries; individual Windows calls are
+synchronous, so this is not an OS-call timeout. Queues drain between queries.
+Failures, budget exhaustion and an unknown unenumerated remainder are explicit.
+A prior read-only local probe took 318 ms for 492 process and 8,714 thread queries,
+resolving 6,006 threads with 2,708 access/invalid-handle failures. This is startup
+cost evidence, not a live ETW throughput measurement or a guaranteed cost.
+
+A new regression exposed a separate ordering bug: a reused thread's stop could
+be discarded while two candidate intervals were temporarily open. Retained stop
+facts now conservatively bound every earlier matching TID/owner interval and
+remain available to delayed starts. Six delivery permutations verify the fix;
+stop-only input cannot manufacture an actor. The existing 131,072-stop ceiling
+is unchanged, but retaining matched stops increases occupancy; exhaustion remains
+visible and invalidates lifecycle completeness. Reopen/full/page/explain and
+late-loss regressions retain the additive identity evidence without promoting
+final-state ownership.
+
+Collector boundaries and independent fixture processes now sample local host-name
+hash and native boot-environment identity separately. This is matching local
+native observation, not physical-host or VM-clone attestation. Unsupported status,
+layout, zero identity or inconsistent observations remain unavailable. The native
+boot information class has no stable public Win32 contract; the implementation
+accepts only the observed 32-byte layout and preserves errors. A measured compact
+fixture row adds 514 bytes; sampling occurs once per process, outside operation
+intervals. Both exploratory arms must use the same new fixture binary so this
+extra journal traffic is common input. Old records remain readable and no database
+migration or CLI contract version changes.
+
+### Timing evidence and remaining formal prerequisites
+
+The local provider-manifest export and retained raw evidence distinguish file
+requests from OperationEnd status. In the small capture, 17 verified-actor sources
+are numerically inside their independent call intervals; all 13 associated file
+requests have matching IRP completions, request-before-completion order, and
+in-interval completion records. Other events and the failed Open remain retained.
+At the recorded 10-MHz QPC frequency, the smallest source-to-start/end margins
+are 1,291/8 ticks; completion margins are 1,440/237 ticks, and the smallest
+request-to-completion interval is 32 ticks. These positives do not need a widened
+one-tick boundary. The private arithmetic recheck preserves original input hashes.
+This validates those sample relations, not a general emission contract for every
+provider descriptor or API path. [FileIo OperationEnd documentation](https://learn.microsoft.com/en-us/windows/win32/etw/fileio-opend)
+describes the request/IRP/status distinction; the current manifest-based provider
+still needs a scoped timing validation by Windows build, GUID/event/version and
+synchronous operation type. [QPC documentation](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps)
+also identifies cross-thread ordering ambiguity at one tick. No matching window
+is widened to conceal it.
+
+Protocol 4 checks independent provenance and keeps numeric interval candidates
+separate from validation readiness. Its provider-emission prerequisite remains
+explicitly unmet: another administrator run alone cannot make formal readiness
+pass. Malformed optional clock/provenance objects now produce unavailable results
+instead of aborting the audit. The protocol is committed separately from runtime
+changes; old protocol outputs and raw inputs are retained.
+
+Exploration is fixed at **eight planned attempts**: 1,000 and 10,000 files, four
+workers, 100 noise files, fresh database, baseline/candidate with raw diagnostics
+on/off separately. It is not the formal 32-attempt protocol. Capture parent
+CPU/memory/logical I/O, DB/WAL and distinct primary/companion counters are retained;
+physical-disk and total-provider loss-rate denominators remain unavailable.
+Clock/identity-dependent validated operation metrics stay unavailable when their
+prerequisites fail; legacy scores remain separate. A timeout with uncertain worker
+termination stops further execution and retains remaining planned rows as not
+executed, instead of contaminating the next arm. No automatic cleanup occurs.
+
+Both clean revisions were rebuilt with the same release/locked command, recorded
+compiler versions, environment and Cargo configuration. Startup shims and actual
+`rustup which` toolchain executables are recorded separately, with unchanged
+before/after hashes; these are file observations, not loaded-image or complete
+SDK/linker attestation. The earlier, superseded build records remain local and
+are not substituted into any historical run. The active frozen inputs are:
+
+| Input | SHA-256 |
+| --- | --- |
+| Baseline e72d88c executable | `1f8a874cc14030d0afe0051f9acf462b961c309fb1e4370bf6ec139356b90ce2` |
+| Candidate 545ed3f executable | `15c13e21747be8a6bc384aa6745de880f6e2f3c39205c7c6e0ab3b5ebf9fe296` |
+| Common candidate fixture | `25200a95051e046f5a776b330d69a0365aabe71a14585ee24d6337ae9716ba0a` |
+| Private fixed plan | `516e8a74bebfb3ecec94d54ecf7a38dbc3ceaef625ed7c7ff309ae5c2b1e4d39` |
+
+The fixed entry's validate-only run passed with **no capture launched**. Its nine
+private harness regressions do not count as ETW samples. The developer token is
+still non-administrator; actual execution requires the existing administrator
+window, using `target/stabilization/evidence-load-20261025/run-exploratory-admin.cmd`.
+The expected new output is `exploratory-545ed3f-verified-eight` in that directory.
+All eight live attempts and the formal 32 attempts remain **unexecuted** at this
+report update. There is therefore no measured new large-load bottleneck or capture
+speedup to report yet.
+
+Formal acceptance still requires audited contemporary identity/provenance evidence,
+a scoped provider-timing protocol with explicit unsupported/failed-call behavior,
+an acceptable small diagnostic and immutable paired inputs. No formal inputs are
+frozen, no new scale pass is claimed, and final file/registry ownership remains
+Unknown. Private evidence is under `target/stabilization/evidence-load-20261025/`;
+earlier failures remain under `evidence-load-20261024/` and `raw-clock-stabilization/`.
+
 ## Current evidence gaps and exploratory scope (2026-10-24)
 
 Starting source and verified remote development HEAD: `e72d88c410f8ec69b8e17f7ccc193a6cb9c972d4`.
