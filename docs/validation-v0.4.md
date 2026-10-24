@@ -1,278 +1,258 @@
 # v0.4 development validation
 
-## Current stabilization status (2026-10-25)
+## Current status: all eight exploratory captures audited (2026-10-25)
 
-The starting local and verified remote development revision was `ef52caa`, which
-already included the per-operation audit and isolated matrix sidecars below.
-The reviewed runtime is `cada888122dba836ea6bc22b7ff09e5eeb607ec9`; candidate runtime
-and protocol together are frozen at `545ed3f91740786cf0d9df7c0efce4fe7e0e0e4a`.
-Inherited, uncommitted identity/provenance work was inventoried and reviewed before
-continuing it. The original workspace remains at `baf8db3` with its UI/preview
-files untouched. Version remains **0.3.1**. The owner has now run the frozen
-`e72d88c` / `545ed3f` executables in an administrator window: four 1,000-file
-attempts finished processing and the fifth, baseline 10,000-file attempt finished
-capture before the owner interrupted postprocessing. The developer token remains
-non-administrator. The sixth through eighth attempts have not run. This is partial
-exploration, not the formal 32-attempt protocol or a scale acceptance pass.
+**The main capture queues are not the observed failure point in these samples.**
+All eight databases contain completed captures and balanced main persistence.
+All eight retained scores still fail the unchanged unexpected-positive requirement;
+candidate/on at 10,000 files additionally hits the quiet-drain deadline and the
+raw companion's disk quota. These are three separate failures. There is one sample
+per condition, no stability claim, and no formal 32-attempt acceptance execution.
+Version remains **0.3.1**. This update changes the report only: no production,
+scorer, protocol or workload changes, no new capture and no cleanup.
 
-The retained **21-row table below remains the evidence checklist**, including the
-failed call. The 17 unique interval candidates, two missing actor intervals,
-NoiseOnly's missing absolute registry context, and failed deletion observability
-are different requirements. Successful-call denominators remain 17 target and
-20 target-plus-noise. Neither historical Unknown nor the 1,000/10,000-file failures
-are repaired by the new code or by a protocol-only reread.
+### Runtime identity and completeness
 
-### Checks on the exact candidate
+The report checkout and verified remote started at `6218ece1c9d5e4a5008a1ca6017fd82c21f39b98`.
+The executed candidate remains **`545ed3f91740786cf0d9df7c0efce4fe7e0e0e4a`**, baseline
+`e72d88c410f8ec69b8e17f7ccc193a6cb9c972d4`. The original workspace remains `baf8db3`
+with its UI/preview files untouched. Report and harness commits are not runtime builds.
 
-All five existing quality modes were rerun in a clean detached `545ed3f` worktree,
-with the source still clean at the same revision afterward. These are local
-quality results, not administrator capture results.
-
-| Check | Result and limits |
+| Frozen input | SHA-256 |
 | --- | --- |
-| `scripts/quality.ps1 -Mode Check` | 182 Rust and 142 Python tests passed; formatting, Clippy, PowerShell checks and one fuzz-seed aggregate passed; no retries |
-| Omitted cases | Four explicit ignored experiments: three legacy storage benchmarks and the unchanged large spool experiment. Doctests contain zero tests |
-| `-Mode Coverage` | 7,742/11,212 lines (69.05%), 636/869 functions (73.19%); original floors unchanged; includes inline tests |
-| Affected coverage | Lifetime 96.21% lines, clock provenance 85.45%, native wrappers 51.47%, ETW wrapper 46.82%. Live provider startup/stop, several OS-query failures and enumeration-budget branches remain unexercised |
-| `-Mode Dependencies` | Both committed lockfile graphs passed; shared-version drift zero; existing duplicate-version and license-exception notices remain in full logs |
-| `-Mode Fuzz -FuzzSeconds 30` | Three existing targets completed 91,661 / 163,131 / 48,649 runs, each 31 elapsed seconds; no crash. The lifetime oracle covers process intervals; new thread-order behavior is covered by deterministic permutations, not claimed as fuzz coverage |
-
-The failing startup-default, missing-thread and reordered-stop regressions are
-retained alongside their successful reruns. The new six-order test failed before
-the stop-retention fix because an event after the new thread's stop still resolved
-an actor. Protocol malformed-object regressions similarly retained their failure
-before the guarded reader fix. No assertions, workload sizes or thresholds changed.
-The first inherited-tree Check stopped on formatting in a storage regression;
-its failure log is retained, and formatting changed no test assertion.
-Exact logs, source identity, test counts and hashes are in
-`target/stabilization/evidence-load-20261025/exact-545ed3f-quality-summary.json`.
-
-The existing release benchmark was rerun for clean `e72d88c` and `545ed3f` on
-the same host/toolchain: two warmups and seven samples of 20,000 work items per
-named case. All samples and p95 values remain in the private JSONs. The mixed
-changes below are not evidence of improved installation or capture throughput.
-These cases do not measure startup handle queries, retained thread-stop occupancy,
-TDH, queues, SQLite or sidecar I/O.
-
-| Synthetic median ns/work item | Baseline e72d88c | Candidate 545ed3f |
-| --- | ---: | ---: |
-| Exact-tick JSON parsing | 1,291.455 | 1,321.570 |
-| Process lifetime ingest/resolve, batches of 512 | 150.375 | 140.360 |
-| Completion correlation, batches of 512 | 240.810 | 246.555 |
-| Registry context open/get/close | 280.700 | 285.665 |
-
-### Reviewed runtime changes and limited live observations
-
-Startup identity sampling now runs with an active lifecycle provider in the
-default configuration, independently of the optional registry experiment. It
-queries existing process/thread handles after trace readiness and before launching
-the installer. Simultaneously held handles, creation times and nonblocking exit
-checks bind a preexisting thread to an exact process instance. Eligibility requires
-the thread to predate the trace-start boundary; validity starts at that individual
-query's completion. Missing, short-lived, inaccessible or raced identities remain
-unresolved. Later starts/stops and PID/TID reuse can revoke the link. Historical
-stop-only records are never backfilled.
-
-The sampling budget remains 4,096 processes, at most 32,768 thread queries and
-two seconds of work checked between queries; individual Windows calls are
-synchronous, so this is not an OS-call timeout. Queues drain between queries.
-Failures, budget exhaustion and an unknown unenumerated remainder are explicit.
-A prior read-only local probe took 318 ms for 492 process and 8,714 thread queries,
-resolving 6,006 threads with 2,708 access/invalid-handle failures. This is startup
-cost evidence, not a live ETW throughput measurement or a guaranteed cost.
-
-A new regression exposed a separate ordering bug: a reused thread's stop could
-be discarded while two candidate intervals were temporarily open. Retained stop
-facts now conservatively bound every earlier matching TID/owner interval and
-remain available to delayed starts. Six delivery permutations verify the fix;
-stop-only input cannot manufacture an actor. The existing 131,072-stop ceiling
-is unchanged, but retaining matched stops increases occupancy; exhaustion remains
-visible and invalidates lifecycle completeness. Reopen/full/page/explain and
-late-loss regressions retain the additive identity evidence without promoting
-final-state ownership.
-
-Collector boundaries and independent fixture processes now sample local host-name
-hash and native boot-environment identity separately. This is matching local
-native observation, not physical-host or VM-clone attestation. Unsupported status,
-layout, zero identity or inconsistent observations remain unavailable. The native
-boot information class has no stable public Win32 contract; the implementation
-accepts only the observed 32-byte layout and preserves errors. A measured compact
-fixture row adds 514 bytes; sampling occurs once per process, outside operation
-intervals. Both exploratory arms must use the same new fixture binary so this
-extra journal traffic is common input. Old records remain readable and no database
-migration or CLI contract version changes.
-
-### Timing evidence and remaining formal prerequisites
-
-The local provider-manifest export and retained raw evidence distinguish file
-requests from OperationEnd status. In the small capture, 17 verified-actor sources
-are numerically inside their independent call intervals; all 13 associated file
-requests have matching IRP completions, request-before-completion order, and
-in-interval completion records. Other events and the failed Open remain retained.
-At the recorded 10-MHz QPC frequency, the smallest source-to-start/end margins
-are 1,291/8 ticks; completion margins are 1,440/237 ticks, and the smallest
-request-to-completion interval is 32 ticks. These positives do not need a widened
-one-tick boundary. The private arithmetic recheck preserves original input hashes.
-This validates those sample relations, not a general emission contract for every
-provider descriptor or API path. [FileIo OperationEnd documentation](https://learn.microsoft.com/en-us/windows/win32/etw/fileio-opend)
-describes the request/IRP/status distinction; the current manifest-based provider
-still needs a scoped timing validation by Windows build, GUID/event/version and
-synchronous operation type. [QPC documentation](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps)
-also identifies cross-thread ordering ambiguity at one tick. No matching window
-is widened to conceal it.
-
-Protocol 4 checks independent provenance and keeps numeric interval candidates
-separate from validation readiness. Its provider-emission prerequisite remains
-explicitly unmet: another administrator run alone cannot make formal readiness
-pass. Malformed optional clock/provenance objects now produce unavailable results
-instead of aborting the audit. The protocol is committed separately from runtime
-changes; old protocol outputs and raw inputs are retained.
-
-Exploration is fixed at **eight planned attempts**: 1,000 and 10,000 files, four
-workers, 100 noise files, fresh database, baseline/candidate with raw diagnostics
-on/off separately. It is not the formal 32-attempt protocol. Capture parent
-CPU/memory/logical I/O, DB/WAL and distinct primary/companion counters are retained;
-physical-disk and total-provider loss-rate denominators remain unavailable.
-Clock/identity-dependent validated operation metrics stay unavailable when their
-prerequisites fail; legacy scores remain separate. A timeout with uncertain worker
-termination stops further execution and retains remaining planned rows as not
-executed, instead of contaminating the next arm. No automatic cleanup occurs.
-
-Both clean revisions were rebuilt with the same release/locked command, recorded
-compiler versions, environment and Cargo configuration. Startup shims and actual
-`rustup which` toolchain executables are recorded separately, with unchanged
-before/after hashes; these are file observations, not loaded-image or complete
-SDK/linker attestation. The earlier, superseded build records remain local and
-are not substituted into any historical run. The active frozen inputs are:
-
-| Input | SHA-256 |
-| --- | --- |
-| Baseline e72d88c executable | `1f8a874cc14030d0afe0051f9acf462b961c309fb1e4370bf6ec139356b90ce2` |
-| Candidate 545ed3f executable | `15c13e21747be8a6bc384aa6745de880f6e2f3c39205c7c6e0ab3b5ebf9fe296` |
+| Baseline executable | `1f8a874cc14030d0afe0051f9acf462b961c309fb1e4370bf6ec139356b90ce2` |
+| Candidate executable | `15c13e21747be8a6bc384aa6745de880f6e2f3c39205c7c6e0ab3b5ebf9fe296` |
 | Common candidate fixture | `25200a95051e046f5a776b330d69a0365aabe71a14585ee24d6337ae9716ba0a` |
-| Private fixed plan | `516e8a74bebfb3ecec94d54ecf7a38dbc3ceaef625ed7c7ff309ae5c2b1e4d39` |
+| Original eight-attempt plan | `516e8a74bebfb3ecec94d54ecf7a38dbc3ceaef625ed7c7ff309ae5c2b1e4d39` |
+| Continuation plan, original indices 6–8 only | `dadd19e43126e7dd86d3ffd237ff9bf54f98c91e60b586ef3670ea65cb7e3cdc` |
+| Unchanged syscall scorer | `aa20dc9b8103c6e79ed3d96b00f6b0219e76d9771f2749a58ffee79a56689ab7` |
+| Unchanged clock protocol 4 | `57a8d30d1afdf56220f64a521d58faaed45b6edee09a69830fb3f4ff75d15f3f` |
 
-### Interrupted exploratory run and retained results
+Arms 1–5 used the `545ed3f` matrix (SHA `983e40d700b7b6fb33e790d7c59bd4d37a5020bc39934422c78ba2a723e18a99`).
+Arms 6–8 used checkpoint/progress harness `bdce931` (SHA
+`f86a2c2d307c1bf84e05a6475a2b9f3a5df0baf9787ba7a8a562b20bbf599d3c`).
+Both use the same scorer/protocol bytes. Each build's 108 recorded runtime inputs
+and all six script snapshots match their declared Git source blobs. Plan, entry,
+launcher and parent-copy hashes match. Seven arms have matching recorded before/after
+identities; arm 5 has only its recorded executable precheck, not a complete before/after
+identity record. Current hashes are separate observations and do not fill that gap.
 
-The first real entry started at 02:20 local time. Its original directory is
-`target/stabilization/evidence-load-20261025/exploratory-545ed3f-verified-eight`.
-The owner confirmed interrupting it; the wrapper's final timestamp is 02:24:07.
-The subsequent 02:24:18 invocation stopped at the exclusive output-directory
-creation guard before launching another capture. Neither attempt was erased.
-The old wrapper incorrectly retained `running` after interruption, and the fifth
-measurement retained `stage=capture` despite complete export and score files.
-Separate read-only recovery records preserve these discrepancies; they do not
-overwrite the original measurements or invent missing process samples.
+| Arm | Files | Runtime / companion | Original run status |
+| --- | ---: | --- | --- |
+| 1 | 1,000 | baseline / on | Capture and analysis completed; legacy and clock gates failed |
+| 2 | 1,000 | candidate / on | Capture and analysis completed; legacy and clock gates failed |
+| 3 | 1,000 | candidate / off | Capture and analysis completed; legacy failed, raw-clock validation unavailable |
+| 4 | 1,000 | baseline / off | Capture and analysis completed; legacy failed, raw-clock validation unavailable |
+| 5 | 10,000 | baseline / on | Capture/export/score completed; owner interrupted analysis; original final measurement and post-identity absent |
+| 6 | 10,000 | candidate / on | Completed; legacy failed, quiet timeout and companion quota loss |
+| 7 | 10,000 | candidate / off | Completed; legacy failed, raw-clock validation unavailable |
+| 8 | 10,000 | baseline / off | Completed; legacy failed, raw-clock validation unavailable |
 
-All four completed 1,000-file captures used active file and process ETW, exited
-zero, and matched their frozen executable hashes before/after. Registry was
-`not_requested`: this workload requests files only. The private entry's requirement
-that all three providers be active was a scope-check error, not snapshot fallback.
-Its original failed labels remain. The independent legacy score also failed all
-four arms, for a separate reason described below; correcting the scope check does
-not change any score or acceptance threshold.
+All databases have `capture_runs=finished`, session exit zero, matching committed
+raw row counts and persistence counters. No WAL/SHM/journal sidecars were present;
+read-only immutable `PRAGMA quick_check` returned `ok` for all eight. This checks
+SQLite structure, not attribution correctness. Seven exported measurements agree
+with stored stats/backend/quality. Arm 5's missing final measurement remains missing;
+its separate offline clock replay and journal archive do not make it an uninterrupted run.
+The original wrapper's incorrect registry-active check for file-only arms 1–4 and
+the later output-directory collision are retained as harness failures, not ETW fallback.
 
-| 1,000 files / four workers / 100 noise files | Baseline on | Candidate on | Candidate off | Baseline off |
-| --- | ---: | ---: | ---: | ---: |
-| Capture-parent elapsed seconds | 11.9853 | 14.5810 | 18.5733 | 12.2862 |
-| Capture-parent CPU seconds | 5.15625 | 6.71875 | 6.921875 | 4.15625 |
-| Peak working set bytes | 35,545,088 | 37,203,968 | 29,589,504 | 28,823,552 |
-| Database bytes | 134,426,624 | 134,987,776 | 125,820,928 | 119,267,328 |
-| Sampled WAL peak bytes | 43,330,072 | 41,752,112 | 61,087,272 | 61,008,992 |
-| Received = persisted | 19,322 | 18,568 | 18,463 | 18,437 |
-| Companion received = stored | 462,849 | 519,591 | unavailable | unavailable |
-| Companion bytes | 29,622,336 | 33,253,824 | unavailable | unavailable |
+### Every unmet gate, with denominators
 
-Each arm has 2,500/2,500 successful target calls observed and assigned by the
-unchanged legacy scorer, and 300/300 successful noise calls observed. All reported
-primary queue, handoff, write/quota and ETW loss counts are zero, with complete
-drains; a total-provider loss-rate denominator remains unavailable. Parent logical
-I/O read/write bytes respectively are 947,282,055/1,135,887,109;
-960,117,759/1,152,892,148; 914,963,399/1,095,802,649; and
-867,145,693/1,033,023,397. These are not physical disk or whole-process-tree costs.
-One sample per arm and different background event volumes do not establish a
-performance improvement; the candidate is slower in these observed samples.
+Four workers and 100 independent noise files were fixed in every arm. The workload
+is files only: file/process providers are active; registry is `not_requested`.
+No failed/unsupported calls occur in this stress truth set. The small demo's failed
+delete and NoiseOnly registry gap remain separate, unresolved requirements.
 
-Every arm retains **500 unexpected High write events among 3,000 positive
-predictions**, giving the frozen precision 83.33% and a failed gate. No independent
-row has a wrong writer under that scorer. All 500 extra sources use the old
-temporary name and fall inside the same actor's later delete of the renamed file,
-not its earlier write/rename call. On arms establish this using exact raw QPC;
-off arms only establish converted FILETIME correspondence. Provider-internal write
-semantics versus stale name context remain unresolved. Do not reinterpret these
-as 500 wrong writers, remove them, or declare them legitimate without further
-evidence. Final-state ownership remains Unknown.
+| Arm | Target success / observed / correct | Noise observed / expected | Wrong actor rows / all successful calls | Legacy Unknown / all successful calls | Unexpected positives / positive predictions |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 2,500 / 2,500 / 2,500 | 300 / 300 | 0 / 2,800 | 300 / 2,800 | 500 / 3,000 |
+| 2 | 2,500 / 2,500 / 2,500 | 300 / 300 | 0 / 2,800 | 300 / 2,800 | 500 / 3,000 |
+| 3 | 2,500 / 2,500 / 2,500 | 300 / 300 | 0 / 2,800 | 300 / 2,800 | 500 / 3,000 |
+| 4 | 2,500 / 2,500 / 2,500 | 300 / 300 | 0 / 2,800 | 300 / 2,800 | 500 / 3,000 |
+| 5 | 25,000 / 25,000 / 25,000 | 300 / 300 | 0 / 25,300 | 300 / 25,300 | 5,000 / 30,000 |
+| 6 | 25,000 / 25,000 / 25,000 | 300 / 300 | 0 / 25,300 | 300 / 25,300 | 5,000 / 30,000 |
+| 7 | 25,000 / 25,000 / 25,000 | 300 / 300 | 0 / 25,300 | 300 / 25,300 | 5,000 / 30,000 |
+| 8 | 25,000 / 25,000 / 25,000 | 300 / 300 | 0 / 25,300 | 300 / 25,300 | 5,000 / 30,000 |
 
-The legacy top-level Unknown is 300/2,800 in every arm. Its noise subgroups expose
-an important distinction: baseline has 300 observed-but-unresolved calls, while
-candidate has 300 correctly identified as not assigned to the target. Candidate
-on has 2,800 unique strict interval candidates and matching independent native
-provenance; baseline on has 2,500 candidates plus 300 missing actor intervals and
-missing collector provenance. Off arms lack raw QPC. Provider emission readiness
-is still unmet, so validated operation metrics remain unavailable in all arms.
+These are **unchanged legacy scorer facts**, not raw-QPC-validated metrics. Target
+observation and effective target attribution are 100% of the stated target-call
+denominators. Noise identity is different: all 300 noise calls in each baseline
+are `observed_but_unresolved`; each candidate identifies all 300 as
+`correctly_not_assigned_to_target_app`. The top-level legacy Unknown bucket includes
+both categories: 10.7143% at 1k and 1.1858% at 10k. Target Unknown is 0; final-state
+ownership remains Unknown and is outside these syscall denominators.
 
-The interrupted fifth attempt's read-only database confirms a finished capture:
-166,971 received and persisted, reported losses zero, all queues drained. Its
-recorded internal capture duration is 94.115 seconds, of which lifetime attribution
-and paged persistence takes 81.483 seconds. This is the largest measured capture
-stage, not a proven single-function root cause. The companion stored all 1,779,485
-records in 113,887,040 bytes, using 435 chunks with queue peak one, no quota/write
-drop and a complete drain; recorded writer memory is 9 MiB. This is a bounded,
-file-only baseline workload, not proof for every provider or sustained load.
-The retained fifth score has 25,000/25,000 target calls and 5,000 unexpected
-positives; its gate still fails. Original parent wall/CPU/memory/I/O measurements
-and runtime post-hashes are unavailable and are not reconstructed from current files.
+| Requirement | Actual | Required | Result / scope |
+| --- | --- | --- | --- |
+| `no_false_attribution`, every arm | Wrong matched rows 0, but 500 (1k) / 5,000 (10k) unmatched supported High positives | Both counts 0 | Failed; precision 83.3333% of 3,000 / 30,000 positive predictions. Extras are not demonstrated wrong writers |
+| `no_drain_timeout`, arm 6 | `drain_timed_out=true`, quiet wait 10,015 ms | false; stop at the unchanged 10,000-ms maximum | Failed; different from queue drain completion |
+| Same requirement, other seven | false | false | Met, including arm 5's stored capture facts |
+| Target observation / attribution | 1.0 / 1.0 | 1.0 at 1k; at least 0.95 at 10k | Met under legacy protocol |
+| Target/noise denominator, active file ETW, pipeline/handoff balance, empty bounded queues, worker completion, zero context/decode/application/upstream loss | Recorded values satisfy each existing predicate | Unchanged `quality_gate` predicates in `scripts/v04-matrix.py` | Met; arm 5 assessment is an offline check of stored facts, not a fabricated original gate |
 
-Offline replay of the unchanged protocol 4 preserved hashes of all original fifth
-inputs and returned 25,000 unique interval candidates plus 300 unavailable actor
-intervals; provenance and provider readiness remain unmet. The profiled replay
-took 64.19 seconds, including 55.33 in clock analysis (49.04 own-function seconds
-in its truth/source scanning). This identifies slow postprocessing that previously
-showed no progress, not real-time ETW blocking or an installation speedup. The
-profiling wrapper's process exit zero is not a protocol pass; the diagnostic says
-`unavailable` / `requirements_unmet`. Original outputs and this separate replay
-are retained under `interrupted-fifth-audit`; the reviewed audit is
-`exploratory-545ed3f-readonly-evidence-audit.json`. Full records stay private.
+The recorded false-check sets are exactly `no_false_attribution` for 1–4, 7, 8;
+arm 6 additionally has `no_drain_timeout`. Arm 5 never wrote its final gate: its
+retained score independently violates the zero-unexpected-positive requirement.
+No denominator or threshold has been changed and no sample has been discarded.
 
-The harness now persists completed capture metrics and each subsequent stage
-before slow export/scoring/clock work, and exposes concise stage progress.
-Python-delivered interruption records its stage and retains journals before
-propagating; force termination can still bypass final handlers. Acceptance is not
-published at an unfinished checkpoint. Focused regressions first reproduced stale
-stages/interrupted status, then passed without changing workload, scorer or gates.
-The modified harness passed the complete Check mode: 182 Rust tests, four explicit
-skips, 145 Python tests (including 23 matrix tests), formatting, Clippy and existing
-PowerShell/fuzz-seed checks; doctests contain zero cases. Coverage, dependency,
-fuzz-campaign and benchmark modes were not rerun for this Python harness-only
-change. Their exact-candidate results above remain historical. The original
-runtime executables, attribution scorer and protocol 4 bytes are unchanged.
+| Arm | Detailed clock result | Evidence requirement still unmet |
+| --- | --- | --- |
+| 1 | 2,500 unique interval candidates, 300 unavailable actor intervals | Initial noise identity and collector native provenance missing; provider timing unverified |
+| 2 | `diagnostic_ready`, 2,800 unique strict interval candidates; native provenance matched | General provider timing contract unverified; readiness still `requirements_unmet` |
+| 3 | 2,800 unavailable rows | Raw companion intentionally off; native provenance matched. Not a companion runtime failure |
+| 4 | 2,800 unavailable rows | Raw companion off; collector provenance absent |
+| 5 | Separate unchanged-protocol replay: 25,000 unique + 300 unavailable | Missing actor intervals/provenance; original diagnostic absent; provider timing unverified |
+| 6 | 25,300 unavailable rows | Incomplete companion: 821,039 quota rejections; native provenance matched but cannot repair missing raw-clock proof |
+| 7 | 25,300 unavailable rows | Raw companion intentionally off; native provenance matched |
+| 8 | 25,300 unavailable rows | Raw companion off; collector provenance absent |
 
-The continuation entry is now frozen separately at
-`target/stabilization/evidence-load-20261025/continuation-6-8/run-continuation-admin.cmd`.
-It executes only original indices **6, 7, 8** (10,000-file candidate on, candidate
-off, baseline off) into a new directory. It binds the original plan and partial
-comparison by hash, uses the same executable/fixture inputs, and retains original
-indices 1–5 without rerunning or relabeling them. The checkpoint harness is
-`bdce93188946a5b2234dfcf900ace407e65e78d1`; the runtime candidate remains `545ed3f`.
-The new plan SHA-256 is
-`dadd19e43126e7dd86d3ffd237ff9bf54f98c91e60b586ef3670ea65cb7e3cdc`.
-Eight private continuation regressions passed, including existing-output refusal,
-fixed indices, provider scope and stopping after uncertain/nonzero capture exits.
-The actual short entry with `-ValidateOnly` returned zero and explicitly launched
-no process. These three captures remain unexecuted until the administrator runs it.
-The original and continuation harness versions remain distinct; do not pool them
-as a uniform performance series or replace the formal paired protocol with them.
-This file-only workload does not resolve the small demo's NoiseOnly registry
-context gap, failed-deletion observability or general provider timing prerequisite.
+All original `clock_diagnostic_pass=false` values remain false. In unavailable
+arms, a temporal match failure rate is **null**, not 100%; those comparisons could
+not be validated. All arms still lack the general provider emission prerequisite.
+Strictly validated operation metrics remain null. Numeric interval candidates,
+verified writer instances, resource naming and final state are separate conclusions.
 
-Formal acceptance still requires audited contemporary identity/provenance evidence,
-a scoped provider-timing protocol with explicit unsupported/failed-call behavior,
-an acceptable small diagnostic and immutable paired inputs. No formal inputs are
-frozen, no new scale pass is claimed, and final file/registry ownership remains
-Unknown. Private evidence is under `target/stabilization/evidence-load-20261025/`;
-earlier failures remain under `evidence-load-20261024/` and `raw-clock-stabilization/`.
+### Main pipeline versus raw companion
 
-## Current evidence gaps and exploratory scope (2026-10-24)
+| Arm | Main received = persisted | Main / handoff queue record peaks | STOP + queue drain ms | Raw received / stored / quota rejected | Raw bytes |
+| --- | ---: | --- | ---: | --- | ---: |
+| 1 | 19,322 | 346 / 1,896 | 28 | 462,849 / 462,849 / 0 | 29,622,336 |
+| 2 | 18,568 | 134 / 1,426 | 68 | 519,591 / 519,591 / 0 | 33,253,824 |
+| 3 | 18,463 | 297 / 2,138 | 4 | null / null / null (off) | null |
+| 4 | 18,437 | 219 / 1,492 | 5 | null / null / null (off) | null |
+| 5 | 166,971 | 405 / 2,964 | 59 | 1,779,485 / 1,779,485 / 0 | 113,887,040 |
+| 6 | 174,495 | 485 / 3,986 | 54 | 2,917,167 / 2,096,128 / 821,039 | 134,152,192 |
+| 7 | 167,111 | 282 / 3,228 | 20 | null / null / null (off) | null |
+| 8 | 167,215 | 259 / 3,755 | 43 | null / null / null (off) | null |
+
+For **each of eight main captures**, upstream reported ETW events/buffers lost,
+callback queue overflow/disconnection, handoff overflow/oversized/disconnection/
+serialization failure, persistence failure and raw-evidence quota refusal are all
+0. Both pending queues are 0; consumer stop is recorded; receiver and writer finished.
+Queue record limits are 4,096 each. Arm 6's handoff reaches 97.31% of that limit
+without dropping, so sustained-load headroom is not established. The provider-total
+loss denominator is unavailable; no main/companion count difference is a loss rate.
+
+For the four enabled companions, queue/writer-closed/not-persisted rejection
+counters are 0, writer queue peak one chunk, producer stopped and writer drained.
+Arm 6 reaches the fixed 128-MiB disk budget (64 KiB reserved for metadata), hence
+2,096,128 accepted 64-byte rows and 821,039 quota rejections: **28.1451% of this
+companion's 2,917,167 received callbacks**. `capacity_dropped` and `quota_dropped`
+describe the same refusals, not two losses to add. Its binary SHA matches and
+`complete=true` means the accepted file is complete, not that all received events
+were saved. Reported writer memory is 9 MiB. Companion final consumer-loss counters
+are unavailable; zero counters in its OpenTrace header are startup values only.
+
+### Costs and what was not timed
+
+Times below are seconds. Capture-parent wall includes its post-STOP processing;
+the derived-evidence column is part of that time, not additional. The wrapper
+remainder is its recorded UTC span minus capture-parent monotonic duration; it
+covers setup, hash checks, export, scoring, clock analysis and archival, and could
+also reflect wall-clock adjustment. It is **not** an isolated analysis measurement.
+Offline export/score/clock durations
+for every original arm are **null**, because those stages have no duration timer.
+
+| Arm | Capture-parent wall | Stored internal capture | Derived evidence/paged persistence | Wrapper remainder | Parent CPU | Peak WS / sampled private bytes |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | 11.985 | 11.723 | 3.083 | 2.398 | 5.156 | 35,545,088 / 25,096,192 |
+| 2 | 14.581 | 14.248 | 4.129 | 2.472 | 6.719 | 37,203,968 / 26,083,328 |
+| 3 | 18.573 | 18.329 | 4.677 | 1.631 | 6.922 | 29,589,504 / 19,169,280 |
+| 4 | 12.286 | 12.108 | 2.717 | 1.253 | 4.156 | 28,823,552 / 16,322,560 |
+| 5 | null | 94.115 | 81.483 | null | null | null / null |
+| 6 | 122.909 | 120.670 | 98.263 | 18.926 | 100.781 | 78,278,656 / 66,818,048 |
+| 7 | 93.426 | 92.031 | 71.201 | 14.199 | 70.859 | 78,213,120 / 70,373,376 |
+| 8 | 89.456 | 88.003 | 68.588 | 13.696 | 66.172 | 77,373,440 / 69,300,224 |
+
+| Arm | DB bytes | Sampled WAL peak bytes | Parent logical read / write bytes |
+| --- | ---: | ---: | --- |
+| 1 | 134,426,624 | 43,330,072 | 947,282,055 / 1,135,887,109 |
+| 2 | 134,987,776 | 41,752,112 | 960,117,759 / 1,152,892,148 |
+| 3 | 125,820,928 | 61,087,272 | 914,963,399 / 1,095,802,649 |
+| 4 | 119,267,328 | 61,008,992 | 867,145,693 / 1,033,023,397 |
+| 5 | 1,220,132,864 | null | null / null |
+| 6 | 1,274,957,824 | 375,748,152 | 19,744,039,076 / 21,112,769,184 |
+| 7 | 1,153,626,112 | 416,054,112 | 18,683,696,223 / 20,082,363,751 |
+| 8 | 1,106,087,936 | 416,396,072 | 17,690,160,029 / 19,143,482,767 |
+
+CPU/memory/I/O are capture-parent only; physical disk I/O and descendant totals
+remain null. The main serialized-raw quota does not bound all derived tables/indexes.
+Separate companion CPU/callback duration is unavailable; its write timer covers
+sink writes only and excludes hashing, so it cannot measure total diagnostic overhead.
+For arms 5/6/7/8, grouped derived COMMIT (including automatic checkpoint) takes
+38.663/43.460/32.761/32.632 seconds; derived write takes
+32.892/37.475/26.730/25.240 seconds. Nested detail/edge timings must not be added
+again. Post-STOP SQL, duplicate representations and transaction/checkpoint work
+are the measured major cost; the checkpoint/fsync/index shares are not isolated.
+
+The separately profiled recovery of arm 5 took 64.193 seconds, including 55.326
+in clock analysis; it is a later offline replay, not the missing original duration.
+Its profiling wrapper catches `SystemExit`, so exit zero does not override the
+diagnostic's unavailable/unmet result. The continuation Python result was written
+at **02:46:55 Asia/Shanghai**, but PowerShell finished at **03:07:11**. The
+1,215.427-second recorded UTC gap follows final result creation. Missing monotonic
+process-exit/output-drain timers prevent diagnosing the actual outer wait or excluding
+a clock adjustment; it is not part of the recorded arm-8 cost.
+All sample timings and different ambient volumes are retained. Candidate/off at
+10k is 93.426 s versus baseline/off 89.456 s; candidate/on is 122.909 s with the
+additional failures. One observation cannot isolate companion overhead or prove
+a regression/improvement in stable throughput. Harness revisions also differ.
+
+### Main failure, evidence and smallest next action
+
+| Priority / issue | What existing evidence establishes | Minimal repair or validation action; not executed here |
+| --- | --- | --- |
+| 1. Candidate/off still fails: unmatched High writes and unresolved name provenance | Every one of 5,000 extra Write id16 events in arms 6–8 has the original write's FileObject, generation and FileKey. Rename/delete use different FileObjects of the same FileKey. Extra requests and unique successful same-IRP completions are inside the independent delete call by converted FILETIME, still named `.tmp`. Actor, resource and operation dimensions are all High | First isolate cross-object rename/name validity. Use open/write through A, rename through B, later event through A as the focused regression sequence; retain actor/request/completion and distinguish historical handle names from verified current paths. Do not predetermine that all extras should be renamed, downgraded or discarded |
+| Evidence missing before selecting the implementation fix | `windows/etw/decode.rs` caches by FileObject and invalidates only the rename object's entry, leaving a possible cross-object stale-name path. Retained evidence does not establish whether these extra events used that cache: supplied/cached origin, original payload, I/O size, offset and flags were not retained. Neither a cache cause nor flush semantics is proven | One small controlled write-close/rename/delete fixture sequence retaining those fields and name provenance can distinguish provider semantics from stale context before changing production rules. Use original QPC and exact object/lifetime evidence; do not propagate names by FileKey alone. This is a proposed focused diagnostic, not another 1k/10k rerun or formal sample; no entry was launched or scheduled |
+| 2. Companion disk quota | Arm 6 quota loss is balanced and explicit; queue peak one excludes observed writer-queue saturation. Background volume and capture duration differ | Audit a bounded original-event-key retention policy with both consumer arrival orders and required unrelated/context evidence before implementation. Preserve unmatched/over-limit counts. A larger quota alone is not a fix; no truth-based filtering |
+| 3. Quiet wait hits deadline | All five final installer-family instances have end records. There are 4,573 later scoped writes with Unknown writer and header PID 4; receiver activity refreshes for file events. The exact decision-time quiet/descendant inputs were not logged | Add bounded stop-decision diagnostics to the focused investigation. Do not identify the writer from PID 4, claim OS writeback, ignore late writes, or lengthen the timeout to pass |
+| 4. Derived persistence cost | Existing profiles locate most 10k wall time in paged derived writes/commits, not callback loss | Profile the already captured evidence on a separate database copy, isolating SQL, indexes and COMMIT/checkpoint with identical records. No production refactor justified by the aggregate timer alone |
+| 5. Outer terminal delay | Final result predates wrapper completion by 20 minutes | Measure child exit and output-pipeline completion separately in the harness; no evidence presently proves console selection, ETW blocking or a deadlock |
+
+The candidate's verified noise identity and native provenance are real improvements
+over baseline in these samples. They do not repair resource-name semantics, make an
+incomplete sidecar usable or satisfy the general provider timing contract. Existing
+sources cannot settle the omitted payload/name-origin question offline. No old
+score is reclassified and no final-state ownership or safe deletion is inferred.
+
+### Audit reproduction and remaining gates
+
+Private evidence root: `target/stabilization/evidence-load-20261025/`.
+Original arms are in `exploratory-545ed3f-verified-eight`; continuation in
+`continuation-6-8/results-original-6-7-8`; arm-5 recovery in
+`interrupted-fifth-audit`. New read-only audit scripts, exact command lines, input
+hashes, complete counters and supplements are in `eight-arm-audit-20261025/`:
+`identity-completeness.json`, `database-quick-check.json`, `performance-pipeline.json`,
+`clock-continuation-summary.json`, `clock-context-supplement.json` and
+`eight-arm-aggregate.json`. The local `summarize-eight.py` cross-checks all eight
+existing denominators and persistence/companion accounting without invoking the scorer.
+Its output is exclusive-create; use a new audit destination for another run.
+
+233 selected evidence files (8,255,310,639 bytes) had unchanged before/after SHA,
+size and mtime. Additional read-only SQLite checks created no sidecars. All seven
+completed measurement files, old scores, raw streams and interrupted records remain
+unchanged. Full logs, host/process identities, paths and databases remain private;
+only reviewed aggregate facts appear here.
+
+Executed this update: read-only identity/blob/hash comparisons, eight SQLite
+structural checks, existing-score/accounting invariants, and offline event-context
+audits. No runtime build, Rust/Python product test suite, coverage, benchmark or
+fuzz campaign was rerun for this documentation-only update. Historical checks:
+exact candidate `545ed3f` passed 182 Rust tests (four skipped), 142 Python tests,
+69.05% line / 73.19% function coverage, locked dependency checks and three short
+fuzz runs; checkpoint harness `bdce931` passed Check with 182 Rust / 145 Python
+tests. These are quality checks, not live acceptance or tests of a new fix.
+
+Formal inputs are not frozen. The unexpected-positive/resource-context requirement,
+quiet-timeout cause, bounded companion retention, provider emission contract and
+small-demo registry/failed-call gaps still need resolution. The eight explorations
+cannot replace the unchanged 32-attempt paired acceptance. No new capture is
+scheduled by this audit, and the foundation for a safe removal loop is not established.
+
+
+## Historical evidence gaps and exploratory scope (2026-10-24)
+
 
 Starting source and verified remote development HEAD: `e72d88c410f8ec69b8e17f7ccc193a6cb9c972d4`.
 The most recent live runtime remains clean `86a6b59`, version **0.3.1**.

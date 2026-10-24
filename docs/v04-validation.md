@@ -6,6 +6,17 @@ not satisfy the ETW release gate. No vendor installer has been run in this work.
 
 ## Current diagnostic protocol 4 and exploratory boundary
 
+All eight exploratory captures have now been audited, including the separately
+recovered analysis of the interrupted fifth attempt. The executed candidate is
+`545ed3f`, baseline `e72d88c`; the later report/harness revision is not a new runtime.
+The [eight-arm audit](validation-v0.4.md) records every failed predicate, missing
+measurement and original input identity. All eight retained legacy scores violate
+the unexpected-positive requirement; candidate/on at 10,000 files also reaches
+the quiet-drain deadline and companion disk quota. Raw-off clock validation remains
+unavailable, with original false values preserved. The protocol below describes
+the fixed exploration; it is not an instruction to rerun it. No further capture
+or formal 32-attempt acceptance was started by this audit.
+
 `contain-clock-observability-4` adds independently sampled local provenance to
 protocol 3; numeric interval matching, zero tolerance, success denominators and
 the legacy scorer are unchanged. It requires two collector observations bracketing
