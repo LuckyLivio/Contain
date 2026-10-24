@@ -247,6 +247,24 @@ fuzz-campaign and benchmark modes were not rerun for this Python harness-only
 change. Their exact-candidate results above remain historical. The original
 runtime executables, attribution scorer and protocol 4 bytes are unchanged.
 
+The continuation entry is now frozen separately at
+`target/stabilization/evidence-load-20261025/continuation-6-8/run-continuation-admin.cmd`.
+It executes only original indices **6, 7, 8** (10,000-file candidate on, candidate
+off, baseline off) into a new directory. It binds the original plan and partial
+comparison by hash, uses the same executable/fixture inputs, and retains original
+indices 1–5 without rerunning or relabeling them. The checkpoint harness is
+`bdce93188946a5b2234dfcf900ace407e65e78d1`; the runtime candidate remains `545ed3f`.
+The new plan SHA-256 is
+`dadd19e43126e7dd86d3ffd237ff9bf54f98c91e60b586ef3670ea65cb7e3cdc`.
+Eight private continuation regressions passed, including existing-output refusal,
+fixed indices, provider scope and stopping after uncertain/nonzero capture exits.
+The actual short entry with `-ValidateOnly` returned zero and explicitly launched
+no process. These three captures remain unexecuted until the administrator runs it.
+The original and continuation harness versions remain distinct; do not pool them
+as a uniform performance series or replace the formal paired protocol with them.
+This file-only workload does not resolve the small demo's NoiseOnly registry
+context gap, failed-deletion observability or general provider timing prerequisite.
+
 Formal acceptance still requires audited contemporary identity/provenance evidence,
 a scoped provider-timing protocol with explicit unsupported/failed-call behavior,
 an acceptable small diagnostic and immutable paired inputs. No formal inputs are
