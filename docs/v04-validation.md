@@ -4,6 +4,57 @@ The scripts in this document separate synthetic fixture validation, ETW acceptan
 CLI consistency and third-party installer validation. A passing fallback run does
 not satisfy the ETW release gate. No vendor installer has been run in this work.
 
+## Current diagnostic protocol 4 and exploratory boundary
+
+`contain-clock-observability-4` adds independently sampled local provenance to
+protocol 3; numeric interval matching, zero tolerance, success denominators and
+the legacy scorer are unchanged. It requires two collector observations bracketing
+the trace and one independent initialization observation per fixture process,
+consistent across that process's rows and completed before the recorded calls.
+Hashing the physical DNS name limits accidental disclosure in summaries; the
+identifiers and complete samples still belong only in private artifacts.
+
+The native boot information query accepts only status zero, the observed 32-byte
+layout and a nonzero identifier. [The native API may change](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntquerysysteminformation);
+this is an explicitly versioned local observation rather than a stable Win32
+boot-identity contract. [Physical DNS naming](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-getcomputernameexw)
+also does not attest physical hardware or cloned guests. Missing observations,
+mismatches, failed API calls, malformed shapes or inconsistent phase bounds remain
+unavailable. Old captures deserialize with absent provenance; no current query is
+used to repair them retrospectively.
+
+Common-protocol reassessment retained both historical captures and their prior
+results. The capacity-failed sample remains 21 unavailable rows; the later small
+clock-on capture remains 17 unique interval candidates, two actor-unavailable rows
+and two without qualified in-interval sources. Both exit 2 and lack contemporary
+collector provenance. The complete inputs, sidecars and prior results were hashed
+before and after; no truth row changed. New outputs and the comparison manifest
+are under `target/stabilization/evidence-load-20261025/`.
+
+Numeric candidates are not operation-completion or attribution scores. The current
+`provider_emission_contract` is `unverified_general` and `validation_readiness`
+remains `requirements_unmet`, including when local provenance matches. A new run
+cannot by itself enable a formal pass. Required follow-up is a scoped protocol
+for the observed provider GUID/event/version and synchronous call type on the
+recorded Windows build: relate requests to unambiguous completion/status and
+independent call boundaries, retain failed-Open cases that may not emit deletion,
+and leave cross-thread one-tick ordering ambiguous without extending intervals.
+Control-marker provenance is still reported separately as unverified.
+
+The authorized eight-attempt exploration uses the existing matrix runner with
+frozen `e72d88c` baseline, a reviewed candidate, one common new fixture and the same
+three scoring scripts. For each of 1,000 and 10,000 files, execute baseline-on,
+candidate-on, candidate-off, baseline-off, with four workers and 100 noise files.
+Use new output/fixture directories, keep all journals and databases, and retain
+per-attempt binary/script hashes and exact configuration. Label every result
+`exploratory`, never formal acceptance. The private fixed launcher refuses an
+unfrozen plan or a non-administrator token and never elevates or cleans up.
+Uncertain worker termination stops subsequent arms with explicit unexecuted rows.
+Missing clock/identity-dependent metrics remain null; raw-off is a separate cost
+control and its legacy score cannot establish original-clock validation. This
+exploration may run before the small diagnostic passes; the formal 32 attempts
+below still require audited prerequisites and a separate freeze.
+
 ## Current environment boundary
 
 The read-only preflight on 2026-10-22 recorded a Windows host and a non-elevated

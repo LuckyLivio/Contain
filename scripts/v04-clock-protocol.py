@@ -19,7 +19,7 @@ RAW_TIMESTAMP = 0x1000
 SUPPORTED = {"write_requested", "rename_requested", "delete_requested", "set_value"}
 COMPANION_PROTOCOL = "contain-raw-clock-companion-1"
 COMPANION_BINARY_PROTOCOL = "contain-raw-clock-companion-2"
-PROTOCOL_REVISION = "contain-clock-observability-3"
+PROTOCOL_REVISION = "contain-clock-observability-4"
 BINARY_ROW = struct.Struct("<QQq16sHBBBBHQII")
 BINARY_DISK_LIMIT = 128 * 1024 * 1024
 BINARY_METADATA_LIMIT = 64 * 1024
@@ -76,6 +76,95 @@ def identity(value, event=False):
     if not 0 < pid <= 0xFFFFFFFF or birth == 0:
         raise ValueError("unknown process identity")
     return pid, birth
+
+
+def native_provenance_sample(value, phase):
+    if not isinstance(value, dict):
+        raise ValueError("native_provenance_sample_missing")
+    if (type(value.get("schema_version")) is not int or value["schema_version"] != 1
+            or value.get("phase") != phase or value.get("status") != "observed"
+            or value.get("machine_source") != "GetComputerNameExW_PhysicalDnsFullyQualified_lower_utf16le_sha256"
+            or value.get("boot_source") != "NtQuerySystemInformation_SystemBootEnvironmentInformation_90_32"
+            or value.get("nt_status") != "00000000" or type(value.get("returned_bytes")) is not int
+            or value["returned_bytes"] != 32 or value.get("errors") != []):
+        raise ValueError("native_provenance_measurement_unavailable_or_invalid")
+    for name, width in (("machine_name_sha256", 64), ("boot_identifier_le_hex", 32)):
+        token = value.get(name)
+        if (not isinstance(token, str) or len(token) != width or any(c not in "0123456789abcdef" for c in token)
+                or int(token, 16) == 0):
+            raise ValueError("native_provenance_identifier_invalid")
+    times = []
+    for name in ("qpc_before", "qpc_after"):
+        tick = value.get(name)
+        if (not isinstance(tick, str) or not tick.isascii() or not tick.isdecimal()
+                or str(int(tick)) != tick or not 0 <= int(tick) < 1 << 63):
+            raise ValueError("native_provenance_qpc_invalid")
+        times.append(int(tick))
+    if times[0] > times[1]:
+        raise ValueError("native_provenance_qpc_regressed")
+    return (value["machine_name_sha256"], value["boot_identifier_le_hex"]), tuple(times)
+
+
+def provenance_diagnostic(metadata, truth):
+    result = dict(status="unavailable", verified=False, collector_samples=0, fixture_rows=0,
+                  scope="matching_independent_local_native_observations_not_tamper_or_vm_clone_attestation")
+    try:
+        samples = metadata.get("provenance")
+        if not isinstance(samples, list) or len(samples) != 2:
+            raise ValueError("collector_native_provenance_missing")
+        first, first_bounds = native_provenance_sample(samples[0], "trace_start_requested")
+        last, last_bounds = native_provenance_sample(samples[1], "consumer_stopped")
+        if first != last:
+            raise ValueError("collector_native_provenance_changed")
+        calibrations = metadata["calibrations"]
+        if (first_bounds[1] > bracket(calibrations[0])[0]
+                or last_bounds[0] < bracket(calibrations[2])[2]
+                or last_bounds[1] > bracket(calibrations[3])[0]):
+            raise ValueError("collector_native_provenance_phase_bounds_invalid")
+        result["collector_samples"] = 2
+        processes = {}
+        for row in truth:
+            clock = row["clock"]
+            if not isinstance(clock, dict):
+                raise ValueError("fixture_clock_not_an_object")
+            measured, bounds = native_provenance_sample(clock.get("provenance"), "fixture_clock_initialized")
+            if measured != first:
+                raise ValueError("fixture_collector_machine_or_boot_mismatch")
+            if bounds[1] > bracket(clock["before"])[0]:
+                raise ValueError("fixture_native_provenance_after_operation_boundary")
+            process = identity(row)
+            observation = (measured, bounds)
+            if process in processes and processes[process] != observation:
+                raise ValueError("fixture_native_provenance_changed_within_process")
+            processes[process] = observation
+            result["fixture_rows"] += 1
+        result.update(status="matched_native_observations", verified=True, fixture_processes=len(processes))
+    except (KeyError, TypeError, ValueError, IndexError) as error:
+        result["reason"] = str(error)
+    return result
+
+
+def provider_emission_diagnostic(events):
+    observations = []
+    for event in events:
+        raw = event.get("raw")
+        clock = raw.get("clock") if isinstance(raw, dict) else None
+        descriptor = clock.get("record_identity") if isinstance(clock, dict) else None
+        if not isinstance(descriptor, dict):
+            descriptor = {}
+        provider, number, version = (descriptor.get(name) for name in ("provider", "event_id", "version"))
+        semantics = "unverified_descriptor"
+        if type(number) is int and type(version) is int:
+            if (provider == "edd08927-9cc4-4e65-b970-c2560fb5c289" and version in (0, 1)
+                    and {16: "write_requested", 26: "delete_requested", 27: "rename_requested"}.get(number) == event.get("operation")):
+                semantics = "file_operation_request"
+            elif (provider == "70eb4f03-c1de-4f73-a051-33d13d5413bd" and number == 5 and version == 0
+                    and event.get("operation") == "set_value"):
+                semantics = "registry_operation_status"
+        observations.append(dict(event_id=event.get("id"), provider=provider, provider_event_id=number,
+                                 provider_version=version, semantics=semantics, completion_proven_by_timestamp=False))
+    return dict(status="unverified_general", source_events=observations,
+                definition="An exact interval candidate is a timestamp observation, not proof of operation completion. File requests need separate unambiguous OperationEnd evidence; registry result needs the recorded status. Provider schemas alone do not guarantee emission within every API-call interval.")
 
 
 def record_identity(value):
@@ -512,6 +601,7 @@ def analyze(capture, truth, sid="", raw_clock_bytes=None, raw_clock_path=None):
     events = [event for event in capture.get("events", [])
               if event.get("event_type") in {"file", "registry"} and event.get("operation") in SUPPORTED]
     report["source_event_count"] = len(events)
+    report["provider_emission_contract"] = provider_emission_diagnostic(events)
     valid_events = []
     unknown_actor_events = []
     missing_qpc = 0
@@ -610,9 +700,16 @@ def analyze(capture, truth, sid="", raw_clock_bytes=None, raw_clock_path=None):
     counts = Counter(row["status"] for row in report["truth_rows"])
     report["counts"] = dict(counts)
     report["status"] = "invalid" if invalid else "unavailable" if not source_ready or counts["unavailable"] else "diagnostic_ready"
+    report["clock_provenance"] = provenance_diagnostic(metadata, truth)
+    report["same_machine_boot_provenance_verified"] = report["clock_provenance"]["verified"]
+    requirements = dict(original_clock_and_intervals=report["status"],
+                        same_machine_boot=report["clock_provenance"]["status"],
+                        provider_emission_contract=report["provider_emission_contract"]["status"])
+    report["validation_readiness"] = dict(status="requirements_unmet", requirements=requirements,
+        definition="Clock/interval facts remain visible when provenance or the provider emission contract is unverified; diagnostic_ready alone is not readiness or acceptance.")
     report["definition"] = ("Timing compatibility is not causal attribution or a release pass. Missing original QPC stays unavailable. "
                             "Missing actor identity is retained as Unknown and blocks every matching operation/resource/QPC interval. "
-                            "Same-machine, same-boot capture and fixture provenance must be independently established. "
+                            "Native provenance comparisons are limited to independently sampled local observations, not tamper or cloned-VM attestation. "
                             "FILETIME samples diagnose clocks only; no inverse conversion or tolerance is used.")
     return report
 
@@ -658,8 +755,9 @@ def main():
     with args.output.open("x", encoding="utf-8") as output:
         json.dump(result, output, indent=2, allow_nan=False)
         output.write("\n")
-    print(json.dumps({"status": result["status"], "counts": result["counts"], "release_gate": None}))
-    return 0 if result["status"] == "diagnostic_ready" else 2
+    print(json.dumps({"status": result["status"], "validation_readiness": result["validation_readiness"]["status"],
+                      "counts": result["counts"], "release_gate": None}))
+    return 0 if result["status"] == "diagnostic_ready" and result["validation_readiness"]["status"] == "ready" else 2
 
 
 if __name__ == "__main__":

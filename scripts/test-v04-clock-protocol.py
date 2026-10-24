@@ -39,6 +39,96 @@ class ClockProtocolTests(unittest.TestCase):
     def analyze(self, truth=None):
         return CLOCK.analyze(self.capture, [self.truth] if truth is None else truth)
 
+    def native_provenance(self):
+        sample = dict(schema_version=1, status="observed",
+            machine_source="GetComputerNameExW_PhysicalDnsFullyQualified_lower_utf16le_sha256",
+            machine_name_sha256="1" * 64,
+            boot_source="NtQuerySystemInformation_SystemBootEnvironmentInformation_90_32",
+            boot_identifier_le_hex="2" * 32, nt_status="00000000", returned_bytes=32,
+            errors=[])
+        self.capture["backend"]["clock"]["provenance"] = [
+            dict(sample, phase="trace_start_requested", qpc_before="0", qpc_after="1"),
+            dict(sample, phase="consumer_stopped", qpc_before="430", qpc_after="440")]
+        self.truth["clock"]["provenance"] = dict(sample, phase="fixture_clock_initialized",
+                                                  qpc_before="20", qpc_after="21")
+
+    def test_missing_provenance_preserves_exact_interval_fact_but_not_readiness(self):
+        result = self.analyze()
+        self.assertEqual(result["truth_rows"][0]["status"], "unique_interval_candidate")
+        self.assertEqual(result["truth_rows"][0]["event_ids"], ["source"])
+        self.assertFalse(result["same_machine_boot_provenance_verified"])
+        self.assertEqual(result["validation_readiness"]["status"], "requirements_unmet")
+        self.assertEqual(result["clock_provenance"]["reason"], "collector_native_provenance_missing")
+
+    def test_independently_matching_native_provenance_is_not_provider_completion(self):
+        self.native_provenance()
+        self.event["raw"]["clock"]["record_identity"] = dict(
+            provider="edd08927-9cc4-4e65-b970-c2560fb5c289", event_id=16, version=1)
+        result = self.analyze()
+        self.assertTrue(result["same_machine_boot_provenance_verified"])
+        self.assertEqual(result["validation_readiness"]["status"], "requirements_unmet")
+        self.assertEqual(result["provider_emission_contract"]["status"], "unverified_general")
+        observed = result["provider_emission_contract"]["source_events"][0]
+        self.assertEqual(observed["semantics"], "file_operation_request")
+        self.assertFalse(observed["completion_proven_by_timestamp"])
+
+    def test_native_provenance_rejects_mismatch_failure_truncation_or_fabrication(self):
+        for field, invalid in (("schema_version", True), ("status", "unavailable"),
+                ("returned_bytes", True), ("returned_bytes", 31), ("returned_bytes", 33),
+                ("nt_status", "c0000001"), ("boot_identifier_le_hex", "0" * 32),
+                ("boot_identifier_le_hex", "3" * 32), ("machine_name_sha256", "3" * 64),
+                ("boot_source", "trace_header_BootTime"), ("errors", ["failed"]),
+                ("qpc_before", "22"), ("qpc_after", "100"), ("qpc_before", True)):
+            with self.subTest(field=field, invalid=invalid):
+                self.native_provenance()
+                self.truth["clock"]["provenance"][field] = invalid
+                result = self.analyze()
+                self.assertFalse(result["same_machine_boot_provenance_verified"])
+                self.assertEqual(result["truth_rows"][0]["event_ids"], ["source"])
+                self.assertEqual(result["validation_readiness"]["status"], "requirements_unmet")
+
+    def test_native_provenance_requires_both_collector_phases_and_every_fixture_row(self):
+        for defect in ("missing_stop", "reversed", "different_stop_boot", "fixture_missing"):
+            with self.subTest(defect=defect):
+                self.native_provenance()
+                samples = self.capture["backend"]["clock"]["provenance"]
+                if defect == "missing_stop": samples.pop()
+                elif defect == "reversed": samples.reverse()
+                elif defect == "different_stop_boot": samples[-1]["boot_identifier_le_hex"] = "3" * 32
+                else: self.truth["clock"].pop("provenance")
+                self.assertFalse(self.analyze()["same_machine_boot_provenance_verified"])
+
+    def test_malformed_source_clock_shapes_remain_unavailable_without_crashing(self):
+        for raw in (None, [], {"clock": None}, {"clock": []}):
+            with self.subTest(raw=raw):
+                self.event["raw"] = raw
+                result = self.analyze()
+                self.assertEqual(result["status"], "unavailable")
+                self.assertEqual(result["truth_rows"][0]["event_ids"], [])
+                self.assertEqual(result["provider_emission_contract"]["source_events"][0]["semantics"],
+                                 "unverified_descriptor")
+                self.assertEqual(result["validation_readiness"]["status"], "requirements_unmet")
+
+    def test_malformed_provider_descriptor_never_claims_known_semantics(self):
+        for descriptor in (None, [], "descriptor", 5):
+            with self.subTest(descriptor=descriptor):
+                self.event["raw"]["clock"]["record_identity"] = descriptor
+                result = self.analyze()
+                self.assertEqual(result["provider_emission_contract"]["source_events"][0]["semantics"],
+                                 "unverified_descriptor")
+                self.assertEqual(result["validation_readiness"]["status"], "requirements_unmet")
+
+    def test_malformed_independent_clock_cannot_verify_native_provenance(self):
+        self.native_provenance()
+        for clock in (None, [], "clock", 5):
+            with self.subTest(clock=clock):
+                self.truth["clock"] = clock
+                result = self.analyze()
+                self.assertEqual(result["status"], "invalid")
+                self.assertFalse(result["same_machine_boot_provenance_verified"])
+                self.assertEqual(result["clock_provenance"]["reason"], "fixture_clock_not_an_object")
+                self.assertEqual(result["validation_readiness"]["status"], "requirements_unmet")
+
     def companion(self):
         descriptor = dict(provider="11111111-1111-1111-1111-111111111111", event_id=16,
                           version=0, channel=0, level=0, opcode=0, task=0,
@@ -100,7 +190,7 @@ class ClockProtocolTests(unittest.TestCase):
         original = copy.deepcopy(self.capture)
         result = CLOCK.analyze(self.capture, [self.truth], raw_clock_bytes=raw)
         self.assertEqual(result["status"], "diagnostic_ready")
-        self.assertEqual(result["protocol_revision"], "contain-clock-observability-3")
+        self.assertEqual(result["protocol_revision"], "contain-clock-observability-4")
         self.assertEqual(result["raw_companion"]["start_time_observation"], dict(
             primary="0", companion="0", status="unavailable_at_realtime_open",
             available=False, used_as_clock_origin=False))
@@ -731,9 +821,13 @@ class BinaryClockProtocolTests(unittest.TestCase):
         truth.write_text(json.dumps([self.truth]))
         process = subprocess.run([sys.executable, str(Path(CLOCK.__file__)), "--capture", str(capture),
             "--truth", str(truth), "--raw-clock", str(self.path), "--output", str(output)], capture_output=True)
-        self.assertEqual(process.returncode, 0, process.stderr)
+        # The exact sibling link is still valid, but missing independent native
+        # provenance/general emission validation now prevents readiness.
+        self.assertEqual(process.returncode, 2, process.stderr)
         result = json.loads(output.read_text())
         self.assertEqual(result["status"], "diagnostic_ready")
+        self.assertEqual(result["validation_readiness"]["status"], "requirements_unmet")
+        self.assertEqual(result["raw_companion"]["status"], "exact_original_key_links_available")
         self.assertIsNone(result["release_gate"])
 
 
