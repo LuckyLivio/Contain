@@ -1,5 +1,6 @@
 """Checks denominator/gate invariants and preservation of failed matrix attempts."""
 import copy
+from contextlib import ExitStack
 import importlib.util
 import io
 import json
@@ -37,6 +38,111 @@ def handoff_data(**changes):
 
 
 class MatrixTests(unittest.TestCase):
+    def staged_trial(self, root, *, observe=None, interrupt=None, progress_callback=None):
+        args = SimpleNamespace(baseline=root / "baseline.exe", candidate=root / "candidate.exe", fixture=root / "fixture.exe",
+                               baseline_variant=None, candidate_variant=None, keep_fixtures=True, snapshot_only=False,
+                               timeout=600, sid="")
+        capture, score = data()
+        capture["quality"] = {}
+        score["groups"]["noise_success"]["expected"] = 0
+        def boundary(stage):
+            if observe:
+                observe(stage, json.loads((root / "attempt/measurement.json").read_text()))
+            if interrupt == stage:
+                raise KeyboardInterrupt()
+        def launch(command, **kwargs):
+            truth = Path(kwargs["env"]["CONTAIN_FIXTURE_TRUTH"])
+            (truth / "ground-truth-1.jsonl").write_text('{"operation":"write_requested"}\n')
+            Path(kwargs["env"]["CONTAIN_ETW_RAW_CLOCK_PATH"]).write_bytes(b"{}")
+            poll = mock.Mock(side_effect=[None, 0]) if interrupt == "capture" else lambda: 0
+            return SimpleNamespace(pid=1, returncode=0, poll=poll)
+        def export(command, **kwargs):
+            boundary("export")
+            kwargs["stdout"].write(json.dumps({"data": capture}).encode())
+        def scoring(*args):
+            boundary("legacy_score")
+            return score
+        def analysis(*args):
+            boundary("clock_diagnostic")
+            return {"status": "diagnostic_ready", "validation_readiness": {"status": "requirements_unmet"}}
+        sample = mock.Mock(side_effect=[KeyboardInterrupt(), None]) if interrupt == "capture" else lambda: None
+        metrics = SimpleNamespace(values={"parent_cpu_seconds": .5, "parent_peak_working_set_bytes": 4096},
+                                  errors=set(), sample=sample, close=mock.Mock())
+        with ExitStack() as stack:
+            for patch in (
+                mock.patch.object(MATRIX.tempfile, "gettempdir", return_value=str(root)),
+                mock.patch.object(MATRIX.subprocess, "Popen", side_effect=launch),
+                mock.patch.object(MATRIX.subprocess, "run", side_effect=export),
+                mock.patch.object(MATRIX.subprocess, "CREATE_NO_WINDOW", 0, create=True),
+                mock.patch.object(MATRIX, "ProcessMetrics", return_value=metrics),
+                mock.patch.object(MATRIX.time, "perf_counter", side_effect=[10, 12]),
+                mock.patch.object(MATRIX.ORACLE, "score", side_effect=scoring),
+                mock.patch.object(MATRIX.CLOCK, "analyze", side_effect=analysis),
+                mock.patch.object(MATRIX.CLOCK, "marker_diagnostics", return_value={"status": "measured"}),
+            ):
+                stack.enter_context(patch)
+            kwargs = {"progress_callback": progress_callback} if progress_callback else {}
+            return MATRIX.run_trial(args, root / "attempt", "candidate", 1000, 4, 0, 1, None,
+                                    raw_clock_enabled=True, fixture_clock_enabled=True, **kwargs)
+
+    def test_stage_checkpoints_preserve_capture_metrics_before_slow_analysis(self):
+        observed = []
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            def observe(stage, record):
+                observed.append(stage)
+                self.assertEqual(record["stage"], stage)
+                self.assertEqual(record["elapsed_seconds"], 2)
+                self.assertEqual(record["parent_cpu_seconds"], .5)
+                self.assertEqual(record["capture_exit"], 0)
+                self.assertFalse(record["acceptance_pass"])
+                if stage == "clock_diagnostic":
+                    self.assertTrue(record["legacy_acceptance_pass"])
+                    self.assertIn("score", record)
+                    self.assertTrue((root / "attempt/score.json").is_file())
+            record = self.staged_trial(root, observe=observe)
+            self.assertEqual(observed, ["export", "legacy_score", "clock_diagnostic"])
+            self.assertEqual(record["status"], "completed")
+
+    def test_keyboard_interrupt_preserves_stage_metrics_and_independent_journals(self):
+        for stage in ("capture", "export", "legacy_score", "clock_diagnostic"):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                with self.assertRaises(KeyboardInterrupt):
+                    self.staged_trial(root, interrupt=stage)
+                record = json.loads((root / "attempt/measurement.json").read_text())
+                self.assertEqual(record["status"], "interrupted")
+                self.assertEqual(record["failed_stage"], stage)
+                self.assertFalse(record["acceptance_pass"])
+                self.assertEqual(record["elapsed_seconds"], 2)
+                self.assertEqual(record["parent_cpu_seconds"], .5)
+                self.assertTrue((root / "attempt/truth-journals/ground-truth-1.jsonl").is_file())
+                if stage == "clock_diagnostic":
+                    self.assertTrue(record["legacy_acceptance_pass"])
+                    self.assertTrue((root / "attempt/score.json").is_file())
+
+    def test_progress_callback_reports_durable_stages_without_private_context(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stages = []
+            def progress(stage, details):
+                stages.append(stage)
+                persisted = json.loads((root / "attempt/measurement.json").read_text())
+                self.assertEqual(persisted["stage"], stage)
+                self.assertEqual(set(details), {"mode", "files", "workers", "noise_files", "trial", "status"})
+                self.assertNotIn(str(root), json.dumps(details))
+                if stage == "capture_finished":
+                    self.assertEqual(persisted["elapsed_seconds"], 2)
+                if stage == "clock_diagnostic_finished":
+                    self.assertEqual(persisted["clock_diagnostic_status"], "diagnostic_ready")
+                    self.assertFalse(persisted["clock_diagnostic_pass"])
+                    self.assertFalse(persisted["acceptance_pass"])
+            with mock.patch.object(MATRIX.sys, "stdout", io.StringIO()) as output:
+                self.staged_trial(root, progress_callback=progress)
+            self.assertEqual(output.getvalue(), "")
+            self.assertEqual(stages, ["prepare_fixture", "capture", "capture_finished", "export", "legacy_score",
+                                      "legacy_score_finished", "clock_diagnostic", "clock_diagnostic_finished", "completed"])
+
     def arguments(self, *extra):
         return MATRIX.parser().parse_args(["--baseline", "baseline.exe", "--candidate", "candidate.exe",
             "--fixture", "fixture.exe", "--output", "output", "--files", "100", "1000", "10000", "--workers", "4", *extra])
@@ -96,7 +202,7 @@ class MatrixTests(unittest.TestCase):
                 binary = root / (name + ".exe")
                 binary.write_bytes(name.encode())
                 argv += ["--" + name, str(binary)]
-            def failed(args, directory, mode, files, workers, noise, trial, seed, seed_index):
+            def failed(args, directory, mode, files, workers, noise, trial, seed, seed_index, *, progress_callback=None):
                 return dict(mode=mode, files=files, workers=workers, noise_files=noise, trial=trial,
                             seed_index=seed_index, status="failed", acceptance_pass=False, harness_error="injected failure")
             with mock.patch.object(MATRIX.sys, "argv", argv), mock.patch.object(MATRIX.sys, "platform", "win32"), \

@@ -2,6 +2,10 @@
 
 Both executables use the same fixture and frozen score-fixture.py. All attempts
 are journaled before execution. Raw exports, profiles and databases stay local.
+Stage checkpoints preserve completed work before export/scoring/clock analysis.
+Python-delivered KeyboardInterrupt is recorded and re-raised; forced termination
+or Windows control-event process exit can bypass handlers and leave only the last
+checkpoint, without a final resource sample or completed archival.
 """
 import argparse
 from contextlib import closing
@@ -212,7 +216,7 @@ def backup_database(source, destination):
 
 
 def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, seed_index=0,
-              *, raw_clock_enabled=None, fixture_clock_enabled=None):
+              *, raw_clock_enabled=None, fixture_clock_enabled=None, progress_callback=None):
     directory.mkdir()
     executable = args.baseline if mode == "baseline" else args.candidate
     root = Path(tempfile.gettempdir()) / ("contain-demo-v04-" + uuid.uuid4().hex)
@@ -239,7 +243,15 @@ def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, s
     if getattr(args, "stabilization", False):
         record.update(protocol="v04-stabilization-1", source_revision=getattr(args, mode + "_revision"),
                       source_revision_provenance="operator_declared_not_build_attestation", stability_trials=args.stability_trials)
-    write_json(directory / "measurement.json", record)
+    def checkpoint(stage=None):
+        if stage is not None:
+            record["stage"] = stage
+        write_json(directory / "measurement.json", record)
+        if stage is not None and progress_callback is not None:
+            progress_callback(stage, {key: record[key] for key in
+                ("mode", "files", "workers", "noise_files", "trial", "status")})
+
+    checkpoint("prepare_fixture")
     noise = process = metrics = start = None
     db_peak = wal_peak = None
     environment = os.environ.copy()
@@ -273,7 +285,7 @@ def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, s
             backup_database(seed, database)
         record["database_initial_bytes"] = sampled_size(database)
         if noise_count:
-            record["stage"] = "noise_readiness"
+            checkpoint("noise_readiness")
             with (directory / "noise.stdout.txt").open("wb") as stdout, (directory / "noise.stderr.txt").open("wb") as stderr:
                 noise = subprocess.Popen([str(args.fixture), "--root", str(root), "--role", "noise", "--files", str(noise_count)],
                                          stdout=stdout, stderr=stderr, env=environment, creationflags=subprocess.CREATE_NO_WINDOW)
@@ -287,8 +299,7 @@ def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, s
             command.append("--no-etw")
         command += ["--", "--root", str(root), "--role", "stress", "--files", str(files), "--workers", str(workers)]
         record["command"] = command
-        record["stage"] = "capture"
-        write_json(directory / "measurement.json", record)
+        checkpoint("capture")
         start = time.perf_counter()
         with (directory / "capture.stdout.txt").open("wb") as stdout, (directory / "capture.stderr.txt").open("wb") as stderr:
             process = subprocess.Popen(command, stdout=stdout, stderr=stderr, env=environment, creationflags=subprocess.CREATE_NO_WINDOW)
@@ -312,11 +323,12 @@ def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, s
                                                         if "parent_cpu_seconds" in metrics.values else None)
         record.update(capture_exit=process.returncode, sampled_db_peak_bytes=db_peak, sampled_wal_peak_bytes=wal_peak,
                       sqlite_bytes=sampled_size(database))
+        checkpoint("capture_finished")
         if process.returncode:
             raise RuntimeError(f"capture exit {process.returncode}")
         if noise and noise.wait(timeout=30):
             raise RuntimeError("independent noise failed")
-        record["stage"] = "export"
+        checkpoint("export")
         with (directory / "capture.json").open("wb") as stdout, (directory / "export.stderr.txt").open("wb") as stderr:
             subprocess.run([str(executable), "--db", str(database), "inspect", name, "--json"],
                            stdout=stdout, stderr=stderr, check=True, timeout=args.timeout, creationflags=subprocess.CREATE_NO_WINDOW)
@@ -324,16 +336,16 @@ def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, s
         truth = [json.loads(line) for source in sorted(truth_root.glob("ground-truth-*.jsonl"))
                  for line in source.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
         write_json(directory / "ground-truth.json", truth)
-        record["stage"] = "legacy_score"
+        record.update(stats=capture["stats"], backend=capture["backend"], quality=capture["quality"])
+        checkpoint("legacy_score")
         score = ORACLE.score(capture, truth, args.sid)
         write_json(directory / "score.json", score)
-        record.update(stats=capture["stats"], backend=capture["backend"], quality=capture["quality"],
-                      score={key: value for key, value in score.items() if key != "rows"})
+        record["score"] = {key: value for key, value in score.items() if key != "rows"}
         record["gate"] = quality_gate(capture, score, files, workers, noise_count, args.snapshot_only)
-        record["acceptance_pass"] = record["gate"]["pass"]
         record["legacy_acceptance_pass"] = record["gate"]["pass"]
+        checkpoint("legacy_score_finished")
         if not args.snapshot_only:
-            record["stage"] = "clock_diagnostic"
+            checkpoint("clock_diagnostic")
             raw_clock_bytes = None
             if raw_clock_path:
                 with raw_clock_path.open("rb") as source:
@@ -355,9 +367,15 @@ def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, s
             if getattr(args, "stabilization", False):
                 record["legacy_acceptance_pass"] = record["gate"]["pass"]
                 record["stabilization_gate"] = stabilization_gate(record["gate"], diagnostic)
-                record["acceptance_pass"] = record["stabilization_gate"]["pass"]
+            checkpoint("clock_diagnostic_finished")
+        record["acceptance_pass"] = record.get("stabilization_gate", record["gate"])["pass"]
         record["status"] = "completed"
         record["stage"] = "completed"
+    except KeyboardInterrupt:
+        record.update(status="interrupted", failed_stage=record["stage"], acceptance_pass=False,
+                      harness_error="KeyboardInterrupt; retained completed stages and available measurements")
+        checkpoint()
+        raise
     except (OSError, ValueError, KeyError, RuntimeError, sqlite3.Error, subprocess.SubprocessError) as error:
         record["status"] = "failed"
         record["failed_stage"] = record["stage"]
@@ -408,7 +426,7 @@ def run_trial(args, directory, mode, files, workers, noise_count, trial, seed, s
                     record["cleanup_error"] = str(error)
                     record["acceptance_pass"] = False
                     record["status"] = "failed"
-        write_json(directory / "measurement.json", record)
+        checkpoint(record["stage"])
     return record
 
 
@@ -508,7 +526,8 @@ def main():
         for index, plan in enumerate(planned, 1):
             directory = args.output / f"{index:04}-{plan['mode']}-{plan['files']}-w{plan['workers']}-n{plan['noise_files']}-db{plan['seed_index']}-t{plan['trial']}"
             seed = args.seed_database[plan["seed_index"] - 1] if plan["seed_index"] else None
-            record = run_trial(args, directory, plan["mode"], plan["files"], plan["workers"], plan["noise_files"], plan["trial"], seed, plan["seed_index"])
+            record = run_trial(args, directory, plan["mode"], plan["files"], plan["workers"], plan["noise_files"], plan["trial"], seed, plan["seed_index"],
+                               progress_callback=lambda stage, details: print(json.dumps(dict(details, stage=stage)), flush=True))
             records.append(record)
             write_json(args.output / "comparison.json", dict(environment=environment, trials=records, completed_attempts=len(records), planned_attempts=len(planned)))
             print(json.dumps({key: record.get(key) for key in ("mode", "files", "workers", "noise_files", "trial", "status", "elapsed_seconds", "acceptance_pass", "harness_error")}), flush=True)

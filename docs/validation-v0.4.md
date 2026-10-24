@@ -8,8 +8,12 @@ The reviewed runtime is `cada888122dba836ea6bc22b7ff09e5eeb607ec9`; candidate ru
 and protocol together are frozen at `545ed3f91740786cf0d9df7c0efce4fe7e0e0e4a`.
 Inherited, uncommitted identity/provenance work was inventoried and reviewed before
 continuing it. The original workspace remains at `baf8db3` with its UI/preview
-files untouched. Version remains **0.3.1**. The last real runtime is still
-`86a6b59`; no new elevated capture has been executed in this development session.
+files untouched. Version remains **0.3.1**. The owner has now run the frozen
+`e72d88c` / `545ed3f` executables in an administrator window: four 1,000-file
+attempts finished processing and the fifth, baseline 10,000-file attempt finished
+capture before the owner interrupted postprocessing. The developer token remains
+non-administrator. The sixth through eighth attempts have not run. This is partial
+exploration, not the formal 32-attempt protocol or a scale acceptance pass.
 
 The retained **21-row table below remains the evidence checklist**, including the
 failed call. The 17 unique interval candidates, two missing actor intervals,
@@ -57,7 +61,7 @@ TDH, queues, SQLite or sidecar I/O.
 | Completion correlation, batches of 512 | 240.810 | 246.555 |
 | Registry context open/get/close | 280.700 | 285.665 |
 
-### Reviewed runtime changes, not yet validated with live ETW
+### Reviewed runtime changes and limited live observations
 
 Startup identity sampling now runs with an active lifecycle provider in the
 default configuration, independently of the optional registry experiment. It
@@ -148,14 +152,100 @@ are not substituted into any historical run. The active frozen inputs are:
 | Common candidate fixture | `25200a95051e046f5a776b330d69a0365aabe71a14585ee24d6337ae9716ba0a` |
 | Private fixed plan | `516e8a74bebfb3ecec94d54ecf7a38dbc3ceaef625ed7c7ff309ae5c2b1e4d39` |
 
-The fixed entry's validate-only run passed with **no capture launched**. Its nine
-private harness regressions do not count as ETW samples. The developer token is
-still non-administrator; actual execution requires the existing administrator
-window, using `target/stabilization/evidence-load-20261025/run-exploratory-admin.cmd`.
-The expected new output is `exploratory-545ed3f-verified-eight` in that directory.
-All eight live attempts and the formal 32 attempts remain **unexecuted** at this
-report update. There is therefore no measured new large-load bottleneck or capture
-speedup to report yet.
+### Interrupted exploratory run and retained results
+
+The first real entry started at 02:20 local time. Its original directory is
+`target/stabilization/evidence-load-20261025/exploratory-545ed3f-verified-eight`.
+The owner confirmed interrupting it; the wrapper's final timestamp is 02:24:07.
+The subsequent 02:24:18 invocation stopped at the exclusive output-directory
+creation guard before launching another capture. Neither attempt was erased.
+The old wrapper incorrectly retained `running` after interruption, and the fifth
+measurement retained `stage=capture` despite complete export and score files.
+Separate read-only recovery records preserve these discrepancies; they do not
+overwrite the original measurements or invent missing process samples.
+
+All four completed 1,000-file captures used active file and process ETW, exited
+zero, and matched their frozen executable hashes before/after. Registry was
+`not_requested`: this workload requests files only. The private entry's requirement
+that all three providers be active was a scope-check error, not snapshot fallback.
+Its original failed labels remain. The independent legacy score also failed all
+four arms, for a separate reason described below; correcting the scope check does
+not change any score or acceptance threshold.
+
+| 1,000 files / four workers / 100 noise files | Baseline on | Candidate on | Candidate off | Baseline off |
+| --- | ---: | ---: | ---: | ---: |
+| Capture-parent elapsed seconds | 11.9853 | 14.5810 | 18.5733 | 12.2862 |
+| Capture-parent CPU seconds | 5.15625 | 6.71875 | 6.921875 | 4.15625 |
+| Peak working set bytes | 35,545,088 | 37,203,968 | 29,589,504 | 28,823,552 |
+| Database bytes | 134,426,624 | 134,987,776 | 125,820,928 | 119,267,328 |
+| Sampled WAL peak bytes | 43,330,072 | 41,752,112 | 61,087,272 | 61,008,992 |
+| Received = persisted | 19,322 | 18,568 | 18,463 | 18,437 |
+| Companion received = stored | 462,849 | 519,591 | unavailable | unavailable |
+| Companion bytes | 29,622,336 | 33,253,824 | unavailable | unavailable |
+
+Each arm has 2,500/2,500 successful target calls observed and assigned by the
+unchanged legacy scorer, and 300/300 successful noise calls observed. All reported
+primary queue, handoff, write/quota and ETW loss counts are zero, with complete
+drains; a total-provider loss-rate denominator remains unavailable. Parent logical
+I/O read/write bytes respectively are 947,282,055/1,135,887,109;
+960,117,759/1,152,892,148; 914,963,399/1,095,802,649; and
+867,145,693/1,033,023,397. These are not physical disk or whole-process-tree costs.
+One sample per arm and different background event volumes do not establish a
+performance improvement; the candidate is slower in these observed samples.
+
+Every arm retains **500 unexpected High write events among 3,000 positive
+predictions**, giving the frozen precision 83.33% and a failed gate. No independent
+row has a wrong writer under that scorer. All 500 extra sources use the old
+temporary name and fall inside the same actor's later delete of the renamed file,
+not its earlier write/rename call. On arms establish this using exact raw QPC;
+off arms only establish converted FILETIME correspondence. Provider-internal write
+semantics versus stale name context remain unresolved. Do not reinterpret these
+as 500 wrong writers, remove them, or declare them legitimate without further
+evidence. Final-state ownership remains Unknown.
+
+The legacy top-level Unknown is 300/2,800 in every arm. Its noise subgroups expose
+an important distinction: baseline has 300 observed-but-unresolved calls, while
+candidate has 300 correctly identified as not assigned to the target. Candidate
+on has 2,800 unique strict interval candidates and matching independent native
+provenance; baseline on has 2,500 candidates plus 300 missing actor intervals and
+missing collector provenance. Off arms lack raw QPC. Provider emission readiness
+is still unmet, so validated operation metrics remain unavailable in all arms.
+
+The interrupted fifth attempt's read-only database confirms a finished capture:
+166,971 received and persisted, reported losses zero, all queues drained. Its
+recorded internal capture duration is 94.115 seconds, of which lifetime attribution
+and paged persistence takes 81.483 seconds. This is the largest measured capture
+stage, not a proven single-function root cause. The companion stored all 1,779,485
+records in 113,887,040 bytes, using 435 chunks with queue peak one, no quota/write
+drop and a complete drain; recorded writer memory is 9 MiB. This is a bounded,
+file-only baseline workload, not proof for every provider or sustained load.
+The retained fifth score has 25,000/25,000 target calls and 5,000 unexpected
+positives; its gate still fails. Original parent wall/CPU/memory/I/O measurements
+and runtime post-hashes are unavailable and are not reconstructed from current files.
+
+Offline replay of the unchanged protocol 4 preserved hashes of all original fifth
+inputs and returned 25,000 unique interval candidates plus 300 unavailable actor
+intervals; provenance and provider readiness remain unmet. The profiled replay
+took 64.19 seconds, including 55.33 in clock analysis (49.04 own-function seconds
+in its truth/source scanning). This identifies slow postprocessing that previously
+showed no progress, not real-time ETW blocking or an installation speedup. The
+profiling wrapper's process exit zero is not a protocol pass; the diagnostic says
+`unavailable` / `requirements_unmet`. Original outputs and this separate replay
+are retained under `interrupted-fifth-audit`; the reviewed audit is
+`exploratory-545ed3f-readonly-evidence-audit.json`. Full records stay private.
+
+The harness now persists completed capture metrics and each subsequent stage
+before slow export/scoring/clock work, and exposes concise stage progress.
+Python-delivered interruption records its stage and retains journals before
+propagating; force termination can still bypass final handlers. Acceptance is not
+published at an unfinished checkpoint. Focused regressions first reproduced stale
+stages/interrupted status, then passed without changing workload, scorer or gates.
+The modified harness passed the complete Check mode: 182 Rust tests, four explicit
+skips, 145 Python tests (including 23 matrix tests), formatting, Clippy and existing
+PowerShell/fuzz-seed checks; doctests contain zero cases. Coverage, dependency,
+fuzz-campaign and benchmark modes were not rerun for this Python harness-only
+change. Their exact-candidate results above remain historical. The original
+runtime executables, attribution scorer and protocol 4 bytes are unchanged.
 
 Formal acceptance still requires audited contemporary identity/provenance evidence,
 a scoped provider-timing protocol with explicit unsupported/failed-call behavior,
