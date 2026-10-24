@@ -3,6 +3,7 @@ use crate::model::{
     ClockCalibration, ClockRecordIdentity, OpenTraceHeader, SourceClock, TraceClockMetadata,
 };
 pub mod companion;
+mod provenance;
 use windows_sys::Win32::{
     Foundation::FILETIME,
     System::{
@@ -138,6 +139,7 @@ pub fn metadata() -> TraceClockMetadata {
         raw_companion: None,
         qpc_frequency: None,
         calibrations: Vec::new(),
+        provenance: Vec::new(),
         errors: Vec::new(),
     };
     match frequency() {
@@ -148,6 +150,9 @@ pub fn metadata() -> TraceClockMetadata {
 }
 
 pub fn observe(metadata: &mut TraceClockMetadata, phase: &str) {
+    if matches!(phase, "trace_start_requested" | "consumer_stopped") {
+        metadata.provenance.push(provenance::sample(phase));
+    }
     match sample(phase) {
         Ok(sample) => metadata.calibrations.push(sample),
         Err(error) => metadata.errors.push(format!("{phase}: {error}")),
@@ -180,5 +185,36 @@ mod tests {
         assert!(first.qpc_before <= first.qpc_after);
         assert!(first.qpc_after <= last.qpc_before);
         assert!(last.qpc_before <= last.qpc_after);
+    }
+
+    #[test]
+    fn trace_boundaries_record_native_provenance_separately_from_trace_header() {
+        let mut value = metadata();
+        observe(&mut value, "trace_start_requested");
+        observe(&mut value, "consumer_stopped");
+        let json = serde_json::to_value(value).unwrap();
+        let samples = json["provenance"].as_array().unwrap();
+        assert_eq!(samples.len(), 2);
+        assert_eq!(samples[0]["phase"], "trace_start_requested");
+        assert_eq!(samples[1]["phase"], "consumer_stopped");
+        for sample in samples {
+            assert!(sample["status"] == "observed" || sample["status"] == "unavailable");
+            assert!(sample["qpc_before"].is_string());
+            assert!(sample["qpc_after"].is_string());
+        }
+        assert!(json["trace_header"].is_null());
+        if let Some(directory) = std::env::var_os("CONTAIN_PROVENANCE_TEST_OUTPUT") {
+            use std::io::Write;
+            let path = std::path::Path::new(&directory)
+                .join(format!("collector-provenance-{}.json", std::process::id()));
+            let mut output = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path)
+                .unwrap();
+            output
+                .write_all(serde_json::to_string_pretty(&json).unwrap().as_bytes())
+                .unwrap();
+        }
     }
 }

@@ -17,6 +17,7 @@ use windows_sys::Win32::{
         Threading::{GetCurrentProcess, GetCurrentThreadId, GetProcessTimes},
     },
 };
+mod provenance;
 
 // Independent Win32 measurements, deliberately not shared with contain-core.
 // Opt-in keeps historical fixture measurements and the frozen scorer unchanged.
@@ -24,6 +25,7 @@ struct ClockProtocol {
     frequency: u64,
     sequence: Cell<u64>,
     marker_sequence: Cell<u64>,
+    provenance: serde_json::Value,
 }
 
 fn qpc() -> Result<u64> {
@@ -61,6 +63,7 @@ impl ClockProtocol {
             frequency: frequency as u64,
             sequence: Cell::new(0),
             marker_sequence: Cell::new(0),
+            provenance: provenance::observe(),
         })
     }
 }
@@ -163,7 +166,8 @@ impl Truth {
             "role":self.role,"pid":std::process::id(),"creation_time":self.birth.to_string(),
             "resource":resource,"success":result.is_ok(),"error":result.as_ref().err().and_then(|e|e.raw_os_error()),
             "clock":{"schema_version":1,"qpc_frequency":clock.frequency.to_string(),"sequence":sequence,
-                "thread_id":thread_id,"start_qpc":start.to_string(),"end_qpc":end.to_string(),"before":before,"after":after}});
+                "thread_id":thread_id,"start_qpc":start.to_string(),"end_qpc":end.to_string(),"before":before,"after":after,
+                "provenance":&clock.provenance}});
         let mut line = serde_json::to_vec(&entry)?;
         line.push(b'\n');
         journal.borrow_mut().write_all(&line)?;
@@ -209,6 +213,7 @@ impl Truth {
                 "end_qpc":end_qpc.map(|v|v.to_string()),
                 "before":before,
                 "after":after,
+                "provenance":&clock.provenance,
             });
         }
         // Value::Display streams JSON fragments through Write::write_fmt. Sending
@@ -382,6 +387,35 @@ mod tests {
             assert!(tick(&clock["start_qpc"]) <= tick(&clock["end_qpc"]));
             assert!(tick(&clock["end_qpc"]) <= tick(&clock["after"]["qpc_before"]));
             assert!(tick(&clock["after"]["qpc_before"]) <= tick(&clock["after"]["qpc_after"]));
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn independent_rows_record_locally_queried_provenance() {
+        let (truth, path) = journal(Some(ClockProtocol::new().unwrap()));
+        truth
+            .record("write_requested", "fixture", None, || Ok(()))
+            .unwrap();
+        drop(truth);
+        let row: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let sample = &row["clock"]["provenance"];
+        assert!(sample["status"] == "observed" || sample["status"] == "unavailable");
+        assert_eq!(sample["phase"], "fixture_clock_initialized");
+        assert!(sample["qpc_before"].is_string());
+        assert!(sample["qpc_after"].is_string());
+        if let Some(directory) = std::env::var_os("CONTAIN_PROVENANCE_TEST_OUTPUT") {
+            let path = std::path::Path::new(&directory)
+                .join(format!("fixture-provenance-{}.json", std::process::id()));
+            let mut output = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path)
+                .unwrap();
+            output
+                .write_all(serde_json::to_string_pretty(&row).unwrap().as_bytes())
+                .unwrap();
         }
         std::fs::remove_file(path).unwrap();
     }

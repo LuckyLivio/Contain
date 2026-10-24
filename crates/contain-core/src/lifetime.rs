@@ -12,12 +12,58 @@ pub struct LifetimeCache {
     conflicting_threads: BTreeSet<(u32, u64)>,
     conflicting_processes: BTreeSet<ProcessIdentity>,
     pending_process_stops: BTreeMap<ProcessIdentity, u64>,
-    pending_thread_stops: BTreeSet<(u32, u32, u64)>,
+    // Retain stop facts even after applying them: a delayed start can expose
+    // another interval with the same TID. Stops only restrict existing starts.
+    thread_stops: BTreeSet<(u32, u32, u64)>,
     pub dropped: u64,
     snapshot_from: BTreeMap<ProcessIdentity, u64>,
+    initial_threads: BTreeMap<(u32, u64), InitialThreadIdentity>,
 }
 
 impl LifetimeCache {
+    pub fn seed_thread_snapshot(
+        &mut self,
+        identity: InitialThreadIdentity,
+        process: ProcessRecord,
+    ) {
+        if identity.thread_creation_time == 0
+            || identity.owner_creation_time == 0
+            || identity.owner_creation_time > identity.thread_creation_time
+            || identity.thread_creation_time > identity.capture_started_ticks
+            || identity.observed_at < identity.capture_started_ticks
+            || process.pid != identity.owner_pid
+            || process.creation_time != Some(identity.owner_creation_time)
+        {
+            return;
+        }
+        let key = (identity.thread_id, identity.thread_creation_time);
+        if let Some(old) = self.initial_threads.get(&key) {
+            if old.owner_pid != identity.owner_pid
+                || old.owner_creation_time != identity.owner_creation_time
+            {
+                self.conflicting_threads.insert(key);
+            }
+            return;
+        }
+        if self.threads.contains_key(&key) {
+            self.conflicting_threads.insert(key);
+            return;
+        }
+        if self.threads.len() >= CAPACITY * 4 {
+            self.dropped += 1;
+            return;
+        }
+        self.seed_snapshot(process, identity.observed_at);
+        let stop = self
+            .thread_stops
+            .range((key.0, identity.owner_pid, key.1)..=(key.0, identity.owner_pid, u64::MAX))
+            .next()
+            .copied();
+        self.threads
+            .insert(key, (identity.owner_pid, stop.map(|(_, _, at)| at)));
+        self.initial_threads.insert(key, identity);
+    }
+
     pub fn seed_snapshot(&mut self, process: ProcessRecord, observed_at: u64) {
         let Some(birth) = process.creation_time else {
             return;
@@ -146,18 +192,15 @@ impl LifetimeCache {
                     if let Some((owner, _)) = self.threads.get(&key) {
                         // Identical starts are idempotent, including after a stop.
                         // Conflicting starts must never select the last observed owner.
-                        if *owner != pid {
+                        if *owner != pid || self.initial_threads.contains_key(&key) {
                             self.conflicting_threads.insert(key);
                         }
                     } else if self.threads.len() < CAPACITY * 4 {
                         let stop = self
-                            .pending_thread_stops
+                            .thread_stops
                             .range((tid, pid, event.timestamp_ticks)..=(tid, pid, u64::MAX))
                             .next()
                             .copied();
-                        if let Some(stop) = stop {
-                            self.pending_thread_stops.remove(&stop);
-                        }
                         self.threads.insert(key, (pid, stop.map(|(_, _, at)| at)));
                     } else {
                         self.dropped += 1;
@@ -166,28 +209,24 @@ impl LifetimeCache {
             }
             "thread_stop" => {
                 if let Some(tid) = event.raw.thread_id {
-                    let candidates: Vec<_> = self
+                    let stop = (tid, pid, event.timestamp_ticks);
+                    if self.thread_stops.contains(&stop) || self.thread_stops.len() < CAPACITY * 4 {
+                        self.thread_stops.insert(stop);
+                    } else {
+                        self.dropped += 1;
+                    }
+                    // A stop bounds every earlier candidate with this TID/owner:
+                    // if it belongs to a reused TID, older instances must already
+                    // have ended. It cannot supply a start or select an owner.
+                    // Retaining the fact also covers starts delivered afterward.
+                    for (_, (owner, end)) in self
                         .threads
-                        .iter()
-                        .filter(|((id, start), (owner, end))| {
-                            *id == tid
-                                && *owner == pid
-                                && *start <= event.timestamp_ticks
-                                && end.is_none_or(|end| event.timestamp_ticks <= end)
-                        })
-                        .map(|(k, _)| *k)
-                        .collect();
-                    if candidates.len() == 1 {
-                        self.threads.get_mut(&candidates[0]).unwrap().1 =
-                            Some(event.timestamp_ticks);
-                    } else if candidates.is_empty() {
-                        let stop = (tid, pid, event.timestamp_ticks);
-                        if self.pending_thread_stops.contains(&stop)
-                            || self.pending_thread_stops.len() < CAPACITY * 4
-                        {
-                            self.pending_thread_stops.insert(stop);
-                        } else {
-                            self.dropped += 1;
+                        .range_mut((tid, 0)..=(tid, event.timestamp_ticks))
+                    {
+                        if *owner == pid {
+                            *end = Some(end.map_or(event.timestamp_ticks, |old| {
+                                old.min(event.timestamp_ticks)
+                            }));
                         }
                     }
                 }
@@ -295,6 +334,21 @@ impl LifetimeCache {
     }
 
     pub fn resolve_event(&self, event: &mut SystemEvent) {
+        if event.raw.initial_thread_identity.is_some() {
+            // A prior resolution is not a live handle query. A later conflicting
+            // start/stop must be able to revoke it on every subsequent pass.
+            event.evidence.pid = None;
+            event.evidence.process_creation_time = None;
+            event.evidence.process_image = None;
+            event.evidence.parent_pid = None;
+            event.evidence.ancestor_pid = None;
+            event.evidence.rule = AttributionRule::MissingWriter;
+            event.confidence = Confidence::Unknown;
+            event.dimensions.actor = Confidence::Unknown;
+            event.state_validated = false;
+            event.reason =
+                "Initial thread identity requires unambiguous retained lifetime coverage.".into();
+        }
         if event.evidence.process_creation_time.is_some() {
             return;
         } // Already verified via live handle.
@@ -308,6 +362,12 @@ impl LifetimeCache {
                     .filter(|((_, start), (_, end))| {
                         *start <= event.timestamp_ticks
                             && end.is_none_or(|e| event.timestamp_ticks <= e)
+                            && self
+                                .initial_threads
+                                .get(&(tid, *start))
+                                .is_none_or(|identity| {
+                                    event.timestamp_ticks >= identity.observed_at
+                                })
                     });
             let Some(((.., start), (pid, _))) = candidates.next() else {
                 return;
@@ -315,16 +375,32 @@ impl LifetimeCache {
             if candidates.next().is_some() || self.conflicting_threads.contains(&(tid, *start)) {
                 return;
             }
-            // The thread must start in the same process lifetime as the event.
-            let Some(owner) = self.resolve(*pid, *start) else {
-                return;
-            };
-            if self
-                .resolve(*pid, event.timestamp_ticks)
-                .map(|p| p.creation_time)
-                != Some(owner.creation_time)
-            {
-                return;
+            if let Some(identity) = self.initial_threads.get(&(tid, *start)) {
+                // The simultaneously held thread/process handles bind this
+                // instance; the sample is never backdated to thread creation.
+                if self
+                    .resolve(*pid, event.timestamp_ticks)
+                    .and_then(|p| p.creation_time)
+                    != Some(identity.owner_creation_time)
+                {
+                    return;
+                }
+                event.raw.initial_thread_identity = Some(identity.clone());
+            } else {
+                // An ETW thread start must belong to the same process instance.
+                let Some(owner) = self.resolve(*pid, *start) else {
+                    return;
+                };
+                if self
+                    .resolve(*pid, event.timestamp_ticks)
+                    .map(|p| p.creation_time)
+                    != Some(owner.creation_time)
+                {
+                    return;
+                }
+                // A re-resolved event now belongs to an ETW interval. Do not
+                // present an earlier, revoked snapshot link as its actor proof.
+                event.raw.initial_thread_identity = None;
             }
             *pid
         } else {
@@ -353,6 +429,186 @@ impl LifetimeCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn initial_thread() -> InitialThreadIdentity {
+        InitialThreadIdentity {
+            thread_id: 7,
+            thread_creation_time: 110,
+            owner_pid: 2,
+            owner_creation_time: 100,
+            capture_started_ticks: 120,
+            observed_at: 150,
+        }
+    }
+    #[test]
+    fn preexisting_thread_handle_sample_resolves_only_after_query_completion() {
+        let mut cache = LifetimeCache::default();
+        cache.seed_thread_snapshot(initial_thread(), record(2, 100, None));
+        let mut before = file_event(149);
+        cache.resolve_event(&mut before);
+        assert!(before.evidence.process_creation_time.is_none());
+        let mut after = file_event(151);
+        cache.resolve_event(&mut after);
+        assert_eq!(after.evidence.process_creation_time, Some(100));
+        assert_eq!(after.raw.initial_thread_identity, Some(initial_thread()));
+    }
+    #[test]
+    fn initial_thread_late_conflicting_start_revokes_existing_resolution() {
+        let mut cache = LifetimeCache::default();
+        cache.seed_thread_snapshot(initial_thread(), record(2, 100, None));
+        let mut event = file_event(180);
+        cache.resolve_event(&mut event);
+        assert_eq!(event.evidence.process_creation_time, Some(100));
+        event.confidence = Confidence::High;
+        event.state_validated = true;
+        cache.ingest(&lifecycle("thread_start", 2, None, 170));
+        cache.resolve_event(&mut event);
+        assert!(event.evidence.pid.is_none());
+        assert_eq!(event.confidence, Confidence::Unknown);
+        assert!(!event.state_validated);
+        // Preserve the queried facts even though they no longer resolve actor.
+        assert_eq!(event.raw.initial_thread_identity, Some(initial_thread()));
+    }
+    #[test]
+    fn initial_thread_stops_duplicates_and_reuse_preserve_bounds() {
+        let mut cache = LifetimeCache::default();
+        cache.ingest(&lifecycle("thread_stop", 2, None, 170));
+        cache.seed_thread_snapshot(initial_thread(), record(2, 100, None));
+        cache.seed_thread_snapshot(initial_thread(), record(2, 100, None));
+        let mut during = file_event(160);
+        cache.resolve_event(&mut during);
+        assert_eq!(during.evidence.process_creation_time, Some(100));
+        let mut after = file_event(180);
+        cache.resolve_event(&mut after);
+        assert!(after.evidence.process_creation_time.is_none());
+        cache.ingest(&lifecycle("process_stop", 2, Some(100), 190));
+        cache.ingest(&lifecycle("process_start", 2, Some(200), 200));
+        cache.ingest(&lifecycle("thread_start", 2, None, 210));
+        let mut reused = file_event(220);
+        cache.resolve_event(&mut reused);
+        assert_eq!(reused.evidence.process_creation_time, Some(200));
+        assert!(reused.raw.initial_thread_identity.is_none());
+    }
+    #[test]
+    fn initial_thread_and_reused_thread_stops_survive_every_delivery_order() {
+        let callbacks = [
+            lifecycle("thread_start", 2, None, 210),
+            lifecycle("thread_stop", 2, None, 170),
+            lifecycle("thread_stop", 2, None, 220),
+        ];
+        for order in [
+            [0, 1, 2],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ] {
+            let mut cache = LifetimeCache::default();
+            cache.seed_thread_snapshot(initial_thread(), record(2, 100, None));
+            for index in order {
+                cache.ingest(&callbacks[index]);
+            }
+            for (at, expected) in [(160, Some(100)), (180, None), (215, Some(100)), (230, None)] {
+                let mut event = file_event(at);
+                cache.resolve_event(&mut event);
+                assert_eq!(
+                    event.evidence.process_creation_time, expected,
+                    "callback order {order:?}, event time {at}"
+                );
+            }
+        }
+    }
+    #[test]
+    fn retained_thread_stops_are_bounded_and_cannot_create_an_actor() {
+        let mut cache = LifetimeCache::default();
+        cache.seed(record(2, 100, None));
+        for at in 0..CAPACITY * 4 {
+            cache.thread_stops.insert((7, 2, at as u64));
+        }
+        cache.ingest(&lifecycle("thread_stop", 2, None, 170));
+        assert_eq!(cache.dropped, 0);
+        cache.ingest(&lifecycle("thread_stop", 2, None, u64::MAX));
+        assert_eq!(cache.dropped, 1);
+        assert_eq!(cache.thread_stops.len(), CAPACITY * 4);
+        let mut event = file_event(160);
+        cache.resolve_event(&mut event);
+        assert!(event.evidence.process_creation_time.is_none());
+        assert!(cache.threads.is_empty());
+    }
+    #[test]
+    fn initial_thread_never_rebinds_to_reused_pid_or_invalid_sample() {
+        let mut cache = LifetimeCache::default();
+        cache.seed_thread_snapshot(initial_thread(), record(2, 100, None));
+        cache.ingest(&lifecycle("process_stop", 2, Some(100), 170));
+        cache.ingest(&lifecycle("process_start", 2, Some(180), 180));
+        let mut event = file_event(190);
+        cache.resolve_event(&mut event);
+        assert!(event.evidence.process_creation_time.is_none());
+        for invalid in [
+            InitialThreadIdentity {
+                observed_at: 119,
+                ..initial_thread()
+            },
+            InitialThreadIdentity {
+                thread_creation_time: 121,
+                ..initial_thread()
+            },
+            InitialThreadIdentity {
+                owner_creation_time: 111,
+                ..initial_thread()
+            },
+        ] {
+            let mut cache = LifetimeCache::default();
+            cache.seed_thread_snapshot(invalid, record(2, 100, None));
+            assert!(cache.threads.is_empty());
+        }
+    }
+    #[test]
+    fn initial_thread_stop_before_observation_cannot_invent_coverage() {
+        let mut cache = LifetimeCache::default();
+        cache.ingest(&lifecycle("thread_stop", 2, None, 140));
+        cache.seed_thread_snapshot(initial_thread(), record(2, 100, None));
+        for at in [130, 149, 150, 151] {
+            let mut event = file_event(at);
+            cache.resolve_event(&mut event);
+            assert!(event.evidence.process_creation_time.is_none());
+        }
+    }
+    #[test]
+    fn late_process_start_never_backdates_initial_thread_sample() {
+        let mut cache = LifetimeCache::default();
+        cache.seed_thread_snapshot(initial_thread(), record(2, 100, None));
+        cache.ingest(&lifecycle("process_start", 2, Some(100), 100));
+        let mut before = file_event(149);
+        cache.resolve_event(&mut before);
+        assert!(before.evidence.process_creation_time.is_none());
+        let mut boundary = file_event(150);
+        cache.resolve_event(&mut boundary);
+        assert_eq!(boundary.evidence.process_creation_time, Some(100));
+    }
+    #[test]
+    fn initial_thread_conflicting_owner_and_capacity_are_visible() {
+        let mut cache = LifetimeCache::default();
+        cache.seed_thread_snapshot(initial_thread(), record(2, 100, None));
+        cache.seed_thread_snapshot(
+            InitialThreadIdentity {
+                owner_creation_time: 101,
+                ..initial_thread()
+            },
+            record(2, 101, None),
+        );
+        let mut event = file_event(160);
+        cache.resolve_event(&mut event);
+        assert!(event.evidence.process_creation_time.is_none());
+        let mut full = LifetimeCache::default();
+        for n in 0..CAPACITY * 4 {
+            full.threads.insert((1, n as u64), (1, None));
+        }
+        full.seed_thread_snapshot(initial_thread(), record(2, 100, None));
+        assert_eq!(full.dropped, 1);
+        assert!(full.initial_threads.is_empty());
+        assert_eq!(full.threads.len(), CAPACITY * 4);
+    }
     fn lifecycle(operation: &str, pid: u32, birth: Option<u64>, at: u64) -> SystemEvent {
         SystemEvent {
             timestamp_ticks: at,

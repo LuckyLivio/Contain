@@ -129,6 +129,7 @@ fn install_inner(
     );
     source.initialize_identities(|page| journal.append(db, page));
     let initial_identities = source.take_initial_identities();
+    let initial_threads = source.take_initial_threads();
     let lifecycle_receiver =
         crate::hotpath::Variant::from_env().lifecycle_receiver() && source.lifecycle_active();
     let receive_clock = Instant::now();
@@ -294,6 +295,15 @@ fn install_inner(
     let mut cache = LifetimeCache::default();
     for (p, at) in initial_identities {
         cache.seed_snapshot(p, at);
+    }
+    for identity in initial_threads {
+        if let Some(process) = cache
+            .processes
+            .get(&(identity.owner_pid, identity.owner_creation_time))
+            .cloned()
+        {
+            cache.seed_thread_snapshot(identity, process);
+        }
     }
     for p in &processes {
         cache.seed(p.clone());

@@ -2,6 +2,10 @@ use super::*;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct RawEvidence {
+    /// A handle query binds an already-running thread to a process instance.
+    /// It proves nothing before observed_at and does not establish ownership.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_thread_identity: Option<InitialThreadIdentity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clock: Option<SourceClock>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -19,6 +23,21 @@ pub struct RawEvidence {
     pub parent_key: Option<String>,
     pub related_event: Option<String>,
     pub resource_resolved: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InitialThreadIdentity {
+    pub thread_id: u32,
+    #[serde(with = "ticks")]
+    pub thread_creation_time: u64,
+    pub owner_pid: u32,
+    #[serde(with = "ticks")]
+    pub owner_creation_time: u64,
+    /// Existing trace_start_requested calibration, not an invented offset.
+    #[serde(with = "ticks")]
+    pub capture_started_ticks: u64,
+    #[serde(with = "ticks")]
+    pub observed_at: u64,
 }
 
 /// Owned manifest fields retained without borrowing an EVENT_RECORD payload.
@@ -46,6 +65,7 @@ pub struct RegistryFieldDiagnostics {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct InitialIdentitySnapshot {
     pub started_ticks: u64,
     pub finished_ticks: u64,
@@ -56,6 +76,17 @@ pub struct InitialIdentitySnapshot {
     pub skipped: u64,
     pub query_ns: u64,
     pub elapsed_ns: u64,
+    pub thread_enumerated: u64,
+    pub thread_queried: u64,
+    pub thread_resolved: u64,
+    pub thread_failed: u64,
+    pub thread_outside_boundary: u64,
+    pub thread_query_ns: u64,
+    /// A budget-limited enumeration has an unknown remainder, not zero.
+    pub thread_unqueried: Option<u64>,
+    pub thread_enumeration_complete: bool,
+    pub budget_exhausted: bool,
+    pub query_errors: std::collections::BTreeMap<String, u64>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

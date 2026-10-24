@@ -1,13 +1,18 @@
 //! Small Win32 wrappers. All owned handles are closed in this module.
 use chrono::{DateTime, Utc};
 use std::mem::{size_of, zeroed};
-use std::os::windows::io::{AsRawHandle, BorrowedHandle};
+use std::os::windows::io::{AsHandle, AsRawHandle, BorrowedHandle, FromRawHandle, OwnedHandle};
 use std::ptr::null_mut;
-use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
+use windows_sys::Win32::Foundation::{
+    CloseHandle, FILETIME, GetLastError, INVALID_HANDLE_VALUE, WAIT_TIMEOUT,
+};
 use windows_sys::Win32::Security::{
     GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation,
 };
 use windows_sys::Win32::Storage::FileSystem::QueryDosDeviceW;
+use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
+};
 use windows_sys::Win32::System::Threading::*;
 
 const EPOCH: u64 = 116_444_736_000_000_000;
@@ -45,6 +50,180 @@ pub fn process_identity(pid: u32) -> Option<ProcessIdentity> {
         let result = identity_from_handle(BorrowedHandle::borrow_raw(handle), pid);
         CloseHandle(handle);
         result
+    }
+}
+
+/// Supplemental startup observation. The query completion is the validity lower
+/// bound; creation time alone never backdates a snapshot.
+pub fn observed_process_identity(pid: u32) -> Option<(ProcessIdentity, u64)> {
+    // SAFETY: the owned read-only handle remains open through the zero wait.
+    unsafe {
+        let raw = OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
+            0,
+            pid,
+        );
+        if raw.is_null() {
+            return None;
+        }
+        let handle = OwnedHandle::from_raw_handle(raw);
+        let identity = identity_from_handle(handle.as_handle(), pid)?;
+        if WaitForSingleObject(handle.as_raw_handle(), 0) != WAIT_TIMEOUT {
+            return None;
+        }
+        let at = now_ticks();
+        (identity.creation_time != 0 && identity.creation_time <= at).then_some((identity, at))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum IdentityQueryError {
+    Win32(u32),
+    EndedOrChanged,
+    AfterTraceStart,
+}
+
+/// Toolhelp entries are candidates only, not thread identity evidence. Each
+/// caller must verify the actual thread and owner handles before accepting one.
+pub struct ThreadSnapshot {
+    handle: OwnedHandle,
+    first: bool,
+    done: bool,
+}
+impl ThreadSnapshot {
+    pub fn open() -> Result<Self, u32> {
+        // SAFETY: read-only snapshot. OwnedHandle closes exactly this result.
+        unsafe {
+            let raw = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+            if raw == INVALID_HANDLE_VALUE {
+                return Err(GetLastError());
+            }
+            Ok(Self {
+                handle: OwnedHandle::from_raw_handle(raw),
+                first: true,
+                done: false,
+            })
+        }
+    }
+}
+impl Iterator for ThreadSnapshot {
+    type Item = Result<(u32, u32), u32>;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+        // SAFETY: entry is sized per Toolhelp's contract and handle stays live.
+        unsafe {
+            let mut entry: THREADENTRY32 = zeroed();
+            entry.dwSize = size_of::<THREADENTRY32>() as u32;
+            let ok = if self.first {
+                self.first = false;
+                Thread32First(self.handle.as_raw_handle(), &mut entry)
+            } else {
+                Thread32Next(self.handle.as_raw_handle(), &mut entry)
+            };
+            if ok == 0 {
+                self.done = true;
+                let error = GetLastError();
+                return (error != windows_sys::Win32::Foundation::ERROR_NO_MORE_FILES)
+                    .then_some(Err(error));
+            }
+            // Older structures may not contain the owner field at all.
+            if (entry.dwSize as usize)
+                < std::mem::offset_of!(THREADENTRY32, th32OwnerProcessID) + size_of::<u32>()
+            {
+                self.done = true;
+                return Some(Err(windows_sys::Win32::Foundation::ERROR_BAD_LENGTH));
+            }
+            Some(Ok((entry.th32ThreadID, entry.th32OwnerProcessID)))
+        }
+    }
+}
+
+pub fn initial_thread_identity(
+    tid: u32,
+    listed_owner: u32,
+    capture_started_ticks: u64,
+) -> Result<(crate::model::InitialThreadIdentity, ProcessIdentity), IdentityQueryError> {
+    initial_thread_identity_with(tid, listed_owner, capture_started_ticks, || {})
+}
+
+fn initial_thread_identity_with(
+    tid: u32,
+    listed_owner: u32,
+    capture_started_ticks: u64,
+    before_validate: impl FnOnce(),
+) -> Result<(crate::model::InitialThreadIdentity, ProcessIdentity), IdentityQueryError> {
+    // SAFETY: read-only, independently owned thread and process handles remain
+    // open together until validation completes. No debug privilege is enabled.
+    unsafe {
+        let raw = OpenThread(
+            THREAD_QUERY_LIMITED_INFORMATION | SYNCHRONIZATION_SYNCHRONIZE,
+            0,
+            tid,
+        );
+        if raw.is_null() {
+            return Err(IdentityQueryError::Win32(GetLastError()));
+        }
+        let thread = OwnedHandle::from_raw_handle(raw);
+        let mut created = zeroed();
+        let mut exited = zeroed();
+        let mut kernel = zeroed();
+        let mut user = zeroed();
+        if GetThreadTimes(
+            thread.as_raw_handle(),
+            &mut created,
+            &mut exited,
+            &mut kernel,
+            &mut user,
+        ) == 0
+        {
+            return Err(IdentityQueryError::Win32(GetLastError()));
+        }
+        let birth = ticks(created);
+        let pid = GetProcessIdOfThread(thread.as_raw_handle());
+        if pid == 0 || pid != listed_owner || birth == 0 {
+            return Err(IdentityQueryError::EndedOrChanged);
+        }
+        if birth > capture_started_ticks {
+            return Err(IdentityQueryError::AfterTraceStart);
+        }
+        let raw = OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
+            0,
+            pid,
+        );
+        if raw.is_null() {
+            return Err(IdentityQueryError::Win32(GetLastError()));
+        }
+        let process = OwnedHandle::from_raw_handle(raw);
+        let owner = identity_from_handle(process.as_handle(), pid)
+            .ok_or_else(|| IdentityQueryError::Win32(GetLastError()))?;
+        before_validate();
+        // GetThreadTimes leaves ExitTime undefined for running threads. A zero
+        // exit time is therefore not proof of life; use nonblocking waits.
+        if owner.creation_time == 0
+            || owner.creation_time > birth
+            || WaitForSingleObject(process.as_raw_handle(), 0) != WAIT_TIMEOUT
+            || WaitForSingleObject(thread.as_raw_handle(), 0) != WAIT_TIMEOUT
+        {
+            return Err(IdentityQueryError::EndedOrChanged);
+        }
+        let observed_at = now_ticks();
+        if observed_at < capture_started_ticks {
+            return Err(IdentityQueryError::EndedOrChanged);
+        }
+        Ok((
+            crate::model::InitialThreadIdentity {
+                thread_id: tid,
+                thread_creation_time: birth,
+                owner_pid: pid,
+                owner_creation_time: owner.creation_time,
+                capture_started_ticks,
+                observed_at,
+            },
+            owner,
+        ))
     }
 }
 
@@ -387,5 +566,65 @@ pub fn file_identity(handle: BorrowedHandle<'_>) -> Option<String> {
             info.nFileIndexLow,
             ticks(info.ftCreationTime)
         ))
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    #[test]
+    fn initial_thread_handle_query_binds_current_owner_and_completion() {
+        // SAFETY: these functions only return this process/thread's identifiers.
+        let (tid, pid) = unsafe { (GetCurrentThreadId(), GetCurrentProcessId()) };
+        let boundary = now_ticks();
+        let (sample, process) = initial_thread_identity(tid, pid, boundary).unwrap();
+        assert_eq!(sample.owner_pid, pid);
+        assert_eq!(sample.thread_id, tid);
+        assert_eq!(sample.owner_creation_time, process.creation_time);
+        assert!(sample.owner_creation_time <= sample.thread_creation_time);
+        assert!(sample.thread_creation_time <= boundary);
+        assert!(sample.observed_at >= boundary);
+        assert_eq!(
+            initial_thread_identity(tid, pid.wrapping_add(1), boundary).unwrap_err(),
+            IdentityQueryError::EndedOrChanged
+        );
+        assert_eq!(
+            initial_thread_identity(tid, pid, 1).unwrap_err(),
+            IdentityQueryError::AfterTraceStart
+        );
+    }
+
+    #[test]
+    fn initial_thread_query_rejects_exit_during_handle_validation() {
+        let (send_tid, receive_tid) = std::sync::mpsc::channel();
+        let (finish, wait) = std::sync::mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            // SAFETY: this returns the calling thread's identifier only.
+            send_tid.send(unsafe { GetCurrentThreadId() }).unwrap();
+            wait.recv().unwrap();
+        });
+        let tid = receive_tid.recv().unwrap();
+        // SAFETY: this returns the calling process's identifier only.
+        let pid = unsafe { GetCurrentProcessId() };
+        let result = initial_thread_identity_with(tid, pid, now_ticks(), || {
+            finish.send(()).unwrap();
+            thread.join().unwrap();
+        });
+        assert_eq!(result.unwrap_err(), IdentityQueryError::EndedOrChanged);
+    }
+
+    #[test]
+    fn thread_enumeration_is_only_a_candidate_list_and_reports_current_thread() {
+        // SAFETY: these functions return this process/thread's identifiers only.
+        let expected = unsafe { (GetCurrentThreadId(), GetCurrentProcessId()) };
+        let mut found = false;
+        for entry in ThreadSnapshot::open().unwrap().take(32768) {
+            if entry.unwrap() == expected {
+                found = true;
+                break;
+            }
+        }
+        assert!(found);
     }
 }

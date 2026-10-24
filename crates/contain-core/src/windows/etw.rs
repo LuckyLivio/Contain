@@ -78,6 +78,8 @@ pub struct EtwSource {
     raw_clock: Option<super::clock::companion::Companion>,
     decoder: Option<Arc<Mutex<Decoder>>>,
     initial_records: Vec<(crate::model::ProcessRecord, u64)>,
+    initial_threads: Vec<crate::model::InitialThreadIdentity>,
+    identity_boundary: u64,
     trace: Option<UserTrace>,
     consumer: Option<JoinHandle<Result<(), String>>>,
     name: String,
@@ -181,6 +183,8 @@ impl EtwSource {
             raw_clock: None,
             decoder: None,
             initial_records: Vec::new(),
+            initial_threads: Vec::new(),
+            identity_boundary: native::now_ticks(),
             trace: None,
             consumer: None,
             name: name.clone(),
@@ -201,6 +205,10 @@ impl EtwSource {
         }
         let mut clock = super::clock::metadata();
         super::clock::observe(&mut clock, "trace_start_requested");
+        source.identity_boundary = clock
+            .calibrations
+            .last()
+            .map_or(0, |point| point.filetime_ticks);
         source.report.clock = Some(clock);
         let devices = native::device_map();
         let probe_id = uuid::Uuid::new_v4();
@@ -516,9 +524,7 @@ impl EtwSource {
     /// Setup only, before the installer starts. No process query holds the decoder
     /// lock. Drain committed raw pages between queries; no metadata worker or PID cache.
     pub fn initialize_identities(&mut self, mut sink: impl FnMut(Vec<SystemEvent>)) {
-        if !crate::hotpath::Variant::from_env().deferred_registry()
-            || self.report.etw_registry != "active"
-        {
+        if !self.lifecycle_active() || self.identity_boundary == 0 {
             return;
         }
         use crate::model::{InitialIdentitySnapshot, ProcessRecord};
@@ -544,10 +550,10 @@ impl EtwSource {
             }
             stats.queried += 1;
             let query = Instant::now();
-            let identity = native::process_identity(pid.as_u32());
+            let identity = native::observed_process_identity(pid.as_u32())
+                .filter(|(_, at)| *at >= self.identity_boundary);
             stats.query_ns += query.elapsed().as_nanos() as u64;
-            let at = native::now_ticks();
-            if let Some(identity) = identity {
+            if let Some((identity, at)) = identity {
                 stats.resolved += 1;
                 let record = ProcessRecord {
                     pid: identity.pid, creation_time: Some(identity.creation_time), image: identity.image,
@@ -570,14 +576,107 @@ impl EtwSource {
         }
         sink(self.drain());
         stats.skipped = stats.enumerated - stats.queried;
+        let mut process_keys: std::collections::BTreeSet<_> = self
+            .initial_records
+            .iter()
+            .filter_map(|(p, _)| p.creation_time.map(|birth| (p.pid, birth)))
+            .collect();
+        match native::ThreadSnapshot::open() {
+            Ok(mut threads) => loop {
+                sink(self.drain());
+                if stats.thread_queried >= 32768 || clock.elapsed().as_secs() >= 2 {
+                    stats.budget_exhausted = true;
+                    break;
+                }
+                let Some(entry) = threads.next() else {
+                    stats.thread_enumeration_complete = true;
+                    stats.thread_unqueried = Some(0);
+                    break;
+                };
+                let (tid, pid) = match entry {
+                    Ok(entry) => entry,
+                    Err(code) => {
+                        *stats
+                            .query_errors
+                            .entry(format!("thread_enumeration_win32_{code}"))
+                            .or_default() += 1;
+                        break;
+                    }
+                };
+                stats.thread_enumerated += 1;
+                stats.thread_queried += 1;
+                let query = Instant::now();
+                let identity = native::initial_thread_identity(tid, pid, self.identity_boundary);
+                stats.thread_query_ns += query.elapsed().as_nanos() as u64;
+                match identity {
+                    Ok((identity, owner)) => {
+                        let key = (owner.pid, owner.creation_time);
+                        if !process_keys.contains(&key) && process_keys.len() >= 4096 {
+                            stats.thread_failed += 1;
+                            *stats
+                                .query_errors
+                                .entry("process_capacity".into())
+                                .or_default() += 1;
+                            continue;
+                        }
+                        if process_keys.insert(key) {
+                            let at = identity.observed_at;
+                            let record = ProcessRecord {
+                                pid: owner.pid, creation_time: Some(owner.creation_time), image: owner.image,
+                                first_seen: native::timestamp(at), last_seen: native::timestamp(at),
+                                evidence: AttributionEvidence { source: EvidenceSource::ProcessApi, ..Default::default() },
+                                reason: "Process and preexisting thread handles were queried together after ETW readiness; validity begins at query completion.".into(),
+                                ..Default::default()
+                            };
+                            if let Some(decoder) = &self.decoder {
+                                decoder
+                                    .lock()
+                                    .unwrap()
+                                    .lifetimes
+                                    .seed_snapshot(record.clone(), at);
+                            }
+                            self.initial_records.push((record, at));
+                        }
+                        stats.thread_resolved += 1;
+                        self.initial_threads.push(identity);
+                    }
+                    Err(native::IdentityQueryError::AfterTraceStart) => {
+                        stats.thread_outside_boundary += 1
+                    }
+                    Err(error) => {
+                        stats.thread_failed += 1;
+                        let label = match error {
+                            native::IdentityQueryError::Win32(code) => {
+                                format!("thread_query_win32_{code}")
+                            }
+                            _ => "thread_ended_or_changed".into(),
+                        };
+                        *stats.query_errors.entry(label).or_default() += 1;
+                    }
+                }
+            },
+            Err(code) => {
+                *stats
+                    .query_errors
+                    .entry(format!("thread_snapshot_win32_{code}"))
+                    .or_default() += 1;
+            }
+        }
+        sink(self.drain());
+        stats.budget_exhausted |= stats.skipped > 0;
         stats.finished_ticks = native::now_ticks();
         stats.elapsed_ns = clock.elapsed().as_nanos() as u64;
         self.report.warnings.push(format!("Bounded initial process snapshot: {} queried, {} resolved, {} failed, {} skipped. Per-process query completion bounds validity; not an instantaneous or complete snapshot.", stats.queried, stats.resolved, stats.failed, stats.skipped));
+        self.report.warnings.push(format!("Bounded initial thread snapshot: {} queried, {} resolved, {} failed, {} born after trace start; enumeration complete: {}. Unqueried remainder: {:?}. No event before each query completion is covered.", stats.thread_queried, stats.thread_resolved, stats.thread_failed, stats.thread_outside_boundary, stats.thread_enumeration_complete, stats.thread_unqueried));
         self.report.initial_identity_snapshot = Some(stats);
     }
 
     pub fn take_initial_identities(&mut self) -> Vec<(crate::model::ProcessRecord, u64)> {
         std::mem::take(&mut self.initial_records)
+    }
+
+    pub fn take_initial_threads(&mut self) -> Vec<crate::model::InitialThreadIdentity> {
+        std::mem::take(&mut self.initial_threads)
     }
 
     pub fn stop_with(&mut self, mut sink: impl FnMut(Vec<SystemEvent>)) -> BackendReport {
@@ -694,6 +793,39 @@ impl EtwSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn startup_identity_sampling_is_available_without_registry_provider() {
+        // Only the provider status is injected. The read-only identity queries
+        // exercise startup coverage without starting ETW or requiring elevation.
+        let mut source = EtwSource::start(&[], None, false);
+        source.report.etw_process = "active".into();
+        source.initialize_identities(|_| {});
+        assert!(source.report.initial_identity_snapshot.is_some());
+        let stats = source.report.initial_identity_snapshot.as_ref().unwrap();
+        assert_eq!(stats.queried, stats.resolved + stats.failed);
+        assert_eq!(stats.enumerated, stats.queried + stats.skipped);
+        assert_eq!(
+            stats.thread_queried,
+            stats.thread_resolved + stats.thread_failed + stats.thread_outside_boundary
+        );
+        assert_eq!(source.initial_threads.len() as u64, stats.thread_resolved);
+        assert!(source.initial_records.len() <= 4096);
+        for sample in &source.initial_threads {
+            assert!(sample.observed_at >= stats.started_ticks);
+            assert!(sample.thread_creation_time <= source.identity_boundary);
+            assert!(
+                source
+                    .initial_records
+                    .iter()
+                    .any(|(p, _)| p.pid == sample.owner_pid
+                        && p.creation_time == Some(sample.owner_creation_time))
+            );
+        }
+        eprintln!(
+            "read_only_native_sampling_no_etw={}",
+            serde_json::to_string(stats).unwrap()
+        );
+    }
     #[test]
     fn full_channel_drops_without_blocking_and_counts_loss() {
         let (tx, rx) = mpsc::sync_channel(1);

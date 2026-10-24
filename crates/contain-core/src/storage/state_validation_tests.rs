@@ -75,6 +75,94 @@ fn assert_views(db: &Storage, capture: &Capture, expected: &[&str]) {
 }
 
 #[test]
+fn initial_thread_proof_survives_reopen_pagination_and_late_loss_downgrade() {
+    for late_loss in [false, true] {
+        let path = std::env::temp_dir().join(format!(
+            "contain-initial-identity-{}.db",
+            uuid::Uuid::new_v4()
+        ));
+        let birth = 134_350_000_000_000_017;
+        let proof = InitialThreadIdentity {
+            thread_id: 7,
+            thread_creation_time: birth + 1,
+            owner_pid: 2,
+            owner_creation_time: birth,
+            capture_started_ticks: birth + 2,
+            observed_at: birth + 3,
+        };
+        let mut source = event(
+            "initial-thread-write",
+            "file",
+            "write_requested",
+            Some(true),
+        );
+        source.timestamp_ticks = birth + 4;
+        source.evidence = AttributionEvidence {
+            source: EvidenceSource::EtwFile,
+            pid: Some(2),
+            process_creation_time: Some(birth),
+            ..Default::default()
+        };
+        source.raw.initial_thread_identity = Some(proof.clone());
+        source.raw.thread_id = Some(7);
+        let mut capture = Capture {
+            id: "initial-thread-readback".into(),
+            name: "initial-thread-readback".into(),
+            schema_version: 3,
+            ..Default::default()
+        };
+        capture.backend.etw_events_lost = Some(0);
+        capture.backend.etw_buffers_lost = Some(0);
+        let mut db = Storage::open(&path).unwrap();
+        let mut raw = RawBuffer::new(&mut db, &capture, DEFAULT_QUOTA).unwrap();
+        raw.append(&mut db, vec![source.clone()]);
+        raw.finish(&mut db).unwrap();
+        capture.events.push(source);
+        db.prepare_raw(&capture.id).unwrap();
+        db.append_evidence(&capture).unwrap();
+        if late_loss {
+            capture.backend.context_losses = 1;
+        }
+        db.mark_finished(&capture).unwrap();
+        drop(db);
+
+        let db = Storage::open(&path).unwrap();
+        let full = db.load(&capture.id).unwrap();
+        let page = db.events_page(&capture.id, 0, 1).unwrap();
+        let explanation = db.for_event("initial-thread-write").unwrap();
+        assert_eq!(db.list().unwrap().len(), 1);
+        assert!(db.load_summary(&capture.id).unwrap().events.is_empty());
+        assert!(db.events_page(&capture.id, 1, 1).unwrap().is_empty());
+        assert_eq!(full.events.len(), 1);
+        for restored in [&full.events[0], &page[0], &explanation.events[0]] {
+            assert_eq!(restored.raw.initial_thread_identity.as_ref(), Some(&proof));
+            assert!(!restored.state_validated);
+            assert_eq!(
+                restored.confidence,
+                if late_loss {
+                    Confidence::Unknown
+                } else {
+                    Confidence::High
+                }
+            );
+            let json = serde_json::to_value(restored).unwrap();
+            assert_eq!(
+                json["raw"]["initial_thread_identity"]["owner_creation_time"],
+                birth.to_string()
+            );
+            assert_eq!(json, serde_json::to_value(&full.events[0]).unwrap());
+        }
+        drop(db);
+        for suffix in ["", "-wal", "-shm"] {
+            let artifact = std::path::PathBuf::from(format!("{}{suffix}", path.display()));
+            if artifact.exists() {
+                std::fs::remove_file(artifact).unwrap();
+            }
+        }
+    }
+}
+
+#[test]
 fn selected_file_and_registry_ids_survive_full_paged_and_explain_views() {
     let (mut db, mut capture) = fixture();
     // Deliberately mark ineligible records too: persistence independently rejects

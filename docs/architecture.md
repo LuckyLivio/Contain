@@ -5,6 +5,7 @@
 ```text
 CLI -> baseline registry + read-only inventories
     -> ETW session with confirmed provider configuration and consumer callback readiness
+    -> bounded initial process/thread handle observations with per-query lower bounds
     -> start scoped receiver/writer -> baseline file observations
     -> launch installer through owned handle
     -> bounded callback queue -> receiver/lifetimes -> bounded writer handoff -> SQLite batches
@@ -38,13 +39,22 @@ Its syscall journal is an external oracle used only by verification scripts.
 
 Process identity is `(PID, creation FILETIME)`, never PID alone. Resolve at event
 time; ambiguous PID/TID reuse remains Unknown. Retain original birth ancestry after
-exit. Legacy event times remain converted FILETIME ticks. The QPC-based ETW session
+exit. Startup thread observations bind simultaneously held thread/process handles,
+exclude threads born after the trace-start boundary, and cover only events at or
+after each query completes. They cannot reconstruct missing historical starts.
+Retained stops only shorten candidate lifetimes; delayed starts cannot consume a
+stop needed to bound another reused instance. These maps and startup queries stay
+bounded, with failures and capacity loss reported. Legacy event times remain converted FILETIME ticks. The QPC-based ETW session
 currently uses a ProcessTrace consumer without RAW_TIMESTAMP, so the delivered
 header is not original QPC. Optional clock metadata retains that fact, the exact
 signed header, and bracketed QPC/precise-FILETIME observations; it does not invert
 the conversion. Independent fixture QPC bounds are separate. JSON uses decimal
 strings; SQLite uses 64-bit integers. Snapshot wall time is diagnostic observation,
 not a mutation timestamp or a proven common-clock ETW interval.
+Local clock provenance records independently queried host-name hashes and native
+boot observations. Unsupported layouts and mismatches stay unavailable; neither
+those identifiers nor a numeric interval match establish a writer or final state
+ownership. Full diagnostic identifiers remain private.
 Stable `(ticks, sequence, id)` order does not imply causality at equal timestamps.
 Deadline decisions use monotonic time.
 

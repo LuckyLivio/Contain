@@ -59,6 +59,25 @@ pub struct ClockCalibration {
     pub qpc_after: u64,
 }
 
+/// Local diagnostic identity observations, never actor or ownership evidence.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ClockProvenanceSample {
+    pub schema_version: u32,
+    pub phase: String,
+    pub status: String,
+    pub machine_source: String,
+    pub machine_name_sha256: Option<String>,
+    pub boot_source: String,
+    pub boot_identifier_le_hex: Option<String>,
+    pub nt_status: Option<String>,
+    pub returned_bytes: Option<u32>,
+    #[serde(default, with = "ticks::optional")]
+    pub qpc_before: Option<u64>,
+    #[serde(default, with = "ticks::optional")]
+    pub qpc_after: Option<u64>,
+    pub errors: Vec<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TraceClockMetadata {
     pub schema_version: u32,
@@ -77,6 +96,8 @@ pub struct TraceClockMetadata {
     #[serde(default, with = "ticks::optional")]
     pub qpc_frequency: Option<u64>,
     pub calibrations: Vec<ClockCalibration>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provenance: Vec<ClockProvenanceSample>,
     pub errors: Vec<String>,
 }
 
@@ -93,6 +114,18 @@ mod tests {
         assert!(restored.raw.clock.is_none());
         let backend = serde_json::to_value(BackendReport::default()).unwrap();
         assert!(backend.get("clock").is_none());
+    }
+
+    #[test]
+    fn historical_trace_clock_without_provenance_remains_readable() {
+        let old = serde_json::json!({"schema_version":1,"configuration_source":"historic",
+            "clock_type":"qpc","client_context":1,"process_trace_mode":268435712,
+            "delivered_timestamp_domain":"filetime_100ns","raw_qpc_available":false,
+            "trace_header_available":false,"qpc_frequency":"10000000",
+            "calibrations":[],"errors":[]});
+        let restored: TraceClockMetadata = serde_json::from_value(old.clone()).unwrap();
+        assert!(restored.provenance.is_empty());
+        assert_eq!(serde_json::to_value(restored).unwrap(), old);
     }
 
     #[test]
