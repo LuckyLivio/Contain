@@ -1,14 +1,144 @@
 # v0.4 development validation
 
-## Current scope: minimal extra-Write diagnostic (2026-10-25)
+## Current result: extra Write reproduced in the minimal diagnostic (2026-10-25)
 
 The frozen diagnostic source is **`d80b4903c237f892e98a913c566a3f1b51e4e349`**,
-built from the reviewed `0ac483e` development history. The previous live runtime
-remains `545ed3f`, baseline `e72d88c`, version **0.3.1**. No new live reproduction,
-production root-cause fix or protocol correction is claimed by this preparation.
-The developer token is still non-administrator. Existing administrator-run results
-below remain valid exploratory evidence; they do not grant this token elevation.
-The original workspace and UI/preview are unchanged.
+built from the reviewed `0ac483e` development history. The previous large-load
+candidate was `545ed3f`, baseline `e72d88c`; version remains **0.3.1**. The owner has now run the
+frozen **d80b490** diagnostic in the existing administrator window. Both D files
+reproduced an additional High Write during the independent delete-call interval,
+with successful completion records. The native source records are real; why this
+I/O is issued and whether its historical name is its current path remain unproven.
+No production naming/operation fix or scoring-protocol correction is claimed.
+The development report started this audit at `c0792f8`; the original workspace
+and UI/preview remain untouched. No new capture or formal acceptance was launched
+during this read-only audit.
+
+### Actual run and A/B/C/D outcome
+
+Private attempt: `write-diagnostic-20261025/admin-20261025-120717-3042a933`.
+The plan, all eight inputs and the short entry match the frozen identities below;
+the eight runtime input hashes match before/after and at audit time. The build
+manifest maps 263 tracked files to d80b490 (one report has only CRLF differences).
+Both release executables were built in that recorded build. Compiler version is
+recorded, but its executable hash was not captured then; that identity field is
+missing and has not been filled using a later hash.
+
+All **16/16 API calls succeeded**: 8 writes, 4 renames and 4 deletes, with null
+errors. All 8 sequences and 16 final path checks match the fixture expectations;
+4 files survive. Each of the 16 calls has exactly one retained successful source
+operation matching operation, path/input-or-destination, PID plus birth and strict
+original-QPC interval. This is positive call-observation coverage **16/16**, not
+precision over every low-level I/O. The original scorer was not rerun or changed.
+
+| Case, two files each | Explicit call-matching High Write | Extra High Write inside delete interval | Other retained Write |
+| --- | ---: | --- | --- |
+| A: write/close | 2 | Not applicable | 2 later Unknown, outside all calls |
+| B: write/rename | 2 | Not applicable | 2 later Unknown, outside all calls |
+| C: write/delete | 2 | None recorded; complete negative conclusion unavailable | 0 |
+| D: write/rename/delete | 2 | **2, both with successful completion** | 0 |
+
+All 14 retained Write records use the actual file provider GUID
+`edd08927-9cc4-4e65-b970-c2560fb5c289`, id16/v1, opcode0/task16. Their actual TDH
+schema has eight fields and their 48-byte payloads are complete. Independent
+little-endian decoding agrees with all eight retained values for all 14 records.
+The 8 explicit writes request IOSize42/offset0/IOFlags`0x60a00`; D's 2 extras
+request IOSize4096/offset0/IOFlags`0x60043`; the 4 later A/B writes request
+IOSize4096/offset0/IOFlags`0x60003`. ExtraFlags is 0 throughout. These numeric
+flags are not assigned undocumented meanings or borrowed from another provider.
+The 4 later records have header PID4 and remain Unknown; their completion does
+not manufacture an actor. For this **14-record Write subset**, 10 are recorded
+High and 4 Unknown (28.57%); this is not the Unknown rate of all captured events.
+False-attribution rate and precision over all low-level writes remain **null**:
+the API journal is not exhaustive independent ground truth for that layer.
+
+### One auditable extra-Write chain
+
+The complete local `clock-chain-audit/audit.json` preserves exact event IDs,
+EventKeys, raw QPC, payload, pointers and actor identity. The following is a
+redacted view of **D0, delete call 13**; offsets are QPC ticks from that call's
+independently recorded start, at 10 MHz. No tolerance or clock inversion is used.
+
+1. The API call runs from tick 0 to **28,294**, returns Ok and names `D-0.dat`.
+2. The extra Write appears at **1,645**; its unique same-IRP id24/v0 completion
+   appears at **1,710**, status0. Both have exact EventKey/descriptor links to the
+   original-clock sidecar and lie strictly inside the call interval.
+3. The recorded process PID/birth agrees with the independent process identity
+   and owned process handle. Real process/thread start and stop records enclose
+   the event. This does not rely on header PID or a later stop alone.
+4. Write's FileObject and local cache generation lead to a retained id30 origin
+   named `D-0.tmp`. Write's schema has **no FileName/FilePath**. An earlier successful
+   Rename on a different FileObject supplies `D-0.dat` and the same FileKey; it
+   invalidates that rename object's cache, not the original object's history.
+5. Request IOSize is **4096**, but completion's complete 20-byte payload contains
+   ExtraInformation **42** and Status0. ExtraInformation's interpretation has not
+   been established for this provider. Neither value proves that 4096 bytes of
+   new application content were written. Final state/ownership remains separate.
+
+This rules out a Rename event being decoded as Write in these two samples. It
+does **not** prove flush/writeback, a duplicate of the earlier write, deletion as
+the cause, or a second explicit application write. The old path is demonstrably
+cached history; same FileKey and a local generation do not independently establish
+an immutable file identity, its unique current name, or safe deletion ownership.
+
+### Collection, clock and diagnostic limits
+
+| Measurement | Actual value and scope |
+| --- | --- |
+| Main receive / persisted | 271 / 271; 206 file, 43 lifecycle and 22 completion raw records |
+| Main queue / handoff / write / quota loss | All reported counters 0; pending0; receiver and writer finished; no quiet-drain timeout |
+| Upstream ETW loss | Reported events0/buffers0; raw consumer's final independent loss counters unavailable |
+| Raw-clock companion | 276,056 received/accepted/stored; 17,667,584 bytes; queue/capacity/quota/not-persisted counters0; producer stopped, writer drained, binary complete and hash verified |
+| Clock correspondence | Independent scan finds no duplicate EventKeys; 271/271 main descriptors link exactly; 16/16 call clock envelopes valid with matching native machine/boot observations |
+| Attached diagnostics | 228/228, 598,863 encoded JSON bytes; no budget rejection, oversize or field parse errors |
+| Bounded context | 48 first-N samples (16 per reason), 112,605 bytes; **275,347 omitted**, not main-queue drops |
+| Truncation | **132 payload prefixes** (127 admitted + 5 context); no schema/text-field truncation. All 14 Write payloads complete. This still blocks complete negative coverage. |
+| Capture / export / offline analysis wall time | 26.323921 / 0.205575 / 0.727662 seconds |
+| Main process CPU / memory | CPU1.359375s; peak working set33,013,760 B; sampled private peak21,921,792 B; no sampling errors; not the whole process tree |
+| Main process I/O | Read24,909,652 B; write29,423,328 B; includes companion activity, not an on/off overhead comparison |
+| Database / WAL | Final DB4,325,376 B; sampled WAL peak6,278,912 B. Sampled DB peak4,096 B missed final growth and is not the true peak. |
+
+The database is finished, has no WAL/SHM/journal sidecars and passes read-only
+`quick_check`. Its hash matches the export-time hash. The selected 27 original
+artifacts retain their hashes, sizes and mtimes across the audit. Full evidence
+stays local in `clock-chain-audit`, `identity-integrity-audit` and
+`resource-semantics-audit` alongside the untouched run files.
+
+The saved analyzer still says **unavailable_or_incomplete**, fix/release gates
+null. Its two failing negative-coverage checks are truncated_records132 and
+context_samples_omitted275347, each requiring0. This is not a source-loss finding.
+The nested old clock report's 16 actor-unavailable rows use the pre-attribution
+raw view. The new per-sequence analysis separately verifies the unchanged facts
+against final same-ID actor evidence; this is not 16 missing production actors.
+The general provider emission/causality contract remains unverified. StartTime0
+is retained as unavailable at realtime OpenTrace, not used as an origin. All four
+final file ownership judgments remain Unknown.
+
+The 26-second wall time includes a reported 20-second scheduled-task inventory
+timeout. It does not establish a slow disk or callback bottleneck. This run has
+no diagnostic-off pair, so added diagnostic CPU/I/O cost remains unavailable.
+
+### Decision after this run
+
+Keep the production decoder, cache and attribution rules unchanged for now. The
+event really is a Write; renaming it Delete or removing the extra positive would
+erase evidence. The API journal's same-operation matching does not cover every
+lower-level I/O produced during other calls. That coverage gap is now explicit,
+but it is not permission to reclassify historical false positives or change gates.
+
+The next unresolved mechanism question is which filesystem/cache path issued the
+4096-byte request during D's delete. These artifacts contain no call stack or
+independent native-I/O trace to answer it. A future targeted D request/completion
+stack observation could distinguish the competing explanations; it has not been
+configured or run. A current-name fix additionally needs independent per-object
+file identity and name observations across rename/replacement, not FileKey-only
+propagation or blanket invalidation. No larger workload is justified by this run.
+
+This audit adds no production or protocol change. The existing analyzer's 25
+regressions and clock protocol's 55 regressions were rerun; independent read-only
+checks also verified payload/layout, all main-to-companion links and database
+integrity. Full Rust quality checks below belong to d80b490 preparation and were
+not rerun for this report-only update. Formal 32-run acceptance remains unexecuted.
 
 The dedicated `write-diagnostic` fixture keeps the original Rust file APIs, with
 two files each in A (write/close), B (write/rename), C (write/delete), D
@@ -45,8 +175,9 @@ perform no synchronous disk writes. Limits are 16 KiB per diagnostic record and
 has a separate 128-sample/512-KiB ceiling and 16 samples per fixed reason. All
 omissions and budget failures are visible. This first-N context is not a complete
 system trace. Cache-origin metadata uses the existing 16,384-object ceiling.
-Diagnostic JSON bytes are not a measurement of allocator overhead; additional
-callback CPU and SQLite/I/O costs still need the small real run. These limits do
+Diagnostic JSON bytes are not a measurement of allocator overhead. The real run
+above measured enabled totals; incremental CPU and SQLite/I/O cost still lacks
+a matched disabled run. These limits do
 not replace the existing queue, raw-evidence or raw-clock companion quotas.
 
 The read-only analyzer joins original QPC through the unchanged protocol-4
@@ -58,7 +189,7 @@ thresholds and formal workload are unchanged. The entry makes a separate bounded
 export of all committed raw records, including lifecycle/open/completion, using
 a read-only database connection; it does not overwrite the CLI export or database.
 
-### What is established before the new capture
+### Source review retained from preparation
 
 The retained provider export and the current local manifest identify GUID
 `edd08927-9cc4-4e65-b970-c2560fb5c289`, id16/version1, task Write/opcode Info. Its
@@ -69,13 +200,11 @@ The matching Rust 1.98.1 local standard-library source calls DeleteFileW, with a
 access-denied disposition fallback; it contains no explicit write in remove_file.
 Neither observation proves why Windows emits the extra Write during deletion.
 
-No new extra-Write chain can yet be claimed. The next capture is limited to this
-single eight-file fixture, using frozen executable/script hashes and real file /
-process providers plus the original-clock companion. A missing source or fallback
-cannot satisfy it. The entry retains unique output directories, stage checkpoints,
-partial measurements and uncertain child state after interruption. It never
-retries, cleans up, expands the workload or starts formal acceptance. Companion
-quota, quiet-timeout and storage optimization remain separate follow-up items.
+The completed run above used this single eight-file fixture, frozen inputs,
+real file/process providers and original-clock companion. No fallback was used.
+The entry retains unique output directories and stage checkpoints, with no retry,
+cleanup, automatic expansion or formal acceptance. Companion quota, quiet-timeout
+and storage optimization remain separate follow-up items.
 
 ### Frozen inputs and executed checks
 
@@ -122,15 +251,16 @@ fix for the extra Write. New analyzer/entry checks contribute 25/10 Python cases
 
 Affected coverage: `file_diagnostics.rs` 493/685 lines (71.97%), 36/59 functions
 (61.02%); `decode.rs` 159/741 lines (21.46%). The actual callback-to-TDH `build`,
-`admit` and `ignored` paths are not covered by these model tests. Names, scalar
-parsing and callback attachment therefore still need the frozen real diagnostic.
-No exclusion was added to hide that gap. The synthetic medians are 1,305.610 ns
+`admit` and `ignored` paths are not covered by these model tests. The real run now
+provides actual schema/scalar evidence for all 14 complete Write payloads and
+228 attached diagnostics; it does not cover every schema, error path or missing
+model-test branch. No exclusion was added to hide that gap. The synthetic medians are 1,305.610 ns
 per JSON event, 153.695 ns per lifecycle record, 253.285 ns per completion source
 record, and 284.095 ns per registry context cycle; all samples stay in the private
 quality archive. They do not measure this diagnostic's callback, queue or disk cost.
 
-The next permitted entry is one A/B/C/D capture, followed by bounded raw export
-and offline analysis. No full eight-arm rerun or formal 32-run protocol is started.
+The frozen entry is one A/B/C/D capture, followed by bounded raw export
+and offline analysis; its completed result is above. No full eight-arm rerun or formal 32-run protocol is started.
 The runner records stages and prints a heartbeat during capture. On Ctrl+C,
 timeout or forced window closure, preserve the whole new directory and fixture:
 the capture child can remain running, and a forced close may leave only the last
