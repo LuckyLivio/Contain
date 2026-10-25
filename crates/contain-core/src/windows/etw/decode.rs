@@ -122,6 +122,9 @@ impl Decoder {
             // Do not rewind context or infer a mapping through this gap.
             self.paths.clear();
             self.pending.clear();
+            if let Some(diagnostics) = &mut self.file_diagnostics {
+                diagnostics.clear();
+            }
             self.file_time_regressions += 1;
             self.errors.fetch_add(1, Ordering::Relaxed);
             return false;
@@ -232,22 +235,58 @@ impl Decoder {
     }
     pub(super) fn file(&mut self, record: &EventRecord, locator: &SchemaLocator) {
         let id = record.event_id();
+        if let Some(diagnostics) = &mut self.file_diagnostics {
+            diagnostics.count("callback_records");
+        }
         if !FILE_EVENT_IDS.contains(&id) {
+            if let Some(diagnostics) = &mut self.file_diagnostics {
+                diagnostics.count("unsupported_event_id");
+            }
             return;
         }
         self.metrics.add(Count::Attempted, 1);
         let time = record.raw_timestamp().max(0) as u64;
         if !self.admit_file_time(time) {
+            if let Some(diagnostics) = &mut self.file_diagnostics {
+                diagnostics.ignored("clock_regression", record, None, None, Default::default());
+            }
             return;
         }
         let Ok(schema) = measured!(self.metrics, Schema, locator.event_schema(record)) else {
             self.errors.fetch_add(1, Ordering::Relaxed);
+            if let Some(diagnostics) = &mut self.file_diagnostics {
+                diagnostics.ignored("schema_failure", record, None, None, Default::default());
+            }
             return;
         };
         let p = Parser::create(record, &schema);
         let irp = pointer(&self.metrics, &p, "Irp");
         if id == 24 {
-            if let Some((request, start)) = irp.as_ref().and_then(|irp| self.pending.remove(irp))
+            let completion = irp.as_ref().and_then(|irp| self.pending.remove(irp));
+            let mut context = self
+                .file_diagnostics
+                .as_ref()
+                .map(|_| file_diagnostics::Context {
+                    path_source: "completion",
+                    pending_irp: Some(crate::model::FilePendingDiagnostic {
+                        action: if irp.is_none() {
+                            "missing_irp"
+                        } else if completion.is_none() {
+                            "no_pending_request"
+                        } else {
+                            "consumed_pending_request"
+                        }
+                        .into(),
+                        prior_request_id: completion.as_ref().map(|(request, _)| request.clone()),
+                        prior_request_timestamp: completion
+                            .as_ref()
+                            .map(|(_, time)| time.to_string()),
+                        current_request_id: None,
+                    }),
+                    ..Default::default()
+                });
+            let missing_request = completion.is_none();
+            if let Some((request, start)) = completion
                 && time >= start
                 && time - start < 300_000_000
             {
@@ -269,17 +308,48 @@ impl Decoder {
                     related_event: Some(request),
                     ..Default::default()
                 };
+                if let Some(diagnostics) = &mut self.file_diagnostics {
+                    e.raw.file_diagnostics =
+                        diagnostics.admit(record, &schema, &p, context.take().unwrap_or_default());
+                }
                 self.send(e);
+            } else if let Some(diagnostics) = &mut self.file_diagnostics {
+                diagnostics.ignored(
+                    if irp.is_none() {
+                        "completion_irp_missing"
+                    } else if missing_request {
+                        "completion_no_request"
+                    } else {
+                        "completion_expired"
+                    },
+                    record,
+                    Some(&schema),
+                    Some(&p),
+                    context.unwrap_or_default(),
+                );
             }
             return;
         }
         let Ok(object) = measured!(self.metrics, Properties, p.try_parse::<u64>("FileObject"))
         else {
             self.errors.fetch_add(1, Ordering::Relaxed);
+            if let Some(diagnostics) = &mut self.file_diagnostics {
+                diagnostics.ignored(
+                    "file_object_parse_failure",
+                    record,
+                    Some(&schema),
+                    Some(&p),
+                    Default::default(),
+                );
+            }
             return;
         };
+        let mut name_source = "supplied_FileName";
         let supplied = measured!(self.metrics, Properties, p.try_parse::<String>("FileName"))
-            .or_else(|_| measured!(self.metrics, Properties, p.try_parse::<String>("FilePath")))
+            .or_else(|_| {
+                name_source = "supplied_FilePath";
+                measured!(self.metrics, Properties, p.try_parse::<String>("FilePath"))
+            })
             .ok()
             .map(|p| {
                 measured!(
@@ -288,8 +358,26 @@ impl Decoder {
                     native::normalize_path(&p, &self.devices)
                 )
             });
+        let mut diagnostic_context =
+            self.file_diagnostics
+                .as_ref()
+                .map(|diagnostics| file_diagnostics::Context {
+                    cache_origin: diagnostics.origin(object),
+                    ..Default::default()
+                });
         if matches!(id, 12 | 30) {
-            self.paths.remove(&object);
+            let removed = self.paths.remove(&object).is_some();
+            if let Some(diagnostics) = &mut self.file_diagnostics {
+                if let Some(context) = &mut diagnostic_context
+                    && removed
+                {
+                    context.cache_invalidated_reason =
+                        Some("open_or_create_replaces_object_context");
+                    context.invalidated_cache_origin = context.cache_origin.take();
+                    diagnostics.count("cache_invalidated_open_or_create");
+                }
+                diagnostics.invalidate(object);
+            }
             if let Some(path) = supplied
                 .as_ref()
                 .filter(|p| native::in_scope(p, &self.roots))
@@ -306,11 +394,49 @@ impl Decoder {
             .paths
             .get(&object)
             .map(|(_, generation)| generation.clone());
+        if let (Some(context), Some(diagnostics)) =
+            (&mut diagnostic_context, &self.file_diagnostics)
+        {
+            context.selected_path(
+                supplied.as_ref().map(|_| name_source),
+                self.paths.get(&object).map(|(path, _)| path.as_str()),
+                diagnostics.origin(object),
+            );
+        }
         let path = supplied.or_else(|| self.paths.get(&object).map(|(path, _)| path.clone()));
         if matches!(id, 14 | 27) {
-            self.paths.remove(&object);
+            let removed = self.paths.remove(&object).is_some();
+            if let Some(diagnostics) = &mut self.file_diagnostics {
+                if let Some(context) = &mut diagnostic_context
+                    && removed
+                {
+                    context.cache_invalidated_reason =
+                        Some(if id == 14 { "close" } else { "rename" });
+                    context.invalidated_cache_origin = context.cache_origin.clone();
+                    diagnostics.count(if id == 14 {
+                        "cache_invalidated_close"
+                    } else {
+                        "cache_invalidated_rename"
+                    });
+                }
+                diagnostics.invalidate(object);
+            }
         }
+        let unresolved_path = path.is_none();
         let Some(path) = path.filter(|p| native::in_scope(p, &self.roots)) else {
+            if let Some(diagnostics) = &mut self.file_diagnostics {
+                diagnostics.ignored(
+                    if unresolved_path {
+                        "unresolved_path"
+                    } else {
+                        "out_of_scope"
+                    },
+                    record,
+                    Some(&schema),
+                    Some(&p),
+                    diagnostic_context.unwrap_or_default(),
+                );
+            }
             return;
         };
         let tid = measured!(
@@ -353,17 +479,48 @@ impl Decoder {
             resource_resolved: true,
             ..Default::default()
         };
+        if let Some(diagnostics) = &mut self.file_diagnostics {
+            let context = diagnostic_context
+                .as_mut()
+                .expect("enabled diagnostic context");
+            if matches!(id, 12 | 30) && e.raw.object_generation.is_some() {
+                diagnostics.establish(object, &e);
+                diagnostics.count("cache_created");
+                context.cache_created = true;
+                context.cache_origin = diagnostics.origin(object);
+            }
+            if context.path_source == "file_object_cache" && context.cache_origin.is_none() {
+                diagnostics.count("cache_origin_missing");
+            }
+        }
         if matches!(id, 16 | 26 | 27)
             && let Some(irp) = irp
         {
+            if let Some(context) = &mut diagnostic_context {
+                context.pending_request(
+                    self.pending.get(&irp),
+                    &e.id,
+                    self.pending.len() < OBJECT_CAPACITY,
+                );
+            }
             if self.pending.contains_key(&irp) {
                 self.pending.remove(&irp);
                 self.errors.fetch_add(1, Ordering::Relaxed);
+                if let Some(diagnostics) = &mut self.file_diagnostics {
+                    diagnostics.count("pending_irp_collision");
+                }
             } else if self.pending.len() < OBJECT_CAPACITY {
                 self.pending.insert(irp, (e.id.clone(), time));
             } else {
                 self.metrics.add(Count::ContextEvictions, 1);
+                if let Some(diagnostics) = &mut self.file_diagnostics {
+                    diagnostics.count("pending_irp_capacity");
+                }
             }
+        }
+        if let Some(diagnostics) = &mut self.file_diagnostics {
+            e.raw.file_diagnostics =
+                diagnostics.admit(record, &schema, &p, diagnostic_context.unwrap_or_default());
         }
         self.send(e);
     }
@@ -622,6 +779,7 @@ mod tests {
     fn delayed_file_record_cannot_reuse_newer_object_or_irp_context() {
         let (tx, _rx) = mpsc::sync_channel(1);
         let mut decoder = Decoder {
+            file_diagnostics: None,
             deferred_registry: false,
             file_watermark: 0,
             file_time_regressions: 0,

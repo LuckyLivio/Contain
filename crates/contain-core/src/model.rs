@@ -202,6 +202,8 @@ pub struct SystemEvent {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct BackendReport {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_diagnostics: Option<FileDiagnosticReport>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub handoff: Option<crate::ingest::HandoffStats>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clock: Option<TraceClockMetadata>,

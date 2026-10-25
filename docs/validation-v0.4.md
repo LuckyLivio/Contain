@@ -1,6 +1,82 @@
 # v0.4 development validation
 
-## Current status: all eight exploratory captures audited (2026-10-25)
+## Current scope: minimal extra-Write diagnostic (2026-10-25)
+
+The starting reviewed development revision is `0ac483e`; the previous live runtime
+remains `545ed3f`, baseline `e72d88c`, version **0.3.1**. No new live reproduction,
+production root-cause fix or protocol correction is claimed by this preparation.
+The developer token is still non-administrator. Existing administrator-run results
+below remain valid exploratory evidence; they do not grant this token elevation.
+The original workspace and UI/preview are unchanged.
+
+The dedicated `write-diagnostic` fixture keeps the original Rust file APIs, with
+two files each in A (write/close), B (write/rename), C (write/delete), D
+(write/rename/delete), in one thread. It is separate from the frozen stress/demo
+workload. A fresh marked TEMP container and fresh payload/truth directories are
+mandatory. Only this invocation's C/D disposable files are removed as part of
+the requested diagnostic; no cleanup, uninstall or user-data deletion exists.
+The journal is outside the watched directory. Each of the 16 API calls records
+independent QPC/calibration bounds, actual result/error, order, process/thread
+creation times, local native provenance and requested payload bytes. The internal
+File Drop in `std::fs::write` has no independently observable close result; this
+is recorded as null, not success. Failed calls and stopped dependent sequences
+remain in the journal. Final content/path observations are separate from calls.
+
+One unmonitored eight-file self-test completed all 16 APIs successfully, with four
+expected surviving files and matching contents. Its executable hash was unchanged
+before/after. This validates the fixture, not ETW or the extra-Write hypothesis.
+Private artifacts are under `target/stabilization/write-diagnostic-20261025/`.
+
+### Evidence additions, without changing attribution
+
+`CONTAIN_FILE_DIAGNOSTICS=1` enables diagnostic copies on existing admitted file
+records and completions. Default behavior is off. Actual descriptors, TDH property
+names/raw types, payload prefixes, field parse states, name selection, cache
+establishment/invalidation and pending-IRP links are retained. Missing fields,
+schema errors, type mismatches and truncation remain distinct. A historical cache
+name is explicitly not a proven current path. No filename propagation by FileKey,
+operation relabelling, actor promotion, new SystemEvent or scoring change occurs.
+
+Copies travel through the existing bounded queue and persistence path; callbacks
+perform no synchronous disk writes. Limits are 16 KiB per diagnostic record and
+8 MiB total attached diagnostic JSON; names are capped at 1 KiB, raw payload at
+256 bytes, and actual schema at 24 fields with 64-byte names. Non-admitted context
+has a separate 128-sample/512-KiB ceiling and 16 samples per fixed reason. All
+omissions and budget failures are visible. This first-N context is not a complete
+system trace. Cache-origin metadata uses the existing 16,384-object ceiling.
+Diagnostic JSON bytes are not a measurement of allocator overhead; additional
+callback CPU and SQLite/I/O costs still need the small real run. These limits do
+not replace the existing queue, raw-evidence or raw-clock companion quotas.
+
+The read-only analyzer joins original QPC through the unchanged protocol-4
+EventKey/descriptor checks, preserves raw and final views separately, and records
+request/completion identity and interval relationships without turning Write into
+Delete. Its output is an evidence review, never an acceptance score. Missing
+clocks, loss, actors or diagnostic fields remain explicit. The original scores,
+thresholds and formal workload are unchanged. The entry makes a separate bounded
+export of all committed raw records, including lifecycle/open/completion, using
+a read-only database connection; it does not overwrite the CLI export or database.
+
+### What is established before the new capture
+
+The retained provider export and the current local manifest identify GUID
+`edd08927-9cc4-4e65-b970-c2560fb5c289`, id16/version1, task Write/opcode Info. Its
+fields are ByteOffset, Irp, FileObject, FileKey, IssuingThreadId, IOSize, IOFlags
+and ExtraFlags; FileName/FilePath are absent. This supports investigating cached
+names but is not a replacement for each historical callback's actual TDH schema.
+The matching Rust 1.98.1 local standard-library source calls DeleteFileW, with an
+access-denied disposition fallback; it contains no explicit write in remove_file.
+Neither observation proves why Windows emits the extra Write during deletion.
+
+No new extra-Write chain can yet be claimed. The next capture is limited to this
+single eight-file fixture, using frozen executable/script hashes and real file /
+process providers plus the original-clock companion. A missing source or fallback
+cannot satisfy it. The entry retains unique output directories, stage checkpoints,
+partial measurements and uncertain child state after interruption. It never
+retries, cleans up, expands the workload or starts formal acceptance. Companion
+quota, quiet-timeout and storage optimization remain separate follow-up items.
+
+## Eight exploratory captures audited (2026-10-25)
 
 **The main capture queues are not the observed failure point in these samples.**
 All eight databases contain completed captures and balanced main persistence.

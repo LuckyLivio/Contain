@@ -1,10 +1,10 @@
 //! Safe wrappers over the EVENT_RECORD type
 
-use windows::core::GUID;
 use windows::Win32::System::Diagnostics::Etw::EVENT_RECORD;
+use windows::core::GUID;
 
-use crate::native::etw_types::extended_data::EventHeaderExtendedDataItem;
 use crate::native::ExtendedDataItem;
+use crate::native::etw_types::extended_data::EventHeaderExtendedDataItem;
 
 use super::EVENT_HEADER_FLAG_32_BIT_HEADER;
 
@@ -16,8 +16,28 @@ pub struct EventRecord(pub(crate) EVENT_RECORD);
 mod contain_key_tests {
     use super::*;
     use windows::Win32::System::Diagnostics::Etw::{
-        EVENT_HEADER_EXTENDED_DATA_ITEM, EVENT_HEADER_EXT_TYPE_EVENT_KEY,
+        EVENT_HEADER_EXT_TYPE_EVENT_KEY, EVENT_HEADER_EXTENDED_DATA_ITEM,
     };
+    #[test]
+    fn diagnostic_payload_prefix_is_bounded_and_null_is_not_valid_empty_data() {
+        let mut raw = EVENT_RECORD::default();
+        assert_eq!(EventRecord(raw).user_payload_prefix(5), Some([].as_slice()));
+        raw.UserDataLength = 3;
+        assert_eq!(EventRecord(raw).user_payload_prefix(0), None);
+        assert_eq!(EventRecord(raw).user_payload_prefix(5), None);
+        let bytes = [1_u8, 2, 3];
+        raw.UserData = bytes.as_ptr() as *mut _;
+        assert_eq!(EventRecord(raw).user_payload_len(), 3);
+        assert_eq!(
+            EventRecord(raw).user_payload_prefix(2),
+            Some([1, 2].as_slice())
+        );
+        assert_eq!(
+            EventRecord(raw).user_payload_prefix(5),
+            Some(bytes.as_slice())
+        );
+        assert_eq!(EventRecord(raw).user_payload_prefix(0), Some([].as_slice()));
+    }
     #[test]
     fn exact_key_checks_size_duplicates_and_preserves_the_header_timestamp() {
         let key = u64::MAX - 3;
@@ -174,6 +194,25 @@ impl EventRecord {
         unsafe {
             std::slice::from_raw_parts(self.0.UserData as *mut _, self.0.UserDataLength.into())
         }
+    }
+
+    /// Declared payload size; no payload interpretation or allocation.
+    pub fn user_payload_len(&self) -> usize {
+        self.0.UserDataLength.into()
+    }
+
+    /// A bounded, callback-lifetime view. A nonempty null payload is invalid.
+    pub fn user_payload_prefix(&self, limit: usize) -> Option<&[u8]> {
+        let len = self.user_payload_len().min(limit);
+        if self.user_payload_len() != 0 && self.0.UserData.is_null() {
+            return None;
+        }
+        if len == 0 {
+            return Some(&[]);
+        }
+        // Safety: ETW owns this valid payload for the callback; the returned
+        // borrow cannot outlive this EventRecord and is capped by UserDataLength.
+        Some(unsafe { std::slice::from_raw_parts(self.0.UserData.cast(), len) })
     }
 
     pub(crate) fn pointer_size(&self) -> usize {

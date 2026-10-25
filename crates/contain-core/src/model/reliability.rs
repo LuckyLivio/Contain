@@ -10,6 +10,9 @@ pub struct RawEvidence {
     pub clock: Option<SourceClock>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registry_fields: Option<Box<RegistryFields>>,
+    /// Optional diagnostic observations, never an input to attribution or naming.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_diagnostics: Option<Box<FileDiagnostics>>,
     pub event_id: Option<u16>,
     pub thread_id: Option<u32>,
     pub header_pid: Option<u32>,
@@ -23,6 +26,109 @@ pub struct RawEvidence {
     pub parent_key: Option<String>,
     pub related_event: Option<String>,
     pub resource_resolved: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct FileDiagnosticField {
+    pub status: String,
+    /// Exact integers are decimal strings; absent/failed fields remain None.
+    pub value: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct FileDiagnosticSchemaField {
+    pub name: String,
+    pub flags: u32,
+    /// Original TDH numbers, not the parser's fallback type enumeration.
+    pub in_type: Option<u16>,
+    pub out_type: Option<u16>,
+    pub length_or_index: u16,
+    pub count_or_index: u16,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct FileDiagnosticSchema {
+    pub property_count: u32,
+    pub top_level_property_count: u32,
+    pub fields: Vec<FileDiagnosticSchemaField>,
+    pub truncated: bool,
+    pub invalid_layout: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct FileCacheOrigin {
+    pub event_key: Option<String>,
+    pub event_id: u16,
+    pub event_timestamp: String,
+    pub source_event_id: Option<String>,
+    pub object_generation: String,
+    pub file_key: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct FilePendingDiagnostic {
+    pub action: String,
+    pub prior_request_id: Option<String>,
+    pub prior_request_timestamp: Option<String>,
+    pub current_request_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FileDiagnostics {
+    pub schema_version: u32,
+    pub descriptor: ClockRecordIdentity,
+    pub header_flags: u16,
+    pub payload_bytes: usize,
+    pub payload_prefix_hex: Option<String>,
+    pub payload_truncated: bool,
+    pub schema: Option<FileDiagnosticSchema>,
+    pub fields: std::collections::BTreeMap<String, FileDiagnosticField>,
+    pub path_source: String,
+    pub cache_name: Option<String>,
+    pub cache_origin: Option<FileCacheOrigin>,
+    pub cache_created: bool,
+    pub cache_invalidated_reason: Option<String>,
+    pub invalidated_cache_origin: Option<FileCacheOrigin>,
+    pub pending_irp: Option<FilePendingDiagnostic>,
+    /// A cached name is not a query of the object's current path.
+    pub current_path_verified: bool,
+    pub truncated_fields: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FileDiagnosticSample {
+    pub reason: String,
+    pub clock: SourceClock,
+    pub diagnostics: FileDiagnostics,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FileDiagnosticReport {
+    pub schema_version: u32,
+    pub enabled: bool,
+    pub counts: std::collections::BTreeMap<String, u64>,
+    /// Admission refers to the existing decoder decision, before queue delivery.
+    pub admitted_records: u64,
+    pub attached_records: u64,
+    pub attached_bytes: u64,
+    pub parsed_fields: u64,
+    pub missing_fields: u64,
+    pub parse_errors: u64,
+    pub truncated_records: u64,
+    pub budget_dropped: u64,
+    pub oversized_records: u64,
+    pub record_byte_limit: usize,
+    pub total_byte_limit: usize,
+    pub cache_entry_limit: usize,
+    pub cache_entries_peak: usize,
+    pub context_sample_limit: usize,
+    pub context_samples_per_reason: usize,
+    pub context_byte_limit: usize,
+    pub context_bytes: u64,
+    pub context_samples_omitted: u64,
+    /// First-N samples per fixed reason; not a complete diagnostic event stream.
+    pub context_samples: Vec<FileDiagnosticSample>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

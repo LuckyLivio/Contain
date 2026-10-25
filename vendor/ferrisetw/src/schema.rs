@@ -17,7 +17,36 @@ pub struct Schema {
     cached_properties: OnceCell<Result<Vec<Property>, PropertyError>>,
 }
 
+/// Bounded diagnostic copies of the original TDH schema, without type coercion.
+#[derive(Clone, Debug, Default)]
+pub struct DiagnosticSchema {
+    pub property_count: u32,
+    pub top_level_property_count: u32,
+    pub fields: Vec<DiagnosticProperty>,
+    pub truncated: bool,
+    pub invalid_layout: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DiagnosticProperty {
+    pub name: String,
+    pub flags: u32,
+    pub in_type: Option<u16>,
+    pub out_type: Option<u16>,
+    pub length_or_index: u16,
+    pub count_or_index: u16,
+}
+
 impl Schema {
+    /// Retain at most max_fields names/types, each name capped in UTF-8 bytes.
+    pub fn diagnostic_properties(
+        &self,
+        max_fields: usize,
+        max_name_bytes: usize,
+    ) -> DiagnosticSchema {
+        self.te_info
+            .diagnostic_properties(max_fields, max_name_bytes)
+    }
     pub(crate) fn new(te_info: TraceEventInfo) -> Self {
         Schema {
             te_info,

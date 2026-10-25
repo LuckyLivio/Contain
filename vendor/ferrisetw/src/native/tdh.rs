@@ -12,9 +12,9 @@ use crate::native::etw_types::event_record::EventRecord;
 use crate::native::tdh_types::Property;
 use crate::traits::*;
 use widestring::U16CStr;
-use windows::core::GUID;
 use windows::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER;
 use windows::Win32::System::Diagnostics::Etw::{self, EVENT_PROPERTY_INFO, TRACE_EVENT_INFO};
+use windows::core::GUID;
 
 /// Tdh native module errors
 #[derive(Debug)]
@@ -169,6 +169,149 @@ impl TraceEventInfo {
 
     pub fn properties(&self) -> PropertyIterator {
         PropertyIterator::new(self)
+    }
+
+    pub fn diagnostic_properties(
+        &self,
+        max_fields: usize,
+        max_name_bytes: usize,
+    ) -> crate::schema::DiagnosticSchema {
+        let raw = self.as_raw();
+        let mut result = crate::schema::DiagnosticSchema {
+            property_count: raw.PropertyCount,
+            top_level_property_count: raw.TopLevelPropertyCount,
+            truncated: raw.PropertyCount as usize > max_fields,
+            ..Default::default()
+        };
+        let first = raw.EventPropertyInfoArray.as_ptr();
+        let offset = first as usize - self.data as usize;
+        let available =
+            self.layout.size().saturating_sub(offset) / std::mem::size_of::<EVENT_PROPERTY_INFO>();
+        result.invalid_layout = raw.PropertyCount as usize > available;
+        let count = (raw.PropertyCount as usize).min(available).min(max_fields);
+        for index in 0..count {
+            // Bounds above are against the allocated TDH buffer, including its
+            // variable-length property array. No EVENT_RECORD is retained.
+            let property = unsafe { &*first.add(index) };
+            let name_offset = property.NameOffset as usize;
+            let mut units = Vec::new();
+            let mut terminated = false;
+            if name_offset != 0 && name_offset < self.layout.size() {
+                let remaining = (self.layout.size() - name_offset) / 2;
+                for i in 0..remaining.min(max_name_bytes.saturating_add(1)) {
+                    let value = unsafe {
+                        self.data
+                            .add(name_offset + i * 2)
+                            .cast::<u16>()
+                            .read_unaligned()
+                    };
+                    if value == 0 {
+                        terminated = true;
+                        break;
+                    }
+                    units.push(value);
+                }
+            } else {
+                result.invalid_layout = true;
+            }
+            let mut name = match String::from_utf16(&units) {
+                Ok(name) => name,
+                Err(_) => {
+                    result.invalid_layout = true;
+                    String::from_utf16_lossy(&units)
+                }
+            };
+            let mut end = name.len().min(max_name_bytes);
+            while !name.is_char_boundary(end) {
+                end -= 1;
+            }
+            result.truncated |= !terminated || end != name.len();
+            name.truncate(end);
+            let flags = property.Flags.0 as u32;
+            let scalar = flags & (0x1 | 0x80) == 0;
+            result.fields.push(crate::schema::DiagnosticProperty {
+                name,
+                flags,
+                in_type: scalar.then(|| unsafe { property.Anonymous1.nonStructType.InType }),
+                out_type: scalar.then(|| unsafe { property.Anonymous1.nonStructType.OutType }),
+                length_or_index: unsafe { property.Anonymous3.length },
+                count_or_index: unsafe { property.Anonymous2.count },
+            });
+        }
+        result
+    }
+}
+
+#[cfg(test)]
+mod contain_diagnostic_schema_tests {
+    use super::*;
+
+    fn fixture(name: &[u16]) -> TraceEventInfo {
+        let name_offset = std::mem::size_of::<TRACE_EVENT_INFO>();
+        let layout = Layout::from_size_align(
+            name_offset + name.len() * 2,
+            std::mem::align_of::<TRACE_EVENT_INFO>(),
+        )
+        .unwrap();
+        let data = unsafe { std::alloc::alloc_zeroed(layout) };
+        assert!(!data.is_null());
+        // A self-owned synthetic TDH buffer. No ETW session or OS query.
+        unsafe {
+            let raw = &mut *data.cast::<TRACE_EVENT_INFO>();
+            raw.PropertyCount = 1;
+            raw.TopLevelPropertyCount = 1;
+            let property = &mut raw.EventPropertyInfoArray[0];
+            property.NameOffset = name_offset as u32;
+            property.Flags = Etw::PROPERTY_FLAGS(0x20);
+            property.Anonymous1.nonStructType.InType = 0xf001;
+            property.Anonymous1.nonStructType.OutType = 0xf002;
+            property.Anonymous3.length = 4;
+            property.Anonymous2.count = 1;
+            for (index, unit) in name.iter().enumerate() {
+                data.add(name_offset + index * 2).cast::<u16>().write(*unit);
+            }
+        }
+        TraceEventInfo {
+            data,
+            mut_data_for_dealloc: data,
+            layout,
+        }
+    }
+
+    #[test]
+    fn diagnostic_schema_keeps_unknown_types_and_bounds_names_and_field_counts() {
+        let info = fixture(&[73, 79, 83, 105, 122, 101, 0]);
+        let schema = info.diagnostic_properties(24, 64);
+        assert_eq!(schema.fields[0].name, "IOSize");
+        assert_eq!(schema.fields[0].flags, 0x20);
+        assert_eq!(schema.fields[0].in_type, Some(0xf001));
+        assert_eq!(schema.fields[0].out_type, Some(0xf002));
+        assert_eq!(schema.fields[0].length_or_index, 4);
+        assert!(!schema.invalid_layout);
+        assert!(!schema.truncated);
+        let short = info.diagnostic_properties(24, 4);
+        assert_eq!(short.fields[0].name, "IOSi");
+        assert!(short.truncated);
+        assert!(info.diagnostic_properties(0, 64).fields.is_empty());
+        assert!(info.diagnostic_properties(0, 64).truncated);
+    }
+
+    #[test]
+    fn diagnostic_schema_marks_invalid_utf16_offsets_and_layout() {
+        let info = fixture(&[0xd800, 0]);
+        assert!(info.diagnostic_properties(24, 64).invalid_layout);
+        unsafe {
+            (*info.mut_data_for_dealloc.cast::<TRACE_EVENT_INFO>()).EventPropertyInfoArray[0]
+                .NameOffset = u32::MAX;
+        }
+        assert!(info.diagnostic_properties(24, 64).invalid_layout);
+        unsafe {
+            (*info.mut_data_for_dealloc.cast::<TRACE_EVENT_INFO>()).PropertyCount = u32::MAX;
+        }
+        let malformed = info.diagnostic_properties(24, 64);
+        assert!(malformed.invalid_layout);
+        assert!(malformed.truncated);
+        assert!(malformed.fields.len() <= 24);
     }
 }
 

@@ -3,6 +3,7 @@ use super::native;
 use crate::model::{AttributionEvidence, BackendReport, EvidenceSource, SystemEvent};
 use crate::monitor::EventSource;
 mod decode;
+mod file_diagnostics;
 mod metrics;
 use ferrisetw::provider::{EventFilter, Provider, TraceFlags};
 use ferrisetw::trace::{TraceProperties, TraceTrait};
@@ -27,6 +28,7 @@ const OBJECT_CAPACITY: usize = 16384;
 pub(crate) const FILE_EVENT_IDS: &[u16] = &[12, 14, 16, 24, 26, 27, 30];
 
 struct Decoder {
+    file_diagnostics: Option<file_diagnostics::Diagnostics>,
     deferred_registry: bool,
     file_watermark: u64,
     file_time_regressions: u64,
@@ -226,7 +228,9 @@ impl EtwSource {
         };
         let consumer_ready = Arc::new(AtomicBool::new(false));
         let raw_clock_requested = super::clock::companion::configured();
-        let key_flags = if raw_clock_requested {
+        let file_diagnostics = file_diagnostics::Diagnostics::configured();
+        let diagnostic_keys = raw_clock_requested || file_diagnostics.is_some();
+        let key_flags = if diagnostic_keys {
             TraceFlags::EVENT_ENABLE_PROPERTY_EVENT_KEY
         } else {
             TraceFlags::empty()
@@ -246,6 +250,7 @@ impl EtwSource {
         let companion_roots = roots.clone();
         let registry_enabled = registry_root.is_some();
         let decoder = Arc::new(Mutex::new(Decoder {
+            file_diagnostics,
             deferred_registry: registry_enabled
                 && crate::hotpath::Variant::from_env().deferred_registry(),
             file_watermark: 0,
@@ -365,7 +370,7 @@ impl EtwSource {
                     &name,
                     registry_enabled,
                     filter_ids,
-                    raw_clock_requested,
+                    diagnostic_keys,
                 )
                 .and_then(|()| {
                     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
@@ -778,6 +783,10 @@ impl EtwSource {
                     self.report.warnings.push(warning);
                 }
             }
+            self.report.file_diagnostics = decoder
+                .file_diagnostics
+                .as_ref()
+                .map(|diagnostics| diagnostics.report.clone());
         }
         if let Some(old) = self.report.pipeline.take() {
             let mut p = self.metrics.snapshot();
@@ -833,6 +842,7 @@ mod tests {
         let mut source = EtwSource::start(&[], None, false);
         source.rx = rx;
         let decoder = Decoder {
+            file_diagnostics: None,
             deferred_registry: false,
             file_watermark: 0,
             file_time_regressions: 0,
