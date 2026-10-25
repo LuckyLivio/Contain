@@ -33,7 +33,7 @@ struct Decoder {
     file_watermark: u64,
     file_time_regressions: u64,
     lifetimes: crate::lifetime::LifetimeCache,
-    paths: HashMap<u64, (String, String)>,
+    paths: HashMap<u64, (String, String, Option<crate::model::FileNameEvidence>)>,
     pending: HashMap<String, (String, u64)>,
     registry_context: super::registry_context::RegistryContext,
     roots: Vec<String>,

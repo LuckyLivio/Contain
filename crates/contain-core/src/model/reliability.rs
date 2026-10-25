@@ -2,6 +2,10 @@ use super::*;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct RawEvidence {
+    /// Name provenance is retained during ordinary capture, independently of the
+    /// optional payload diagnostics. It does not establish a current path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_name: Option<Box<FileNameEvidence>>,
     /// A handle query binds an already-running thread to a process instance.
     /// It proves nothing before observed_at and does not establish ownership.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -26,6 +30,17 @@ pub struct RawEvidence {
     pub parent_key: Option<String>,
     pub related_event: Option<String>,
     pub resource_resolved: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileNameEvidence {
+    pub path_source: String,
+    /// Timestamp of the source name observation, not of a later cached use.
+    #[serde(with = "ticks")]
+    pub observed_ticks: u64,
+    pub source_event_id: String,
+    /// No current decoder operation performs a handle-based current-name query.
+    pub current_path_verified: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -197,8 +212,11 @@ pub struct InitialIdentitySnapshot {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ConfidenceDimensions {
+    /// Verified actor instance, not proof of an explicit application API call.
     pub actor: Confidence,
+    /// Resolution of the recorded name, not current path or physical identity.
     pub resource: Confidence,
+    /// Request result evidence, independently of final state validation.
     pub operation: Confidence,
 }
 

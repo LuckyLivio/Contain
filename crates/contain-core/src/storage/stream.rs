@@ -653,6 +653,23 @@ impl Storage {
             return Ok(Some(c));
         }
         c.events.push(serde_json::from_str(&document)?);
+        // The full explanation includes outgoing edges of the selected event.
+        // Query them once using the primary-key prefix; do not scan all edges
+        // in this session for every ancestor or traverse shared resource nodes.
+        let event_node = format!("event:{id}");
+        let mut outgoing = self.connection.prepare_cached("SELECT from_node,to_node,relation,confidence,reason FROM evidence_edges WHERE session_id=?1 AND from_node=?2 AND to_node<>?2 LIMIT 4097")?;
+        for row in outgoing.query_map(params![session, event_node], |r| {
+            Ok(EvidenceEdge {
+                from: r.get(0)?,
+                to: r.get(1)?,
+                relation: r.get(2)?,
+                confidence: super::parse_confidence(&r.get::<_, String>(3)?),
+                reason: r.get(4)?,
+            })
+        })? {
+            c.edges.push(row?);
+            anyhow::ensure!(c.edges.len() <= 4096, "Explanation edge quota exceeded");
+        }
         let mut nodes = vec![format!("event:{id}")];
         let mut visited = std::collections::HashSet::new();
         while let Some(node) = nodes.pop() {

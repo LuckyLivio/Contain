@@ -23,11 +23,13 @@ pub fn correlate(
     }) {
         let mut refs = vec![e.id.clone()];
         let mut ambiguous_completion = false;
+        let mut matched_completion = false;
         if let Some(matches) = completions.get(&e.id) {
             refs.extend(matches.iter().map(|(id, _, _)| id.clone()));
             if let [(.., success, status)] = matches.as_slice() {
                 e.success = *success;
                 e.raw.status = *status;
+                matched_completion = true;
             } else {
                 // Match paged storage: more than one completion is ambiguous,
                 // even when statuses happen to agree. Never select by input order.
@@ -56,8 +58,10 @@ pub fn correlate(
                 "Multiple completion records refer to this request; result is ambiguous and all raw references are retained."
             } else if e.success == Some(false) {
                 "Request failed; this is not a state deletion."
+            } else if e.success.is_some() && matched_completion {
+                "IRP completion matched the scoped request generation; raw status is retained. The operation label describes a native request result, not a final state observation or an explicit application API call."
             } else if e.success.is_some() {
-                "IRP completion matched the scoped request generation; raw status is retained."
+                "Recorded native request result without a matching completion record in this view; no completion join is claimed. The operation label is not a final state observation or an explicit application API call."
             } else {
                 "Completion or rename endpoints unresolved; raw request retained."
             }
@@ -108,6 +112,73 @@ pub fn correlate(
 mod tests {
     use super::*;
     use crate::filesystem::FileState;
+    #[test]
+    fn completed_native_write_retains_success_without_claiming_explicit_api_or_final_state() {
+        let request = SystemEvent {
+            id: "native-write".into(),
+            event_type: "file".into(),
+            operation: "write_requested".into(),
+            success: Some(true),
+            confidence: Confidence::High,
+            resource: r"C:\fixture\historical.tmp".into(),
+            raw: RawEvidence {
+                object_generation: Some("one-open".into()),
+                irp: Some("request-irp".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        for with_completion in [false, true] {
+            let mut events = vec![request.clone()];
+            if with_completion {
+                events.push(SystemEvent {
+                    id: "completion".into(),
+                    event_type: "completion".into(),
+                    success: Some(true),
+                    raw: RawEvidence {
+                        related_event: Some("native-write".into()),
+                        irp: Some("request-irp".into()),
+                        status: Some(0),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                });
+            }
+            let operations = correlate(&mut events, &Snapshot::default(), &Snapshot::default());
+            assert_eq!(operations[0].operation, "Modified");
+            assert_eq!(operations[0].confidence, Confidence::High);
+            assert_eq!(operations[0].success, Some(true));
+            assert!(operations[0].reason.contains("native request result"));
+            assert!(
+                operations[0]
+                    .reason
+                    .contains("not a final state observation or an explicit application API call")
+            );
+            assert_eq!(
+                operations[0].reason.contains("IRP completion matched"),
+                with_completion
+            );
+            assert_eq!(
+                operations[0]
+                    .reason
+                    .contains("no completion join is claimed"),
+                !with_completion
+            );
+            assert_eq!(
+                operations[0].raw_events.len(),
+                if with_completion { 2 } else { 1 }
+            );
+            if with_completion {
+                assert!(operations[0].raw_events.iter().any(|id| id == "completion"));
+            }
+            assert_eq!(
+                operations[0].resource_identity.as_deref(),
+                Some("open-generation:one-open")
+            );
+            assert_eq!(events[0].operation, "write_requested");
+            assert!(!events[0].state_validated);
+        }
+    }
     #[test]
     fn missing_delete_completion_remains_a_delete_request() {
         let mut events = [SystemEvent {

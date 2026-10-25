@@ -114,7 +114,60 @@ pub fn status_success(status: u32) -> Option<bool> {
     }
 }
 
+fn file_name_evidence(
+    supplied_source: Option<&str>,
+    time: u64,
+    event_id: &str,
+    cached: Option<crate::model::FileNameEvidence>,
+) -> Option<Box<crate::model::FileNameEvidence>> {
+    if let Some(source) = supplied_source {
+        Some(Box::new(crate::model::FileNameEvidence {
+            path_source: source.into(),
+            observed_ticks: time,
+            source_event_id: event_id.into(),
+            current_path_verified: false,
+        }))
+    } else {
+        cached.map(|mut name| {
+            name.path_source = "file_object_cache".into();
+            // Copying a name never constitutes a fresh current-path query.
+            name.current_path_verified = false;
+            Box::new(name)
+        })
+    }
+}
+
 impl Decoder {
+    fn begin_file_name(&mut self, id: u16, object: u64, supplied: Option<&String>) -> bool {
+        if !matches!(id, 12 | 30) {
+            return false;
+        }
+        let removed = self.paths.remove(&object).is_some();
+        if let Some(path) = supplied.filter(|p| native::in_scope(p, &self.roots)) {
+            if self.paths.len() < OBJECT_CAPACITY {
+                self.paths.insert(
+                    object,
+                    (path.clone(), uuid::Uuid::new_v4().to_string(), None),
+                );
+            } else {
+                self.metrics.add(Count::ContextEvictions, 1);
+            }
+        }
+        removed
+    }
+
+    fn end_file_name(&mut self, id: u16, object: u64) -> bool {
+        matches!(id, 14 | 27) && self.paths.remove(&object).is_some()
+    }
+
+    fn retain_file_name_origin(&mut self, id: u16, object: u64, event: &SystemEvent) {
+        if matches!(id, 12 | 30)
+            && let Some((_, _, origin)) = self.paths.get_mut(&object)
+        {
+            *origin = event.raw.file_name.as_deref().cloned();
+        }
+    }
+
     fn admit_file_time(&mut self, time: u64) -> bool {
         if time < self.file_watermark {
             // FileObject and IRP numbers can be reused. Applying a delayed record
@@ -366,7 +419,7 @@ impl Decoder {
                     ..Default::default()
                 });
         if matches!(id, 12 | 30) {
-            let removed = self.paths.remove(&object).is_some();
+            let removed = self.begin_file_name(id, object, supplied.as_ref());
             if let Some(diagnostics) = &mut self.file_diagnostics {
                 if let Some(context) = &mut diagnostic_context
                     && removed
@@ -378,34 +431,31 @@ impl Decoder {
                 }
                 diagnostics.invalidate(object);
             }
-            if let Some(path) = supplied
-                .as_ref()
-                .filter(|p| native::in_scope(p, &self.roots))
-            {
-                if self.paths.len() < OBJECT_CAPACITY {
-                    self.paths
-                        .insert(object, (path.clone(), uuid::Uuid::new_v4().to_string()));
-                } else {
-                    self.metrics.add(Count::ContextEvictions, 1);
-                }
-            }
         }
         let generation = self
             .paths
             .get(&object)
-            .map(|(_, generation)| generation.clone());
+            .map(|(_, generation, _)| generation.clone());
+        let cached_name_origin = if supplied.is_none() {
+            self.paths
+                .get(&object)
+                .and_then(|(_, _, origin)| origin.clone())
+        } else {
+            None
+        };
+        let supplied_name_source = supplied.as_ref().map(|_| name_source);
         if let (Some(context), Some(diagnostics)) =
             (&mut diagnostic_context, &self.file_diagnostics)
         {
             context.selected_path(
                 supplied.as_ref().map(|_| name_source),
-                self.paths.get(&object).map(|(path, _)| path.as_str()),
+                self.paths.get(&object).map(|(path, _, _)| path.as_str()),
                 diagnostics.origin(object),
             );
         }
-        let path = supplied.or_else(|| self.paths.get(&object).map(|(path, _)| path.clone()));
+        let path = supplied.or_else(|| self.paths.get(&object).map(|(path, _, _)| path.clone()));
         if matches!(id, 14 | 27) {
-            let removed = self.paths.remove(&object).is_some();
+            let removed = self.end_file_name(id, object);
             if let Some(diagnostics) = &mut self.file_diagnostics {
                 if let Some(context) = &mut diagnostic_context
                     && removed
@@ -468,6 +518,7 @@ impl Decoder {
             None,
         );
         e.raw = RawEvidence {
+            file_name: file_name_evidence(supplied_name_source, time, &e.id, cached_name_origin),
             clock: Some(super::super::clock::record(record)),
             event_id: Some(id),
             thread_id: tid,
@@ -479,6 +530,7 @@ impl Decoder {
             resource_resolved: true,
             ..Default::default()
         };
+        self.retain_file_name_origin(id, object, &e);
         if let Some(diagnostics) = &mut self.file_diagnostics {
             let context = diagnostic_context
                 .as_mut()
@@ -775,10 +827,9 @@ mod tests {
         assert!(fields.diagnostics.is_none());
     }
 
-    #[test]
-    fn delayed_file_record_cannot_reuse_newer_object_or_irp_context() {
+    fn decoder_without_diagnostics() -> Decoder {
         let (tx, _rx) = mpsc::sync_channel(1);
-        let mut decoder = Decoder {
+        Decoder {
             file_diagnostics: None,
             deferred_registry: false,
             file_watermark: 0,
@@ -796,11 +847,16 @@ mod tests {
             errors: Arc::new(AtomicU64::new(0)),
             registry_path_gaps: Arc::new(AtomicU64::new(0)),
             received: Arc::new(AtomicU64::new(0)),
-        };
+        }
+    }
+
+    #[test]
+    fn delayed_file_record_cannot_reuse_newer_object_or_irp_context() {
+        let mut decoder = decoder_without_diagnostics();
         assert!(decoder.admit_file_time(30));
         decoder
             .paths
-            .insert(7, ("new-file".into(), "new-generation".into()));
+            .insert(7, ("new-file".into(), "new-generation".into(), None));
         decoder
             .pending
             .insert("irp".into(), ("new-request".into(), 30));
@@ -822,5 +878,138 @@ mod tests {
             ..Default::default()
         };
         assert!(!backend.source_intact());
+    }
+
+    #[test]
+    fn ordinary_name_cache_transitions_keep_cross_object_history_and_reject_reuse() {
+        let mut decoder = decoder_without_diagnostics();
+        decoder.roots.push(r"c:\fixture".into());
+        let old = r"c:\fixture\old.tmp".to_string();
+        let new = r"c:\fixture\new.dat".to_string();
+        let open = |id: &str, ticks| SystemEvent {
+            id: id.into(),
+            raw: RawEvidence {
+                file_key: Some("shared-file-key".into()),
+                file_name: file_name_evidence(Some("supplied_FileName"), ticks, id, None),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(!decoder.begin_file_name(30, 1, Some(&old)));
+        decoder.retain_file_name_origin(30, 1, &open("opened-original", 100));
+        let original_generation = decoder.paths[&1].1.clone();
+        assert!(!decoder.begin_file_name(12, 2, Some(&old)));
+        decoder.retain_file_name_origin(12, 2, &open("opened-for-rename", 110));
+        // Both opens have the same FileKey, but the actual rename invalidation
+        // targets object 2 only. Object 1 still carries a historical open name.
+        assert!(decoder.end_file_name(27, 2));
+        assert!(!decoder.paths.contains_key(&2));
+        assert_eq!(decoder.paths[&1].0, old);
+        assert_eq!(decoder.paths[&1].1, original_generation);
+        let copied =
+            file_name_evidence(None, 150, "extra-write", decoder.paths[&1].2.clone()).unwrap();
+        assert_eq!(copied.source_event_id, "opened-original");
+        assert_eq!(copied.observed_ticks, 100);
+        assert!(!copied.current_path_verified);
+        // Same name/new open on another object gets its own generation/origin.
+        assert!(!decoder.begin_file_name(30, 3, Some(&old)));
+        decoder.retain_file_name_origin(30, 3, &open("same-name-replacement", 160));
+        assert_ne!(decoder.paths[&3].1, original_generation);
+        assert_eq!(
+            decoder.paths[&3].2.as_ref().unwrap().source_event_id,
+            "same-name-replacement"
+        );
+        assert_eq!(
+            decoder.paths[&1].2.as_ref().unwrap().source_event_id,
+            "opened-original"
+        );
+        // Object-number reuse starts with no old origin, before the actual new
+        // source event exists. Retention happens only after event construction.
+        assert!(decoder.begin_file_name(12, 1, Some(&new)));
+        assert_ne!(decoder.paths[&1].1, original_generation);
+        assert!(decoder.paths[&1].2.is_none());
+        decoder.retain_file_name_origin(12, 1, &open("reused-object", 170));
+        assert_eq!(decoder.paths[&1].0, new);
+        assert_eq!(
+            decoder.paths[&1].2.as_ref().unwrap().source_event_id,
+            "reused-object"
+        );
+        assert!(decoder.end_file_name(14, 1));
+        assert!(!decoder.paths.contains_key(&1));
+        assert!(!decoder.begin_file_name(16, 3, Some(&new)));
+        assert!(!decoder.end_file_name(16, 3));
+        assert_eq!(decoder.paths[&3].0, old);
+        // An out-of-scope replacement also retires the prior name rather than
+        // leaving a scoped historical name attached to a recycled object.
+        assert!(decoder.begin_file_name(12, 3, Some(&r"c:\other\file".into())));
+        assert!(!decoder.paths.contains_key(&3));
+        assert!(decoder.file_diagnostics.is_none());
+    }
+
+    #[test]
+    fn ordinary_name_provenance_retains_origin_time_without_diagnostic_payloads() {
+        let opened = file_name_evidence(Some("supplied_FileName"), 100, "open-old", None).unwrap();
+        let cached = file_name_evidence(None, 200, "write-later", Some(*opened.clone())).unwrap();
+        assert_eq!(cached.path_source, "file_object_cache");
+        assert_eq!(cached.observed_ticks, 100);
+        assert_eq!(cached.source_event_id, "open-old");
+        assert!(!cached.current_path_verified);
+        // A supplied rename endpoint describes its own event; it neither changes
+        // another FileObject's historical opening nor establishes physical identity.
+        let renamed = file_name_evidence(
+            Some("supplied_FilePath"),
+            150,
+            "other-object-rename",
+            Some(*opened.clone()),
+        )
+        .unwrap();
+        assert_eq!(renamed.observed_ticks, 150);
+        assert_eq!(renamed.source_event_id, "other-object-rename");
+        assert_eq!(cached.source_event_id, "open-old");
+        assert_eq!(opened.path_source, "supplied_FileName");
+        // A new opening, including same-name replacement/object-number reuse,
+        // must source its own observation rather than inherit the old origin.
+        let replacement = file_name_evidence(
+            Some("supplied_FileName"),
+            300,
+            "replacement-open",
+            Some(*opened),
+        )
+        .unwrap();
+        assert_eq!(replacement.source_event_id, "replacement-open");
+        assert_eq!(replacement.observed_ticks, 300);
+        assert!(!replacement.current_path_verified);
+        assert!(file_name_evidence(None, 400, "unknown", None).is_none());
+        let mut measured = SystemEvent::default();
+        let before_bytes = serde_json::to_vec(&measured).unwrap().len();
+        measured.raw.file_name = file_name_evidence(
+            Some("supplied_FileName"),
+            134_350_000_000_000_001,
+            "00000000-0000-0000-0000-000000000001",
+            None,
+        );
+        let supplied_bytes = serde_json::to_vec(&measured).unwrap().len() - before_bytes;
+        measured.raw.file_name =
+            file_name_evidence(None, 0, "unused", measured.raw.file_name.map(|n| *n));
+        let cached_bytes = serde_json::to_vec(&measured).unwrap().len() - before_bytes;
+        let inline_delta =
+            std::mem::size_of::<(String, String, Option<crate::model::FileNameEvidence>)>()
+                - std::mem::size_of::<(String, String)>();
+        println!(
+            "NAME_PROVENANCE_COST supplied_json_bytes={supplied_bytes} cached_json_bytes={cached_bytes} cache_inline_delta_bytes={inline_delta} cache_slots={OBJECT_CAPACITY}; strings, allocator and hash buckets excluded from inline delta"
+        );
+    }
+
+    #[test]
+    fn cached_name_copy_cannot_reuse_a_current_path_assertion() {
+        let origin = crate::model::FileNameEvidence {
+            path_source: "supplied_FileName".into(),
+            observed_ticks: 100,
+            source_event_id: "source".into(),
+            current_path_verified: true,
+        };
+        let copied = file_name_evidence(None, 200, "later", Some(origin)).unwrap();
+        assert!(!copied.current_path_verified);
+        assert_eq!(copied.observed_ticks, 100);
     }
 }

@@ -114,6 +114,12 @@ Inspect summarizes capture quality and counters; `--verbose` and `explain` show 
 
 ## Limitations
 
+- File source confidence identifies an execution actor and recorded name, not an
+  explicit application API call, verified current path or final content owner.
+  Ordinary capture retains provider/cache name provenance and its observation
+  time; a historical cached name is labelled as such. Older records without this
+  evidence remain readable with provenance unavailable.
+
 - Missing lifecycle events, ambiguous lifetimes, provider access failure or unsupported schemas reduce coverage. Captures are Degraded or Incomplete; v0.3 never claims a complete footprint.
 - Normalized operations preserve raw references. IRP completion is partial; stable file IDs prove surviving rename/replacement endpoints, not an entire transient chain or exclusive ownership.
 - Registry context requires a verified absolute base and the same process lifetime. Missing paths stay `<unresolved registry object>`. Registry snapshots remain Unknown when complete scoped writer evidence is unavailable.

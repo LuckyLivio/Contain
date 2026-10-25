@@ -1,4 +1,4 @@
-//! Deterministic policy. Sources provide facts; this module decides whether they imply ownership.
+//! Deterministic actor attribution and separately controlled state association.
 use crate::model::*;
 use crate::windows::native::normalize_path;
 
@@ -58,7 +58,7 @@ pub fn attribute(event: &mut SystemEvent, processes: &[ProcessRecord], session_i
         AttributionRule::DescendantProcess
     };
     event.reason = format!(
-        "{} from PID {} (creation time {}) matches a verified {} process. Operation completion: {}.",
+        "{} from PID {} (creation time {}) matches a verified {} process. Operation completion: {}. Source actor attribution does not establish an explicit application API call, current resource name, or final state ownership.",
         event.operation,
         pid,
         created,

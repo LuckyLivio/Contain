@@ -28,7 +28,9 @@ Its syscall journal is an external oracle used only by verification scripts.
 - Kernel-Process: retained process/thread starts/stops. Polling enriches live
   metadata and supplies fallback. Child birth must match a unique parent lifetime.
 - Kernel-File: raw open/create/write/rename/delete/close and IRP completion.
-  Issuing TID identifies the writer; header PID may be a system worker.
+  Issuing TID, when resolved against a verified event-time lifetime, identifies
+  the execution context; header PID may be a system worker. This does not by
+  itself identify an explicit application API call or the author of final content.
 - Kernel-Registry: mutation status, optional native name and object/base context.
   Missing full paths stay explicit; a selected HKCU key is never a guessed prefix.
 - File snapshots: hash, size and stable single-link file ID from the same handle.
@@ -63,6 +65,17 @@ actor, resource and operation certainty. A known unrelated actor remains applica
 Unknown; a registry actor need not have a known resource. A completed request does
 not prove exclusive ownership or durable final state.
 
+For file source events, resource confidence means resolution of a **recorded
+name**, not a verified current path or physical file identity. Optional
+`raw.file_name` persists provider/cache provenance, the original name observation
+time and source-event reference during ordinary capture. A cached name keeps its
+original time after another FileObject renames the file; no shared FileKey
+propagates a new name. Current capture always records `current_path_verified=false`.
+Older records without this metadata remain readable, with provenance unavailable
+unless their retained diagnostic payload supplies it. Neither form proves an
+explicit application call or final ownership. Native Write and its completion
+remain Write evidence, including writes executed inside another API's path.
+
 Loss/decode/overflow, snapshot/notification gaps, failed shutdown statistics or drain
 timeout produce Incomplete. Otherwise v0.3 reports Degraded because scope/provider
 coverage cannot prove a complete footprint. There is no current path to Complete.
@@ -86,8 +99,11 @@ show missing v3 metadata. Newer schemas are rejected before any table changes.
 
 Adjacency nodes identify sessions, `(PID,birth)`, events and resolved resources.
 Edges persist relationship, confidence and reason. `explain` walks incoming actor
-ancestry and lists operations referencing the selected event. A visited-node set
-bounds graph traversal. Source evidence and snapshot operations remain distinct.
+ancestry, includes the selected event's outgoing resource edges, and lists
+operations referencing that event. It does not traverse from a shared resource
+to other events. A visited-node set and the existing edge quota bound traversal;
+outgoing and incoming reads use their respective adjacency indexes. Source
+evidence and snapshot operations remain distinct.
 
 Final resource reads occur while ETW and the receiver run. Production uses shared
 file handles and retains no file or ancestor exclusion handles through stop/drain.

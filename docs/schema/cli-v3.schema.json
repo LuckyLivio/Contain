@@ -1097,6 +1097,16 @@
         "resource_resolved"
       ],
       "properties": {
+        "file_name": {
+          "type": "object",
+          "required": ["path_source", "observed_ticks", "source_event_id", "current_path_verified"],
+          "properties": {
+            "path_source": { "type": "string" },
+            "observed_ticks": { "type": "string", "pattern": "^[0-9]+$" },
+            "source_event_id": { "type": "string" },
+            "current_path_verified": { "type": "boolean" }
+          }
+        },
         "resource_resolved": {
           "type": "boolean"
         },

@@ -49,6 +49,146 @@ fn fixture_at(path: &Path) -> (Storage, Capture) {
     (db, capture)
 }
 
+#[test]
+fn file_name_origin_survives_reopen_pages_and_explanation_without_ownership() {
+    let path =
+        std::env::temp_dir().join(format!("contain-name-origin-{}.db", uuid::Uuid::new_v4()));
+    let origin = 134_350_000_000_000_001;
+    let mut capture = Capture {
+        id: "name-origins".into(),
+        name: "name-origins".into(),
+        schema_version: 3,
+        files: vec![FileChange {
+            path: r"C:\fixture\old.tmp".into(),
+            operation: "modified".into(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    // Same FileKey is deliberately shared: it never supplies a current name or
+    // physical identity. The third row reuses both a path and object number.
+    for (id, name, object, generation, observed, source, source_event) in [
+        (
+            "historical-write",
+            "old.tmp",
+            "object-a",
+            "open-a",
+            origin,
+            "file_object_cache",
+            "open-original",
+        ),
+        (
+            "other-object-rename",
+            "new.dat",
+            "object-b",
+            "open-b",
+            origin + 10,
+            "supplied_FileName",
+            "other-object-rename",
+        ),
+        (
+            "same-name-replacement",
+            "old.tmp",
+            "object-a",
+            "open-c",
+            origin + 20,
+            "supplied_FileName",
+            "same-name-replacement",
+        ),
+        (
+            "legacy-no-name-proof",
+            "old.tmp",
+            "object-a",
+            "open-c",
+            origin + 30,
+            "",
+            "",
+        ),
+    ] {
+        let mut e = event(id, "file", "write_requested", Some(true));
+        e.timestamp_ticks = observed + 1;
+        e.resource = format!(r"C:\fixture\{name}");
+        e.evidence = AttributionEvidence {
+            source: EvidenceSource::EtwFile,
+            pid: Some(7),
+            process_creation_time: Some(origin - 1),
+            ..Default::default()
+        };
+        e.raw.resource_resolved = true;
+        e.raw.file_object = Some(object.into());
+        e.raw.file_key = Some("shared-key".into());
+        e.raw.object_generation = Some(generation.into());
+        e.raw.file_name = (!source.is_empty()).then(|| {
+            Box::new(FileNameEvidence {
+                path_source: source.into(),
+                observed_ticks: observed,
+                source_event_id: source_event.into(),
+                current_path_verified: false,
+            })
+        });
+        if id == "other-object-rename" {
+            e.operation = "rename_requested".into();
+        }
+        capture.events.push(e);
+    }
+    crate::reliability::finish(&mut capture);
+    let expected: std::collections::HashMap<_, _> = capture
+        .events
+        .iter()
+        .map(|e| (e.id.clone(), serde_json::to_value(e).unwrap()))
+        .collect();
+    let mut db = Storage::open(&path).unwrap();
+    db.save(&capture).unwrap();
+    drop(db);
+    let db = Storage::open(&path).unwrap();
+    let full = db.load(&capture.id).unwrap();
+    let summary = db.load_summary(&capture.id).unwrap();
+    assert_eq!(summary.stats.known_actor_events, 4);
+    assert_eq!(summary.stats.known_resource_events, 4);
+    assert_eq!(summary.stats.high_confidence_events, 4);
+    assert_eq!(summary.files[0].confidence, Confidence::Unknown);
+    assert!(summary.events.is_empty());
+    for (offset, e) in full.events.iter().enumerate() {
+        let page = db.events_page(&capture.id, offset as u64, 1).unwrap();
+        let explained = db.for_event(&e.id).unwrap();
+        let explained_event = explained.events.iter().find(|x| x.id == e.id).unwrap();
+        for view in [e, &page[0], explained_event] {
+            assert_eq!(serde_json::to_value(view).unwrap(), expected[&e.id]);
+            assert_eq!(view.confidence, Confidence::High);
+            assert_eq!(view.dimensions.actor, Confidence::High);
+            assert_eq!(view.success, Some(true));
+            assert!(!view.state_validated);
+        }
+        if let Some(name) = &e.raw.file_name {
+            assert_eq!(
+                serde_json::to_value(e).unwrap()["raw"]["file_name"]["observed_ticks"],
+                name.observed_ticks.to_string()
+            );
+        } else {
+            assert!(crate::reliability::resource_evidence_reason(e).contains("unavailable"));
+        }
+        let original_edge = capture
+            .edges
+            .iter()
+            .find(|edge| edge.from == format!("event:{}", e.id) && edge.to.starts_with("resource:"))
+            .unwrap();
+        assert!(
+            explained
+                .edges
+                .iter()
+                .any(|edge| edge.from == original_edge.from && edge.reason == original_edge.reason)
+        );
+    }
+    assert!(db.events_page(&capture.id, 4, 1).unwrap().is_empty());
+    drop(db);
+    for suffix in ["", "-wal", "-shm"] {
+        let artifact = std::path::PathBuf::from(format!("{}{suffix}", path.display()));
+        if artifact.exists() {
+            std::fs::remove_file(artifact).unwrap();
+        }
+    }
+}
+
 fn assert_views(db: &Storage, capture: &Capture, expected: &[&str]) {
     let full = db.load(&capture.id).unwrap();
     assert!(db.load_summary(&capture.id).unwrap().events.is_empty());
