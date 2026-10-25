@@ -1,5 +1,98 @@
 # v0.4 development validation
 
+## Current stage: independent request stacks and sampled file identity (2026-10-25)
+
+The last actual minimal capture remains **d80b490**, reviewed at **3b89307**;
+version remains **0.3.1**. Its two extra native High Writes remain established
+positive evidence. This stage prepares an independent observer and a separately
+labelled metadata variant. No new stack trace, reproduction outcome, production
+fix, changed scorer or formal 32-run acceptance is claimed.
+
+### Observer selection and execution boundary
+
+Process Monitor was not found in bounded checks of PATH, common tool directories,
+running processes or installation/EULA records. That does not prove it is absent
+from every directory. Its installed version/source and licence state are therefore
+unavailable; no executable was downloaded, started or accepted on the owner's
+behalf. Microsoft's [Process Monitor documentation](https://learn.microsoft.com/en-us/sysinternals/downloads/procmon)
+describes per-operation stacks and native PML records, but no local PML has been
+obtained.
+
+The existing Microsoft-signed WPR **10.0.26100.9711** and xperf
+**10.0.26100.3916** were inspected instead. `scripts/write-stack.wprp` requests
+FileWrite, FileCreate, FileCleanup, FileClose, FileSetInformation, FileDelete,
+FileRename and FileOpEnd stacks, together with process/thread/image and filename
+context. The installed WPR profile parser and installed XSD accept this exact
+profile. These are request-event stack settings, not CPU sampling; successful
+configuration is not evidence that a captured request has usable frames.
+
+An unrelated persistent kernel logger is already active. The observer must use a
+fresh WPR instance, verify its exact owned collector, and stop only that instance.
+It must never call a default/global stop or cancel to make room. Microsoft
+[documents that instance name, not SystemCollector Name, determines the session](https://devblogs.microsoft.com/performance-diagnostics/controlling-the-event-session-name-with-the-instance-name/).
+Read-only queries can return exit0 for an absent instance, so exit0 alone cannot
+authorize a child capture or establish collector ownership.
+
+The profile requests 256 KiB x128 buffers (32 MiB buffer budget) and a **256 MB
+sequential source ETL limit**. [MaximumFileSize](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/maximumfilesize)
+stops sequential recording at the cap; it does not overwrite old evidence. Hitting
+the cap is incomplete evidence. This is not a 32 MiB whole-process memory cap or
+a 256 MB total-directory cap: recorder overhead, merge output, Contain's existing
+bounded artifacts and later exports are separate costs. No PID-only filter is
+used; old/new names and other execution contexts remain eligible for collection.
+No symbol download, service setting change, new driver, automatic elevation or
+foreign-session stop is part of the entry.
+
+### Fixed comparison and interpretation rules
+
+The first observer-on run reuses the original frozen d80b490 executables and
+original A-D APIs, eight files, one worker. It compares against the already
+retained observer-off capture; there is no new observer-off rerun or automatic
+second arm. The stack entry changes only the child's private output parent and
+records the derived plan. Every input is hashed before and after. A fresh output
+directory, bounded wait and staged failure record preserve interrupted attempts;
+an uncertain child is not killed or retried. Actual stack inspection is required
+before any later metadata-variant capture.
+
+Matching will not assume shared EventKeys, timestamp epochs or provider schemas.
+First inspect the actual classic kernel event layout and trace clock metadata.
+Where available, require a unique request-generation match using IRP, object,
+operation, length/offset and verified actor lifetime, with order and measured
+clock bounds as additional checks. A pointer or nearby timestamp alone is not
+enough. Missing fields or multiple candidates leave cross-collector correspondence
+unavailable. Link stack fragments to their triggering request using retained trace
+metadata and the existing decoder, not a nearest-time search. Preserve unresolved
+addresses, image identity and symbol provenance; a missing/truncated stack or a
+different observation layer cannot establish an application call chain.
+
+The opt-in `write-diagnostic --observe-file-identity` variant keeps `std::fs::write`,
+`rename` and `remove_file` unchanged; no flush or caching policy is added. A separate
+`identity-observations.jsonl` contains at most 28 metadata observations, each with
+open/query/close QPC boundaries and actual native errors. Transient attribute
+handles share READ/WRITE/DELETE and close before the next workload call. FileIdInfo
+records a 128-bit file ID and 64-bit volume serial; volume information separately
+records filesystem type, label and formatting serial. Handle-name queries record
+both OPENED and NORMALIZED flags and bounded-buffer failures.
+
+These are names of **observer handles**; the original write handle is inaccessible
+inside the unchanged `std::fs::write` API and stays unavailable. ETW-provided names,
+historical cache origins and queried names remain separate. Equal volume/file IDs
+on either side of a handle gap are sampled identity evidence, not proof of no
+replacement, a unique pathname or ownership. Microsoft documents both the
+[identity pair](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_id_info)
+and [handle-name query modes](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfinalpathnamebyhandlew).
+The variant's extra opens, queries, closes and logging can perturb I/O; compare
+API success/error, final contents and the D extra-Write reproduction separately.
+
+The current branch conclusion is **C: request mechanism and current-name meaning
+remain insufficiently established**. A positive stack chain may support the
+lower-level-activity/API-journal distinction, but will not retroactively pass old
+scores. A demonstrated cache-semantic error needs a failing regression before a
+minimal production fix. Thread execution, request success, current name, explicit
+application call and final-state ownership must remain distinct judgments.
+Scheduled-task inventory timeout, companion quota and derived-write performance
+remain separate follow-ups; this stage does not refactor them.
+
 ## Current result: extra Write reproduced in the minimal diagnostic (2026-10-25)
 
 The frozen diagnostic source is **`d80b4903c237f892e98a913c566a3f1b51e4e349`**,

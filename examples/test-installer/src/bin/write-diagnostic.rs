@@ -29,6 +29,9 @@ use windows_sys::Win32::{
 #[path = "../truth/provenance.rs"]
 mod provenance;
 
+#[path = "write_diagnostic/identity.rs"]
+mod identity;
+
 const PREFIX: &str = "contain-write-diagnostic-";
 const MARKER: &str = ".contain-write-diagnostic-marker";
 const MARKER_BYTES: &[u8] = b"Contain write diagnostic container v1";
@@ -39,6 +42,9 @@ struct Args {
     /// New marked direct TEMP child. It must contain only the marker file.
     #[arg(long)]
     container: PathBuf,
+    /// Separate observer variant; adds short-lived metadata opens outside workload calls.
+    #[arg(long)]
+    observe_file_identity: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -353,7 +359,14 @@ fn details(
         "close_result":null,"close_boundary":null})
 }
 
-fn run_case(fixture: &Fixture, journal: &mut Journal, case: Case, index: usize) -> Result<bool> {
+fn run_case(
+    fixture: &Fixture,
+    journal: &mut Journal,
+    observer: &mut Option<identity::Observer>,
+    case: Case,
+    index: usize,
+) -> Result<bool> {
+    identity::ensure_ready(observer)?;
     let original_name = format!("{}-{index}.tmp", case.name());
     let final_name = format!("{}-{index}.dat", case.name());
     let mut current = fixture.checked_leaf(&original_name, false)?;
@@ -373,12 +386,36 @@ fn run_case(fixture: &Fixture, journal: &mut Journal, case: Case, index: usize) 
             "rename" => {
                 fixture.checked_leaf(&original_name, true)?;
                 let destination = fixture.checked_leaf(&final_name, false)?;
+                identity::observe(
+                    observer,
+                    case,
+                    index,
+                    "before_rename",
+                    &current,
+                    journal.order,
+                )?;
                 let success = journal.call(
                     details(case, index, action, &current, Some(&destination)),
                     || fs::rename(&current, &destination),
                 )?;
                 if success {
+                    identity::observe(
+                        observer,
+                        case,
+                        index,
+                        "after_rename_old_path",
+                        &current,
+                        journal.order,
+                    )?;
                     current = destination;
+                    identity::observe(
+                        observer,
+                        case,
+                        index,
+                        "after_rename_new_path",
+                        &current,
+                        journal.order,
+                    )?;
                 }
                 success
             }
@@ -389,6 +426,14 @@ fn run_case(fixture: &Fixture, journal: &mut Journal, case: Case, index: usize) 
                     &original_name
                 };
                 fixture.checked_leaf(name, true)?;
+                identity::observe(
+                    observer,
+                    case,
+                    index,
+                    "before_delete",
+                    &current,
+                    journal.order,
+                )?;
                 journal.call(details(case, index, action, &current, None), || {
                     fs::remove_file(&current)
                 })?
@@ -402,6 +447,20 @@ fn run_case(fixture: &Fixture, journal: &mut Journal, case: Case, index: usize) 
                 "reason":"failed API; dependent actions were not attempted"}),
             )?;
             return Ok(false);
+        }
+        if matches!(*action, "write" | "delete") {
+            identity::observe(
+                observer,
+                case,
+                index,
+                if *action == "write" {
+                    "after_write"
+                } else {
+                    "after_delete"
+                },
+                &current,
+                journal.order,
+            )?;
         }
     }
     Ok(true)
@@ -448,6 +507,13 @@ fn final_state(fixture: &Fixture, case: Case, index: usize) -> Value {
 fn run(args: Args) -> Result<()> {
     let fixture = Fixture::prepare(&args.container)?;
     let mut journal = Journal::new(&fixture.truth.join("operations.jsonl"))?;
+    let mut observer = if args.observe_file_identity {
+        Some(identity::Observer::new(
+            &fixture.truth.join("identity-observations.jsonl"),
+        )?)
+    } else {
+        None
+    };
     journal.append(&json!({"schema_version":1,"kind":"write_diagnostic_session",
         "root":fixture.root,"truth":fixture.truth,"workers":1,"files_per_case":FILES_PER_CASE,
         "expected_api_calls":16,"actor":journal.actor,"provenance":journal.provenance,
@@ -456,7 +522,7 @@ fn run(args: Args) -> Result<()> {
     let mut succeeded = 0;
     let mut failures = Vec::new();
     for (case, index) in cases() {
-        match run_case(&fixture, &mut journal, case, index) {
+        match run_case(&fixture, &mut journal, &mut observer, case, index) {
             Ok(true) => succeeded += 1,
             Ok(false) => failures.push(json!({"case":case.name(),"file_index":index,"reason":"API failed; see operation row"})),
             Err(error) => {

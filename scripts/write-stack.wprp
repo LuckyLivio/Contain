@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WindowsPerformanceRecorder Version="1.0" Author="Contain">
+  <Profiles>
+    <!--
+      Request-level file stacks, not sampled CPU stacks. Use a fresh WPR
+      -instancename on every invocation, including status and stop. Never stop
+      the default kernel logger or another recording to make this profile run.
+      MaximumFileSize uses the documented MB unit. The sequential cap retains
+      the beginning and stops at 256 MB; reaching it is incomplete evidence,
+      not a successful capture. This caps one trace file, not merge output or
+      total diagnostic disk use. Buffers do not cap total process memory.
+    -->
+    <SystemCollector Id="ContainWriteCollector" Name="Contain Write Collector">
+      <BufferSize Value="256"/>
+      <Buffers Value="128"/>
+      <MaximumFileSize Value="256" FileMode="Sequential"/>
+    </SystemCollector>
+    <SystemProvider Id="ContainWriteProvider">
+      <Keywords>
+        <Keyword Value="ProcessThread"/>
+        <Keyword Value="Loader"/>
+        <Keyword Value="Filename"/>
+        <Keyword Value="FileIO"/>
+        <Keyword Value="FileIOInit"/>
+      </Keywords>
+      <Stacks>
+        <Stack Value="FileCreate"/>
+        <Stack Value="FileCleanup"/>
+        <Stack Value="FileClose"/>
+        <Stack Value="FileWrite"/>
+        <Stack Value="FileSetInformation"/>
+        <Stack Value="FileDelete"/>
+        <Stack Value="FileRename"/>
+        <Stack Value="FileOpEnd"/>
+      </Stacks>
+    </SystemProvider>
+    <Profile Id="ContainWrite.Verbose.File" Name="ContainWrite"
+             Description="Bounded independent file request stack observation"
+             LoggingMode="File" DetailLevel="Verbose">
+      <Collectors>
+        <SystemCollectorId Value="ContainWriteCollector">
+          <SystemProviderId Value="ContainWriteProvider"/>
+        </SystemCollectorId>
+      </Collectors>
+    </Profile>
+  </Profiles>
+</WindowsPerformanceRecorder>
