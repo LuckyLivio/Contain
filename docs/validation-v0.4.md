@@ -1,6 +1,206 @@
 # v0.4 development validation
 
-## Current result: request-linked stacks recovered; observer incomplete (2026-10-25)
+## Current result: semantic fixes tested; transient identity run pending (2026-10-25)
+
+The frozen development candidate is **956febcfe34ffeb40a2a2245e22b1c8e4ad596dd**,
+version **0.3.1**. The most recently observed capture code remains **d80b490**;
+the candidate has not yet run with real ETW. Report-only commits may follow the
+frozen candidate. This phase changes evidence expression and offline validation,
+not the native operation, attribution thresholds, workload APIs or removal rules.
+Formal 32-run acceptance remains **unexecuted**.
+The original workspace's UI/preview work remains untouched.
+
+### Confirmed product defects and bounded repairs
+
+- Ordinary capture previously omitted provider/cache name provenance when the
+  optional payload diagnostic was disabled or exhausted. `414120e` adds optional
+  `raw.file_name`: selected source, original observation FILETIME and source-event
+  reference, with `current_path_verified=false`. A cached name keeps its original
+  observation after a different FileObject renames the file. No FileKey-wide
+  rename propagation or blanket invalidation is introduced. Old records lacking
+  both compact and diagnostic provenance remain unavailable, not reconstructed.
+- A resource edge and CLI wording could present a recorded historical name as
+  resource identity without explaining its scope. Provider names, historical
+  cache names, process birth identity, source TID, native result, state validation
+  and ownership are now explained separately. A source TID is explicitly not a
+  thread birth; existing initial-thread handle evidence and retained lifecycle
+  records remain the identity evidence. Real Write, High actor attribution and
+  successful completion remain intact. Neither source form proves an explicit
+  application API call or final content ownership.
+- Focused database `explain` omitted the selected event's outgoing resource edge,
+  losing the name caveat available in the full view. It now reads outgoing edges
+  once by the primary-key prefix and walks incoming ancestry by `edges_target`,
+  within the existing shared 4,096-edge quota. It does not traverse other events
+  through a shared resource. Query-plan inspection rejected an initial OR-query
+  approach that would scan the session's edges.
+- A normalized-operation reason claimed an IRP join from a retained success value
+  alone. It now says a completion matched only when the actual matching reference
+  is present. A recorded result without that reference stays a recorded result;
+  success, High and existing operation strings are not rewritten.
+
+The missing serialized provenance and missing resource edge each failed before
+repair. Regressions cover diagnostic-off cache transitions, cross-object rename,
+same-name replacement, object reuse, close/out-of-scope invalidation, exact string
+timestamps, legacy reads, reopen/full/page/explain agreement, and joined versus
+unjoined native results. These are model/database tests, not TDH decoding proof.
+The v3 JSON addition is optional; no SQLite migration or command change is needed.
+Historical stored reason strings remain historical; text views qualify their scope.
+
+Measured representation cost for a UUID and 18-digit FILETIME is **173 additional
+JSON bytes per named event**, before changes to explanatory text. Cache slot inline
+size increases by 64 bytes; typical source strings add 52 bytes, about 1.81 MiB at all
+16,384 slots, excluding allocation/hash-table overhead. This is not a total heap
+bound. The larger records count against the existing handoff/record quotas;
+those limits were not raised. Actual queue, disk and live capture costs remain
+unmeasured for this candidate.
+
+### Separate layered protocol, with all positive requests retained
+
+`342e059` introduces **contain-layered-evidence-1** and separately pinned
+**contain-layered-review-1**. The existing analyzer, legacy scorer, historical
+results and successful-call denominators are unchanged. The verifier recomputes
+existing clock/completion links from hash-checked inputs, including companion
+binary bytes, and rechecks hashes at completion. Missing clock evidence preserves
+counts and makes timing-dependent coverage null. A review must bind the same
+observer/child execution, boot/frequency headers, exact request fields, completion,
+actor instance and StackWalk trigger fields; nearby time alone is insufficient.
+No new timestamp offset or tolerance is introduced.
+
+The native schema support is deliberately limited to the already audited manifest
+Write and independent classic Write/completion/StackWalk layouts. Review JSON is
+an explicitly pinned human-reviewed artifact, not an authenticated signature or a
+replacement for ETL decoding. The verifier checks recorded stack linkage; it does
+not resolve symbols or independently derive the prior mechanism interpretation.
+It can prove an operation-label contradiction against that supported native
+schema. Wrong actor/resource review assertions are rejected, not converted into
+new ground truth. No delete-window, size or flag exemption exists.
+
+Both retained captures were evaluated with the same implementation at `956febc`:
+
+| Layer and denominator | Prior WPR off | Retained WPR on |
+|---|---:|---:|
+| Successful independent API calls / observed / matched | 16 / 16 / 16 | 16 / 16 / 16 |
+| Successful High/Certain native file requests | 18 | 18 |
+| Independently supported / proven wrong / unresolved | 0 / 0 / 18 | 2 / 0 / 16 |
+| Unresolved share of those 18 positive requests | 100% | 88.89% |
+| Other retained High requests with result unavailable | 9 | 9 |
+| Other retained Unknown successful Writes | 4 | 4 |
+| Native overall precision / false-attribution rate | null / null | null / null |
+| Name source references checked / selected requests | 31 / 31 | 31 / 31 |
+| Current-path proofs / transient identity observations | 0 / unavailable | 0 / unavailable |
+
+The 18 positives are 10 Writes, 4 Renames and 4 Deletes. The other 9 records carry
+`create_new_file` labels with `success=null`; they are not proven successful
+creates or failed API calls. Of 22 recorded successful requests, 4 are application
+Unknown (4/22). That confidence proportion is different from independent-review
+unresolved 16/18 or 18/18. The 31 selected records comprise 14 cached names and 17
+provider names; this is not a denominator for all system events.
+
+The two supported D requests are only those with previously audited independent
+stacks. Their supporting trace lost 80,719 events and 129 buffers and had a failed
+merge; those shared losses are not added twice. They cannot establish completeness,
+overall precision, current path or final ownership. WPR-off has no such independent
+witness and does not borrow one. No conclusion is extended to historical 500/5,000
+extra Writes or all Windows deletes. Old failures remain failures.
+
+`956febc` separately fixes an offline name-reference defect found while reviewing
+the first protocol output: four Rename events select their own parsed provider
+FilePath but also retain older cache context. The verifier had incorrectly used
+that cache context as the selected name's origin. It now keeps both facts and uses
+the provider event's own time/reference. The earlier 27/31 outputs at `342e059`
+are retained; 31/31 corrects reference interpretation only. Namespace normalization
+is not independently replayed, and no resource identity or current-path proof is
+created. API/native counts and old scores are unchanged.
+
+### Executed checks and measured cost
+
+On Windows x64/MSVC, rustc/cargo 1.98.1, the exact frozen HEAD `956febc` passed
+`./scripts/quality.ps1 -Mode Check`: formatting, warnings-denied Clippy, **207
+nextest tests**, **243 Python tests in 18 suites**, PowerShell scorer/provenance
+checks and **1 fuzz seed replay**. Four existing storage/volume experiments remain
+ignored; doctests matched 0, not a positive test count. Four existing dependency
+warnings remain. No dependencies or lockfiles changed.
+
+Coverage and three 30-second fuzz campaigns ran at `342e059`; its Rust source is
+identical to `956febc` (the intervening patch changes only the two layered scripts,
+which were retested). Coverage is 8,678/12,453 lines (**69.69%**) and 705/970 functions
+(**72.68%**), including inline tests; branch coverage is unavailable. Event JSON,
+lifetime and completion fuzzing completed 78,878 / 43,778 / 44,806 iterations with no
+failure. These are bounded synthetic campaigns. Uncovered affected paths include
+cache-capacity refusal, historical diagnostic fallback, explanation quota/cycle
+errors and instrumented CLI print entrypoints. Full TDH/callback paths remain
+unverified. The earlier `414120e` gate artifacts are retained separately.
+
+The frozen release passed exhaustive readback on a copy of the retained WPR-on
+database: **250 timeline events and explanations**, 4 file states, 0 registry states,
+with page size 7. Source DB SHA-256 remained unchanged. Actual text inspect/history/
+explain and list also ran. The first supplemental dry-run invocation incorrectly
+included unsupported `--json` and was rejected before execution; that failure is
+retained. The correct `remove <app> --dry-run` succeeded with no SAFE label or
+deletion. v3 schema checks accept legacy and additive-field documents and reject
+a numeric `observed_ticks`; the latter two inputs are explicitly synthetic.
+
+`-Mode Bench` passed at `956febc`. Three alternating release pairs compare baseline
+`31e14c3` and candidate `956febc`, each with 20,000 items, 7 samples and 2 warmups:
+
+| Synthetic case; ns/item, three trial medians | Baseline | Candidate |
+|---|---|---|
+| JSON parse with exact ticks | 1297.97 / 1289.71 / 1286.57 | 1298.54 / 1303.96 / 1311.43 |
+| Lifecycle batch ingest/resolve | 148.52 / 149.34 / 168.53 | 151.99 / 173.76 / 159.15 |
+| Completion correlation | 242.66 / 242.50 / 245.47 | 247.71 / 241.69 / 260.45 |
+| Registry context cycle | 280.44 / 285.30 / 283.96 | 283.07 / 280.76 / 285.27 |
+
+All samples and checksum assertions are retained. This is a cost observation,
+not a speedup or live throughput claim. These cases exclude TDH, new name-cache
+population, queues, SQLite and ETW; the default parse fixture has no new name field.
+The memory/encoded-size measurement above is separate.
+
+### One prepared identity observation, not acceptance
+
+`c288404` extends the existing entry with explicit **contain-write-diagnostic-entry-2**
+and the existing `--observe-file-identity` variant. It keeps original A-D writes,
+closes, renames and deletes: 8 files, 1 worker, 16 workload API calls. The planned 28
+transient metadata observations have their own journal. Their actual open/query/
+close counts, errors and results are unavailable until execution. Short observer
+handles close before the next workload call; they are not original write handles.
+Equal sampled volume/file IDs do not bridge closed-handle gaps. No WPR is enabled.
+
+The private frozen plan hashes nine actual runtime inputs, including the Python
+interpreter, and records clean tracked-source hashes before/after the locked
+release build. Preflight passed without capture. Binary SHA-256 values:
+
+- contain.exe: `c2c68be16d9c0a6c3a57d8a6844c986ff3dbee69898607e5cee1ce1186ef1813`
+- write-diagnostic.exe: `77e38bc2d340bfb17f8a3b4da263cea8ebf7caa084214ca035dcf2809d08e5fd`
+- plan: `dc753872bfd4d28c9c886087b1c49a40a90c39b2fee8e86b020ace939fd02ed8`
+
+The current token is non-admin. The only remaining execution prerequisite is
+running the frozen short entry in the owner's existing administrator window.
+Each invocation uses a fresh directory, verifies input hashes before/after and
+keeps interrupted/failed evidence; it never retries, elevates, cleans up, or launches
+formal acceptance. The product's existing snapshot fallback, if attempted, is
+explicitly rejected as a failed real-ETW diagnostic. An interruption can leave its child active;
+preserve the printed directory and inspect exact-instance status before recovery.
+No old WPR STOP is needed or retried. The prior stop-wrapper repair remains live
+unverified and is not exercised by this WPR-free entry.
+
+Private artifacts reside under `target/stabilization/semantic-identity-20261025`:
+frozen inputs/plan/build and preflight logs, both versions of layered outputs,
+gate logs, all benchmark pairs, and the readback copy. Reproduction uses
+`verify-layered-evidence.py --analysis ... --capture ... --operations ... --summary ...
+--raw-clock ... --output <new-path>`; the supported WPR-on result additionally
+requires its reviewed bundle and explicit SHA pin. The future identity journal
+also requires its explicit hash pin. Complete clocks, witness addresses, journals
+and databases remain local; only reviewed aggregates are published here.
+
+Next: audit the single identity run's actual hashes, original 16 API outcomes and
+final content, separately enumerate observer operations/errors, compare sampled
+volume/file IDs and provider/cache/query names, and check whether the D Writes
+still reproduce. A new run does not automatically inherit the old two requests'
+stack proof. Companion quotas, inventory timeout and derived-write performance
+remain separate pending work. This phase does not establish safe removal or
+readiness for formal 32-run acceptance.
+
+## Previous result: request-linked stacks recovered; observer incomplete (2026-10-25)
 
 The owner's administrator run **actually captured independent request stacks**.
 Both extra D Writes still reproduce with the observer enabled. Retained positive
