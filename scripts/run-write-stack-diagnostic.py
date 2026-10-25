@@ -111,29 +111,46 @@ class Commands:
     def __init__(self, directory, record, checkpoint):
         self.directory, self.record, self.checkpoint = directory, record, checkpoint
 
-    def run(self, label, command, timeout=10):
+    def run(self, label, command, timeout=10, preserve_on_timeout=False):
         item = dict(label=label, command=[str(value) for value in command], started_utc=utc(),
-                    timeout_seconds=timeout, exit=None, timed_out=False)
+                    timeout_seconds=timeout, exit=None, timed_out=False,
+                    preserve_on_timeout=preserve_on_timeout)
         self.record["commands"].append(item)
+        if preserve_on_timeout:
+            # Keep the controller identity in memory before any fallible save.
+            self.record["observer_stop_controller"] = item
         self.checkpoint()
         started = time.monotonic()
+        process = None
         stdout_path, stderr_path = (self.directory / f"{label}.{name}.log" for name in ("stdout", "stderr"))
         try:
             with stdout_path.open("xb") as stdout, stderr_path.open("xb") as stderr:
-                result = subprocess.run(item["command"], stdout=stdout, stderr=stderr, timeout=timeout,
-                                        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
-            item["exit"] = result.returncode
+                options = dict(stdout=stdout, stderr=stderr,
+                               creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+                if preserve_on_timeout:
+                    # WPR stop also merges. A wait budget must not kill its writer.
+                    process = subprocess.Popen(item["command"], **options)
+                    item.update(pid=process.pid, process_running=True, process_observed_utc=utc())
+                    self.checkpoint()
+                    item["exit"] = process.wait(timeout=timeout)
+                else:
+                    item["exit"] = subprocess.run(item["command"], timeout=timeout, **options).returncode
         except subprocess.TimeoutExpired:
-            # This only terminates this WPR/xperf controller process. A trace
-            # may remain active; never interpret a controller timeout as stop.
+            # Read-only controls retain their old bounded subprocess behavior.
+            # The stop controller is left running; no automatic retry follows.
             item["timed_out"] = True
         except BaseException as error:
             item["error"] = f"{type(error).__name__}: {error}"
             raise
         finally:
+            if process is not None:
+                item["exit"] = process.poll()
+                item["process_running"] = item["exit"] is None
             item["elapsed_seconds"] = time.monotonic() - started
             item["finished_utc"] = utc()
-            item["outputs"] = [dict(path=str(path), bytes=path.stat().st_size, sha256=sha(path))
+            stable = not item.get("process_running", False)
+            item["outputs"] = [dict(path=str(path), bytes=path.stat().st_size,
+                                    sha256=sha(path) if stable else None, stable=stable)
                                for path in (stdout_path, stderr_path) if path.exists()]
             self.checkpoint()
         return item, text_log(stdout_path) + "\n" + text_log(stderr_path)
@@ -191,6 +208,7 @@ def stop_owned(record, inputs, commands, checkpoint, label="observer-stop"):
     if not record["observer_start_succeeded"] or record["observer_stop_check_attempted"]:
         return
     record["observer_stop_check_attempted"] = True
+    record["observer_recovery_required"] = True
     checkpoint()
     instance = record["instance"]
     status, output = commands.run(label + "-status", [inputs["wpr"], "-status", "profiles", "collectors",
@@ -205,10 +223,14 @@ def stop_owned(record, inputs, commands, checkpoint, label="observer-stop"):
     record["collector_counters_before_stop"] = ("recorded_requires_offline_review" if
         owned_status(collector, collector_output, instance)
         else "unavailable_exact_query_failed_or_returned_no_collector")
+    if Path(record["trace_path"]).exists():
+        record["observer_stop_refusal"] = "Trace destination already exists; no stop or overwrite attempted"
+        checkpoint()
+        return
     record["observer_stop_attempted"] = True
     record["observer_stop_started_utc"] = utc()
     checkpoint()
-    result, _ = commands.run(label, record["recovery_stop_command"], timeout=20)
+    result, _ = commands.run(label, record["observer_stop_command"], timeout=20, preserve_on_timeout=True)
     record["observer_stop_exit"] = result["exit"]
     record["observer_stop_controller_timed_out"] = result["timed_out"]
     record["observer_stop_command_succeeded"] = result["exit"] == 0 and not result["timed_out"]
@@ -217,7 +239,9 @@ def stop_owned(record, inputs, commands, checkpoint, label="observer-stop"):
     record["observer_absent_after_stop"] = (after["exit"] == 0 and not after["timed_out"] and
         "wpr is not recording" in after_output.casefold() and collector_name(instance).casefold() not in after_output.casefold())
     record["observer_stop_succeeded"] = record["observer_stop_command_succeeded"] and record["observer_absent_after_stop"]
-    record["observer_recovery_required"] = not record["observer_absent_after_stop"]
+    record["observer_recovery_required"] = not record["observer_stop_succeeded"]
+    record["observer_recovery_action"] = ("none" if record["observer_stop_succeeded"] else
+        "inspect_exact_instance_and_controller_merge_state_no_stop_retry")
     record["observer_start_to_stop_return_seconds"] = time.monotonic() - record["observer_start_monotonic"]
     checkpoint()
 
@@ -242,8 +266,10 @@ def launch(plan, inputs, before, child_plan, child_before):
                   trace_path=str(trace), trace_stack_evidence="configured_not_verified", trace_validity=None,
                   source_loss=None, stack_count=None, symbols_verified=False, symbol_downloads=False,
                   child_pid=None, child_exit=None, child_state=None, child_still_running=None,
-                  recovery_stop_command=[str(inputs["wpr"]), "-stop", str(trace), "Contain minimal file observation",
-                                         "-skipPdbGen", "-instancename", instance])
+                  observer_stop_command=[str(inputs["wpr"]), "-stop", str(trace), "Contain minimal file observation",
+                                         "-skipPdbGen", "-instancename", instance],
+                  recovery_status_command=[str(inputs["wpr"]), "-status", "profiles", "collectors", "-details",
+                                           "-instancename", instance])
     def checkpoint(stage=None):
         if stage is not None:
             record["stage"] = stage
@@ -319,7 +345,7 @@ def launch(plan, inputs, before, child_plan, child_before):
             checkpoint("observer-stop")
             stop_owned(record, inputs, commands, checkpoint)
             if not record["observer_stop_succeeded"]:
-                raise RuntimeError("Owned observer stop not confirmed; no retry, exact-instance recovery required")
+                raise RuntimeError("Observer stop/merge not confirmed; inspect exact instance and controller, no stop retry")
             checkpoint("child-offline-analysis")
             offline_started = time.monotonic()
             pulse = offline_started
@@ -376,7 +402,9 @@ def launch(plan, inputs, before, child_plan, child_before):
         checkpoint(record["stage"])
         print(f"Private stack artifacts: {directory}\nFormal acceptance: not executed; actual stacks require offline review.", flush=True)
         if record["observer_recovery_required"]:
-            print("Observer recovery required. Use only the exact named command in attempt.json after inspecting its status; never generic stop/cancel.", flush=True)
+            print("Observer review required. Inspect recovery_status_command and observer_stop_controller in attempt.json. "
+                  "A retained controller may still be merging; do not retry STOP or reuse the existing trace destination. "
+                  "Never use generic stop/cancel.", flush=True)
     return directory, record
 
 

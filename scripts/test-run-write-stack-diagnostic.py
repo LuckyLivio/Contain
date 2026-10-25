@@ -138,7 +138,7 @@ class StackEntryTests(unittest.TestCase):
             poll = lambda: process.returncode
         process.poll = poll
 
-        def run(owner, label, command, timeout=10):
+        def run(owner, label, command, timeout=10, preserve_on_timeout=False):
             command = [str(value) for value in command]
             commands.append((label, command, timeout))
             item = dict(label=label, command=command, exit=0, timed_out=False)
@@ -167,6 +167,7 @@ class StackEntryTests(unittest.TestCase):
             if label.endswith("-collector"):
                 output = ENTRY.collector_name(owner.record["instance"])
             if label in ("observer-stop", "final-owned-stop"):
+                self.assertTrue(preserve_on_timeout)
                 if failure == "stop_timeout":
                     item.update(exit=None, timed_out=True)
                 else:
@@ -294,6 +295,110 @@ class StackEntryTests(unittest.TestCase):
             path.write_bytes(b"still writing")
             self.assertIsNone(ENTRY.artifact_file(path, False)["sha256"])
             self.assertEqual(ENTRY.artifact_file(path, True)["sha256"], ENTRY.sha(path))
+
+    def test_stop_timeout_preserves_controller_and_marks_merge_unfinished(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            process = mock.Mock(pid=3456)
+            process.wait.side_effect = ENTRY.subprocess.TimeoutExpired("wpr", 20)
+            process.poll.return_value = None
+            record = dict(commands=[], instance="unit", observer_start_succeeded=True,
+                          observer_stop_check_attempted=False, observer_start_monotonic=0,
+                          trace_path=str(root / "trace.etl"),
+                          observer_stop_command=["wpr", "-stop", str(root / "trace.etl")])
+            def run(command, **kwargs):
+                if "-stop" in command:
+                    # subprocess.run(timeout=...) kills its child before raising.
+                    process.kill()
+                    raise ENTRY.subprocess.TimeoutExpired(command, 20)
+                message = "WPR is not recording" if process.wait.called else "Collector Name: " + ENTRY.collector_name("unit")
+                kwargs["stdout"].write(message.encode())
+                return SimpleNamespace(returncode=0)
+            commands = ENTRY.Commands(root, record, lambda: None)
+            with mock.patch.object(ENTRY.subprocess, "run", side_effect=run), \
+                    mock.patch.object(ENTRY.subprocess, "Popen", return_value=process):
+                ENTRY.stop_owned(record, dict(wpr="wpr", xperf="xperf"), commands, lambda: None)
+            process.kill.assert_not_called()
+            process.terminate.assert_not_called()
+            process.wait.assert_called_once_with(timeout=20)
+            self.assertTrue(record["observer_absent_after_stop"])
+            self.assertFalse(record["observer_stop_succeeded"])
+            self.assertTrue(record["observer_recovery_required"])
+            self.assertEqual(record["observer_stop_controller"]["pid"], 3456)
+            self.assertTrue(record["observer_stop_controller"]["process_running"])
+            self.assertTrue(all(row["sha256"] is None for row in record["observer_stop_controller"]["outputs"]))
+
+    def test_interrupted_stop_wait_keeps_pid_and_live_logs_without_killing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            record = dict(commands=[])
+            process = mock.Mock(pid=3456)
+            process.wait.side_effect = KeyboardInterrupt
+            process.poll.return_value = None
+            commands = ENTRY.Commands(root, record, lambda: None)
+            with mock.patch.object(ENTRY.subprocess, "Popen", return_value=process), \
+                    mock.patch.object(ENTRY.subprocess, "run") as run:
+                with self.assertRaises(KeyboardInterrupt):
+                    commands.run("observer-stop", ["wpr", "-stop", "unused.etl"], timeout=20, preserve_on_timeout=True)
+            run.assert_not_called()
+            process.kill.assert_not_called()
+            process.terminate.assert_not_called()
+            controller = record["observer_stop_controller"]
+            self.assertEqual(controller["pid"], 3456)
+            self.assertTrue(controller["process_running"])
+            self.assertIn("KeyboardInterrupt", controller["error"])
+            self.assertTrue(all(row["sha256"] is None for row in controller["outputs"]))
+
+    def test_stop_pid_is_recorded_before_post_launch_checkpoint_failure(self):
+        with tempfile.TemporaryDirectory() as folder:
+            record = dict(commands=[])
+            process = mock.Mock(pid=3456)
+            process.poll.return_value = None
+            saves = []
+            def checkpoint():
+                saves.append(dict(record["observer_stop_controller"]))
+                if len(saves) >= 2:
+                    raise OSError("injected checkpoint failure")
+            commands = ENTRY.Commands(Path(folder), record, checkpoint)
+            with mock.patch.object(ENTRY.subprocess, "Popen", return_value=process):
+                with self.assertRaisesRegex(OSError, "checkpoint failure"):
+                    commands.run("observer-stop", ["wpr", "-stop", "unused.etl"], timeout=20, preserve_on_timeout=True)
+            self.assertEqual(saves[1]["pid"], 3456)
+            self.assertEqual(record["observer_stop_controller"]["pid"], 3456)
+            process.wait.assert_not_called()
+            process.kill.assert_not_called()
+            process.terminate.assert_not_called()
+
+    def test_existing_stop_destination_is_retained_and_not_retried(self):
+        with tempfile.TemporaryDirectory() as folder:
+            trace = Path(folder) / "trace.etl"
+            trace.write_bytes(b"original evidence")
+            record = dict(observer_start_succeeded=True, observer_stop_check_attempted=False,
+                          instance="unit", trace_path=str(trace))
+            commands = mock.Mock()
+            commands.run.return_value = (dict(exit=0, timed_out=False),
+                                         "Collector Name: " + ENTRY.collector_name("unit"))
+            ENTRY.stop_owned(record, dict(wpr="wpr", xperf="xperf"), commands, lambda: None)
+            ENTRY.stop_owned(record, dict(wpr="wpr", xperf="xperf"), commands, lambda: None)
+            self.assertEqual(commands.run.call_count, 2)
+            self.assertFalse(any("-stop" in call.args[1] for call in commands.run.call_args_list))
+            self.assertEqual(trace.read_bytes(), b"original evidence")
+            self.assertTrue(record["observer_recovery_required"])
+            self.assertIn("already exists", record["observer_stop_refusal"])
+
+    def test_completed_stop_controller_has_stable_output_hashes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            record = dict(commands=[])
+            process = mock.Mock(pid=3456)
+            process.wait.return_value = 0
+            process.poll.return_value = 0
+            commands = ENTRY.Commands(Path(folder), record, lambda: None)
+            with mock.patch.object(ENTRY.subprocess, "Popen", return_value=process):
+                result, _ = commands.run("observer-stop", ["wpr", "-stop", "unused.etl"], timeout=20, preserve_on_timeout=True)
+            self.assertEqual(result["exit"], 0)
+            self.assertFalse(result["process_running"])
+            self.assertFalse(result["timed_out"])
+            self.assertTrue(all(row["stable"] and row["sha256"] is not None for row in result["outputs"]))
 
 
 if __name__ == "__main__":
