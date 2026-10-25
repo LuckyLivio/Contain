@@ -2,7 +2,8 @@
 
 ## Current scope: minimal extra-Write diagnostic (2026-10-25)
 
-The starting reviewed development revision is `0ac483e`; the previous live runtime
+The frozen diagnostic source is **`d80b4903c237f892e98a913c566a3f1b51e4e349`**,
+built from the reviewed `0ac483e` development history. The previous live runtime
 remains `545ed3f`, baseline `e72d88c`, version **0.3.1**. No new live reproduction,
 production root-cause fix or protocol correction is claimed by this preparation.
 The developer token is still non-administrator. Existing administrator-run results
@@ -75,6 +76,67 @@ cannot satisfy it. The entry retains unique output directories, stage checkpoint
 partial measurements and uncertain child state after interruption. It never
 retries, cleans up, expands the workload or starts formal acceptance. Companion
 quota, quiet-timeout and storage optimization remain separate follow-up items.
+
+### Frozen inputs and executed checks
+
+The release build used Rust **1.98.1 (48a229cea)**, Windows x64 MSVC and the
+committed lockfile. All tracked source hashes matched before/after the build.
+The only untracked development-tree item is local `vendor/ferrisetw/target/`
+build output; it is neither staged nor a source input. The earlier unmonitored
+fixture used an earlier executable hash: its fixture/provenance source and lockfile
+match the frozen sources, but it is not a run of the newly frozen binary.
+
+| Frozen artifact | SHA-256 |
+| --- | --- |
+| `contain.exe` | `66fdbea18a0fcca82d5a48a21a619d615e29783937088d6f91056f942189a577` |
+| `write-diagnostic.exe` | `5039423469e3367e56ade0f04107cc09916054a897ad324d832f4d7899da9f4b` |
+| Private plan (all eight inputs pinned) | `b6fb0098a422cd2c927fdfb8aeb95b5392b08abd29d5c96fcc626bc7b474ba76` |
+
+The plan pins both executables, runner, analyzer, original clock protocol, matrix
+metrics helper, original scorer import and private build manifest. The entry checks
+them before and after execution. A read-only preflight passed; it starts no ETW.
+Private build commands, source/script hashes, logs and run entry are retained under
+`target/stabilization/write-diagnostic-20261025/frozen-d80b490/` and its parent.
+
+Checks below ran on committed **d80b490**, not the historical runtime or a later
+report-only HEAD. Existing assertions, coverage floors and ignored cases remain.
+
+| Command/check | Actual result and scope |
+| --- | --- |
+| `./scripts/quality.ps1 -Mode Check` | Pass: fmt, workspace Clippy, 196 nextest passes / 0 failures / 4 skipped, doctests 0 cases, one fuzz-seed replay, PowerShell scorer/provenance checks, 180 Python regressions. Zero doctests is not additional validation. |
+| `./scripts/quality.ps1 -Mode Coverage` | Pass at unchanged floors: lines 8,244/12,047 = 68.43%; functions 673/934 = 72.06%. Includes inline test code; not production-only or branch coverage. |
+| `./scripts/quality.ps1 -Mode Dependencies` | Main/fuzz advisories, bans, licenses, sources and shared lock check pass; existing duplicate-version warnings remain. No dependency version/lockfile change. |
+| `./scripts/quality.ps1 -Mode Fuzz -FuzzSeconds 30` | Existing targets finish without failure: JSON 84,792, lifetime 54,563, completion 44,536 iterations (31 seconds each). These are model smoke checks, not a native TDH fuzz campaign or throughput measurement. |
+| `./scripts/quality.ps1 -Mode Bench` | Four synthetic cases, 20,000 work items per sample, seven measured samples each; all assertions pass. No paired baseline, live ETW or enabled-diagnostic cost claim. |
+| `cargo test --manifest-path vendor/ferrisetw/Cargo.toml --lib diagnostic --locked` | 3 bounded payload/schema tests pass; 17 unrelated cases filtered. The vendored crate is outside the workspace coverage report. |
+
+The four skipped tests remain three disk-backed storage experiments and the
+historical-volume companion spool experiment, neither being modified here.
+The vendored dependency still emits four existing compiler warnings; the workspace
+Clippy result does not mean those warnings were eliminated. New core diagnostics
+have eight regressions, including real database close/reopen/full/page/summary
+readback without attribution promotion. The ThreadId width regression first failed
+for a valid UInt32 declaration, then passed after diagnostic-only width selection.
+Its red/green logs remain local. This is a diagnostic parsing fix, not a root-cause
+fix for the extra Write. New analyzer/entry checks contribute 25/10 Python cases.
+
+Affected coverage: `file_diagnostics.rs` 493/685 lines (71.97%), 36/59 functions
+(61.02%); `decode.rs` 159/741 lines (21.46%). The actual callback-to-TDH `build`,
+`admit` and `ignored` paths are not covered by these model tests. Names, scalar
+parsing and callback attachment therefore still need the frozen real diagnostic.
+No exclusion was added to hide that gap. The synthetic medians are 1,305.610 ns
+per JSON event, 153.695 ns per lifecycle record, 253.285 ns per completion source
+record, and 284.095 ns per registry context cycle; all samples stay in the private
+quality archive. They do not measure this diagnostic's callback, queue or disk cost.
+
+The next permitted entry is one A/B/C/D capture, followed by bounded raw export
+and offline analysis. No full eight-arm rerun or formal 32-run protocol is started.
+The runner records stages and prints a heartbeat during capture. On Ctrl+C,
+timeout or forced window closure, preserve the whole new directory and fixture:
+the capture child can remain running, and a forced close may leave only the last
+checkpoint. Do not relaunch automatically. Missing context prevents a negative
+"not reproduced" conclusion; an observed Write and its successful completion
+remain visible separately, even when the overall evidence review is incomplete.
 
 ## Eight exploratory captures audited (2026-10-25)
 
