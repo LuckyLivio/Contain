@@ -40,18 +40,31 @@ def save(path, value):
     temporary.replace(path)
 
 
+def fixture_variant(plan):
+    if plan.get("protocol") == "contain-write-diagnostic-entry-1":
+        if plan.get("fixture_variant", "original") != "original":
+            raise ValueError("The original protocol cannot enable a fixture variant")
+        return "original"
+    if plan.get("protocol") == "contain-write-diagnostic-entry-2":
+        if plan.get("fixture_variant") != "transient_metadata_handles_v1":
+            raise ValueError("The identity protocol requires its explicit fixture variant")
+        return "transient_metadata_handles_v1"
+    raise ValueError("Unsupported diagnostic plan")
+
+
 def verified_plan(path, expected):
     if sha(path) != expected:
         raise ValueError("Frozen plan SHA mismatch; nothing launched")
     plan = read(path)
-    if plan.get("protocol") != "contain-write-diagnostic-entry-1":
-        raise ValueError("Unsupported diagnostic plan")
+    variant = fixture_variant(plan)
     if plan.get("sequences") != ["A", "B", "C", "D"] or plan.get("files_per_sequence") != 2 or plan.get("workers") != 1:
         raise ValueError("This entry permits only the fixed eight-file single-worker diagnostic")
     if plan.get("formal_acceptance") is not False:
         raise ValueError("Formal acceptance is not authorized by this entry")
     names = {entry["name"] for entry in plan["inputs"]}
     required = {"contain", "fixture", "runner", "analyzer", "clock", "matrix", "scorer", "build"}
+    if variant != "original":
+        required.add("python")
     if names != required or len(plan["inputs"]) != len(required):
         raise ValueError("Missing or duplicate frozen input")
     observed = []
@@ -63,12 +76,42 @@ def verified_plan(path, expected):
     inputs = {entry["name"]: Path(entry["path"]) for entry in observed}
     if inputs["runner"].resolve() != Path(__file__).resolve():
         raise ValueError("Running script is not the frozen entry")
+    if "python" in inputs and inputs["python"].resolve() != Path(sys.executable).resolve():
+        raise ValueError("Running interpreter is not the frozen input")
     for owner, name, filename in (("matrix", "clock", "v04-clock-protocol.py"),
                                   ("matrix", "scorer", "score-fixture.py"),
                                   ("analyzer", "clock", "v04-clock-protocol.py")):
         if inputs[owner].with_name(filename).resolve() != inputs[name].resolve():
             raise ValueError(f"Frozen {name} is not the actual sibling imported by {owner}")
     return plan, inputs, observed
+
+
+def identity_observer_artifact(truth, enabled, producer_finished):
+    """Inventory only: the layered verifier validates this independent journal."""
+    path = truth / "identity-observations.jsonl"
+    result = dict(path=str(path), enabled=enabled, producer_finished=producer_finished,
+                  bytes=None, sha256=None, observed_samples=None,
+                  semantic_validation="unavailable_not_performed_by_entry",
+                  availability="not_enabled" if not enabled else "unavailable_missing")
+    if not enabled:
+        return result
+    try:
+        before = path.stat()
+        result["bytes"] = before.st_size
+        if not producer_finished:
+            result["availability"] = "unavailable_producer_may_be_running"
+        elif before.st_size > 4 * 1024 * 1024:
+            result["availability"] = "unavailable_size_limit"
+        else:
+            digest = sha(path)
+            after = path.stat()
+            if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+                result["availability"] = "unavailable_changed_during_inventory"
+            else:
+                result.update(sha256=digest, availability="present_unvalidated")
+    except OSError as error:
+        result["read_error"] = f"{type(error).__name__}: {error}"
+    return result
 
 
 def capture_environment(directory):
@@ -126,9 +169,10 @@ def main():
     parser.add_argument("--preflight", action="store_true", help="Read/hash inputs only; never start a capture")
     args = parser.parse_args()
     plan, inputs, before = verified_plan(args.plan, args.plan_sha256)
+    variant = fixture_variant(plan)
     if args.preflight:
         print(json.dumps(dict(status="frozen_inputs_verified", runtime_commit=plan["runtime_commit"],
-                              capture_executed=False, formal_acceptance=False, inputs=len(before))))
+                              fixture_variant=variant, capture_executed=False, formal_acceptance=False, inputs=len(before))))
         return 0
     if os.name != "nt" or not ctypes.windll.shell32.IsUserAnAdmin():
         raise RuntimeError("Use the existing administrator window; this entry cannot elevate or fall back")
@@ -139,6 +183,10 @@ def main():
     truth = container.with_name(container.name + "-truth")
     database = directory / "capture.db"
     record = dict(protocol=plan["protocol"], runtime_commit=plan["runtime_commit"], formal_acceptance=False,
+                  plan_identity=dict(path=str(args.plan.resolve()), sha256=args.plan_sha256),
+                  fixture_variant=variant, workload_expected_api_calls=16,
+                  observer_expected_samples=28 if variant != "original" else None,
+                  workload_journal=str(truth / "operations.jsonl"),
                   status="running", stage="prepare", started_utc=datetime.now(timezone.utc).isoformat(),
                   artifact_directory=str(directory), fixture_container=str(container), truth_directory=str(truth),
                   input_identity_before=before, input_identity_after=None, capture_exit=None, capture_pid=None,
@@ -158,6 +206,8 @@ def main():
             marker.write(b"Contain write diagnostic container v1")
         command = [str(inputs["contain"]), "--db", str(database), "install", str(inputs["fixture"]),
                    "--name", "write-diagnostic", "--watch", str(container), "--", "--container", str(container)]
+        if variant != "original":
+            command.append("--observe-file-identity")
         record["command"] = command
         record["capture_environment"] = {key: value for key, value in capture_environment(directory).items() if key.startswith("CONTAIN_")}
         metrics = module(inputs["matrix"], "write_diagnostic_metrics")
@@ -242,6 +292,8 @@ def main():
             record["child_still_running_at_entry_finish"] = process.returncode is None
             if record["capture_elapsed_seconds"] is None and start is not None:
                 record["partial_capture_observation_seconds"] = time.perf_counter() - start
+        record["identity_observer_artifact"] = identity_observer_artifact(
+            truth, variant != "original", record.get("child_still_running_at_entry_finish") is False)
         try:
             _, _, record["input_identity_after"] = verified_plan(args.plan, args.plan_sha256)
         except (OSError, ValueError) as error:

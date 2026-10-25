@@ -145,10 +145,12 @@ class EntryTests(unittest.TestCase):
             self.assertEqual(Path(str(database) + "-wal").read_bytes(), b"preserve")
             self.assertFalse((root / "evidence.json").exists())
 
-    def fake_run(self, root, interrupt):
+    def fake_run(self, root, interrupt, identity_variant=False):
         output = root / "output"
         output.mkdir()
         plan = dict(protocol="contain-write-diagnostic-entry-1", runtime_commit="a" * 40, output_parent=str(output))
+        if identity_variant:
+            plan.update(protocol="contain-write-diagnostic-entry-2", fixture_variant="transient_metadata_handles_v1")
         inputs = {name: root / name for name in ("contain", "fixture", "matrix", "analyzer")}
         process = SimpleNamespace(pid=123, returncode=None if interrupt else 0,
                                   poll=lambda: None if interrupt else 0)
@@ -190,6 +192,109 @@ class EntryTests(unittest.TestCase):
         self.assertEqual(record["failed_stage"], "export")
         self.assertIn("OperationalError", record["error"])
         self.assertFalse(record["formal_acceptance"])
+
+    def test_identity_variant_is_selected_explicitly_without_changing_workload_arguments(self):
+        with tempfile.TemporaryDirectory() as folder:
+            record = self.fake_run(Path(folder), True, identity_variant=True)
+        command = record["command"]
+        self.assertEqual(command[-1], "--observe-file-identity")
+        self.assertEqual(command.count("--observe-file-identity"), 1)
+        self.assertNotIn("-start", command)
+        self.assertEqual(record["fixture_variant"], "transient_metadata_handles_v1")
+        self.assertEqual(record["workload_expected_api_calls"], 16)
+        self.assertEqual(record["observer_expected_samples"], 28)
+        self.assertIsNone(record["identity_observer_artifact"]["sha256"])
+        self.assertIsNone(record["identity_observer_artifact"]["observed_samples"])
+
+    def test_identity_protocol_pins_actual_python_and_rejects_wrong_variant(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path, plan = self.plan(Path(folder))
+            plan.update(protocol="contain-write-diagnostic-entry-2", fixture_variant="transient_metadata_handles_v1")
+            interpreter = Path(ENTRY.sys.executable)
+            plan["inputs"].append(dict(name="python", path=str(interpreter), sha256=ENTRY.sha(interpreter)))
+            path.write_text(json.dumps(plan))
+            _, inputs, observed = ENTRY.verified_plan(path, ENTRY.sha(path))
+            self.assertEqual(inputs["python"].resolve(), interpreter.resolve())
+            self.assertEqual(len(observed), 9)
+            plan["fixture_variant"] = "unknown"
+            path.write_text(json.dumps(plan))
+            with self.assertRaisesRegex(ValueError, "fixture variant"):
+                ENTRY.verified_plan(path, ENTRY.sha(path))
+
+    def test_identity_variant_cannot_be_silently_enabled_in_original_protocol(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path, plan = self.plan(Path(folder))
+            plan["fixture_variant"] = "transient_metadata_handles_v1"
+            path.write_text(json.dumps(plan))
+            with self.assertRaisesRegex(ValueError, "original protocol"):
+                ENTRY.verified_plan(path, ENTRY.sha(path))
+
+    def test_identity_interpreter_is_required_and_must_be_the_actual_executable(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            path, plan = self.plan(root)
+            plan.update(protocol="contain-write-diagnostic-entry-2", fixture_variant="transient_metadata_handles_v1")
+            path.write_text(json.dumps(plan))
+            with self.assertRaisesRegex(ValueError, "Missing"):
+                ENTRY.verified_plan(path, ENTRY.sha(path))
+            fake_python = root / "different-python.exe"
+            fake_python.write_bytes(b"does not execute")
+            plan["inputs"].append(dict(name="python", path=str(fake_python), sha256=ENTRY.sha(fake_python)))
+            path.write_text(json.dumps(plan))
+            with self.assertRaisesRegex(ValueError, "interpreter"):
+                ENTRY.verified_plan(path, ENTRY.sha(path))
+
+    def test_identity_preflight_never_creates_artifacts_or_launches_a_process(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            path, plan = self.plan(root)
+            interpreter = Path(ENTRY.sys.executable)
+            plan.update(protocol="contain-write-diagnostic-entry-2", fixture_variant="transient_metadata_handles_v1")
+            plan["inputs"].append(dict(name="python", path=str(interpreter), sha256=ENTRY.sha(interpreter)))
+            path.write_text(json.dumps(plan))
+            before = set(root.iterdir())
+            with mock.patch("sys.argv", ["entry", "--plan", str(path), "--plan-sha256", ENTRY.sha(path), "--preflight"]), \
+                    mock.patch.object(ENTRY.subprocess, "Popen") as launch, \
+                    mock.patch.object(ENTRY.subprocess, "run") as run, mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+                self.assertEqual(ENTRY.main(), 0)
+                launch.assert_not_called()
+                run.assert_not_called()
+            self.assertEqual(before, set(root.iterdir()))
+            self.assertEqual(json.loads(stdout.getvalue())["fixture_variant"], "transient_metadata_handles_v1")
+
+    def test_observer_inventory_never_turns_missing_live_or_malformed_evidence_into_counts(self):
+        with tempfile.TemporaryDirectory() as folder:
+            truth = Path(folder)
+            missing = ENTRY.identity_observer_artifact(truth, True, True)
+            self.assertEqual(missing["availability"], "unavailable_missing")
+            self.assertIsNone(missing["observed_samples"])
+            self.assertIsNone(missing["bytes"])
+            path = truth / "identity-observations.jsonl"
+            path.write_bytes(b'{"partial":')
+            with mock.patch.object(ENTRY, "sha") as digest:
+                live = ENTRY.identity_observer_artifact(truth, True, False)
+                digest.assert_not_called()
+            self.assertIsNone(live["sha256"])
+            self.assertIsNone(live["observed_samples"])
+            retained = ENTRY.identity_observer_artifact(truth, True, True)
+            self.assertEqual(retained["availability"], "present_unvalidated")
+            self.assertEqual(retained["sha256"], ENTRY.sha(path))
+            self.assertIsNone(retained["observed_samples"])
+            self.assertEqual(retained["semantic_validation"], "unavailable_not_performed_by_entry")
+            self.assertEqual(path.read_bytes(), b'{"partial":')
+
+    def test_observer_inventory_size_bound_does_not_hash_or_claim_complete_data(self):
+        with tempfile.TemporaryDirectory() as folder:
+            truth = Path(folder)
+            path = truth / "identity-observations.jsonl"
+            with path.open("wb") as stream:
+                stream.truncate(4 * 1024 * 1024 + 1)
+            with mock.patch.object(ENTRY, "sha") as digest:
+                result = ENTRY.identity_observer_artifact(truth, True, True)
+                digest.assert_not_called()
+            self.assertEqual(result["availability"], "unavailable_size_limit")
+            self.assertIsNone(result["observed_samples"])
+            self.assertIsNone(result["sha256"])
 
 
 if __name__ == "__main__":
