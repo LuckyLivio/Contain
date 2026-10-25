@@ -93,6 +93,49 @@ application call and final-state ownership must remain distinct judgments.
 Scheduled-task inventory timeout, companion quota and derived-write performance
 remain separate follow-ups; this stage does not refactor them.
 
+### Frozen preparation and executed checks
+
+Observer/optional-fixture source: **6f4d8fa6ccac07a13571b59728dd4849edc93335**.
+The first stack entry still runs the original **d80b490** Contain and fixture
+executables; it does not rebuild or substitute them. Its seven wrapper inputs
+and eight existing child inputs pass the read-only hash preflight. Private plan
+SHA-256: `edc35bde2f4d3fcade14a52aa4077a6e6f6019bb6f9eded88abf21dcc0ffd322`.
+The entry's 60-second observation limit initiates only an owned-instance stop;
+the status/counter/stop/post-status control budget is separately 35 seconds.
+This is a bounded control attempt, not an operating-system stop guarantee. A
+forced window close can leave a child or observer running; retain the new output
+directory and use its exact-instance recovery record, never a generic stop.
+
+`./scripts/quality.ps1 -Mode Check` was rerun on committed **6f4d8fa**: formatting,
+workspace Clippy with warnings denied, **199 nextest tests passed**, **200 Python
+tests passed across 17 suites**, the existing PowerShell scorer/provenance checks
+passed, and **1 fuzz seed replay passed**. Four existing tests remain skipped
+(three disk-backed storage experiments and one companion spool-volume experiment).
+Doctests matched **0**, which is not acceptance coverage. The existing four
+dependency warnings remain visible; no dependency or lint policy was changed.
+Current aggregate logs are retained privately under `quality-6f4d8fa6ccac`;
+an older zero-output formatter's stale individual log is explicitly labelled
+historical, not used as current gate evidence.
+
+The identity fixture's nine tests include default/observer call-result comparison,
+exclusive-open proof that observer handles were released, and a failed-close plus
+failed-clock regression preventing later workload operations. Local NTFS fixture
+observations exercised 20 successful metadata opens/queries/closes, eight real
+missing-path errors and four sampled rename identity pairs with changed queried
+names. These are fixture/API checks, not a new ETW reproduction. The initial
+private sidecar came from the uncommitted preparation tree; it was not relabelled
+as a release capture. The full test suite was subsequently rerun at 6f4d8fa.
+
+The optional fixture release build also succeeds at 6f4d8fa, with source hashes
+before/after and the actual compiler executable hash retained. Its executable
+SHA-256 is `38410eec4d767e3620f4cb5631e04a2feaa79ec4c3d5669c777ca98c2212d1b5`;
+it is **not** selected by the first stack entry. No second administrator entry is
+enabled until the first trace's request-linked stacks have been reviewed. Core
+coverage, fuzz campaigns, throughput benchmarks and dependency checks were not
+rerun: this patch changes diagnostic fixtures/orchestration, not production core,
+parser, storage, dependencies or the capture hot path. New WPR frames, symbols,
+observer-on D reproduction and formal 32-run acceptance remain **unexecuted**.
+
 ## Current result: extra Write reproduced in the minimal diagnostic (2026-10-25)
 
 The frozen diagnostic source is **`d80b4903c237f892e98a913c566a3f1b51e4e349`**,
