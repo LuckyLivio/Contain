@@ -1,12 +1,192 @@
 # v0.4 development validation
 
-## Current stage: independent request stacks and sampled file identity (2026-10-25)
+## Current result: request-linked stacks recovered; observer incomplete (2026-10-25)
 
-The last actual minimal capture remains **d80b490**, reviewed at **3b89307**;
-version remains **0.3.1**. Its two extra native High Writes remain established
-positive evidence. This stage prepares an independent observer and a separately
-labelled metadata variant. No new stack trace, reproduction outcome, production
-fix, changed scorer or formal 32-run acceptance is claimed.
+The owner's administrator run **actually captured independent request stacks**.
+Both extra D Writes still reproduce with the observer enabled. Retained positive
+evidence now supports branch **B for these two requests**: they occur on a
+`DeleteFileW` execution path through filesystem filters, flush and cache-coherency
+functions. Branch **C still applies to current-name/file-identity meaning**.
+The observer attempt failed: its source reached the configured size limit with
+loss, and its stop/merge controller was terminated by the entry's wait timeout.
+Neither this attempt nor the earlier scores are reclassified as passing.
+
+Runtime remains **d80b4903c237f892e98a913c566a3f1b51e4e349**, observer source
+**6f4d8fa6ccac07a13571b59728dd4849edc93335**, version **0.3.1**. All seven wrapper
+and eight child input hashes agree before/after; the child's eight inputs also
+match the prior observer-off run. This audit began at report HEAD **8396bca**.
+Wrapper-only repair **df1e6ef4aaedb5eace0e75b526078aba3f06501f** is tested locally,
+but has not been run with an administrator token. Original frozen inputs and
+artifacts were not replaced. No new capture, retry, identity arm or acceptance
+run was launched during this audit; the original workspace/UI/preview is intact.
+
+### What failed, and current session state
+
+The child capture/export/analysis completed with exit0. The outer entry's
+`subprocess.run(timeout=20)` then killed the WPR stop controller while it was
+merging. Python [documents this timeout behavior](https://docs.python.org/3.11/library/subprocess.html#subprocess.run).
+The partial merged ETL is 12,582,912 bytes but contains **only one header event**;
+it supplies none of the request/stack evidence below. A successful child does
+not turn this failed outer attempt into a completed observation.
+
+Read-only `ControlTraceW(EVENT_TRACE_CONTROL_QUERY)` calls for both exact owned
+collector names subsequently returned **4201**, not access-denied5. Microsoft
+[defines this as the named session not running](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/nf-evntrace-controltracew).
+No corresponding controller/capture process remained. No recovery STOP is
+needed; the old stored command must not be retried against its existing output.
+This later absence does not establish that the historical merge succeeded.
+
+The retained source ETL has **1,726,945 readable records**, including 805,098
+StackWalk records. Its header reports **80,719 events and 129 buffers lost**.
+`MaximumFileSize=256 MiB`, `BufferSize=262,144` bytes and `BuffersWritten=1,024`
+agree with its 268,435,456-byte length. The source ends about 2.03 seconds before
+the stop request. The source reached its configured sequential capacity and is
+incomplete. No explicit contemporaneous capacity-error status was retained;
+the exact cause of all reported losses is not established. These are independent
+observer losses, not Contain main-queue drops. No loss rate is inferred by
+subtracting counts from different collectors.
+
+Offline analysis used verified copies of all three ETLs; original SHA-256 values
+remain unchanged. xperf's default loss rejection was preserved, then documented
+`-tle` was used only to inspect retained positive evidence. An independent native
+SDK `OpenTraceW/ProcessTrace` reader with `RAW_TIMESTAMP` verified the selected
+payloads. ProcessTrace exit0 means the readable source was processed, not that
+the capture was loss-free or complete.
+
+### One auditable extra-Write chain, confirmed twice
+
+1. The independent journal records a successful D0 delete after the original
+   write/close/rename sequence. Contain records a 48-byte manifest Write
+   (provider `edd08927-9cc4-4e65-b970-c2560fb5c289`, ID16/v1), followed by its
+   unique successful completion. Request/completion fall 2,078/2,229 QPC ticks
+   after the delete call begins; no time tolerance was added.
+2. Independent classic FileIo provider `90cbdc39-4a3e-11d1-84f4-0000f80464e3`
+   has an ID0/opcode68/v3 Write with the same IRP, FileObject, FileKey, thread,
+   offset0, size4096 and flags `0x60043`. This multi-field match is unique within
+   the inspected 20ms window; its ID0/opcode76/v3 completion has the same IRP,
+   status0 and ExtraInformation42. The request timestamp is two ticks later
+   than the manifest event, not equal; the second D request differs by one tick.
+   Shared EventKeys, schemas or exact cross-provider emission times were never
+   assumed. The actual source header is QPC clock1 with 10MHz frequency.
+3. Stack provider `def2fe46-7bd6-4b80-bd94-f57fe20d0ce3`, ID0/opcode32/v2,
+   contains one 440-byte payload for that request: its **original event QPC,
+   PID and TID match exactly**, followed by 53 addresses (38 kernel, 15 user).
+   Each selected request and stack is unique in the complete readable-source
+   scan. These are actual [StackWalk association fields](https://learn.microsoft.com/en-us/windows/win32/etw/stackwalk-event),
+   not adjacent-output or nearest-time matching. Native payload and xperf frames
+   agree address for address; D0 and D1 stacks also agree.
+4. Selected frames, from outer to inner, are `DeleteFileW` -> private helper ->
+   `ntdll!NtSetInformationFile` -> ... -> kernel `NtSetInformationFile` -> ... ->
+   filesystem filtering -> `FltFlushBuffers` -> `FltFlushBuffers2` -> ... -> NTFS
+   -> `CcCoherencyFlushAndPurgeCache` -> ... -> Write event recording. Ellipses
+   are unresolved/intervening frames, not claims of direct adjacent calls.
+   Named functions are confirmed by matching local PE export entry points and
+   unwind-function bounds. Eight module timestamp/checksum/image-size tuples
+   match trace image records. Current module hashes are **not** runtime hashes.
+   Full PDB symbol resolution was not obtained; a mismatched fixture PDB was rejected.
+   No symbol download occurred.
+
+Contain has verified process/thread birth identities for these requests. The
+independent trace's rendered lifetime model also has one covering process and
+thread interval, without an observed reuse/conflict; lifecycle raw payloads were
+not separately fully decoded. Known observer loss prevents a global no-reuse or
+no-other-request claim. The request tuple is unique in the inspected window;
+pointer uniqueness is not asserted across lifetimes or missing events.
+
+This proves real lower-layer Write on the observed delete execution path, not an
+additional explicit application write call. The stack includes an additional
+installed filesystem filter whose internal policy/parameters remain unresolved;
+do not generalize this to every Windows delete or a Windows-only mechanism.
+Request size4096 and success do not prove 4096 new bytes, final content ownership,
+or permission to delete anything.
+
+Name evidence remains separate: Contain's old `.tmp` name comes from its original
+FileObject's ID30 mapping, with `current_path_verified=false`; xperf's `.dat` is
+its own resolved name, **not a file-ID or handle-name query**. This run has no
+same-run independent before/after rename volume/file-ID observations. It cannot
+choose between historical-open-name and incorrect-current-name interpretations.
+No production cache rewrite, Write-to-Delete conversion or blanket downgrade was
+made. The prepared transient identity variant is still unexecuted with ETW.
+
+### Comparable child outcome and remaining limits
+
+| Measure and scope | Prior observer off | This observer on |
+|---|---:|---:|
+| Successful API calls / complete file sequences | 16/16; 8/8 | 16/16; 8/8 |
+| Successful calls with strict actor/op/path/QPC source match | 16/16 | 16/16 |
+| Recorded Write / High / Unknown, Write subset | 14 / 10 / 4 | 14 / 10 / 4 |
+| Extra D High Writes / D files | 2/2 | 2/2 |
+| Main received / persisted records | 271 / 271 | 258 / 258 |
+| File source / lifecycle / completion records | 206 / 43 / 22 | 206 / 30 / 22 |
+| Main reported ETW, queue, handoff, write and quota loss | 0 | 0 |
+| Companion received / saved | 276,056 / 276,056 | 218,596 / 218,596 |
+| Capture seconds; export / analysis seconds | 26.323921; .205575 / .727662 | 7.981442; .142561 / .632373 |
+| Final inventory milliseconds | 20,015 | 2,314 |
+| Parent CPU seconds; peak working set bytes | 1.359375; 33,013,760 | 1.328125; 31,965,184 |
+| Parent sampled private bytes | 21,921,792 | 20,480,000 |
+| Parent read / write bytes | 24,909,652 / 29,423,328 | 11,694,597 / 25,196,890 |
+| Final DB / sampled WAL peak bytes | 4,325,376 / 6,278,912 | 4,300,800 / 6,208,872 |
+| Companion file bytes | 17,667,584 | 13,990,144 |
+
+All 14 current Write payloads are complete and independently decoded; 258/258
+main records link to raw QPC by full descriptor/EventKey. Handoff received,
+submitted and drained253 plus five initial records equals258; pending0,
+receiver/writer finished, main/handoff peaks41/34. Immutable DB `quick_check` is
+ok with no remaining WAL/SHM. The child diagnostic remains incomplete because
+131 diagnostic payload prefixes were truncated (127 admitted records and four
+sampled-context records) and 217,906 context records sampled out; neither count
+is a main-pipeline loss. Companion independent terminal
+consumer-loss counters remain unavailable. The parent metrics exclude WPR's
+whole cost, which is unavailable. Different inventory delays/system activity and
+one sample per arm preclude a speedup or stability claim.
+
+Proposed protocol handling is **same-layer comparison**, not an implemented gate
+change: API-journal recall keeps all successful calls; native request claims
+need independent request-layer evidence, separately from explicit API intent,
+current name and final ownership. These two independently supported native
+requests cannot justify dropping other unmatched positives. Old extra-High
+failures and denominators remain; a revised protocol would need its own version
+and equal evaluation of comparison samples with adequate evidence.
+
+### Confirmed entry repair and verification
+
+`df1e6ef` changes only the wrapper and its regressions. STOP now uses
+`Popen.wait(timeout=20)` without terminating the merge on timeout/interruption.
+It records controller PID/state before waiting, leaves live output hashes null,
+keeps unfinished merge as failed/unconfirmed even after collector disappearance,
+refuses an existing ETL destination, and never retries STOP. The wait budget was
+not increased. A surviving merge can continue after the entry returns; this is
+explicitly recorded, not an OS-stop or bounded whole-directory guarantee.
+
+The regression failed against the old terminating path, then all **25 wrapper
+tests passed**, covering timeout, interruption, checkpoint failure, existing-file
+protection and successful completion. `./scripts/quality.ps1 -Mode Check` at
+committed **df1e6ef** passed formatting, Clippy, **199 nextest tests**, **205 Python
+tests in 17 suites**, PowerShell scorer/provenance checks and **1 fuzz seed replay**.
+Four pre-existing performance/volume tests were skipped; doctests matched0.
+Four existing dependency warnings remain. Current aggregate logs and matching
+before/after input hashes are retained under private `quality-df1e6ef4aaed`.
+Core coverage, fuzz campaigns, dependency gates and performance benchmarks were
+not rerun for this wrapper-only change. Real validation of the repaired entry,
+the identity variant, and formal 32-run acceptance remain **unexecuted**.
+
+Private evidence is retained under
+`io-stack-20261025/stack-20261025-124840-06b9a8b0789f`: `capture-audit`,
+`stop-state-audit`, and `etl-offline-audit-6450945f` contain original-hash manifests,
+exact offline commands/readers, selected request chains and frame provenance.
+Only these reviewed aggregates are published; raw ETLs, addresses, module
+inventories, clocks and databases stay local. Next missing evidence is a labelled
+transient volume/file-ID/name observation across the rename, with unchanged
+workload API results and extra-Write reproduction checked. It must not reuse
+this incomplete observer as negative proof or substitute for formal acceptance.
+Inventory timeout, companion quota and derived-write performance remain separate.
+
+## Historical preparation: independent request stacks and sampled file identity (2026-10-25)
+
+At preparation HEAD **8396bca**, the last actual minimal capture was **d80b490**,
+reviewed at **3b89307**, version **0.3.1**. The following records preparation before
+the administrator run reviewed above. It did not yet establish stacks or a new
+reproduction outcome, production fix, changed scorer or formal acceptance.
 
 ### Observer selection and execution boundary
 
@@ -84,8 +264,8 @@ and [handle-name query modes](https://learn.microsoft.com/en-us/windows/win32/ap
 The variant's extra opens, queries, closes and logging can perturb I/O; compare
 API success/error, final contents and the D extra-Write reproduction separately.
 
-The current branch conclusion is **C: request mechanism and current-name meaning
-remain insufficiently established**. A positive stack chain may support the
+The preparation-time branch conclusion was **C: request mechanism and current-name
+meaning remained insufficiently established**. A positive stack chain may support the
 lower-level-activity/API-journal distinction, but will not retroactively pass old
 scores. A demonstrated cache-semantic error needs a failing regression before a
 minimal production fix. Thread execution, request success, current name, explicit
@@ -133,10 +313,11 @@ it is **not** selected by the first stack entry. No second administrator entry i
 enabled until the first trace's request-linked stacks have been reviewed. Core
 coverage, fuzz campaigns, throughput benchmarks and dependency checks were not
 rerun: this patch changes diagnostic fixtures/orchestration, not production core,
-parser, storage, dependencies or the capture hot path. New WPR frames, symbols,
-observer-on D reproduction and formal 32-run acceptance remain **unexecuted**.
+parser, storage, dependencies or the capture hot path. WPR frames, symbols and
+observer-on D reproduction were **unexecuted at preparation time**; the actual
+run and remaining limitations are reviewed above. Formal acceptance is unexecuted.
 
-## Current result: extra Write reproduced in the minimal diagnostic (2026-10-25)
+## Prior result: extra Write reproduced in the minimal diagnostic (2026-10-25)
 
 The frozen diagnostic source is **`d80b4903c237f892e98a913c566a3f1b51e4e349`**,
 built from the reviewed `0ac483e` development history. The previous large-load
