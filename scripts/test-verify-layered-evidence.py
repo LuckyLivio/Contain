@@ -195,6 +195,32 @@ class LayeredTests(unittest.TestCase):
         event["raw"]["file_diagnostics"]["cache_origin"]=dict(source_event_id=origin["id"],event_timestamp=origin["timestamp_ticks"])
         self.assertFalse(VERIFY.name_row(event,primary)["origin_reference_verified"])
 
+    def test_supplied_provider_name_uses_this_event_not_old_cache_context(self):
+        primary={e["id"]:e for e in self.analysis["primary_records"]}
+        event=next(e for e in primary.values() if e["operation"]=="rename_requested")
+        old=next(e for e in primary.values() if e["operation"]=="write_requested")
+        event["resource"]="C:\\fixture\\renamed.dat"
+        diagnostic=event["raw"]["file_diagnostics"]
+        diagnostic.update(path_source="supplied_FilePath",truncated_fields=[],
+            cache_origin=dict(source_event_id=old["id"],event_timestamp=old["timestamp_ticks"]),
+            fields=dict(FilePath=dict(status="parsed",value="\\Device\\SyntheticVolume\\fixture\\renamed.dat")))
+        row=VERIFY.name_row(event,primary)
+        self.assertEqual(row["source_observation_id"],event["id"])
+        self.assertEqual(row["source_observed_ticks"],event["timestamp_ticks"])
+        self.assertTrue(row["origin_reference_verified"])
+        self.assertEqual(row["claim_scope"],"provider_name_at_observation")
+        self.assertEqual(row["cache_context_origin"]["source_event_id"],old["id"])
+        self.assertIsNone(row["verified_current_path"])
+        self.assertFalse(row["continuous_file_identity_proven"])
+
+    def test_supplied_name_cannot_hide_invalid_compact_reference_or_missing_field(self):
+        primary={e["id"]:e for e in self.analysis["primary_records"]}
+        event=primary[self.extra_id]
+        event["raw"]["file_diagnostics"].update(path_source="supplied_FilePath",fields={})
+        self.assertFalse(VERIFY.name_row(event,primary)["origin_reference_verified"])
+        event["raw"]["file_name"]=dict(path_source="supplied_FilePath",source_event_id="missing",observed_ticks=event["timestamp_ticks"])
+        self.assertFalse(VERIFY.name_row(event,primary)["origin_reference_verified"])
+
     def test_failed_calls_remain_separate_and_do_not_change_success_denominator(self):
         call=self.analysis["fixture_journal"][1]
         call.update(success=False,api_return="Err",error=5,error_kind="PermissionDenied")

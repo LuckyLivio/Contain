@@ -289,21 +289,34 @@ def name_row(event, primary):
     compact = obj(raw.get("file_name"))
     origin = obj(diagnostic.get("cache_origin"))
     source = compact.get("path_source", diagnostic.get("path_source"))
-    source_id = compact.get("source_event_id", origin.get("source_event_id"))
-    ticks = compact.get("observed_ticks", origin.get("event_timestamp"))
+    supplied = source in {"supplied_FileName", "supplied_FilePath"}
+    field_name = source.removeprefix("supplied_") if supplied else None
+    field = obj(obj(diagnostic.get("fields")).get(field_name))
+    # Diagnostic cache_origin describes context even when a new provider name
+    # was selected. It is the selected name's origin only for cache fallback.
+    source_id = compact.get("source_event_id") if compact else event["id"] if supplied else origin.get("source_event_id")
+    ticks = compact.get("observed_ticks") if compact else event.get("timestamp_ticks") if supplied else origin.get("event_timestamp")
     valid_origin = False
     if source_id in primary:
         observed = primary[source_id]
         try:
-            valid_origin = (integer(ticks) == integer(observed.get("timestamp_ticks")) <= integer(event.get("timestamp_ticks"))
-                and obj(observed.get("raw")).get("file_object") == raw.get("file_object")
-                and obj(observed.get("raw")).get("object_generation") == raw.get("object_generation")
-                and AUDIT.norm(observed.get("resource")) == AUDIT.norm(event.get("resource"))
-                and (source != "file_object_cache" or obj(observed.get("raw")).get("event_id") in (12, 30)))
+            if supplied:
+                field_available = (field.get("status") == "parsed" and isinstance(field.get("value"), str) and bool(field["value"])
+                                   and field_name not in diagnostic.get("truncated_fields", []))
+                valid_origin = (source_id == event["id"] and integer(ticks) == integer(observed.get("timestamp_ticks"))
+                    == integer(event.get("timestamp_ticks")) and (field_available or bool(compact) and not diagnostic))
+            else:
+                valid_origin = (integer(ticks) == integer(observed.get("timestamp_ticks")) <= integer(event.get("timestamp_ticks"))
+                    and obj(observed.get("raw")).get("file_object") == raw.get("file_object")
+                    and obj(observed.get("raw")).get("object_generation") == raw.get("object_generation")
+                    and AUDIT.norm(observed.get("resource")) == AUDIT.norm(event.get("resource"))
+                    and (source != "file_object_cache" or obj(observed.get("raw")).get("event_id") in (12, 30)))
         except ValueError:
             pass
     return dict(event_id=event["id"], recorded_resource=event.get("resource"), name_source=source,
                 source_observation_id=source_id, source_observed_ticks=ticks, origin_reference_verified=valid_origin,
+                provider_name_field=field if supplied and field else None, cache_context_origin=origin or None,
+                origin_validation_scope="Recorded provider observation/reference; namespace normalization not independently replayed" if supplied else "Recorded cache origin name/object/generation/time reference",
                 claim_scope="historical_open_name" if source == "file_object_cache" else
                     "provider_name_at_observation" if source in {"supplied_FileName", "supplied_FilePath"} else "unavailable",
                 verified_current_path=None, continuous_file_identity_proven=False, final_ownership_proven=False,
