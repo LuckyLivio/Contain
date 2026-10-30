@@ -385,3 +385,34 @@ a failing CI, not a verified candidate. Full SQLite databases, ETW sidecars and
 machine inventories are excluded. Formal 32-run, scale, third-party installers,
 final ownership and safe cleanup remain separate unexecuted follow-up scopes.
 Historical six unmatched events without original QPC remain D.
+
+
+The first bounded trial CI, [41061301488](https://github.com/LuckyLivio/Contain/actions/runs/41061301488)
+at `f8e7e84ce1e280deb66366ff75fb49eb5bc95f08`, is retained as a failed attempt.
+`Quality Check` reached the package regression suite: 18 ran, 16 passed and two
+failed. Windows drive-less rooted paths were not rejected by `Path.is_absolute()`;
+the report test also compared a TEMP short path with the selected executable's
+resolved long path. The fix rejects rooted paths explicitly and normalizes only
+the test's expected selected path, preserving strict executable equality.
+Fourteen subsequent Python suites were not executed after this gate failure.
+
+On that same SHA, nextest passed 290 with zero failures and seven skips; all four
+PowerShell regression gates passed. Coverage, original-package Coverage,
+Dependencies, Companion, workspace build and the existing three synthetic CLI
+scenarios passed. Workspace line/function coverage was 13296/17833 (74.5584%) /
+1069/1411 (75.7619%); original packages were 9590/13244 (72.4101%) /
+767/1028 (74.6109%). These include inline tests; shared offline test executions
+are duplicated. The unchanged floors remain 66.5% lines and 70% functions.
+The package freeze and both native scenarios were **not executed**, so this
+failure consumed zero of the two planned captures. There was no candidate ZIP
+from this attempt. The original CI and its quality artifact preserve the failure;
+a follow-up source revision must pass its own checks before any native trial.
+
+The affected `select_raw_only_registry` function's executed original-package
+instance ran seven times and covered 44/47 code regions; its row-decoding
+closure ran three times (2/2 regions). Workspace adds the same shared test via
+the offline package, not independent native coverage. Uncovered regions are the
+non-SetValue registry early return, missing-raw query error propagation and
+witness serialization error propagation. Zero-execution duplicate instances
+remain in the artifact. Region coverage is not branch coverage, and these tests
+do not establish every real SQLite I/O failure behavior.

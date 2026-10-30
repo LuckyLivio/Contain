@@ -3,7 +3,7 @@ import argparse
 import copy
 import importlib.util
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import struct
 import subprocess
 import tempfile
@@ -258,6 +258,16 @@ class TrialTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "output_must_be_new"):
             TRIAL.new_directory(self.package)
 
+    def test_manifest_relative_paths_reject_windows_roots_without_drive(self):
+        # Pure path flavours exercise Windows rooted-but-not-absolute spelling
+        # on every host. They do not simulate native Windows filesystem access.
+        for flavor in (PurePosixPath, PureWindowsPath):
+            with mock.patch.object(TRIAL, "Path", flavor):
+                for name in ("/private.db", "/", "//server/share/private.db", "C:private.db", "C:/private.db"):
+                    with self.subTest(flavor=flavor.__name__, name=name), self.assertRaises(ValueError):
+                        TRIAL.relative_path(name)
+                self.assertEqual(TRIAL.relative_path("scripts/demo.ps1").parts, ("scripts", "demo.ps1"))
+
     def test_public_text_replaces_fixture_values_but_rejects_unrelated_paths(self):
         root = r"C:\Users\PRIVATE\Temp\contain-demo-123"
         text = 'Recorded name: "' + root.replace("\\", "\\\\") + '\\output.txt"\n'
@@ -296,7 +306,7 @@ class TrialTests(unittest.TestCase):
         TRIAL.write(directory / "capture.json", dict(data=capture))
         TRIAL.write(directory / "ground-truth.json", [dict(pid=100, creation_time="134350000000000001")] * 21)
         def command(argv, **kwargs):
-            self.assertEqual(argv[0], str(self.package / "contain.exe"))
+            self.assertEqual(argv[0], str(self.package.resolve() / "contain.exe"))
             kind = argv[3]
             if "--json" in argv:
                 payload = capture if kind == "inspect" else dict(events=[event]) if kind == "history" else dict(event=event, app_id=capture["id"])

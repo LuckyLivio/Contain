@@ -107,7 +107,9 @@ def relative_path(name):
     require(isinstance(name, str) and name and "\\" not in name and ":" not in name,
             "invalid_package_relative_path")
     path = Path(name)
-    require(not path.is_absolute() and all(part not in {".", ".."} for part in path.parts)
+    # Windows /name is rooted on the current drive but is_absolute() is false.
+    # A manifest entry must have neither a drive nor any root/anchor.
+    require(not path.anchor and all(part not in {".", ".."} for part in path.parts)
             and path.as_posix() == name, "invalid_package_relative_path")
     return path
 
