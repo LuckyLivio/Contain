@@ -116,6 +116,44 @@
           "$ref": "#/$defs/explain"
         }
       }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "kind",
+        "data"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 3
+        },
+        "kind": {
+          "const": "inspect_summary"
+        },
+        "data": {
+          "$ref": "#/$defs/inspect_summary"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "kind",
+        "data"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 3
+        },
+        "kind": {
+          "const": "list_details"
+        },
+        "data": {
+          "$ref": "#/$defs/list_details"
+        }
+      }
     }
   ],
   "$defs": {
@@ -1099,12 +1137,26 @@
       "properties": {
         "file_name": {
           "type": "object",
-          "required": ["path_source", "observed_ticks", "source_event_id", "current_path_verified"],
+          "required": [
+            "path_source",
+            "observed_ticks",
+            "source_event_id",
+            "current_path_verified"
+          ],
           "properties": {
-            "path_source": { "type": "string" },
-            "observed_ticks": { "type": "string", "pattern": "^[0-9]+$" },
-            "source_event_id": { "type": "string" },
-            "current_path_verified": { "type": "boolean" }
+            "path_source": {
+              "type": "string"
+            },
+            "observed_ticks": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "source_event_id": {
+              "type": "string"
+            },
+            "current_path_verified": {
+              "type": "boolean"
+            }
           }
         },
         "resource_resolved": {
@@ -1387,6 +1439,148 @@
         },
         "quality": {
           "$ref": "#/$defs/quality"
+        }
+      }
+    },
+    "inspect_summary": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/capture"
+        },
+        {
+          "type": "object",
+          "required": [
+            "view_scope",
+            "history_included",
+            "summary_counts"
+          ],
+          "properties": {
+            "view_scope": {
+              "const": "summary"
+            },
+            "history_included": {
+              "const": false
+            },
+            "events": {
+              "maxItems": 0
+            },
+            "operations": {
+              "maxItems": 0
+            },
+            "edges": {
+              "maxItems": 0
+            },
+            "summary_counts": {
+              "type": "object",
+              "required": [
+                "events_retained",
+                "events_normalized",
+                "known_actor_events",
+                "unknown_actor_events",
+                "unknown_resource_events",
+                "application_records_dropped",
+                "decode_errors",
+                "snapshot_gaps",
+                "notification_gaps",
+                "drain_timed_out"
+              ],
+              "properties": {
+                "events_retained": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "events_normalized": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "known_actor_events": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "unknown_actor_events": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "unknown_resource_events": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "application_records_dropped": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "decode_errors": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "snapshot_gaps": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "notification_gaps": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "drain_timed_out": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "list_details": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "started_at",
+          "finished_at",
+          "capture_state"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "finished_at": {
+            "type": "string"
+          },
+          "capture_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         }
       }
     }

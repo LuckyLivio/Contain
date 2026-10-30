@@ -24,13 +24,20 @@ jobs:
         shell: pwsh
         env:
           TRIAL_PAIR_REQUESTED: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[trial-pair]') }}
+          DESKTOP_REQUESTED: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[desktop-viewer]') }}
         run: |
+          $desktop = $env:DESKTOP_REQUESTED -eq 'true'
+          if ($desktop -and $env:TRIAL_PAIR_REQUESTED -eq 'true') { throw 'Desktop viewing and native capture are separate plans' }
           $requested = $env:TRIAL_PAIR_REQUESTED -eq 'true'
+          "desktop=$($desktop.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           "capture=$($requested.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           New-Item -ItemType Directory -Path target/quality-public -Force | Out-Null
           [ordered]@{
             schema_version=1; source_sha=$env:GITHUB_SHA; requested=$requested
-            configurations=@('default','dual-clock'); maximum_native_captures=2; retries=0
+            configurations=$(if($desktop){@()}else{@('default','dual-clock')}); maximum_native_captures=$(if($desktop){0}else{2}); retries=0
+            desktop_viewer=$desktop
+            legacy_synthetic_cli=$(if($desktop){'not_run_active_doctor_excluded; native_desktop_harness_covers_read_only_views'}else{'planned'})
+            snapshot_fallback=$(if($desktop){'not_run_desktop_existing_records_only'}else{'existing_plan'})
             status=$(if($requested){'planned_after_quality_and_windows_report_preflights'}else{'not_requested_not_validated'})
           } | ConvertTo-Json | Set-Content target/quality-public/capture-plan.json -Encoding utf8
       - name: Required quality tools
@@ -75,7 +82,7 @@ jobs:
         run: cargo build --workspace --locked
       - name: Synthetic read-only CLI integration
         id: synthetic_cli
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.trial_plan.outputs.desktop != 'true' && steps.build.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo run -p contain-offline --bin read-only-examples --locked -- target/read-only-windows
@@ -97,6 +104,72 @@ jobs:
         run: |
           python scripts/quality-summary.py --root . --quality target/quality --output target/quality-public/summary.json
           if ($LASTEXITCODE -ne 0) { throw 'Quality summary validation failed' }
+      - name: Existing desktop SDK
+        if: ${{ !cancelled() && steps.trial_plan.outputs.desktop == 'true' }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build the native desktop viewer and synthetic stores
+        id: viewer_build
+        if: ${{ !cancelled() && steps.trial_plan.outputs.desktop == 'true' && steps.quality_check.outcome == 'success' && steps.coverage.outcome == 'success' && steps.original_coverage.outcome == 'success' && steps.dependencies.outcome == 'success' && steps.companion.outcome == 'success' && steps.build.outcome == 'success' && steps.quality_summary.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          dotnet publish desktop/Contain.Viewer/Contain.Viewer.csproj -c Release -r win-x64 --self-contained true -o target/viewer-publish
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop publish failed' }
+          dotnet publish desktop/Contain.Viewer.Tests/Contain.Viewer.Tests.csproj -c Release -r win-x64 --self-contained true -o target/viewer-tests
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop test harness publish failed' }
+          ./target/debug/viewer-fixtures.exe target/viewer-fixtures
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic desktop fixtures failed' }
+          python -c "import pathlib,shutil,sqlite3; p=pathlib.Path('target/viewer-fixtures'); shutil.copyfile(p/'empty.db',p/'future.db'); c=sqlite3.connect(p/'future.db'); c.execute('PRAGMA user_version=99'); c.close(); (p/'corrupt.db').write_bytes(b'SYNTHETIC corrupt database'); c=sqlite3.connect(p/'unrelated.db'); c.execute('CREATE TABLE unrelated(value TEXT)'); c.close()"
+          if ($LASTEXITCODE -ne 0) { throw 'Adverse database fixture setup failed' }
+      - name: Freeze desktop package before native verification
+        id: viewer_package
+        if: ${{ !cancelled() && steps.viewer_build.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $packageArgs = @('scripts/package-viewer.py','prepare','--viewer','target/viewer-publish','--contain','target/debug/contain.exe','--fixtures','target/viewer-fixtures','--output','target/windows-viewer')
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vsRoot = & $vswhere -latest -products '*' -property installationPath
+          if ($vsRoot) {
+            $crt = Get-ChildItem -LiteralPath (Join-Path $vsRoot 'VC/Redist/MSVC') -Directory -Recurse |
+              Where-Object { $_.Name -like 'Microsoft.VC*.CRT' -and $_.FullName -match '\\x64\\' } |
+              Sort-Object FullName -Descending | Select-Object -First 1
+            if ($crt) { $packageArgs += @('--runtime-directory', $crt.FullName) }
+          }
+          python @packageArgs
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop package freeze failed' }
+      - name: Actual Windows forms, packaged CLI and local report verification
+        id: viewer_verify
+        if: ${{ !cancelled() && steps.viewer_package.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path target/viewer-private -Force | Out-Null
+          ./target/viewer-tests/Contain.Viewer.Tests.exe --package target/windows-viewer --fixtures target/viewer-fixtures --output target/viewer-public --private-output target/viewer-private --source $env:GITHUB_SHA *> target/viewer-private/harness.log
+          $code = $LASTEXITCODE
+          Write-Host "Native desktop verification exit code: $code"
+          if ($code -ne 0) { exit $code }
+      - name: Package the frozen desktop and its actual result
+        id: viewer_finalize
+        if: ${{ !cancelled() && steps.viewer_package.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          python scripts/package-viewer.py finalize --package target/windows-viewer --quality-summary target/quality-public/summary.json --verification target/viewer-public/summary.json --output target/contain-0.3.1-windows-x64-viewer.zip
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop milestone unverified; diagnostic package retains the actual failed or unexecuted checks' }
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && steps.viewer_package.outcome == 'success' }}
+        with:
+          name: contain-windows-x64-viewer
+          path: target/contain-0.3.1-windows-x64-viewer.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && steps.viewer_package.outcome == 'success' }}
+        with:
+          name: windows-viewer-evidence
+          path: |
+            target/viewer-public/summary.json
+            target/viewer-public/screenshots/*.png
+            target/viewer-public/reports/*.html
+          if-no-files-found: error
       # Only an explicitly planned push consumes the two native attempts. All
       # independent quality and Windows report preflights must pass first; documentation pushes cannot
       # accidentally repeat captures. The same frozen package runs both modes.
@@ -169,7 +242,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Trial candidate is unverified; retain the diagnostic package and actual failures' }
       - name: Snapshot fallback integration
         id: fallback
-        if: ${{ !cancelled() && steps.trial_plan.outputs.capture != 'true' && steps.build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.trial_plan.outputs.capture != 'true' && steps.trial_plan.outputs.desktop != 'true' && steps.build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/demo.ps1 -SnapshotOnly -OutputDirectory ./target/demo-fallback
       - name: Publish fixture-only evidence after scoring

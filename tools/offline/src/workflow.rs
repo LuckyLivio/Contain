@@ -150,21 +150,32 @@ pub fn write_fixture(path: &Path, case: &str) -> Result<String> {
 
 fn persist_fixture(
     path: &Path,
-    mut c: Capture,
+    c: Capture,
     raw_events: Vec<SystemEvent>,
     interrupted: bool,
 ) -> Result<String> {
     ensure!(!path.exists(), "refusing to replace an existing database");
+    let mut db = Storage::open(path)?;
+    persist_in_storage(&mut db, c, raw_events, interrupted)
+}
+
+fn persist_in_storage(
+    db: &mut Storage,
+    mut c: Capture,
+    raw_events: Vec<SystemEvent>,
+    interrupted: bool,
+) -> Result<String> {
     // State differences belong to finalization. Persisting them in both the
     // initial stream document and the final save would duplicate their rows.
     let files = std::mem::take(&mut c.files);
-    let mut db = Storage::open(path)?;
-    let mut writer = RawBuffer::new(&mut db, &c, DEFAULT_QUOTA)?;
-    writer.append(&mut db, raw_events.clone());
-    c.backend.stream = Some(writer.finish(&mut db)?);
+    let registry = std::mem::take(&mut c.registry);
+    let mut writer = RawBuffer::new(db, &c, DEFAULT_QUOTA)?;
+    writer.append(db, raw_events.clone());
+    c.backend.stream = Some(writer.finish(db)?);
     if !interrupted {
         db.prepare_raw(&c.id)?;
         c.files = files;
+        c.registry = registry;
         c.events = raw_events;
         c.finished_at = "2026-10-01T00:00:02Z".into();
         c.exit_code = Some(0);
@@ -186,6 +197,133 @@ fn persist_fixture(
         db.mark_finished(&c)?;
     }
     Ok(c.id)
+}
+
+/// Model data for the native desktop viewer, using the same production writer
+/// and readback path as the existing examples. No Windows provider is started.
+pub fn generate_viewer(directory: &Path) -> Result<()> {
+    use sha2::{Digest, Sha256};
+
+    ensure!(
+        !directory.exists(),
+        "choose a new output directory; existing evidence is preserved"
+    );
+    std::fs::create_dir_all(directory)?;
+    let combined_path = directory.join("viewer-demo.db");
+    let mut combined = Storage::open(&combined_path)?;
+    let mut cases = Vec::new();
+    for case in CASES {
+        let (c, raw) = viewer_model(case);
+        let id = c.id.clone();
+        let database = format!("{case}.db");
+        persist_fixture(
+            &directory.join(&database),
+            c.clone(),
+            raw.clone(),
+            case == "interrupted",
+        )?;
+        persist_in_storage(&mut combined, c, raw, case == "interrupted")?;
+        cases.push(serde_json::json!({
+            "case":case, "database":database, "session_id":id,
+            "event_count":60, "first_event_id":format!("{id}-event-0"),
+            "second_page_first_event_id":format!("{id}-event-50"),
+            "last_event_id":format!("{id}-event-59"),
+            "capture_state":if case == "interrupted" {"finalizing"} else {"finished"},
+        }));
+    }
+    drop(combined);
+    drop(Storage::open(&directory.join("empty.db"))?);
+    let mut databases = Vec::new();
+    for name in [
+        "finished.db",
+        "historical.db",
+        "interrupted.db",
+        "empty.db",
+        "viewer-demo.db",
+    ] {
+        let bytes = std::fs::read(directory.join(name))?;
+        databases.push(serde_json::json!({
+            "name":name, "bytes":bytes.len(),
+            "sha256":format!("{:x}",Sha256::digest(&bytes)),
+        }));
+    }
+    let metadata = serde_json::json!({
+        "schema_version":1, "kind":"synthetic_desktop_viewer_fixtures",
+        "synthetic":true, "real_etw":false,
+        "source":"existing workflow models + production Storage/RawBuffer/finalization",
+        "description":"SYNTHETIC: invented controlled model data, not a reconstructed capture or third-party installer.",
+        "combined_database":"viewer-demo.db", "cases":cases, "databases":databases,
+        "serialization_checks":{
+            "started_at":"2026-10-01T00:00:00.120+00:00",
+            "first_event_timestamp":"2026-10-01T00:00:01.123400+00:00",
+            "first_event_timestamp_ticks":(BIRTH+10).to_string(),
+            "process_creation_time":BIRTH.to_string(),
+            "completed_file_after_size_decimal":"9007199254740993",
+            "interrupted_etw_events_lost":serde_json::Value::Null,
+        },
+    });
+    std::fs::write(
+        directory.join("metadata.json"),
+        serde_json::to_vec_pretty(&metadata)?,
+    )?;
+    Ok(())
+}
+
+fn viewer_model(case: &str) -> (Capture, Vec<SystemEvent>) {
+    let mut c = capture(case);
+    c.started_at = "2026-10-01T00:00:00.120+00:00".into();
+    c.warnings.push(
+        "SYNTHETIC desktop example: 60 model observations for pagination; no real installation or provider validation."
+            .into(),
+    );
+    if case == "interrupted" {
+        c.backend.etw_events_lost = None;
+        c.backend.etw_buffers_lost = None;
+        c.warnings
+            .push("Synthetic interrupted capture: final provider counters unavailable".into());
+    } else {
+        c.files.push(FileChange {
+            path: c.watch_roots[0].clone() + r"\recorded.tmp",
+            operation: "modified".into(),
+            before_hash: Some("synthetic-before".into()),
+            after_hash: Some("synthetic-after".into()),
+            after_size: Some(9_007_199_254_740_993),
+            reason: "SYNTHETIC before/after difference; final ownership is Unknown".into(),
+            ..Default::default()
+        });
+        c.registry_key = Some(r"Software\Contain\SyntheticViewer".into());
+        c.registry.push(RegistryChange {
+            key: r"HKCU\Software\Contain\SyntheticViewer".into(),
+            name: "DisplayMode".into(),
+            operation: "modified".into(),
+            before_value: Some("synthetic-before".into()),
+            after_value: Some("synthetic-after".into()),
+            reason:
+                "SYNTHETIC registry state comparison; source not observed and ownership Unknown"
+                    .into(),
+            ..Default::default()
+        });
+    }
+    let pattern = events(&c, case == "historical");
+    let expanded = (0..60_u64)
+        .map(|index| {
+            let mut event = pattern[(index % 3) as usize].clone();
+            event.id = format!("{}-event-{index}", c.id);
+            event.sequence = index + 1;
+            event.timestamp_ticks = BIRTH + 10 + index;
+            event.timestamp = "2026-10-01T00:00:01.123400+00:00".into();
+            event.raw.file_object = Some(format!("synthetic-object-{index}"));
+            event.raw.object_generation = Some(format!("synthetic-generation-{index}"));
+            if let Some(name) = event.raw.file_name.as_mut()
+                && name.path_source != "file_object_cache"
+            {
+                name.observed_ticks = event.timestamp_ticks;
+                name.source_event_id = event.id.clone();
+            }
+            event
+        })
+        .collect();
+    (c, expanded)
 }
 
 /// Bind the existing historical model to an actual disposable fixture directory.
@@ -317,6 +455,106 @@ pub fn generate(directory: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn viewer_fixtures_page_reopen_and_explain_without_fabricating_ownership() {
+        use sha2::{Digest, Sha256};
+
+        let directory =
+            std::env::temp_dir().join(format!("contain-viewer-model-{}", uuid::Uuid::new_v4()));
+        generate_viewer(&directory).unwrap();
+        let original_manifest = std::fs::read(directory.join("metadata.json")).unwrap();
+        let metadata: serde_json::Value = serde_json::from_slice(&original_manifest).unwrap();
+        assert_eq!(metadata["synthetic"], true);
+        assert_eq!(metadata["real_etw"], false);
+        assert_eq!(metadata["cases"].as_array().unwrap().len(), 3);
+        for database in metadata["databases"].as_array().unwrap() {
+            let bytes = std::fs::read(directory.join(database["name"].as_str().unwrap())).unwrap();
+            assert_eq!(database["bytes"], bytes.len());
+            assert_eq!(database["sha256"], format!("{:x}", Sha256::digest(&bytes)));
+        }
+        let combined = Storage::open(&directory.join("viewer-demo.db")).unwrap();
+        assert_eq!(combined.list().unwrap().len(), 3);
+        for case in CASES {
+            let id = format!("synthetic-{case}");
+            let separate = Storage::open(&directory.join(format!("{case}.db"))).unwrap();
+            let full = separate.load(&id).unwrap();
+            let summary = combined.load_summary(&id).unwrap();
+            assert!(summary.events.is_empty());
+            assert_eq!(summary.name, format!("Synthetic {case}"));
+            assert_eq!(summary.started_at, "2026-10-01T00:00:00.120+00:00");
+            assert_eq!(full.events.len(), 60);
+            let mut pages = combined.events_page(&id, 0, 50).unwrap();
+            assert_eq!(pages.len(), 50);
+            let second = combined.events_page(&id, 50, 50).unwrap();
+            assert_eq!(second.len(), 10);
+            assert_eq!(second[0].id, format!("{id}-event-50"));
+            pages.extend(second);
+            assert!(combined.events_page(&id, 60, 50).unwrap().is_empty());
+            assert_eq!(
+                serde_json::to_value(&pages).unwrap(),
+                serde_json::to_value(&full.events).unwrap()
+            );
+            let last = &pages.last().unwrap().id;
+            let focused = combined.for_event(last).unwrap();
+            assert_eq!(
+                render::explanation(&focused, last).unwrap(),
+                render::explanation(&full, last).unwrap()
+            );
+            let document = serde_json::to_value(&full).unwrap();
+            assert_eq!(
+                document["events"][0]["timestamp_ticks"],
+                (BIRTH + 10).to_string()
+            );
+            assert_eq!(
+                document["events"][0]["timestamp"],
+                "2026-10-01T00:00:01.123400+00:00"
+            );
+            assert_eq!(document["processes"][0]["creation_time"], BIRTH.to_string());
+            if case == "interrupted" {
+                assert_eq!(summary.capture_state.as_deref(), Some("finalizing"));
+                assert!(matches!(summary.quality.level, QualityLevel::Incomplete));
+                assert!(document["backend"]["etw_events_lost"].is_null());
+                assert!(
+                    full.events
+                        .iter()
+                        .all(|event| event.confidence == Confidence::Unknown)
+                );
+                assert!(summary.files.is_empty());
+                assert!(summary.registry.is_empty());
+            } else {
+                assert_eq!(summary.capture_state.as_deref(), Some("finished"));
+                assert_eq!(summary.files.len(), 1);
+                assert_eq!(summary.registry.len(), 1);
+                assert_eq!(summary.files[0].confidence, Confidence::Unknown);
+                assert_eq!(summary.registry[0].confidence, Confidence::Unknown);
+                assert_eq!(
+                    document["files"][0]["after_size"],
+                    9_007_199_254_740_993_u64
+                );
+                assert_eq!(full.events[0].confidence, Confidence::High);
+            }
+            if case == "historical" {
+                let historical = full.events[0].raw.file_name.as_ref().unwrap();
+                assert_eq!(historical.path_source, "file_object_cache");
+                assert_eq!(historical.observed_ticks, BIRTH + 1);
+                assert!(!historical.current_path_verified);
+                assert_eq!(full.events[1].confidence, Confidence::Unknown);
+                assert!(full.events[1].success.is_none());
+                assert!(full.events[2].raw.file_name.is_none());
+            }
+        }
+        drop(combined);
+        let empty = Storage::open(&directory.join("empty.db")).unwrap();
+        assert!(empty.list().unwrap().is_empty());
+        drop(empty);
+        assert!(generate_viewer(&directory).is_err());
+        assert_eq!(
+            std::fs::read(directory.join("metadata.json")).unwrap(),
+            original_manifest
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn report_fixture_uses_saved_views_and_preserves_historical_unknown_evidence() {

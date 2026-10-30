@@ -1,6 +1,6 @@
 use crate::model::{Capture, Confidence, FileChange, ProcessRecord, RegistryChange};
 use anyhow::{Context, Result};
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use std::fs;
 use std::path::Path;
 #[path = "storage/checkpoint.rs"]
@@ -15,6 +15,9 @@ mod migration;
 #[cfg(test)]
 #[path = "storage/perf.rs"]
 mod perf;
+#[cfg(test)]
+#[path = "storage/read_only_tests.rs"]
+mod read_only_tests;
 #[path = "storage/reliability.rs"]
 mod reliability;
 #[cfg(test)]
@@ -27,7 +30,65 @@ pub struct Storage {
     connection: Connection,
 }
 
+/// List metadata without reading source-event history or state-change details.
+#[derive(Debug, serde::Serialize)]
+pub struct SessionListEntry {
+    pub id: String,
+    pub name: String,
+    pub started_at: String,
+    pub finished_at: String,
+    pub capture_state: Option<String>,
+}
+
 impl Storage {
+    /// Open a user-selected database without creating it or migrating its schema.
+    /// Older supported schemas use the existing migration on an in-memory backup;
+    /// the original connection is always opened with SQLite's read-only flag.
+    pub fn open_read_only(path: &Path) -> Result<Self> {
+        anyhow::ensure!(
+            path.is_file(),
+            "Database does not exist or is not a file: {}",
+            path.display()
+        );
+        let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .with_context(|| format!("opening read-only database {}", path.display()))?;
+        connection.busy_timeout(std::time::Duration::from_millis(250))?;
+        let version = migration::check_version(&connection)?;
+        let tables: u32 = connection.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('applications','installation_sessions','processes','system_events','file_changes','registry_changes')",
+            [], |row| row.get(0),
+        )?;
+        anyhow::ensure!(
+            tables == 6,
+            "Not a supported Contain database: required record tables are missing; no database was created or changed"
+        );
+        // Validate the header columns even for an empty database, where a list
+        // query would otherwise hide a malformed schema until a later click.
+        connection.prepare("SELECT a.id,a.name,a.installer,s.application_id,s.started_at,s.finished_at,s.exit_code,s.watch_roots_json,s.registry_key,s.warnings_json FROM applications a JOIN installation_sessions s ON s.application_id=a.id LIMIT 0")?;
+        let storage = if version < 4 {
+            let mut copy = Connection::open_in_memory()?;
+            {
+                let backup = rusqlite::backup::Backup::new(&connection, &mut copy)?;
+                backup.run_to_completion(256, std::time::Duration::from_millis(10), None)?;
+            }
+            Self::from_connection(copy)?
+        } else {
+            // Do not run from_connection: even schema 4 may receive additive
+            // indexes there. This path performs no schema or journal mutation.
+            connection
+                .prepare("SELECT session_id,state,stats_json,error FROM capture_runs LIMIT 0")?;
+            connection.prepare(
+                "SELECT id,session_id,ticks,sequence,document FROM event_documents LIMIT 0",
+            )?;
+            Self { connection }
+        };
+        storage.connection.pragma_update(None, "query_only", true)?;
+        // Keep all statements of this CLI query on one SQLite read snapshot.
+        // Closing Storage releases it; no transaction can write in query_only.
+        storage.connection.execute_batch("BEGIN DEFERRED")?;
+        Ok(storage)
+    }
+
     pub fn open(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -140,6 +201,47 @@ impl Storage {
         let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .map_err(Into::into)
+    }
+
+    pub fn list_details(&self) -> Result<Vec<SessionListEntry>> {
+        let mut statement = self.connection.prepare("SELECT a.id,a.name,s.started_at,s.finished_at,r.state FROM applications a JOIN installation_sessions s ON s.application_id=a.id LEFT JOIN capture_runs r ON r.session_id=s.id ORDER BY s.started_at DESC,a.id")?;
+        statement
+            .query_map([], |row| {
+                Ok(SessionListEntry {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    started_at: row.get(2)?,
+                    finished_at: row.get(3)?,
+                    capture_state: row.get(4)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
+    }
+
+    /// Read-only viewers can page older records which predate event_documents.
+    /// Their existing production full-read mapping remains authoritative; only
+    /// the returned page is bounded. Modern records keep the indexed SQL path.
+    pub fn events_page_compatible(
+        &self,
+        session: &str,
+        offset: u64,
+        limit: u32,
+    ) -> Result<Vec<crate::model::SystemEvent>> {
+        anyhow::ensure!((1..=4096).contains(&limit), "page limit must be 1..4096");
+        let missing: bool = self.connection.query_row("SELECT EXISTS(SELECT 1 FROM observations o WHERE session_id=?1 AND NOT EXISTS(SELECT 1 FROM event_documents d WHERE d.id=o.id))", [session], |row| row.get(0))?;
+        if missing && self.stream_state(session)?.is_none() {
+            let capture = self.load(session)?;
+            let start = usize::try_from(offset).unwrap_or(usize::MAX);
+            Ok(capture
+                .events
+                .into_iter()
+                .skip(start)
+                .take(limit as usize)
+                .collect())
+        } else {
+            self.events_page(session, offset, limit)
+        }
     }
 
     pub fn load(&self, identity: &str) -> Result<Capture> {

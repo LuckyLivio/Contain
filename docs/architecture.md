@@ -20,6 +20,16 @@ CLI -> baseline registry + read-only inventories
 
 `crates/contain-core` implements this flow; `contain-cli` renders summaries or JSON.
 The test installer queries Windows directly, independently of the attribution code.
+
+The optional [desktop record viewer](../desktop/README.md) is a native Windows
+presentation layer over the versioned CLI JSON. It uses separate process arguments
+and the strict `--read-only` entrypoint for list, summary, state differences,
+paged history and focused explanation. It has no database query implementation,
+attribution engine or capture entrypoint of its own. Historical schema conversion
+uses the existing core migration on an in-memory backup only. The summary JSON
+shares measurement-availability logic with the production text renderer; missing
+final counters are not promoted to measured zeros. Reports are local HTML derived
+from these same queries, with original JSON and explicit event-page scope.
 Its syscall journal is an external oracle used only by verification scripts.
 
 ## Observation sources

@@ -81,8 +81,56 @@ fn final_accounting_available(capture: &Capture) -> bool {
         && (capture.backend.pipeline.is_some() || !capture.stats.phase_ms.is_empty())
 }
 
-fn recorded_count(value: u64, measured: bool) -> String {
-    optional_count((measured || value != 0).then_some(value))
+fn recorded_count(value: u64, measured: bool) -> Option<u64> {
+    (measured || value != 0).then_some(value)
+}
+
+/// The production summary's accounting availability, shared by text and JSON.
+/// An absent count is not zero. Public raw-journal view counts may be known
+/// before final provider/drain accounting or normalized operations are known.
+#[derive(Debug, serde::Serialize)]
+pub struct SummaryCounts {
+    pub events_retained: Option<u64>,
+    pub events_normalized: Option<u64>,
+    pub known_actor_events: Option<u64>,
+    pub unknown_actor_events: Option<u64>,
+    pub unknown_resource_events: Option<u64>,
+    pub application_records_dropped: Option<u64>,
+    pub decode_errors: Option<u64>,
+    pub snapshot_gaps: Option<u64>,
+    pub notification_gaps: Option<u64>,
+    pub drain_timed_out: Option<bool>,
+}
+
+pub fn summary_counts(capture: &Capture) -> SummaryCounts {
+    let measured = final_accounting_available(capture);
+    let unfinished = capture
+        .capture_state
+        .as_deref()
+        .is_some_and(|state| state != "finished");
+    // Storage reconstructs these public-view counters from committed raw rows
+    // for unfinished sessions. Other diagnostics remain as originally recorded.
+    let view_counts = measured || (unfinished && capture.backend.stream.is_some());
+    SummaryCounts {
+        events_retained: recorded_count(capture.stats.events_retained, view_counts),
+        events_normalized: if unfinished {
+            None
+        } else {
+            recorded_count(capture.stats.events_normalized, measured)
+        },
+        known_actor_events: recorded_count(capture.stats.known_actor_events, view_counts),
+        unknown_actor_events: recorded_count(capture.stats.unknown_actor_events, view_counts),
+        unknown_resource_events: recorded_count(capture.stats.unknown_resource_events, view_counts),
+        application_records_dropped: recorded_count(capture.backend.dropped_events, measured),
+        decode_errors: recorded_count(
+            capture.backend.decode_errors,
+            measured && capture.backend.pipeline.is_some(),
+        ),
+        snapshot_gaps: recorded_count(capture.stats.snapshot_gaps, measured),
+        notification_gaps: recorded_count(capture.stats.notification_gaps, measured),
+        drain_timed_out: (capture.stats.drain_timed_out || measured)
+            .then_some(capture.stats.drain_timed_out),
+    }
 }
 
 fn limitations(capture: &Capture) -> Vec<&str> {
@@ -212,30 +260,27 @@ fn summary_to(capture: &Capture, out: &mut impl Write) {
         );
     }
 
-    let measured = final_accounting_available(capture);
+    let counts = summary_counts(capture);
     let unfinished = capture
         .capture_state
         .as_deref()
         .is_some_and(|state| state != "finished");
-    // Storage reconstructs these public-view counters from committed raw rows
-    // for unfinished sessions. Other diagnostics remain as originally recorded.
-    let view_counts = measured || (unfinished && capture.backend.stream.is_some());
     line!(
         out,
         "Recorded timeline: {} observations (includes state/lifecycle); {} normalized operations",
-        recorded_count(capture.stats.events_retained, view_counts),
+        optional_count(counts.events_retained),
         if unfinished {
             "unavailable (unfinished)".into()
         } else {
-            recorded_count(capture.stats.events_normalized, measured)
+            optional_count(counts.events_normalized)
         }
     );
     line!(
         out,
         "File/registry source observations: {} known actors | {} unknown actors | {} unresolved names/resources",
-        recorded_count(capture.stats.known_actor_events, view_counts),
-        recorded_count(capture.stats.unknown_actor_events, view_counts),
-        recorded_count(capture.stats.unknown_resource_events, view_counts)
+        optional_count(counts.known_actor_events),
+        optional_count(counts.unknown_actor_events),
+        optional_count(counts.unknown_resource_events)
     );
     line!(
         out,
@@ -259,23 +304,18 @@ fn summary_to(capture: &Capture, out: &mut impl Write) {
         "Loss: ETW events={} | ETW buffers={} | application records={} | decode errors={}",
         optional_count(capture.backend.etw_events_lost),
         optional_count(capture.backend.etw_buffers_lost),
-        recorded_count(capture.backend.dropped_events, measured),
-        recorded_count(
-            capture.backend.decode_errors,
-            measured && capture.backend.pipeline.is_some()
-        )
+        optional_count(counts.application_records_dropped),
+        optional_count(counts.decode_errors)
     );
     line!(
         out,
         "Coverage gaps: snapshot={} | notification={} | drain timed out={}",
-        recorded_count(capture.stats.snapshot_gaps, measured),
-        recorded_count(capture.stats.notification_gaps, measured),
-        if capture.stats.drain_timed_out {
-            "yes"
-        } else if measured {
-            "no"
-        } else {
-            "unavailable"
+        optional_count(counts.snapshot_gaps),
+        optional_count(counts.notification_gaps),
+        match counts.drain_timed_out {
+            Some(true) => "yes",
+            Some(false) => "no",
+            None => "unavailable",
         }
     );
     if let Some(stream) = &capture.backend.stream {
@@ -897,6 +937,77 @@ mod tests {
         assert!(
             with_partial_metadata
                 .contains("application records=unavailable | decode errors=unavailable")
+        );
+    }
+
+    #[test]
+    fn structured_summary_counts_share_text_availability_for_finished_and_legacy() {
+        let capture = finished_capture();
+        let counts = serde_json::to_value(summary_counts(&capture)).unwrap();
+        let text = summary_text(&capture);
+        assert_eq!(counts["events_retained"], 8);
+        assert_eq!(counts["events_normalized"], 1);
+        assert_eq!(counts["known_actor_events"], 1);
+        assert_eq!(counts["unknown_actor_events"], 0);
+        assert_eq!(counts["application_records_dropped"], 0);
+        assert_eq!(counts["drain_timed_out"], false);
+        assert!(text.contains("Recorded timeline: 8 observations"));
+        assert!(text.contains("1 known actors | 0 unknown actors"));
+        assert!(text.contains("application records=0"));
+        assert!(text.contains("drain timed out=no"));
+
+        let mut legacy = Capture::default();
+        let missing = serde_json::to_value(summary_counts(&legacy)).unwrap();
+        assert!(
+            missing
+                .as_object()
+                .unwrap()
+                .values()
+                .all(serde_json::Value::is_null)
+        );
+        assert!(summary_text(&legacy).contains("Recorded timeline: unavailable observations"));
+        legacy.stats.events_retained = 4;
+        legacy.backend.dropped_events = 2;
+        let partial = summary_counts(&legacy);
+        assert_eq!(partial.events_retained, Some(4));
+        assert_eq!(partial.application_records_dropped, Some(2));
+        assert_eq!(partial.decode_errors, None);
+        assert_eq!(partial.drain_timed_out, None);
+        let text = summary_text(&legacy);
+        assert!(text.contains("Recorded timeline: 4 observations"));
+        assert!(text.contains("application records=2 | decode errors=unavailable"));
+    }
+
+    #[test]
+    fn structured_summary_counts_keep_unfinished_view_counts_without_final_zeros() {
+        let mut capture = finished_capture();
+        capture.capture_state = Some("capturing".into());
+        capture.backend.stream = Some(contain_core::storage::stream::StreamStats::default());
+        capture.stats.events_retained = 60;
+        capture.stats.events_normalized = 9; // Provisional old value cannot become a final count.
+        capture.stats.known_actor_events = 0;
+        capture.stats.unknown_actor_events = 60;
+        let counts = summary_counts(&capture);
+        assert_eq!(counts.events_retained, Some(60));
+        assert_eq!(counts.events_normalized, None);
+        assert_eq!(counts.known_actor_events, Some(0));
+        assert_eq!(counts.unknown_actor_events, Some(60));
+        assert_eq!(counts.application_records_dropped, None);
+        assert_eq!(counts.decode_errors, None);
+        assert_eq!(counts.snapshot_gaps, None);
+        assert_eq!(counts.notification_gaps, None);
+        assert_eq!(counts.drain_timed_out, None);
+        let text = summary_text(&capture);
+        assert!(text.contains("60 observations (includes state/lifecycle); unavailable (unfinished) normalized operations"));
+        assert!(text.contains("0 known actors | 60 unknown actors"));
+        capture.stats.snapshot_gaps = 2;
+        capture.stats.drain_timed_out = true;
+        let counts = summary_counts(&capture);
+        assert_eq!(counts.snapshot_gaps, Some(2));
+        assert_eq!(counts.drain_timed_out, Some(true));
+        assert!(
+            summary_text(&capture)
+                .contains("snapshot=2 | notification=unavailable | drain timed out=yes")
         );
     }
 }

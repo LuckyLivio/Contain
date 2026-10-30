@@ -80,3 +80,54 @@ ownership stays Unknown when the snapshot lies outside the trace interval. A Hig
 source event and an Unknown state diff are different evidence domains, not a
 contradiction. `state_validated` is cleared on unfinished or continuity-lost source
 evidence; a snapshot observation can still establish that a state difference exists.
+
+## Desktop viewer read-only additions (0.3.1)
+
+These are opt-in additions; existing command output and envelope version 3 remain
+unchanged. `--read-only` requires an explicit `--db` path and permits only list,
+inspect, diff, history and explain. It rejects install, remove and doctor before
+opening the database or probing providers: the existing doctor performs active
+ETW probes and is not a viewer operation.
+
+Read-only opening requires an existing recognized Contain database. Missing,
+non-database, malformed header and newer-schema inputs fail instead of creating
+an empty database. Current schema-4 input is opened with SQLite read-only flags
+and query-only mode; no migrations, indexes or journal settings are applied.
+Each CLI invocation holds a read transaction so its statements share one snapshot;
+separate invocations can observe later commits if another process is recording.
+Supported older schemas use SQLite's online backup into memory and the existing
+production migrations on that private copy. The original is never migrated.
+No synthetic rows are inserted when a valid empty database is selected.
+
+- `list --details --json` uses kind `list_details`. Entries include `id`, `name`,
+  `started_at`, `finished_at` and nullable `capture_state`. It reads only session
+  headers and recording state, ordered by descending start and then ID. A missing
+  legacy state is unknown, not proof of completion.
+- `inspect <id> --summary --json` uses kind `inspect_summary`. Its data is the
+  existing capture shape with `view_scope:"summary"` and `history_included:false`.
+  Events, normalized operations and edges are not loaded; their arrays are empty
+  because they are omitted from this view, not because their counts are zero.
+  Persisted statistics, process evidence, sources, state changes and quality
+  remain available. Use paged history and explain for event evidence.
+  `summary_counts` is the same availability-aware accounting used by the text
+  summary: nullable `events_retained`, `events_normalized`, `known_actor_events`,
+  `unknown_actor_events`, `unknown_resource_events`, `application_records_dropped`,
+  `decode_errors`, `snapshot_gaps`, `notification_gaps`, and nullable boolean
+  `drain_timed_out`. These distinguish unavailable final counters from measured
+  zero and retained nonzero observations. Unfinished normalized operations are
+  null; committed raw-view actor/timeline counts may still be available. Clients
+  use these summary counts rather than interpreting raw default statistics.
+- `diff <id> --state-only --json` retains kind `diff` and adds
+  `view_scope:"state_only"`. File, registry and inventory state changes and quality
+  are retained; normalized operations are excluded. The default diff is unchanged.
+- Read-only `history --limit N --offset M` keeps the existing history document
+  and stable `(ticks, sequence, id)` ordering. Older records without a document
+  index use the existing production full-read mapping internally before returning
+  a bounded page. This compatibility path can read the whole old session; modern
+  document-indexed records use SQL pagination. The ordinary non-read-only legacy
+  pagination error is unchanged.
+
+These views do not reinterpret confidence, unknown metrics, historical names,
+process identities or ownership. Clients still preserve exact time strings and
+integer values and distinguish unavailable/null from zero. The viewer does not
+start collection or active provider probes.

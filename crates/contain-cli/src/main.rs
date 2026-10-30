@@ -22,6 +22,13 @@ struct Cli {
         help = "SQLite path; defaults to LOCALAPPDATA\\Contain\\contain.db"
     )]
     db: Option<PathBuf>,
+    #[arg(
+        long,
+        global = true,
+        requires = "db",
+        help = "Read an existing database without creating or migrating the original; only list/inspect/diff/history/explain"
+    )]
+    read_only: bool,
     #[command(subcommand)]
     command: Commands,
 }
@@ -58,6 +65,11 @@ enum Commands {
     List {
         #[arg(long)]
         json: bool,
+        #[arg(
+            long,
+            help = "Include recording state and recorded end without reading history"
+        )]
+        details: bool,
     },
     Inspect {
         app: String,
@@ -65,6 +77,12 @@ enum Commands {
         verbose: bool,
         #[arg(long)]
         json: bool,
+        #[arg(
+            long,
+            conflicts_with = "verbose",
+            help = "Return summary metadata without event history; JSON kind is inspect_summary"
+        )]
+        summary: bool,
     },
     Explain {
         event: String,
@@ -75,6 +93,11 @@ enum Commands {
         app: String,
         #[arg(long)]
         json: bool,
+        #[arg(
+            long,
+            help = "Read state differences without loading source events or normalized operations"
+        )]
+        state_only: bool,
     },
     History {
         app: String,
@@ -117,7 +140,19 @@ fn envelope(kind: &str, value: impl serde::Serialize) -> Result<String> {
 }
 
 fn run() -> Result<()> {
-    let cli = Cli::parse();
+    run_cli(Cli::parse())
+}
+
+fn run_cli(cli: Cli) -> Result<()> {
+    if cli.read_only {
+        anyhow::ensure!(
+            !matches!(
+                &cli.command,
+                Commands::Install { .. } | Commands::Remove { .. } | Commands::Doctor { .. }
+            ),
+            "--read-only supports list, inspect, diff, history and explain only; capture, cleanup and active provider probes are disabled"
+        );
+    }
     let db = match cli.db {
         Some(path) => path,
         None => PathBuf::from(
@@ -125,6 +160,13 @@ fn run() -> Result<()> {
                 .context("LOCALAPPDATA is missing; supply --db explicitly")?,
         )
         .join("Contain/contain.db"),
+    };
+    let open = || {
+        if cli.read_only {
+            Storage::open_read_only(&db)
+        } else {
+            Storage::open(&db)
+        }
     };
     match cli.command {
         Commands::Install {
@@ -174,8 +216,28 @@ fn run() -> Result<()> {
                 capture.id
             );
         }
-        Commands::List { json } => {
-            let rows = Storage::open(&db)?.list()?;
+        Commands::List { json, details } => {
+            let storage = open()?;
+            if details {
+                let rows = storage.list_details()?;
+                if json {
+                    println!("{}", envelope("list_details", &rows)?);
+                } else if rows.is_empty() {
+                    println!("No captured applications yet.");
+                } else {
+                    for row in rows {
+                        println!(
+                            "{:<28} {}  {}  recording={}",
+                            row.name,
+                            row.started_at,
+                            row.id,
+                            row.capture_state.as_deref().unwrap_or("unknown (legacy)")
+                        );
+                    }
+                }
+                return Ok(());
+            }
+            let rows = storage.list()?;
             if json {
                 println!("{}",envelope("list",rows.iter().map(|(id,name,started)|serde_json::json!({"id":id,"name":name,"started_at":started})).collect::<Vec<_>>())?);
             } else if rows.is_empty() {
@@ -186,21 +248,35 @@ fn run() -> Result<()> {
                 }
             }
         }
-        Commands::Inspect { app, json, verbose } => {
-            let storage = Storage::open(&db)?;
-            let capture = if json || verbose {
+        Commands::Inspect {
+            app,
+            json,
+            verbose,
+            summary,
+        } => {
+            let storage = open()?;
+            let capture = if (json || verbose) && !summary {
                 storage.load(&app)?
             } else {
                 storage.load_summary(&app)?
             };
             if json {
-                println!("{}", envelope("inspect", &capture)?);
+                if summary {
+                    let mut value = serde_json::to_value(&capture)?;
+                    value["view_scope"] = "summary".into();
+                    value["history_included"] = false.into();
+                    value["summary_counts"] =
+                        serde_json::to_value(render::summary_counts(&capture))?;
+                    println!("{}", envelope("inspect_summary", value)?);
+                } else {
+                    println!("{}", envelope("inspect", &capture)?);
+                }
             } else {
                 render::inspect(&capture, verbose);
             }
         }
         Commands::Explain { event, json } => {
-            let capture = Storage::open(&db)?.for_event(&event)?;
+            let capture = open()?.for_event(&event)?;
             let data = render::explanation(&capture, &event)?;
             if json {
                 println!("{}", envelope("explain", data)?);
@@ -208,16 +284,23 @@ fn run() -> Result<()> {
                 render::explain(&capture, &event)?;
             }
         }
-        Commands::Diff { app, json } => {
-            let capture = Storage::open(&db)?.load(&app)?;
+        Commands::Diff {
+            app,
+            json,
+            state_only,
+        } => {
+            let storage = open()?;
+            let capture = if state_only {
+                storage.load_summary(&app)?
+            } else {
+                storage.load(&app)?
+            };
             if json {
-                println!(
-                    "{}",
-                    envelope(
-                        "diff",
-                        serde_json::json!({"app_id":capture.id,"files":capture.files,"registry":capture.registry,"inventory":capture.inventory,"operations":capture.operations,"quality":capture.quality,"warning":"Unattributed changes are not assumed to belong to this app."})
-                    )?
-                );
+                let mut value = serde_json::json!({"app_id":capture.id,"files":capture.files,"registry":capture.registry,"inventory":capture.inventory,"operations":capture.operations,"quality":capture.quality,"warning":"Unattributed changes are not assumed to belong to this app."});
+                if state_only {
+                    value["view_scope"] = "state_only".into();
+                }
+                println!("{}", envelope("diff", value)?);
             } else {
                 render::diff(&capture);
             }
@@ -228,14 +311,18 @@ fn run() -> Result<()> {
             limit,
             offset,
         } => {
-            let storage = Storage::open(&db)?;
+            let storage = open()?;
             let mut capture = if limit.is_some() {
                 storage.load_summary(&app)?
             } else {
                 storage.load(&app)?
             };
             if let Some(limit) = limit {
-                capture.events = storage.events_page(&capture.id, offset, limit)?;
+                capture.events = if cli.read_only {
+                    storage.events_page_compatible(&capture.id, offset, limit)?
+                } else {
+                    storage.events_page(&capture.id, offset, limit)?
+                };
             }
             if json {
                 println!(
@@ -296,4 +383,83 @@ fn run() -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod command_tests {
+    use super::*;
+    #[test]
+    fn read_only_requires_an_explicit_database_and_rejects_active_commands() {
+        assert!(Cli::try_parse_from(["contain", "--read-only", "list"]).is_err());
+        for command in [
+            vec!["doctor", "--json"],
+            vec!["install", "synthetic.exe"],
+            vec!["remove", "sample", "--dry-run"],
+        ] {
+            let mut args = vec![
+                "contain",
+                "--db",
+                "missing-synthetic-database.db",
+                "--read-only",
+            ];
+            args.extend(command);
+            let error = run_cli(Cli::try_parse_from(args).unwrap()).unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("active provider probes are disabled")
+            );
+        }
+    }
+    #[test]
+    fn additive_view_options_preserve_original_defaults() {
+        let base = Cli::try_parse_from(["contain", "inspect", "sample", "--json"]).unwrap();
+        assert!(!base.read_only);
+        assert!(matches!(
+            base.command,
+            Commands::Inspect {
+                summary: false,
+                verbose: false,
+                json: true,
+                ..
+            }
+        ));
+        let summary = Cli::try_parse_from([
+            "contain",
+            "--db",
+            "记录 & [x].db",
+            "--read-only",
+            "inspect",
+            "sample",
+            "--summary",
+            "--json",
+        ])
+        .unwrap();
+        assert!(matches!(
+            summary.command,
+            Commands::Inspect { summary: true, .. }
+        ));
+        assert!(
+            Cli::try_parse_from(["contain", "inspect", "sample", "--summary", "--verbose"])
+                .is_err()
+        );
+        let details = Cli::try_parse_from(["contain", "list", "--details", "--json"]).unwrap();
+        assert!(matches!(
+            details.command,
+            Commands::List {
+                details: true,
+                json: true
+            }
+        ));
+        let diff =
+            Cli::try_parse_from(["contain", "diff", "sample", "--state-only", "--json"]).unwrap();
+        assert!(matches!(
+            diff.command,
+            Commands::Diff {
+                state_only: true,
+                json: true,
+                ..
+            }
+        ));
+    }
 }

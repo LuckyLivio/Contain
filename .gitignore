@@ -8,3 +8,5 @@ __pycache__/
 .vscode/
 /fuzz/target/
 /fuzz/artifacts/
+/desktop/**/bin/
+/desktop/**/obj/
