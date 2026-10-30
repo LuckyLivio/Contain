@@ -534,3 +534,131 @@ failure. Event IDs from CI belong to its private session and are not IDs in a ne
 user capture. Formal 32-run, scale, third-party installers, final ownership and
 safe cleanup remain separate unexecuted scopes. Historical six timing failures
 remain D. No further collection is authorized or scheduled by this closeout.
+
+## Report export update
+
+This bounded delivery used branch `fix/windows-trial-report`, frozen source
+`08604b476dfcdb5bfd7fa93d157bc11467bb858a`. Report export is versioned as
+`contain-trial-report-2`; `BUILD.json` binds the exporter hash as well as the
+packaged binaries and scripts. The existing `149a5e3` stream-redirection fix is
+included. This update does not change capture, attribution, storage optimization,
+the CLI/JSON contracts, version 0.3.1, or the formal acceptance requirements.
+
+The exporter checks the live directory's filesystem identity, canonical fixture
+GUID, marker and recorded run identity, then shares the verified root spellings
+across event selection, diff filtering and redaction. Observed aliases must have
+the same directory identity. Missing/different directories, wrong GUID/marker,
+unverifiable identity, neighbouring prefixes and ambiguous dot paths are rejected.
+Historical or deleted child files need not exist today; directory identity does
+not establish event-resource identity or final ownership.
+
+Windows CI requires both native filesystem regressions and a complete synthetic
+report preflight before either native capture. The latter writes through the
+existing production RawBuffer/Storage path and executes the frozen `contain.exe`:
+inspect JSON, one-event history JSON, explain JSON, inspect text, diff text,
+the same history page and the same event's explain text. All seven commands,
+four report sections, Unknown/historical-name boundaries, path redaction and
+the production package collector must pass. Normal and extended spellings are
+mandatory; 8.3 coverage uses only an actual `GetShortPathNameW` result and is
+explicitly unavailable when the filesystem supplies none. Synthetic results
+cannot satisfy either real-report acceptance gate.
+
+The fixed plan remains one default capture and one dual-clock capture, using the
+same frozen package and separate new directories, without retries. Report failure
+retains its original result and performs one independent read-only investigation
+of that same database before the runner ends. Raw CLI/diagnostic output stays
+private; public evidence contains approved excerpts, status codes and hashes.
+An independent diagnosis cannot promote a failed report or candidate.
+
+Local regression evidence is separate from Windows execution. The old exporter
+at `0df6612` failed a new real-Linux-directory alias test with
+`not_fixed_fixture_scope`, before any report CLI command. Its command responses
+were synthetic mocks: this is neither a Windows filesystem result nor a replay
+of either unavailable historical private database. During the new synthetic
+generator extraction, two tests detected duplicate final-state rows; the
+intermediate change was corrected and exact row-count assertions retained.
+Final Linux results were 338 Python tests passed, 65 offline Rust tests passed
+with 8 ignored, 11 demo regression tests and 36 wrapper assertions passed.
+Windows filesystem tests were 0 passed / 7 skipped on Linux, and the full report
+preflight refused execution with 0 CLI commands / 14 not run. These omissions
+are not Windows passes. Original local failure logs remain under `target/quality`;
+no private path or database is published.
+
+### Frozen Windows result: report still blocked
+
+[CI 41078101988](https://github.com/LuckyLivio/Contain/actions/runs/41078101988)
+completed with **failure**. Both preflights passed before the two planned captures;
+no capture was retried. The updated [Windows ZIP](https://github.com/LuckyLivio/Contain/actions/runs/41078101988/artifacts/12989213594)
+is correctly marked `diagnostic_build_unverified`. The bounded read-only delivery
+milestone remains open. The [reviewed aggregate](examples/windows-read-only-trial-41078101988.json)
+preserves original scores, individual product outcomes, report failures, diagnostic
+results, exact commands and identities. No real fixture text report was generated.
+
+| Check on frozen `08604b476dfcdb5bfd7fa93d157bc11467bb858a` | Actual result |
+| --- | --- |
+| `./scripts/quality.ps1 -Mode Check` | Passed: nextest 291 passed / 0 failed / 7 skipped; 338 Python unittest cases passed; native filesystem 7/7; demo 11/11 and wrapper 36 assertions passed. Doctests executed 0 and do not count as validation coverage. |
+| `-Mode Coverage` / `-Mode CoverageOriginal` | Passed: workspace lines 13450/17995 (74.7430%), functions 1077/1419 (75.8985%); original-package lines 9590/13244 (72.4101%), functions 767/1028 (74.6109%). Workspace test executions 291/0/7 ignored; original packages 222/0/4 ignored. |
+| `-Mode Dependencies` / `-Mode Companion` | Passed; companion 1 passed / 0 failed, 193 filtered. All 48 recorded quality gates passed. No new fuzz campaign, performance experiment or formal acceptance run. |
+| `cargo build --workspace --locked`; existing synthetic CLI + schema | Passed: 66 actual CLI commands, 33 schema checks, three original scenarios. |
+| `test-report-paths.py --summary … --private-log …` | 7 passed / 0 failed / 0 skipped on native Windows; actual 8.3 alias obtained from the OS. The old string comparison disagreed while filesystem identity matched. This is a new synthetic directory, not a historical private-path reconstruction. |
+| `verify-trial-report.py --package … --generator … --output … --public-output …` | Normal and extended paths: 14/14 actual packaged CLI commands, all sections, same-event JSON/text, redaction and collection passed. This volume supplied no distinct 8.3 alias: that third full-export case is explicitly not covered. |
+| Default native fixture, attempt 1 | 35 required product checks passed / 0 failed / 0 not-run; demo exit 0; clocks not requested. Report failed, wrapper exit 1. |
+| Dual-clock native fixture, attempt 2 | 35 required product checks plus one diagnostic passed; 33 original QPC links, supported clock/connection evidence complete. Report failed, wrapper exit 1. |
+| Real report, each configuration | Directory identity passed. `inspect-json` returned 0, then strict comparison failed with `report_reopened_capture_changed`. **1/7 report commands executed, 6/7 not run**. No inspect/diff/history/explain text report or selected report event was published. |
+| Same-capture offline diagnosis, each configuration | 4 commands executed and returned 0: inspect JSON, diff text, history JSON, explain JSON. Its inspect stdout hash exactly matched that configuration's failed report readback. These are independent diagnostics, not completion of the remaining six report commands. |
+| Finalize / overall CI | Diagnostic ZIP produced; finalize exit 2; CI failed. Snapshot fallback was not run in this fixed pair. |
+
+The filesystem tests ran in Check and the explicit preflight; those are repeated
+executions, not fourteen independent cases. Coverage repeats shared offline tests
+and includes inline tests; original-package coverage remains separately gated.
+No denominator or 66.5% line / 70% function floor was changed. Windows Server 2025
+AMD64 build `10.0.26100`, image `win25-vs2026/20261021.278.1`, used Rust/Cargo
+1.99.1, PowerShell 7.6.7, Python 3.12.10, nextest 0.9.149, llvm-cov 0.9.1 and
+deny 0.20.2. Both original scorers retained 19/21 observed operations, 17 correctly
+attributed, four Unknown, zero wrong attributions and zero extra positives.
+Measured provider/application losses were zero; unavailable companion consumer
+loss counters remain unavailable. Finished recording is separate from coverage.
+
+The new blocker is at the **report's whole-document comparison**. The preserved
+diagnosis demonstrates repeatable later readback, but does not contain the
+field-level difference against the original `capture.json`. Therefore it cannot
+establish a validator-only false failure or rule out a product data difference.
+The runner has ended; missing private evidence cannot be reconstructed from the
+aggregate. This limitation is retained rather than marking the report passed.
+
+One independent serialization defect was reproduced offline after the captures:
+demo saves the parsed CLI document through PowerShell `ConvertTo-Json`, whereas
+the report compares it with directly parsed CLI stdout. Using the same operations
+on explicitly synthetic input in existing Linux PowerShell 7.6.9 changed
+`2026-07-16T09:10:20.120+00:00` to `2026-07-16T09:10:20.12+00:00`.
+Three of four trailing-zero samples changed strings; integer ticks were unchanged.
+An earlier six-sample experiment was entirely unchanged and is also retained.
+This proves a possible strict-comparison failure, **not the cause of either
+capture failure using PowerShell 7.6.7 on Windows**. The full synthetic preflight wrote its saved JSON
+directly from production Storage and did not exercise the demo's reserialization.
+
+The next minimal work is an offline regression through that actual save path,
+preserving already-validated CLI stdout verbatim while keeping strict comparison,
+and retaining safe field-category/count/hash differences on failure. Do not relax
+equality or time tolerances, reconstruct a database, or start new capture research.
+Frozen scripts and binaries were not changed after these attempts. This round is
+closed with a diagnostic build; formal 32-attempt, scale, third-party installer,
+final ownership and safe cleanup validation remain separate and unexecuted.
+Historical six timing doubts remain D.
+
+Package identity and public-content review:
+
+- Build: `x86_64-pc-windows-msvc`, **debug**, `cargo build --workspace --locked`.
+- ZIP SHA-256: `591212f952b6ea4df000d88b4834d5a86fdf7a15569024ed176e69e182b3383d`.
+- `contain.exe` SHA-256: `163b493ff0561ef6a2dd67af5613c3cdc6cd26891572e5560a8a7f812753cc3b`.
+- Exporter SHA-256: `54982ea0255cdb1427ef01d1d6246d08f929dc50fecab66e3fc41599f5b4d58d`; all packaged script hashes are in `BUILD.json` and the aggregate.
+- All 24 ZIP members match the allowlist; all 23 `CONTENTS.json` entries match hashes and sizes. `demo-checks.ps1` is byte-identical to the `149a5e3` redirect fix. No database, ETL, PDB, raw clock, full log or run-identity document is packaged.
+- Capture stdout/stderr/host output and original exceptions remained private. Public native-step logs contained only safe status/error codes. Standard Actions build/toolchain paths remain in CI logs; these are not claimed to be path-free logs.
+
+The [complete report actually produced by Windows CLI](examples/windows-report-synthetic-41078101988.txt)
+is explicitly **synthetic**, including its event `synthetic-report-event-0`; it
+contains inspect, diff, history and the same event's explain. It is not substituted
+for the missing real ETW report. The updated diagnostic package includes the
+prebuilt demo, required `vcruntime140.dll`, both failed report summaries and usage
+instructions. Ordinary CLI use still needs no Rust or Visual Studio; the controlled
+demo needs PowerShell 7, Python 3 and existing ETW permissions, with no elevation.

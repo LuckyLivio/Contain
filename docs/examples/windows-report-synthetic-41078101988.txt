@@ -1,0 +1,68 @@
+SYNTHETIC WINDOWS CLI REPORT — production storage and packaged contain.exe; not ETW or an installation.
+Fixture paths are replaced consistently; no database or system trace is published.
+Source: 08604b476dfcdb5bfd7fa93d157bc11467bb858a | configuration: synthetic | event: synthetic-report-event-0
+Public excerpt omits 1 inspect and 0 explain free-form limitation lines; recording quality and measured gaps below are unchanged.
+Diff excerpt shows fixture file/registry changes only; inventory details are omitted.
+See local inspect --verbose for all warnings. Source confidence does not establish explicit API intent or ownership.
+
+INSPECT
+> .\contain.exe --db <saved-db> inspect SyntheticReport
+SyntheticReport
+Session: synthetic-report
+Installer: <fixture-bin>\contain-test-installer.exe
+Started: 2026-10-01T00:00:00Z | Recorded end: 2026-10-01T00:00:02Z | Installer exit: 0
+Recording: finished | Quality: Degraded
+Watched directories: <fixture-root>
+HKCU registry scope: <fixture-registry-key>
+Sources: ETW process=active | file=active | registry=not_requested
+Processes: 1 recorded; 1 Certain/High links with birth identity; 0 other/unresolved
+  PID 100 birth=134350000000000001 [Certain] <fixture-bin>\contain-test-installer.exe
+Recorded timeline: 3 observations (includes state/lifecycle); 3 normalized operations
+File/registry source observations: 2 known actors | 1 unknown actors | 0 unresolved names/resources
+Recorded state differences: 2 files (2 Unknown), 0 registry values (0 Unknown), 0 inventory entries
+Loss: ETW events=0 | ETW buffers=0 | application records=0 | decode errors=unavailable
+Coverage gaps: snapshot=0 | notification=0 | drain timed out=no
+Raw journal: 3 persisted | 0 write failures | 0 quota refusals
+Limitation: Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.
+State differences are not ownership. A recorded name may be historical; source confidence does not prove an explicit application API call or a current path.
+Next (reuse the same --db): inspect synthetic-report --verbose; diff synthetic-report; history synthetic-report --limit 20 --offset 0; explain <event-id>.
+
+DIFF
+> .\contain.exe --db <saved-db> diff SyntheticReport
+STATE DIFFERENCES WITH ATTRIBUTION EVIDENCE
+STATE DIFFERENCES WITH UNKNOWN ATTRIBUTION
+  FILE deleted <fixture-root>\historical-deleted.tmp [Unknown]
+  FILE modified <fixture-root>\recorded.tmp [Unknown]
+State differences are not ownership. Unattributed changes are not assumed to belong to SyntheticReport.
+
+HISTORY
+> .\contain.exe --db <saved-db> history SyntheticReport --limit 1 --offset 0
+Source confidence describes actor attribution, recorded-name resolution and request result separately. It does not establish an explicit application API call, current path, final state ownership or permission to delete.
+2026-10-01T00:00:01Z | event=synthetic-report-event-0 | write_requested      EtwFile PID=Some(100) [High] <fixture-root>\historical-deleted.tmp
+  Name source: file_object_cache; name observation FILETIME: 134350000000000002; source event: synthetic-earlier-open
+Name scope: Recorded historical open name from the FileObject cache; not a verified current path or physical file identity. It does not establish an explicit application call or final state ownership.
+Native request result: Some(true); NTSTATUS: Some(0); actor fields: PID Some(100) birth Some(134350000000000001); identity confidence High
+Issuing TID (source field, not a thread birth): None; event/open generation: Some("synthetic-generation-0")
+Explicit application API intent: unavailable; final state validated: false (not ownership)
+
+EXPLAIN
+> .\contain.exe --db <saved-db> explain synthetic-report-event-0
+Event synthetic-report-event-0
+Recorded name/resource: "<fixture-root>\historical-deleted.tmp"
+Source operation: "write_requested"
+Actor: "<fixture-bin>\contain-test-installer.exe" PID 100 birth "134350000000000001"
+Application: SyntheticReport
+Source actor attribution: "High"
+Actor / recorded-name resolution / completion evidence: "High" / "High" / "High"
+Request result: true (NTSTATUS 0)
+Evidence: "Synthetic source request linked to the installer instance; no ownership claim"
+Name source: file_object_cache; name observation FILETIME: 134350000000000002; source event: synthetic-earlier-open
+Name scope: Recorded historical open name from the FileObject cache; not a verified current path or physical file identity. It does not establish an explicit application call or final state ownership.
+Native request result: Some(true); NTSTATUS: Some(0); actor fields: PID Some(100) birth Some(134350000000000001); identity confidence High
+Issuing TID (source field, not a thread birth): None; event/open generation: Some("synthetic-generation-0")
+Explicit application API intent: unavailable; final state validated: false (not ownership)
+  "event:synthetic-report-event-0" -> "resource:<fixture-root>\historical-deleted.tmp" ["High"]: "Recorded historical open name from the FileObject cache; not a verified current path or physical file identity. It does not establish an explicit application call or final state ownership."
+  "process:100:134350000000000001" -> "event:synthetic-report-event-0" ["High"]: "Synthetic source request linked to the installer instance; no ownership claim"
+  "session:synthetic-report" -> "process:100:134350000000000001" ["Certain"]: "Synthetic owned installer identity"
+Limitation: Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.
+
