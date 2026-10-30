@@ -1696,7 +1696,8 @@
   "public_console": {
     "issue": "Out-Host bypassed private redirect; boot identifier and machine/clock metadata reached CI log",
     "credentials_or_full_traces_found": false,
-    "raw_log_removal": "pending_after_reviewed_evidence_preservation",
-    "code_fix_scope": "post-capture pure PowerShell redirect regression; not in the downloaded frozen package"
+    "raw_log_removal": "removed_after_reviewed_evidence_push; GitHub log API returns 404; failed run status and all three artifacts retained",
+    "code_fix_scope": "post-capture pure PowerShell redirect regression; not in the downloaded frozen package",
+    "redirect_fix_commit": "149a5e3f4224ff5eedb947acb11cedd83be13d23"
   }
 }

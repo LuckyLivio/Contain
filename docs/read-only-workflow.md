@@ -512,10 +512,12 @@ that bypass and adds a real PowerShell child-process redirection regression:
 first 10 passed / 1 failed, then 11 passed / 0 failed / 0 ignored on Linux
 PowerShell 7.6.9. Failure recording and independent checks remain intact. This
 fix is **not in the frozen downloadable package and has not run native Windows
-capture**. Raw console logs were saved privately; a reviewed replacement summary
-preserves the failures without publishing machine identifiers. Their public-log
-removal status is recorded in that summary. Package/local demo output should not
-be uploaded unreviewed.
+capture**. The redirect fix is commit `149a5e3f4224ff5eedb947acb11cedd83be13d23`.
+Raw console logs were saved privately and removed from GitHub after the reviewed
+replacement summary was pushed; the log API now returns 404. The failed run
+status and all three artifacts remain available. This removes exposed machine
+identifiers while preserving the original failures and measured results.
+Package/local demo output should not be uploaded unreviewed.
 
 From the extracted package, with Windows x64, PowerShell 7 and Python 3, use:
 
