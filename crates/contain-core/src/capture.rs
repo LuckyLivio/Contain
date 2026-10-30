@@ -383,10 +383,7 @@ fn install_inner(
                     if e.event_type == "registry_context" {
                         continue;
                     }
-                    if e.event_type == "registry"
-                        && !e.raw.resource_resolved
-                        && e.confidence != Confidence::High
-                    {
+                    if db.select_raw_only_registry(&id, &e, lifecycle_complete)? {
                         continue;
                     }
                     if !source_intact {

@@ -17,6 +17,7 @@ pub(super) fn schema(db: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS raw_stream_related ON raw_stream(session_id,related);
         CREATE INDEX IF NOT EXISTS raw_stream_header ON raw_stream(session_id,kind,header_pid);
         CREATE INDEX IF NOT EXISTS raw_stream_id ON raw_stream(json_extract(document,'$.id'));
+        CREATE TABLE IF NOT EXISTS raw_selections(session_id TEXT NOT NULL, sequence INTEGER NOT NULL, event_id TEXT NOT NULL, document TEXT NOT NULL, PRIMARY KEY(session_id,sequence));
         CREATE TABLE IF NOT EXISTS event_documents(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, ticks INTEGER NOT NULL, sequence INTEGER NOT NULL, resource TEXT NOT NULL, document TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS event_documents_order ON event_documents(session_id,ticks,sequence,id);
         CREATE INDEX IF NOT EXISTS event_documents_resource ON event_documents(session_id,resource);
@@ -402,6 +403,55 @@ impl Storage {
         } else {
             Ok(None)
         }
+    }
+    /// Called after lifetime resolution and actor attribution, at the existing
+    /// registry selection boundary. Retain positive evidence of the actual
+    /// decision without changing a byte of the committed raw event.
+    ///
+    /// The optional table is auxiliary evidence in v4 databases. Old databases
+    /// have no witnesses; their missing final records remain unadjudicated.
+    pub(crate) fn select_raw_only_registry(
+        &mut self,
+        session: &str,
+        event: &SystemEvent,
+        lifetime_resolution_applied: bool,
+    ) -> Result<bool> {
+        if event.event_type != "registry"
+            || event.raw.resource_resolved
+            || event.confidence == Confidence::High
+        {
+            return Ok(false);
+        }
+        // Other registry operations retain the same production selection, but
+        // the bounded clock audit currently supports only SetValue records.
+        if event.operation != "set_value" {
+            return Ok(true);
+        }
+        anyhow::ensure!(
+            !self.connection.is_autocommit(),
+            "Selection witness must share the derived evidence transaction"
+        );
+        let document: String = self.connection.query_row(
+            "SELECT document FROM raw_stream WHERE session_id=?1 AND sequence=?2 AND json_extract(document,'$.id')=?3",
+            params![session, event.sequence, event.id], |r| r.get(0),
+        )?;
+        use sha2::{Digest, Sha256};
+        let witness = serde_json::json!({
+            "schema_version": 1, "event_id": event.id, "sequence": event.sequence,
+            "raw_document_sha256": format!("{:x}", Sha256::digest(document.as_bytes())),
+            "stage": "post_resolve_post_attribute", "decision": "raw_only",
+            "reason": "unresolved_registry_non_high",
+            "lifetime_resolution_applied": lifetime_resolution_applied,
+            "event_type": event.event_type, "operation": event.operation,
+            "resource_resolved": event.raw.resource_resolved,
+            "post_attribution_confidence": event.confidence,
+            "post_attribution_rule": event.evidence.rule,
+        });
+        self.connection.execute(
+            "INSERT INTO raw_selections(session_id,sequence,event_id,document) VALUES (?1,?2,?3,?4)",
+            params![session, event.sequence, event.id, serde_json::to_string(&witness)?],
+        )?;
+        Ok(true)
     }
     /// At most four decoded pages per caller group. Pages are processed and released
     /// individually; SQLite's bounded page cache spills to WAL as necessary.
@@ -842,6 +892,109 @@ mod tests {
             operation: "write_requested".into(),
             ..Default::default()
         }
+    }
+    #[test]
+    fn actual_raw_only_selection_is_bound_atomic_and_readable_after_reopen() {
+        let directory =
+            std::env::temp_dir().join(format!("contain-selection-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("capture.db");
+        let mut db = Storage::open(&path).unwrap();
+        let c = capture();
+        let mut raw = event(1);
+        raw.event_type = "registry".into();
+        raw.operation = "set_value".into();
+        raw.raw.resource_resolved = true;
+        raw.evidence.source = EvidenceSource::EtwRegistry;
+        let mut writer = RawBuffer::new(&mut db, &c, DEFAULT_QUOTA).unwrap();
+        writer.append(&mut db, vec![raw.clone()]);
+        writer.finish(&mut db).unwrap();
+        db.prepare_raw(&c.id).unwrap();
+        let original: String = db
+            .connection
+            .query_row("SELECT document FROM raw_stream", [], |r| r.get(0))
+            .unwrap();
+        let mut resolved = raw.clone();
+        // Lifetime resolution can invalidate a name originally present. The
+        // witness records the real selection input, not the original flag.
+        resolved.raw.resource_resolved = false;
+        resolved.confidence = Confidence::Unknown;
+        resolved.evidence.rule = AttributionRule::MissingWriter;
+        assert!(db.select_raw_only_registry(&c.id, &resolved, true).is_err());
+        db.evidence_group(&c.id, |db| {
+            let mut retained = resolved.clone();
+            retained.confidence = Confidence::High;
+            assert!(!db.select_raw_only_registry(&c.id, &retained, true)?);
+            retained.confidence = Confidence::Unknown;
+            retained.raw.resource_resolved = true;
+            assert!(!db.select_raw_only_registry(&c.id, &retained, true)?);
+            assert!(!db.select_raw_only_registry(&c.id, &event(1), true)?);
+            assert!(db.select_raw_only_registry(&c.id, &resolved, true)?);
+            Ok(())
+        })
+        .unwrap();
+        drop(db);
+        let db = Storage::open(&path).unwrap();
+        assert_eq!(
+            db.connection
+                .query_row::<u32, _, _>("PRAGMA user_version", [], |r| r.get(0))
+                .unwrap(),
+            4
+        );
+        let after: String = db
+            .connection
+            .query_row("SELECT document FROM raw_stream", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(original, after);
+        let witness: String = db
+            .connection
+            .query_row("SELECT document FROM raw_selections", [], |r| r.get(0))
+            .unwrap();
+        let witness: serde_json::Value = serde_json::from_str(&witness).unwrap();
+        use sha2::{Digest, Sha256};
+        assert_eq!(
+            witness["raw_document_sha256"],
+            format!("{:x}", Sha256::digest(original.as_bytes()))
+        );
+        assert_eq!(witness["event_id"], raw.id);
+        assert_eq!(witness["resource_resolved"], false);
+        assert_eq!(witness["post_attribution_confidence"], "Unknown");
+        assert_eq!(
+            db.connection
+                .query_row::<u32, _, _>("SELECT COUNT(*) FROM observations", [], |r| r.get(0))
+                .unwrap(),
+            0
+        );
+        drop(db);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn selection_witness_rolls_back_with_failed_derived_group() {
+        let mut db = Storage::open(Path::new(":memory:")).unwrap();
+        let c = capture();
+        let mut raw = event(1);
+        raw.event_type = "registry".into();
+        raw.operation = "set_value".into();
+        let mut writer = RawBuffer::new(&mut db, &c, DEFAULT_QUOTA).unwrap();
+        writer.append(&mut db, vec![raw.clone()]);
+        writer.finish(&mut db).unwrap();
+        db.prepare_raw(&c.id).unwrap();
+        assert!(
+            db.evidence_group(&c.id, |db| {
+                assert!(db.select_raw_only_registry(&c.id, &raw, false)?);
+                // Duplicate selection is an error, never overwrite the first proof.
+                db.select_raw_only_registry(&c.id, &raw, false)
+            })
+            .is_err()
+        );
+        assert_eq!(
+            db.connection
+                .query_row::<u32, _, _>("SELECT COUNT(*) FROM raw_selections", [], |r| r.get(0))
+                .unwrap(),
+            0
+        );
+        assert_eq!(db.raw_page(&c.id, (0, 0)).unwrap().len(), 1);
     }
     #[test]
     fn commits_before_finish_and_byte_quota_balances_without_tail() {

@@ -17,7 +17,7 @@ import time
 
 
 REPO = Path(__file__).resolve().parent.parent
-PROTOCOL = 'contain-etw-clock-audit-1'
+PROTOCOL = 'contain-etw-clock-audit-2'
 CLOCK_REASON_CODES = frozenset(('collector_native_provenance_changed', 'collector_native_provenance_missing',
  'collector_native_provenance_phase_bounds_invalid', 'collector_samples',
  'consumer_clock_mode_invalid', 'consumer_did_not_request_raw_timestamp',
@@ -100,13 +100,13 @@ def actor(event):
 
 
 def joined_events(capture):
-    """Keep raw facts. Only a unique fact-consistent same-ID view supplies actor."""
+    """Join actual selection evidence; absence alone never proves legal filtering."""
     raw, final = capture.get('raw_events'), capture.get('events')
     issues = []
     if not isinstance(raw, list) or not all(isinstance(row, dict) for row in raw):
-        return [], ['raw_events_missing']
+        return [], ['raw_events_missing'], []
     if not isinstance(final, list) or not all(isinstance(row, dict) for row in final):
-        return [], ['final_events_missing']
+        return [], ['final_events_missing'], []
     raw_ids = Counter(row.get('id') for row in raw)
     final_ids = Counter(row.get('id') for row in final)
     if any(not isinstance(key, str) or count != 1 for key, count in raw_ids.items()):
@@ -114,24 +114,97 @@ def joined_events(capture):
     if any(not isinstance(key, str) or count != 1 for key, count in final_ids.items()):
         issues.append('duplicate_or_invalid_final_event_id')
     finals = {row.get('id'): row for row in final if final_ids[row.get('id')] == 1}
-    result = []
+    witnesses = capture.get('raw_selections')
+    if witnesses is None:
+        witnesses = []  # Older databases have no positive selection evidence.
+    if not isinstance(witnesses, list) or not all(isinstance(row, dict) for row in witnesses):
+        witnesses = []
+        issues.append('selection_witnesses_invalid')
+    witness_ids = Counter(row.get('event_id') for row in witnesses)
+    selections = {row.get('event_id'): row for row in witnesses if witness_ids[row.get('event_id')] == 1}
+    result, membership = [], []
     for primary in raw:
-        view = finals.get(primary.get('id'))
+        key = primary.get('id')
+        view, witness = finals.get(key), selections.get(key)
         event = copy.deepcopy(primary)
-        if view is not None:
+        reasons = []
+        status = 'outside_clock_operation_scope'
+        if raw_ids[key] != 1 or not isinstance(key, str):
+            reasons.append('duplicate_or_invalid_raw_event_id')
+        if final_ids[key] > 1:
+            reasons.append('duplicate_or_invalid_final_event_id')
+        if witness_ids[key] > 1:
+            reasons.append('duplicate_selection_witness')
+        if view is not None and not reasons:
             immutable = ('registry_object', 'registry_fields', 'thread_id', 'header_pid', 'process_key', 'parent_key')
             if (not LAYERED.fact_consistent(primary, view)
+                    or primary.get('sequence') != view.get('sequence')
+                    or obj(primary.get('evidence')).get('source') != obj(view.get('evidence')).get('source')
                     or any(obj(primary.get('raw')).get(key) != obj(view.get('raw')).get(key) for key in immutable)):
-                issues.append('raw_final_fact_conflict')
-            elif raw_ids[primary.get('id')] == 1:
+                reasons.append('raw_final_fact_conflict')
+            elif (actor(primary) is not None and obj(primary.get('raw')).get('initial_thread_identity') is None
+                  and any(obj(primary.get('evidence')).get(key) != obj(view.get('evidence')).get(key)
+                          for key in ('pid', 'process_creation_time', 'process_image'))):
+                # Production resolve_event preserves an identity already verified
+                # by a live handle. Initial thread snapshots are instead revocable.
+                reasons.append('raw_final_live_actor_conflict')
+            elif witness is not None:
+                reasons.append('raw_only_selection_has_final_view')
+            else:
                 for key in ('evidence', 'dimensions', 'confidence', 'success'):
                     event[key] = copy.deepcopy(view.get(key))
+                status = 'same_id_final_connected'
         elif supported(primary):
-            issues.append('supported_raw_event_without_unique_final_view')
+            status = 'required_final_missing'
+            digest = obj(capture.get('raw_document_sha256')).get(primary.get('id'))
+            original = obj(capture.get('raw_selection_documents')).get(primary.get('id'))
+            try:
+                raw_bound = (isinstance(original, str) and json.loads(original) == primary
+                             and hashlib.sha256(original.encode('utf-8')).hexdigest() == digest)
+            except (ValueError, TypeError):
+                raw_bound = False
+            valid_witness = (isinstance(witness, dict) and
+                witness.get('schema_version') == 1 and type(witness.get('schema_version')) is int and
+                witness.get('stage') == 'post_resolve_post_attribute' and
+                witness.get('decision') == 'raw_only' and witness.get('reason') == 'unresolved_registry_non_high' and
+                witness.get('event_type') == primary.get('event_type') == 'registry' and
+                witness.get('operation') == primary.get('operation') == 'set_value' and
+                witness.get('sequence') == primary.get('sequence') and type(witness.get('sequence')) is int and
+                witness.get('resource_resolved') is False and witness.get('post_attribution_confidence') == 'Unknown' and
+                witness.get('post_attribution_rule') in {'MissingWriter', 'UnrelatedProcess', 'AmbiguousLifetime'} and
+                type(witness.get('lifetime_resolution_applied')) is bool and
+                raw_bound and safe_hash(digest) is not None and witness.get('raw_document_sha256') == digest)
+            if not reasons and valid_witness:
+                status = 'raw_only_unknown'
+                # The original raw facts stay intact. A selection witness is
+                # evidence of filtering, never a replacement final actor.
+                event['confidence'] = 'Unknown'
+            else:
+                reasons.append('selection_witness_invalid' if witness is not None else 'required_final_missing_without_selection_evidence')
+        if reasons:
+            status = 'rejected'
+        issues.extend(reasons)
+        membership.append(dict(event_id=primary.get('id'), raw_count=raw_ids[primary.get('id')],
+            final_count=final_ids[primary.get('id')], witness_count=witness_ids[primary.get('id')],
+            status=status, reasons=sorted(set(reasons)),
+            basis='production_post_resolve_post_attribute' if status == 'raw_only_unknown' else
+                  'unique_same_id_fact_consistency' if status == 'same_id_final_connected' else None,
+            raw_document_sha256=obj(capture.get('raw_document_sha256')).get(primary.get('id')),
+            selection_reason=witness.get('reason') if isinstance(witness, dict) else None))
         result.append(event)
-    if any(supported(row) and row.get('id') not in raw_ids for row in final):
-        issues.append('supported_final_event_without_raw_record')
-    return result, sorted(set(issues))
+    for row in final:
+        if supported(row) and row.get('id') not in raw_ids:
+            issues.append('supported_final_event_without_raw_record')
+            membership.append(dict(event_id=row.get('id'), raw_count=0, final_count=final_ids[row.get('id')],
+                witness_count=witness_ids[row.get('id')], status='rejected',
+                reasons=['supported_final_event_without_raw_record'], basis=None))
+    for row in witnesses:
+        if row.get('event_id') not in raw_ids:
+            issues.append('selection_witness_without_raw_record')
+            membership.append(dict(event_id=row.get('event_id'), raw_count=0, final_count=final_ids[row.get('event_id')],
+                witness_count=witness_ids[row.get('event_id')], status='rejected',
+                reasons=['selection_witness_without_raw_record'], basis=None))
+    return result, sorted(set(issues)), membership
 
 
 def integrity(capture):
@@ -175,7 +248,8 @@ def unsigned(value):
 
 def analyze(capture, truth, legacy_score, raw_bytes=None, raw_path=None, sid=''):
     require(isinstance(truth, list) and bool(truth), 'independent_truth_missing')
-    events, issues = joined_events(capture)
+    events, issues, selection_rows = joined_events(capture)
+    selection = {row['event_id']: row for row in selection_rows}
     projection = dict(capture, events=events)
     try:
         clock = CLOCK.analyze(projection, truth, sid, raw_bytes, raw_path)
@@ -188,7 +262,7 @@ def analyze(capture, truth, legacy_score, raw_bytes=None, raw_path=None, sid='')
         and row.get('reason') not in {'trace_fixture_frequency_mismatch', 'fixture_outside_recorded_trace_qpc_window'}
         for row in clock_rows)
     checks = integrity(capture)
-    available = (not issues and obj(clock.get('raw_companion')).get('status') == 'exact_original_key_links_available'
+    available = (obj(clock.get('raw_companion')).get('status') == 'exact_original_key_links_available'
                  and clock.get('same_machine_boot_provenance_verified') is True
                  and clock.get('source_events_without_raw_qpc') == 0 and clocks_valid
                  and not [reason for reason in clock.get('source_reasons', []) if reason != 'source_original_qpc_or_actor_missing'])
@@ -196,7 +270,8 @@ def analyze(capture, truth, legacy_score, raw_bytes=None, raw_path=None, sid='')
     for event in events:
         if not supported(event):
             continue
-        who = actor(event)
+        disposition = selection.get(event.get('id'), {}).get('status')
+        who = actor(event) if disposition == 'same_id_final_connected' else None
         tick = linked.get(event.get('id')) if available else None
         comparisons = []
         for index, call in enumerate(truth):
@@ -221,14 +296,20 @@ def analyze(capture, truth, legacy_score, raw_bytes=None, raw_path=None, sid='')
                 filetime_after_end_100ns=wall-wall_end if wall is not None and wall_end is not None else None))
         candidate = [row['truth_row'] for row in comparisons if row['same_actor'] is True and row['same_resource'] and row['same_operation']]
         exact = [row['truth_row'] for row in comparisons if row['truth_row'] in candidate and row['qpc_relation'] == 'inside']
+        potential = [row['truth_row'] for row in comparisons if row['same_actor'] is not False
+            and (row['same_resource'] or disposition == 'raw_only_unknown'
+                 or obj(event.get('raw')).get('resource_resolved') is False)
+            and row['same_operation'] and row['qpc_relation'] == 'inside']
         rows.append(dict(event_id=event.get('id'), candidate_truth_rows=candidate, exact_qpc_truth_rows=exact,
+                         potential_qpc_truth_rows=potential, selection_status=disposition,
                          unique_qpc_candidate=False, comparisons=comparisons))
-    uses = Counter(index for row in rows for index in row['exact_qpc_truth_rows'])
+    uses = Counter(index for row in rows for index in row['potential_qpc_truth_rows'])
     for row in rows:
         row['unique_qpc_candidate'] = len(row['exact_qpc_truth_rows']) == 1 and uses[row['exact_qpc_truth_rows'][0]] == 1
     recomputed = SCORE.score(capture, truth, sid)
     return dict(schema_version=1, protocol=PROTOCOL, acceptance_pass=None, tolerance_qpc=0,
-        clock_evidence_complete=bool(available and checks['complete']), join_issues=issues,
+        clock_evidence_complete=bool(available and checks['complete'] and not issues), join_issues=issues,
+        clock_data_available=available, selection_rows=selection_rows,
         integrity=checks, clock=clock, events=events, truth=copy.deepcopy(truth), relations=rows,
         watch_roots=capture.get('watch_roots', []), registry_key=capture.get('registry_key'), private_sid=sid,
         legacy_score=copy.deepcopy(legacy_score), legacy_score_recomputed=recomputed,
@@ -332,6 +413,8 @@ def public_summary(result):
                       current_path_verified=name.get('current_path_verified') if type(name.get('current_path_verified')) is bool else None),
             candidate_truth_rows=row.get('candidate_truth_rows') if row else None,
             exact_qpc_truth_rows=row.get('exact_qpc_truth_rows') if comparison_status == 'evaluated' else None,
+            potential_qpc_truth_rows=row.get('potential_qpc_truth_rows') if comparison_status == 'evaluated' else None,
+            selection_status=row.get('selection_status'),
             unique_qpc_candidate=row.get('unique_qpc_candidate') if comparison_status == 'evaluated' else None,
             comparison_status=comparison_status, comparisons=comparisons if row else None))
     legacy = obj(result.get('legacy_score'))
@@ -378,7 +461,10 @@ def public_summary(result):
     provenance_reason = obj(diagnostic.get('clock_provenance')).get('reason')
     if provenance_reason is not None:
         clock_reasons.append(provenance_reason)
-    safe_reasons.extend(reason if isinstance(reason, str) and reason in CLOCK_REASON_CODES else 'private_clock_detail_retained' for reason in clock_reasons)
+    actor_unknown = [reason for reason in clock_reasons if reason == 'source_original_qpc_or_actor_missing'
+                     and diagnostic.get('source_events_without_raw_qpc') == 0]
+    safe_reasons.extend(reason if isinstance(reason, str) and reason in CLOCK_REASON_CODES else 'private_clock_detail_retained'
+                        for reason in clock_reasons if reason not in actor_unknown)
     manifest = obj(result.get('observed_raw_manifest'))
     manifest_stats = ('received', 'stored', 'accepted', 'queued', 'queue_dropped', 'quota_dropped', 'not_persisted', 'missing_event_key',
                       'invalid_timestamp', 'capacity_dropped', 'writer_closed_dropped', 'filtered_nonprimary', 'readiness_probe_records',
@@ -407,10 +493,20 @@ def public_summary(result):
                 **{key: str(unsigned(row.get(key))) if unsigned(row.get(key)) is not None else None
                    for key in ('start_qpc', 'end_qpc', 'qpc_frequency')}))
     return dict(schema_version=1, protocol=PROTOCOL, source_sha=result.get('source_sha'),
-        phase=result.get('phase') if result.get('phase') in {'diagnostic', 'verification'} else None,
+        phase=result.get('phase') if result.get('phase') in {'diagnostic', 'verification', 'candidate'} else None,
         planned_attempts=result.get('planned_attempts') if type(result.get('planned_attempts')) is int else None,
         attempt_index=result.get('attempt_index') if type(result.get('attempt_index')) is int else None, acceptance_pass=None,
         raw_join_status=result.get('raw_join_status', 'unavailable'),
+        clock_data_available=result.get('clock_data_available') is True,
+        selection_rows=[dict(event_id=safe_id(row.get('event_id')),
+            **numeric_fields(row, ('raw_count', 'final_count', 'witness_count')),
+            status=row.get('status') if row.get('status') in {'same_id_final_connected', 'raw_only_unknown', 'outside_clock_operation_scope', 'rejected'} else None,
+            reasons=row.get('reasons', []),
+            basis=row.get('basis') if row.get('basis') in {'production_post_resolve_post_attribute', 'unique_same_id_fact_consistency'} else None,
+            raw_document_sha256=safe_hash(row.get('raw_document_sha256')),
+            selection_reason='unresolved_registry_non_high' if row.get('selection_reason') == 'unresolved_registry_non_high' else None)
+            for row in result.get('selection_rows', [])],
+        unresolved_source_observations=sorted(set(actor_unknown)),
         events_view_scope=view_scope, clock_observation_scope=result.get('clock_observation_scope'),
         existing_clock_report_input_hashes_verified=result.get('existing_clock_report_input_hashes_verified') is True,
         existing_final_view_clock_rows=partial_clock_rows,
@@ -583,7 +679,10 @@ def identities(attempt, identity, directory):
         revision = None
     phase, planned, index = attempt.get('phase'), attempt.get('planned_attempts'), attempt.get('attempt_index', 1)
     if (type(planned) is not int or type(index) is not int or
-            not (phase == 'diagnostic' and planned == 1 and index == 1 or phase == 'verification' and planned == 2 and index in (1, 2))):
+            not (phase == 'diagnostic' and planned == 1 and index == 1 or phase == 'verification' and planned == 2 and index in (1, 2)
+                 or phase == 'candidate' and planned == 2 and index == 2 and attempt.get('configuration') == 'dual-clock'
+                 and attempt.get('optional_environment_isolated') is True and attempt.get('wpr_started') is False
+                 and attempt.get('build_manifest_unchanged') is True and attempt.get('package_files_unchanged') is True)):
         reasons.append('fixed_diagnostic_plan_missing')
     if (attempt.get('source_after_sha') != revision or attempt.get('source_unchanged') is not True
             or attempt.get('source_clean_before') is not True or attempt.get('source_clean_after') is not True
@@ -596,9 +695,52 @@ def identities(attempt, identity, directory):
     if identity.get('fixture_clock') != '1' or Path(identity.get('raw_clock_path', '')).resolve() != (directory / 'raw-clock.json').resolve():
         reasons.append('actual_clock_request_mismatch')
     source_before, source_after = (obj(identity.get(key)) for key in ('source_before_build', 'source_after_build'))
-    if (identity.get('source_stable_during_build') is not True or source_before.get('head') != revision or source_after.get('head') != revision
+    prebuilt = identity.get('build_mode') == 'prebuilt'
+    if phase == 'candidate' and not prebuilt:
+        reasons.append('candidate_requires_frozen_prebuilt_binary')
+    build_valid = identity.get('source_stable_during_build') is True and identity.get('build_exit_code') == 0
+    manifest_digest, manifest_config = None, None
+    if prebuilt:
+        try:
+            path = Path(identity['prebuilt_manifest_path'])
+            manifest_digest = safe_hash(identity.get('prebuilt_manifest_sha256'))
+            require(path.is_file() and manifest_digest is not None and sha(path) == manifest_digest, 'prebuilt_manifest_digest_mismatch')
+            manifest = read(path)
+            require(manifest.get('schema_version') == 1 and manifest.get('source_sha') == revision
+                    and manifest.get('runtime_tree_sha256') == source_before.get('runtime_tree_sha256'), 'prebuilt_manifest_source_mismatch')
+            manifest_config = dict(target=manifest.get('target'), profile=manifest.get('profile'))
+            require(manifest_config['target'] == 'x86_64-pc-windows-msvc' and manifest_config['profile'] in {'debug', 'release'}
+                    and identity.get('build_config') == manifest_config, 'prebuilt_manifest_config_mismatch')
+            observed = {PureWindowsPath(row.get('path', '')).name.lower(): row for row in identity.get('binary_before', [])}
+            named = set()
+            for row in manifest.get('binaries', []):
+                name = row.get('name')
+                require(name in {'contain.exe', 'contain-test-installer.exe', 'contain-registry-noise.exe'} and name not in named, 'prebuilt_manifest_binary_name_invalid')
+                named.add(name)
+                binary = path.parent / name
+                require(name in observed and binary.is_file() and sha(binary) == safe_hash(row.get('sha256')) == safe_hash(observed[name].get('sha256'))
+                        and binary.stat().st_size == row.get('bytes') == observed[name].get('bytes')
+                        and Path(observed[name]['path']).resolve() == binary.resolve(), 'prebuilt_manifest_binary_mismatch')
+            require({'contain.exe', 'contain-test-installer.exe'} <= named, 'prebuilt_manifest_binary_missing')
+            require(isinstance(manifest.get('scripts'), list) and manifest['scripts'], 'prebuilt_manifest_scripts_missing')
+            for row in manifest['scripts'] + manifest.get('resources', []):
+                relative = row.get('path', '')
+                require(isinstance(relative, str) and re.fullmatch(r'[a-zA-Z0-9_./-]+', relative) is not None
+                        and not Path(relative).is_absolute() and '..' not in Path(relative).parts, 'prebuilt_manifest_member_path_invalid')
+                member = path.parent / relative
+                require(member.is_file() and path.parent.resolve() in member.resolve().parents
+                        and sha(member) == safe_hash(row.get('sha256')), 'prebuilt_manifest_member_mismatch')
+            build_valid = (identity.get('build_executed') is False and identity.get('build_exit_code') is None
+                and identity.get('source_stable_during_selection') is True and identity.get('prebuilt_manifest_verified') is True
+                and identity.get('prebuilt_manifest_unchanged') is True
+                and identity.get('prebuilt_manifest_after_sha256') == manifest_digest
+                and (phase != 'candidate' or attempt.get('build_manifest_sha256') == manifest_digest))
+        except (OSError, KeyError, TypeError, ValueError):
+            build_valid = False
+            reasons.append('prebuilt_manifest_unverified')
+    if (not build_valid or source_before.get('head') != revision or source_after.get('head') != revision
             or not safe_hash(source_before.get('runtime_tree_sha256')) or source_before.get('runtime_tree_sha256') != source_after.get('runtime_tree_sha256')
-            or source_before.get('status') != [] or source_after.get('status') != [] or identity.get('build_exit_code') != 0):
+            or source_before.get('status') != [] or source_after.get('status') != []):
         reasons.append('source_or_build_identity_unverified')
     before, after = attempt.get('scripts_before'), attempt.get('scripts_after')
     scripts = []
@@ -643,6 +785,8 @@ def identities(attempt, identity, directory):
         if not {'contain.exe', 'contain-test-installer.exe'} <= names:
             reasons.append('required_binary_identity_missing')
     return revision, reasons, dict(source_tree_sha256=safe_hash(source_before.get('runtime_tree_sha256')),
+                                  build_mode='prebuilt' if prebuilt else 'cargo', build_executed=False if prebuilt else identity.get('build_executed', True),
+                                  prebuilt_manifest_sha256=manifest_digest, build_config=manifest_config,
                                   scripts=scripts, binaries=binaries, demo_exit_code=attempt.get('demo_exit_code') if type(attempt.get('demo_exit_code')) is int else None,
                                   loaded_image_attestation=False)
 
@@ -689,8 +833,9 @@ def main():
         stage = 'clock_analysis_failed'
         analysis = analyze(capture, truth, legacy_score, raw_bytes, paths['raw_clock'], attempt.get('sid', ''))
         result.update(analysis)
-        result['raw_join_status'] = 'verified_same_event_id' if not analysis['join_issues'] else 'rejected'
-        result['clock_observation_scope'] = 'raw_and_final_same_id' if not analysis['join_issues'] else 'raw_view_join_rejected'
+        raw_only = any(row['status'] == 'raw_only_unknown' for row in analysis['selection_rows'])
+        result['raw_join_status'] = ('accounted_with_proven_raw_only' if raw_only else 'verified_same_event_id') if not analysis['join_issues'] else 'rejected'
+        result['clock_observation_scope'] = ('raw_final_and_explicit_raw_only' if raw_only else 'raw_and_final_same_id') if not analysis['join_issues'] else 'raw_view_join_rejected'
         result['legacy_score_recomputation_status'] = 'equal' if analysis['legacy_score_recomputed_equal'] else 'mismatch'
         if raw_bytes is not None:
             sidecar = json.loads(raw_bytes.decode('utf-8-sig'))

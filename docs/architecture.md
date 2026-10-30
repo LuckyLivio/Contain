@@ -97,6 +97,17 @@ ingest staging. JSON stays schema 3. Migrations are
 transactional and preserve old history without inventing evidence. Legacy captures
 show missing v3 metadata. Newer schemas are rejected before any table changes.
 
+The bounded clock audit also uses an optional `raw_selections` auxiliary table
+in v4 databases. At the actual post-resolve, post-attribution registry selection
+branch, supported SetValue records omitted from the final view receive a witness
+in the same derived-evidence transaction. It binds the original raw document's
+SHA-256, ID and sequence to the observed unresolved/non-High selection inputs.
+It never rewrites the raw document or supplies a final actor. Existing public
+CLI JSON and `user_version` stay unchanged. A historical database without a
+witness cannot prove that a missing final record was legitimately filtered.
+The private diagnostic export reads these witnesses; duplicates, changed facts,
+conflicting verified actors and missing required final records remain failures.
+
 Adjacency nodes identify sessions, `(PID,birth)`, events and resolved resources.
 Edges persist relationship, confidence and reason. `explain` walks incoming actor
 ancestry, includes the selected event's outgoing resource edges, and lists

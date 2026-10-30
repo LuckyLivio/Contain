@@ -129,7 +129,7 @@ def export_raw(database, exported, destination):
     session = document["data"]["id"]
     before = sha(database)
     connection = sqlite3.connect(database.resolve().as_uri() + "?mode=ro&immutable=1", uri=True)
-    rows, byte_count = [], 0
+    rows, byte_count, raw_hashes, selections, selection_documents = [], 0, {}, None, {}
     try:
         state = connection.execute("SELECT state FROM capture_runs WHERE session_id=?", (session,)).fetchone()
         if state != ("finished",):
@@ -138,14 +138,38 @@ def export_raw(database, exported, destination):
             byte_count += len(row.encode("utf-8"))
             if len(rows) >= 100_000 or byte_count > 128 * 1024 * 1024:
                 raise RuntimeError("Small-diagnostic raw export limit exceeded; no partial chain claimed")
-            rows.append(json.loads(row))
+            decoded = json.loads(row)
+            rows.append(decoded)
+            key = decoded.get('id')
+            if key in raw_hashes:
+                raw_hashes[key] = None  # Preserve every duplicate row for rejection with its ID.
+            else:
+                raw_hashes[key] = hashlib.sha256(row.encode('utf-8')).hexdigest()
+        raw_byte_count = byte_count
+        if connection.execute("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='raw_selections')").fetchone()[0]:
+            selections = []
+            for sequence, event_id, row in connection.execute('SELECT sequence,event_id,document FROM raw_selections WHERE session_id=? ORDER BY sequence', (session,)):
+                byte_count += len(row.encode('utf-8'))
+                if len(selections) >= 100_000 or byte_count > 128 * 1024 * 1024:
+                    raise RuntimeError('Small-diagnostic raw export limit exceeded; no partial chain claimed')
+                selections.append(json.loads(row))
+                original = connection.execute('SELECT document FROM raw_stream WHERE session_id=? AND sequence=? AND json_extract(document,\'$.id\')=?', (session, sequence, event_id)).fetchone()
+                if original is not None:
+                    byte_count += len(original[0].encode('utf-8'))
+                    if byte_count > 128 * 1024 * 1024:
+                        raise RuntimeError('Small-diagnostic raw export limit exceeded; no partial chain claimed')
+                    selection_documents[event_id] = original[0]
     finally:
         connection.close()
     after = sha(database)
     if before != after:
         raise RuntimeError("Database changed during read-only export")
     document["data"]["raw_events"] = rows
-    document["private_diagnostic_export"] = dict(database_sha256=before, rows=len(rows), raw_json_bytes=byte_count,
+    document['data']['raw_document_sha256'] = raw_hashes
+    document['data']['raw_selections'] = selections
+    document['data']['raw_selection_documents'] = selection_documents
+    document["private_diagnostic_export"] = dict(database_sha256=before, rows=len(rows), raw_json_bytes=raw_byte_count,
+                                                 selection_json_bytes=byte_count-raw_byte_count,
                                                  source_file_records=sum(row.get("event_type") == "file" and row.get("evidence", {}).get("source") == "EtwFile" for row in rows),
                                                  file_diagnostic_records=sum(row.get("raw", {}).get("file_diagnostics") is not None for row in rows),
                                                  scope="all_committed_raw_stream_rows_not_truth_filtered")

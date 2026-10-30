@@ -53,9 +53,84 @@ class ClockAuditTests(unittest.TestCase):
     def analyze(self, raw=True):
         return AUDIT.analyze(self.capture, self.truth, self.score, self.raw if raw else None)
 
+    def raw_only_registry(self):
+        event = copy.deepcopy(self.capture['raw_events'][0])
+        event.update(id='22222222-2222-4222-8222-222222222222', event_type='registry',
+                     operation='set_value', resource='<unresolved registry object>', sequence=2)
+        event['raw']['resource_resolved'] = False
+        event['evidence']['source'] = 'EtwRegistry'
+        self.capture['raw_events'].append(event)
+        original = json.dumps(event)
+        digest = AUDIT.hashlib.sha256(original.encode('utf-8')).hexdigest()
+        self.capture['raw_document_sha256'] = {event['id']: digest}
+        self.capture['raw_selection_documents'] = {event['id']: original}
+        witness = dict(schema_version=1, event_id=event['id'], sequence=2,
+            raw_document_sha256=digest, stage='post_resolve_post_attribute',
+            decision='raw_only', reason='unresolved_registry_non_high',
+            lifetime_resolution_applied=True, event_type='registry', operation='set_value',
+            resource_resolved=False, post_attribution_confidence='Unknown',
+            post_attribution_rule='MissingWriter')
+        self.capture['raw_selections'] = [witness]
+        return event, witness
+
+    def test_production_raw_only_witness_does_not_reject_every_connected_event(self):
+        event, _ = self.raw_only_registry()
+        value = self.analyze()
+        self.assertEqual(value['join_issues'], [])
+        selection = next(row for row in value['selection_rows'] if row['event_id'] == event['id'])
+        self.assertEqual(selection['status'], 'raw_only_unknown')
+        self.assertEqual(value['events'][-1]['confidence'], 'Unknown')
+        self.assertIsNone(value['events'][-1]['evidence']['pid'])
+
+    def test_missing_or_invalid_selection_is_never_inferred_from_final_absence(self):
+        for kind in ('missing', 'empty', 'wrong_id', 'wrong_sequence', 'wrong_digest', 'raw_changed',
+                     'wrong_type', 'wrong_operation', 'resolved', 'high', 'wrong_stage', 'duplicate', 'unexpected_final'):
+            with self.subTest(kind=kind):
+                self.setUp()
+                event, witness = self.raw_only_registry()
+                if kind == 'missing': del self.capture['raw_selections']
+                elif kind == 'empty': self.capture['raw_selections'] = []
+                elif kind == 'wrong_id': witness['event_id'] = '33333333-3333-4333-8333-333333333333'
+                elif kind == 'wrong_sequence': witness['sequence'] = 3
+                elif kind == 'wrong_digest': witness['raw_document_sha256'] = '0'*64
+                elif kind == 'raw_changed': event['raw']['header_pid'] = 999
+                elif kind == 'wrong_type': witness['event_type'] = 'file'
+                elif kind == 'wrong_operation': witness['operation'] = 'delete_key'
+                elif kind == 'resolved': witness['resource_resolved'] = True
+                elif kind == 'high': witness['post_attribution_confidence'] = 'High'
+                elif kind == 'wrong_stage': witness['stage'] = 'before_resolve'
+                elif kind == 'duplicate': self.capture['raw_selections'] *= 2
+                elif kind == 'unexpected_final': self.capture['events'].append(copy.deepcopy(event))
+                value = self.analyze()
+                self.assertTrue(value['join_issues'])
+                self.assertFalse(value['clock_evidence_complete'])
+                self.assertTrue(any(row['status'] == 'rejected' for row in value['selection_rows']))
+
+    def test_expected_final_and_orphan_final_remain_rejected_with_event_ids(self):
+        self.capture['events'] = []
+        value = self.analyze()
+        self.assertIn('required_final_missing_without_selection_evidence', value['join_issues'])
+        self.assertEqual(value['selection_rows'][0]['event_id'], self.capture['raw_events'][0]['id'])
+        self.setUp()
+        self.capture['raw_events'] = []
+        value = self.analyze()
+        self.assertIn('supported_final_event_without_raw_record', value['join_issues'])
+        self.assertEqual(value['selection_rows'][0]['raw_count'], 0)
+
+    def test_selection_summary_retains_out_of_scope_ids_without_private_details(self):
+        event, _ = self.raw_only_registry()
+        value = self.analyze()
+        summary = AUDIT.public_summary(value)
+        selected = next(row for row in summary['selection_rows'] if row['event_id'] == event['id'])
+        self.assertEqual(selected['status'], 'raw_only_unknown')
+        self.assertEqual(selected['basis'], 'production_post_resolve_post_attribute')
+        self.assertNotIn('raw_selection_documents', summary)
+        self.assertNotIn('unresolved registry object', json.dumps(selected))
+
     def write_inputs(self, root, database):
         capture = copy.deepcopy(self.capture)
-        capture.pop('raw_events')
+        for key in ('raw_events', 'raw_document_sha256', 'raw_selections', 'raw_selection_documents'):
+            capture.pop(key, None)
         capture['id'] = 'synthetic-session'
         (root/'capture').mkdir()
         for name, value in (('capture.json', dict(schema_version=3, kind='inspect', data=capture)),
@@ -115,6 +190,55 @@ class ClockAuditTests(unittest.TestCase):
                 exported = json.loads((private/'capture/private-raw.json').read_text())
                 self.assertEqual(exported['data']['raw_events'], self.capture['raw_events'])
                 self.assertEqual(before, {suffix:AUDIT.sha(Path(str(database)+suffix)) for suffix in ('', '-wal')})
+            finally:
+                writer.close()
+
+    def test_snapshot_export_binds_actual_sql_selection_bytes_without_changing_cli_document(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); private = root/'private'; private.mkdir()
+            event, witness = self.raw_only_registry()
+            database = root/'source.db'
+            writer = self.wal_source(database)
+            try:
+                writer.execute('CREATE TABLE raw_selections(session_id TEXT,sequence INTEGER,event_id TEXT,document TEXT)')
+                original = self.capture['raw_selection_documents'][event['id']]
+                writer.execute('INSERT INTO raw_stream VALUES(?,?,?)', ('synthetic-session', 2, original))
+                writer.execute('INSERT INTO raw_selections VALUES(?,?,?,?)', ('synthetic-session', 2, event['id'], json.dumps(witness)))
+                writer.commit()
+                self.write_inputs(private, database)
+                before = (private/'capture/capture.json').read_bytes()
+                result = self.run_cli(private, root/'public')
+                # The extra synthetic record intentionally lacks a companion
+                # row: selection is proved, clock completeness must still fail.
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertEqual((private/'capture/capture.json').read_bytes(), before)
+                report = AUDIT.read(root/'public/summary.json')
+                self.assertEqual(report['raw_join_status'], 'accounted_with_proven_raw_only')
+                self.assertFalse(report['diagnostic_evidence_complete'])
+                exported = AUDIT.read(private/'capture/private-raw.json')['data']
+                self.assertEqual(exported['raw_selection_documents'][event['id']], original)
+                self.assertEqual(exported['raw_selections'], [witness])
+            finally:
+                writer.close()
+
+    def test_export_preserves_duplicate_raw_rows_for_id_specific_rejection(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); private = root/'private'; private.mkdir()
+            database = root/'source.db'
+            writer = self.wal_source(database)
+            try:
+                writer.execute('INSERT INTO raw_stream VALUES(?,?,?)', ('synthetic-session', 2, json.dumps(self.capture['raw_events'][0])))
+                writer.commit()
+                self.write_inputs(private, database)
+                result = self.run_cli(private, root/'public')
+                self.assertEqual(result.returncode, 2, result.stderr)
+                exported = AUDIT.read(private/'capture/private-raw.json')['data']
+                self.assertEqual(len(exported['raw_events']), 2)
+                self.assertIsNone(exported['raw_document_sha256'][self.capture['raw_events'][0]['id']])
+                report = AUDIT.read(root/'public/summary.json')
+                self.assertEqual(len(report['selection_rows']), 2)
+                self.assertTrue(all(row['event_id'] == self.capture['raw_events'][0]['id'] and
+                                    'duplicate_or_invalid_raw_event_id' in row['reasons'] for row in report['selection_rows']))
             finally:
                 writer.close()
 
@@ -293,8 +417,69 @@ class ClockAuditTests(unittest.TestCase):
         self.assertEqual([row['unique_qpc_candidate'] for row in value['relations']], [False, False])
         self.assertEqual(len(AUDIT.public_summary(value)['events']), 2)
 
+    def test_unknown_actor_competitor_prevents_manufacturing_unique_match(self):
+        event_id = '22222222-2222-4222-8222-222222222222'
+        for view in ('raw_events', 'events'):
+            other = copy.deepcopy(self.capture[view][0])
+            other['id'] = event_id
+            other['raw']['clock']['event_key'] = '0000000000000002'
+            other['raw']['file_name']['source_event_id'] = event_id
+            other['evidence'].update(pid=None, process_creation_time=None)
+            other['confidence'] = 'Unknown'
+            self.capture[view].append(other)
+        document = json.loads(self.raw)
+        other = copy.deepcopy(document['records'][0])
+        other.update(event_key='0000000000000002', sequence=2, header_timestamp='151')
+        document['records'].append(other)
+        document['stats'].update(received=2, stored=2, bytes=160)
+        base = FIXTURE.ClockProtocolTests(); base.capture = self.capture
+        self.raw = base.companion_bytes(document)
+        value = self.analyze()
+        self.assertTrue(value['clock_evidence_complete'])
+        self.assertEqual(value['relations'][0]['exact_qpc_truth_rows'], [0])
+        self.assertEqual(value['relations'][1]['exact_qpc_truth_rows'], [])
+        self.assertEqual(value['relations'][1]['potential_qpc_truth_rows'], [0])
+        self.assertFalse(any(row['unique_qpc_candidate'] for row in value['relations']))
+
+    def test_proven_raw_only_unknown_competes_inside_interval_but_not_outside(self):
+        for tick, unique in ((151, False), (250, True)):
+            with self.subTest(tick=tick):
+                self.setUp()
+                provider = '70eb4f03-c1de-4f73-a051-33d13d5413bd'
+                resource = 'HKCU\\Software\\Contain\\Synthetic\\value'
+                for view in ('raw_events', 'events'):
+                    event = self.capture[view][0]
+                    event.update(event_type='registry', operation='set_value', resource=resource)
+                    event['evidence']['source'] = 'EtwRegistry'
+                    event['raw'].pop('file_name')
+                    event['raw']['clock']['record_identity'].update(provider=provider, event_id=5, opcode=36)
+                self.truth[0].update(operation='set_value', resource=resource)
+                other, witness = self.raw_only_registry()
+                other['timestamp_ticks'] = str(100000 + tick)
+                other['raw']['clock'].update(event_key='0000000000000002', header_timestamp=str(100000 + tick))
+                original = json.dumps(other)
+                digest = AUDIT.hashlib.sha256(original.encode()).hexdigest()
+                self.capture['raw_selection_documents'][other['id']] = original
+                self.capture['raw_document_sha256'][other['id']] = digest
+                witness['raw_document_sha256'] = digest
+                document = json.loads(self.raw)
+                document['records'][0].update(provider=provider, event_id=5, opcode=36)
+                row = copy.deepcopy(document['records'][0])
+                row.update(sequence=2, event_key='0000000000000002', header_timestamp=str(tick))
+                document['records'].append(row)
+                document['stats'].update(received=2, stored=2, bytes=160)
+                base = FIXTURE.ClockProtocolTests(); base.capture = self.capture
+                self.raw = base.companion_bytes(document)
+                self.score = AUDIT.SCORE.score(self.capture, self.truth)
+                value = self.analyze()
+                self.assertTrue(value['clock_evidence_complete'], value['clock'])
+                self.assertEqual(value['relations'][0]['unique_qpc_candidate'], unique)
+                self.assertEqual(value['relations'][1]['potential_qpc_truth_rows'], [] if unique else [0])
+                self.assertEqual(value['relations'][1]['exact_qpc_truth_rows'], [])
+                self.assertEqual(value['events'][1]['confidence'], 'Unknown')
+
     def test_duplicate_and_conflicting_views_fail_closed(self):
-        for kind in ('duplicate_raw', 'duplicate_final', 'resource', 'clock', 'file_name', 'registry_object', 'registry_fields'):
+        for kind in ('duplicate_raw', 'duplicate_final', 'resource', 'clock', 'file_name', 'registry_object', 'registry_fields', 'sequence'):
             with self.subTest(kind=kind):
                 self.setUp()
                 if kind == 'duplicate_raw': self.capture['raw_events'] *= 2
@@ -302,11 +487,41 @@ class ClockAuditTests(unittest.TestCase):
                 elif kind == 'resource': self.capture['events'][0]['resource'] = 'C:\\fixture\\other'
                 elif kind == 'clock': self.capture['events'][0]['raw']['clock']['event_key'] = '0000000000009999'
                 elif kind == 'file_name': self.capture['events'][0]['raw']['file_name']['current_path_verified'] = True
+                elif kind == 'sequence': self.capture['events'][0]['sequence'] = 123
                 else: self.capture['events'][0]['raw'][kind] = 'different-object-or-fields'
                 value = self.analyze()
                 self.assertFalse(value['clock_evidence_complete'])
                 self.assertTrue(value['join_issues'])
                 self.assertFalse(any(row['unique_qpc_candidate'] for row in value['relations']))
+
+    def test_live_actor_identity_and_source_conflicts_are_rejected_without_truth(self):
+        for kind in ('pid', 'birth', 'image', 'source', 'erase'):
+            with self.subTest(kind=kind):
+                self.setUp()
+                raw, final = self.capture['raw_events'][0], self.capture['events'][0]
+                raw['evidence'] = copy.deepcopy(final['evidence'])
+                raw['raw']['initial_thread_identity'] = None
+                if kind == 'pid': final['evidence']['pid'] = 999
+                elif kind == 'birth': final['evidence']['process_creation_time'] = '999'
+                elif kind == 'image': final['evidence']['process_image'] = 'C:\\wrong.exe'
+                elif kind == 'source': final['evidence']['source'] = 'EtwRegistry'
+                else: final['evidence'].update(pid=None, process_creation_time=None)
+                value = self.analyze()
+                self.assertTrue(value['join_issues'])
+                self.assertFalse(value['clock_evidence_complete'])
+
+    def test_initial_thread_actor_may_be_revoked_without_inventing_a_replacement(self):
+        raw, final = self.capture['raw_events'][0], self.capture['events'][0]
+        raw['evidence'] = copy.deepcopy(final['evidence'])
+        snapshot = dict(thread_id=9, thread_creation_time='1010', owner_pid=7,
+                        owner_creation_time='1000', capture_started_ticks='100050', observed_at='100100')
+        raw['raw']['initial_thread_identity'] = snapshot
+        final['raw']['initial_thread_identity'] = None
+        final['evidence'].update(pid=None, process_creation_time=None, process_image=None)
+        value = self.analyze()
+        self.assertEqual(value['join_issues'], [])
+        self.assertIsNone(value['events'][0]['evidence']['pid'])
+        self.assertEqual(value['relations'][0]['exact_qpc_truth_rows'], [])
 
     def test_missing_raw_view_and_missing_qpc_never_fall_back(self):
         self.assertFalse(self.analyze(raw=False)['clock_evidence_complete'])
@@ -396,6 +611,47 @@ class ClockAuditTests(unittest.TestCase):
         self.assertIn('private_clock_detail_retained', public['missing_evidence'])
         self.assertNotIn('SECRET_USER', json.dumps(public))
 
+    def test_prebuilt_candidate_identity_is_bound_to_actual_manifest_and_binaries(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.write_inputs(root, root/'capture.db')
+            attempt = AUDIT.read(root/'attempt.json')
+            identity = AUDIT.read(root/'capture/run-identity.json')
+            binaries = []
+            for name in ('contain.exe', 'contain-test-installer.exe'):
+                path = root/name; path.write_bytes(('synthetic '+name).encode())
+                binaries.append(dict(name=name, sha256=AUDIT.sha(path), bytes=path.stat().st_size))
+            (root/'scripts').mkdir(); (root/'scripts/demo.ps1').write_text('synthetic script')
+            manifest = dict(schema_version=1, source_sha='a'*40, runtime_tree_sha256='b'*64,
+                target='x86_64-pc-windows-msvc', profile='release', binaries=binaries,
+                scripts=[dict(path='scripts/demo.ps1', sha256=AUDIT.sha(root/'scripts/demo.ps1'))], resources=[])
+            path = root/'BUILD.json'; path.write_text(json.dumps(manifest))
+            digest = AUDIT.sha(path)
+            before = [dict(path=str(root/row['name']), sha256=row['sha256'], bytes=row['bytes']) for row in binaries]
+            identity.update(build_mode='prebuilt', build_executed=False, build_exit_code=None,
+                source_stable_during_build=None, source_stable_during_selection=True,
+                prebuilt_manifest_path=str(path), prebuilt_manifest_sha256=digest,
+                prebuilt_manifest_after_sha256=digest, prebuilt_manifest_verified=True, prebuilt_manifest_unchanged=True,
+                build_config=dict(target=manifest['target'], profile=manifest['profile']), binary_before=before,
+                binary_after=dict(unchanged=True, binaries=[dict(before=row, after=row, unchanged=True, error=None) for row in before]))
+            attempt.update(phase='candidate', planned_attempts=2, attempt_index=2, configuration='dual-clock',
+                optional_environment_isolated=True, wpr_started=False, build_manifest_sha256=digest,
+                build_manifest_unchanged=True, package_files_unchanged=True)
+            self.assertEqual(AUDIT.identities(attempt, identity, root)[1], [])
+            for kind in ('plan', 'configuration', 'manifest_after', 'manifest_verified', 'package_changed', 'build_executed', 'manifest_digest', 'source'):
+                with self.subTest(kind=kind):
+                    a, i = copy.deepcopy(attempt), copy.deepcopy(identity)
+                    if kind == 'plan': a['attempt_index'] = 1
+                    elif kind == 'configuration': a['configuration'] = 'default'
+                    elif kind == 'manifest_after': i['prebuilt_manifest_after_sha256'] = '0'*64
+                    elif kind == 'manifest_verified': i['prebuilt_manifest_verified'] = False
+                    elif kind == 'package_changed': a['package_files_unchanged'] = False
+                    elif kind == 'build_executed': i['build_executed'] = True
+                    elif kind == 'manifest_digest': i['prebuilt_manifest_sha256'] = '0'*64
+                    elif kind == 'source': a['source_sha'] = 'f'*40
+                    self.assertTrue(AUDIT.identities(a, i, root)[1])
+            (root/'contain.exe').write_bytes(b'changed')
+            self.assertIn('prebuilt_manifest_unverified', AUDIT.identities(attempt, identity, root)[1])
     def test_cli_retains_missing_evidence_without_private_error_publication(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
