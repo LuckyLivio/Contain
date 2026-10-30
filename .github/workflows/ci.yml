@@ -6,47 +6,79 @@ on:
 jobs:
   rust:
     runs-on: windows-latest
+    timeout-minutes: 90
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
-      - name: Format
-        run: cargo fmt --all -- --check
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Tests
-        run: cargo test --workspace
-      - name: Build
-        run: cargo build --workspace
-      - name: Ground truth scorer rejection cases
+      - name: Required quality tools
         shell: pwsh
         run: |
-          ./scripts/test-score.ps1
-          python scripts/test-score.py
-          if($LASTEXITCODE -ne 0){throw 'Frozen scorer tests failed'}
-          python scripts/test-commit-tail.py
-          if($LASTEXITCODE -ne 0){throw 'Commit-tail diagnostic tests failed'}
-          python scripts/test-checkpoint-gate.py
-          if($LASTEXITCODE -ne 0){throw 'Checkpoint gate tests failed'}
-          python scripts/test-hotpath-artifact.py
-          if($LASTEXITCODE -ne 0){throw 'Safe partial-artifact tests failed'}
-          foreach($script in @('test-summarize-checkpoint.py','test-v04-matrix.py','test-v04-public.py','test-v04-verify-views.py','test-v04-metrics.py','test-v04-summarize-matrix.py')) {
-            python "scripts/$script"
-            if($LASTEXITCODE -ne 0){throw "Validation failed: $script"}
+          $ErrorActionPreference = 'Stop'
+          $tools = [ordered]@{ nextest='0.9.149'; 'llvm-cov'='0.9.1'; deny='0.20.2' }
+          foreach ($tool in $tools.Keys) {
+            & cargo $tool --version 2>$null
+            if ($LASTEXITCODE -ne 0) {
+              cargo install "cargo-$tool" --version $tools[$tool] --locked
+              if ($LASTEXITCODE -ne 0) { throw "Installing cargo-$tool failed" }
+            }
           }
+      - name: Quality Check
+        id: quality_check
+        shell: pwsh
+        run: ./scripts/quality.ps1 -Mode Check
+      - name: Quality Coverage
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: ./scripts/quality.ps1 -Mode Coverage
+      - name: Original package coverage denominator
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: ./scripts/quality.ps1 -Mode CoverageOriginal
+      - name: Quality Dependencies
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: ./scripts/quality.ps1 -Mode Dependencies
+      - name: Bounded companion spool regression
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: ./scripts/quality.ps1 -Mode Companion
+      - name: Build
+        id: build
+        if: ${{ !cancelled() }}
+        run: cargo build --workspace --locked
+      - name: Synthetic read-only CLI integration
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          cargo run -p contain-offline --bin read-only-examples --locked -- target/read-only-windows
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic fixture generation failed' }
+          python scripts/verify-read-only-cli.py --contain target/debug/contain.exe --fixtures target/read-only-windows --output target/quality/read-only-cli --public-output target/quality-public/read-only-cli
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic read-only CLI integration failed' }
+          $documents = @(Get-ChildItem target/quality/read-only-cli/json -Filter '*.json')
+          if ($documents.Count -ne 33) { throw 'Expected 33 actual CLI JSON documents' }
+          foreach ($document in $documents) {
+            if (-not (Get-Content -Raw $document.FullName | Test-Json -SchemaFile docs/schema/cli-v3.schema.json)) {
+              throw 'Actual CLI output failed the existing JSON schema'
+            }
+          }
+          Write-Host 'CLI JSON schema: 33 passed, 0 failed, 0 skipped'
       - name: ETW fixture integration
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         env:
           RUST_LOG: contain_core::windows::etw=debug
         shell: pwsh
         run: ./scripts/demo.ps1 -RequireEtw -OutputDirectory ./target/demo-etw
       - name: ETW immediate-launch regression repeat
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/demo.ps1 -RequireEtw -OutputDirectory ./target/demo-etw-repeat
       - name: Snapshot fallback integration
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/demo.ps1 -SnapshotOnly -OutputDirectory ./target/demo-fallback
       - name: Publish fixture-only evidence after scoring
@@ -62,3 +94,14 @@ jobs:
         with:
           name: fixture-evidence
           path: target/ci-fixture-public
+      - name: Publish reviewed quality summary
+        if: always()
+        shell: pwsh
+        run: |
+          python scripts/quality-summary.py --root . --quality target/quality --output target/quality-public/summary.json
+          if ($LASTEXITCODE -ne 0) { throw 'Quality summary validation failed' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-read-only-quality
+          path: target/quality-public

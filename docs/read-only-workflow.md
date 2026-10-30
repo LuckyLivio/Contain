@@ -86,17 +86,23 @@ permissions, no administrator token or ETW trace session. From the repository ro
 ```powershell
 ./scripts/quality.ps1 -Mode Check
 ./scripts/quality.ps1 -Mode Coverage
+./scripts/quality.ps1 -Mode CoverageOriginal
 ./scripts/quality.ps1 -Mode Dependencies
+./scripts/quality.ps1 -Mode Companion
 cargo build --workspace --locked
 $out = 'target/read-only-windows-new'
 cargo run -p contain-offline --bin read-only-examples --locked -- $out
-foreach ($case in @('finished', 'historical', 'interrupted')) {
-    ./target/debug/contain.exe --db "$out/$case.db" inspect "synthetic-$case" |
-        Out-File -Encoding utf8 "$out/$case-cli.txt"
-    if ($LASTEXITCODE -ne 0) { throw "CLI inspection failed: $case" }
-    python scripts/v04-verify-views.py --contain target/debug/contain.exe --database "$out/$case.db" --app "synthetic-$case" --page-size 2 --output "$out/$case-views.json"
-    if ($LASTEXITCODE -ne 0) { throw "View agreement failed: $case; keep all artifacts" }
+if ($LASTEXITCODE -ne 0) { throw 'Synthetic generation failed' }
+python scripts/verify-read-only-cli.py --contain target/debug/contain.exe --fixtures $out --output target/quality/read-only-cli-new --public-output target/quality-public/read-only-cli-new
+if ($LASTEXITCODE -ne 0) { throw 'Synthetic CLI validation failed; preserve all local output' }
+$documents = @(Get-ChildItem target/quality/read-only-cli-new/json -Filter '*.json')
+if ($documents.Count -ne 33) { throw 'Expected 33 CLI JSON documents' }
+foreach ($document in $documents) {
+    if (-not (Get-Content -Raw $document.FullName | Test-Json -SchemaFile docs/schema/cli-v3.schema.json)) {
+        throw 'CLI JSON schema validation failed'
+    }
 }
+python scripts/quality-summary.py --root . --quality target/quality --output target/quality-public/summary.json
 ```
 
 Expect finished/Degraded sessions to retain source actor evidence with Unknown
@@ -111,6 +117,25 @@ Windows-native execution, its full quality/coverage gates and real ETW remain
 unexecuted here. Cross-target compilation and Linux model tests do not establish
 those results. No 32-run acceptance, third-party installer, elevated diagnostic,
 real cleanup, uninstall or rollback is part of this handoff.
+
+The existing Windows CI now invokes these quality modes and the same native CLI
+validator, followed by the two existing ETW fixture runs and snapshot fallback.
+`Coverage` retains the workspace scope and the 66.5% line / 70% function floors.
+`CoverageOriginal` independently applies those same floors to the original three
+packages, with a separate instrumentation directory. The offline package imports
+production source and repeats shared tests; neither execution totals nor LLVM
+source aliases represent additional unique tests. Reports retain both original
+coverage denominators and list aliases without filtering production code.
+
+The native CLI validator runs 66 commands across the three synthetic databases,
+including list, inspect, verbose inspect, diff, paged history, every explanation,
+and a final reopen. CI checks all 33 JSON documents against the existing schema.
+Public artifacts contain only text exactly matching the reviewed examples and
+fixed-field summaries; databases and raw CLI/quality logs stay local. Every quality
+invocation records its SHA, tools, commands, exit statuses and archived logs under
+`target/quality/runs`; failed attempts are retained. The summary reports test
+execution groups and unavailable counts explicitly. These new Windows checks are
+pending until an exact CI run is recorded below.
 
 ## Offline persistence measurement (synthetic)
 
