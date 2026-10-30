@@ -1,0 +1,803 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Synthetic finished · Contain 本地报告</title><style>body{font-family:'Segoe UI','Microsoft YaHei',sans-serif;background:#f4f6f8;color:#203044;margin:0;line-height:1.6}main{max-width:1120px;margin:auto;padding:36px}header,section{background:white;border:1px solid #dce3ea;border-radius:10px;padding:24px;margin-bottom:20px}h1{margin:4px 0 12px}h2{font-size:21px;margin:0 0 16px}h3{font-size:17px}p{margin:8px 0}.muted{color:#5b6d7d}.notice{background:#eef3f8;border-left:3px solid #496d91;padding:12px}.badge{display:inline-block;background:#edf2f6;border-radius:5px;padding:3px 9px}dl{display:grid;grid-template-columns:150px minmax(0,1fr);gap:6px 16px}dt{color:#5b6d7d}dd{margin:0;overflow-wrap:anywhere}.scroll{overflow:auto}table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;vertical-align:top;border-bottom:1px solid #e2e8ee;padding:9px 10px;overflow-wrap:anywhere}th{background:#f0f4f8}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f7f9fb;padding:14px;font-size:12px}details{margin-top:16px}summary{cursor:pointer;color:#355f85}code{overflow-wrap:anywhere}li{margin:5px 0}@media print{body{background:white}main{padding:0}section{break-inside:avoid}}</style></head><body><main><header><div class="muted">Contain 0.3.1 · 本地记录报告</div><h1>Synthetic finished</h1><p>此报告由真实 CLI 查询生成，保存在本地，未上传。它包含记录的原始路径与证据字段。</p><p class="notice">状态变化不等于最终所有权。Unknown 表示证据不足，不表示危险；High 也不代表可以安全删除。记录结束与观察完整是两个不同判断。</p><dl><dt>记录 ID</dt><dd>synthetic-finished</dd><dt>数据库</dt><dd>D:\Contain Viewer Synthetic\4b4d38764ed4\数据库 中文 &amp; $ ; [x]\finished 记录.db</dd><dt>记录开始</dt><dd>2026-10-01T00:00:00.120+00:00</dd><dt>记录结束时间</dt><dd>2026-10-01T00:00:02Z</dd><dt>记录状态</dt><dd>finished</dd><dt>覆盖质量</dt><dd>Degraded</dd><dt>核心文件 SHA-256（导出时）</dt><dd>a57e6ca406f6e7c89aca0ac3655142a2de9acc535b99e8d9e3bb077879106b4e</dd></dl></header><section><h2>观察范围与限制</h2><dl><dt>程序</dt><dd>C:\synthetic\setup.exe</dd><dt>观察目录</dt><dd>C:\synthetic\observed</dd><dt>注册表范围</dt><dd>Software\Contain\SyntheticViewer</dd><dt>进程源</dt><dd>active</dd><dt>文件源</dt><dd>active</dd><dt>注册表源</dt><dd>not_requested</dd><dt>ETW 事件丢失</dt><dd>0</dd><dt>ETW 缓冲区丢失</dt><dd>0</dd><dt>时间线观察数</dt><dd>60</dd><dt>归一化源操作数</dt><dd>60</dd><dt>已知执行进程的源观察</dt><dd>60</dd><dt>未知执行进程的源观察</dt><dd>0</dd><dt>未解析名称 / 资源</dt><dd>0</dd><dt>应用记录丢失</dt><dd>0</dd><dt>解码错误</dt><dd>未测 / 不可用</dd><dt>快照缺口</dt><dd>0</dd><dt>通知缺口</dt><dd>0</dd><dt>排空超时</dt><dd>false</dd></dl><ul><li>Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.</li><li>SYNTHETIC model fixture; provider labels are inputs, no Windows capture was executed.</li><li>SYNTHETIC desktop example: 60 model observations for pagination; no real installation or provider validation.</li></ul></section><section><h2>已记录的执行进程</h2><div class="scroll"><table><thead><tr><th>PID</th><th>出生时间标识（精确 FILETIME）</th><th>程序</th><th>关联依据</th><th>原因</th></tr></thead><tbody><tr><td>100</td><td>134350000000000001</td><td>C:\synthetic\setup.exe</td><td>Certain</td><td>Synthetic owned installer identity</td></tr></tbody></table></div></section><section><h2>前后状态变化</h2><p class="muted">下列是状态差异，不能与源事件相加视为独立操作数，也不能据此推定所有权。</p><h3>文件</h3><div class="scroll"><table><thead><tr><th>操作</th><th>记录路径</th><th>归属证据</th><th>原因</th></tr></thead><tbody><tr><td>modified</td><td>C:\synthetic\observed\recorded.tmp</td><td>Unknown</td><td>SYNTHETIC before/after difference; final ownership is Unknown</td></tr></tbody></table></div><h3>注册表</h3><div class="scroll"><table><thead><tr><th>操作</th><th>键 / 值</th><th>归属证据</th><th>原因</th></tr></thead><tbody><tr><td>modified</td><td>HKCU\Software\Contain\SyntheticViewer\DisplayMode</td><td>Unknown</td><td>SYNTHETIC registry state comparison; source not observed and ownership Unknown</td></tr></tbody></table></div><h3>其他配置记录</h3><div class="scroll"><table><thead><tr><th>类别</th><th>操作</th><th>名称</th><th>归属证据</th><th>原因</th></tr></thead><tbody><tr><td colspan="5">此范围没有记录。</td></tr></tbody></table></div></section><section><h2>源操作与观察事件 · 当前页</h2><p class="notice">仅包含当前事件页，未应用界面中的当前页文字筛选；不是全部事件导出。偏移 50，页大小 50。</p><div class="scroll"><table><thead><tr><th>事件 ID</th><th>时间</th><th>操作</th><th>记录名称</th><th>应用归因</th></tr></thead><tbody><tr><td>synthetic-finished-event-50</td><td>2026-10-01T00:00:01.123400+00:00</td><td>write_requested</td><td>C:\synthetic\observed\recorded.tmp</td><td>High</td></tr><tr><td>synthetic-finished-event-51</td><td>2026-10-01T00:00:01.123400+00:00</td><td>write_requested</td><td>C:\synthetic\observed\recorded.tmp</td><td>High</td></tr><tr><td>synthetic-finished-event-52</td><td>2026-10-01T00:00:01.123400+00:00</td><td>write_requested</td><td>C:\synthetic\observed\recorded.tmp</td><td>High</td></tr><tr><td>synthetic-finished-event-53</td><td>2026-10-01T00:00:01.123400+00:00</td><td>write_requested</td><td>C:\synthetic\observed\recorded.tmp</td><td>High</td></tr><tr><td>synthetic-finished-event-54</td><td>2026-10-01T00:00:01.123400+00:00</td><td>write_requested</td><td>C:\synthetic\observed\recorded.tmp</td><td>High</td></tr><tr><td>synthetic-finished-event-55</td><td>2026-10-01T00:00:01.123400+00:00</td><td>write_requested</td><td>C:\synthetic\observed\recorded.tmp</td><td>High</td></tr><tr><td>synthetic-finished-event-56</td><td>2026-10-01T00:00:01.123400+00:00</td><td>write_requested</td><td>C:\synthetic\observed\recorded.tmp</td><td>High</td></tr><tr><td>synthetic-finished-event-57</td><td>2026-10-01T00:00:01.123400+00:00</td><td>write_requested</td><td>C:\synthetic\observed\recorded.tmp</td><td>High</td></tr><tr><td>synthetic-finished-event-58</td><td>2026-10-01T00:00:01.123400+00:00</td><td>write_requested</td><td>C:\synthetic\observed\recorded.tmp</td><td>High</td></tr><tr><td>synthetic-finished-event-59</td><td>2026-10-01T00:00:01.123400+00:00</td><td>write_requested</td><td>C:\synthetic\observed\recorded.tmp</td><td>High</td></tr></tbody></table></div></section><section><h2>所选事件依据</h2><dl><dt>事件 ID</dt><dd>synthetic-finished-event-50</dd><dt>源操作</dt><dd>write_requested</dd><dt>时间</dt><dd>2026-10-01T00:00:01.123400+00:00</dd><dt>精确 FILETIME</dt><dd>134350000000000061</dd><dt>记录名称</dt><dd>C:\synthetic\observed\recorded.tmp</dd><dt>执行进程</dt><dd>未记录 &#183; PID 100</dd><dt>进程出生标识</dt><dd>134350000000000001</dd><dt>实际数据源</dt><dd>EtwFile</dd><dt>应用归因</dt><dd>High</dd><dt>执行进程身份依据</dt><dd>High</dd><dt>记录名称解析依据</dt><dd>High</dd><dt>操作结果依据</dt><dd>High</dd><dt>依据 / 未知原因</dt><dd>Synthetic source request linked to the installer instance; no ownership claim</dd><dt>名称来源</dt><dd>supplied_FileName</dd><dt>名称观察时间</dt><dd>134350000000000061</dd><dt>请求结果</dt><dd>true</dd></dl><p class="notice">名称可能是历史缓存；没有当前路径验证时，不应将它当作已核实的当前名称。原生操作也不证明应用显式调用了同名 API，且不证明最终所有权。</p><div class="scroll"><table><thead><tr><th>关系来源</th><th>关系目标</th><th>依据等级</th><th>原因</th></tr></thead><tbody><tr><td>event:synthetic-finished-event-50</td><td>resource:C:\synthetic\observed\recorded.tmp</td><td>High</td><td>Provider supplied this event&#39;s recorded name; this is not a handle query of the current path or physical file identity, an explicit application call, or final state ownership.</td></tr><tr><td>process:100:134350000000000001</td><td>event:synthetic-finished-event-50</td><td>High</td><td>Synthetic source request linked to the installer instance; no ownership claim</td></tr><tr><td>session:synthetic-finished</td><td>process:100:134350000000000001</td><td>Certain</td><td>Synthetic owned installer identity</td></tr></tbody></table></div></section><section><h2>高级：原始 CLI JSON</h2><p>以下保留 CLI 字段表达、精确整数、时间字符串与 null；没有重算归因或补全未知字段。</p><details><summary>inspect_summary</summary><pre data-kind="inspect_summary">{
+  &quot;data&quot;: {
+    &quot;backend&quot;: {
+      &quot;context_losses&quot;: 0,
+      &quot;decode_errors&quot;: 0,
+      &quot;dropped_events&quot;: 0,
+      &quot;etw_buffers_lost&quot;: 0,
+      &quot;etw_events_lost&quot;: 0,
+      &quot;etw_file&quot;: &quot;active&quot;,
+      &quot;etw_process&quot;: &quot;active&quot;,
+      &quot;etw_registry&quot;: &quot;not_requested&quot;,
+      &quot;events_received&quot;: 60,
+      &quot;file_event_id_filter&quot;: null,
+      &quot;pipeline&quot;: null,
+      &quot;registry_path_gaps&quot;: 0,
+      &quot;stream&quot;: {
+        &quot;accepted&quot;: 60,
+        &quot;batches&quot;: 1,
+        &quot;checkpoint&quot;: null,
+        &quot;checkpoint_completed&quot;: false,
+        &quot;checkpoint_variant&quot;: null,
+        &quot;committed_bytes&quot;: 66671,
+        &quot;disk_free_min_bytes&quot;: null,
+        &quot;disk_reserve_bytes&quot;: null,
+        &quot;error&quot;: null,
+        &quot;failed&quot;: 0,
+        &quot;max_batch_bytes&quot;: 66671,
+        &quot;persisted&quot;: 60,
+        &quot;persistence_ns&quot;: 607200,
+        &quot;quota_bytes&quot;: 268435456,
+        &quot;quota_dropped&quot;: 0,
+        &quot;restored_wal_autocheckpoint_pages&quot;: null,
+        &quot;sqlite_journal_mode&quot;: &quot;wal&quot;,
+        &quot;sqlite_page_size_bytes&quot;: 4096,
+        &quot;sqlite_synchronous&quot;: 1,
+        &quot;sqlite_version&quot;: &quot;3.50.2&quot;,
+        &quot;wal_autocheckpoint_pages&quot;: 4096,
+        &quot;wal_budget_bytes&quot;: null,
+        &quot;wal_budget_exceeded&quot;: false,
+        &quot;wal_budget_overshoot_bytes&quot;: null,
+        &quot;wal_growth_bytes&quot;: null,
+        &quot;wal_initial_bytes&quot;: null,
+        &quot;wal_peak_bytes&quot;: null,
+        &quot;wal_samples&quot;: 0
+      },
+      &quot;warnings&quot;: []
+    },
+    &quot;capture_state&quot;: &quot;finished&quot;,
+    &quot;edges&quot;: [],
+    &quot;events&quot;: [],
+    &quot;exit_code&quot;: 0,
+    &quot;files&quot;: [
+      {
+        &quot;after_hash&quot;: &quot;synthetic-after&quot;,
+        &quot;after_size&quot;: 9007199254740993,
+        &quot;before_hash&quot;: &quot;synthetic-before&quot;,
+        &quot;confidence&quot;: &quot;Unknown&quot;,
+        &quot;evidence&quot;: [],
+        &quot;notification_seen&quot;: false,
+        &quot;operation&quot;: &quot;modified&quot;,
+        &quot;path&quot;: &quot;C:\\synthetic\\observed\\recorded.tmp&quot;,
+        &quot;reason&quot;: &quot;SYNTHETIC before/after difference; final ownership is Unknown&quot;
+      }
+    ],
+    &quot;finished_at&quot;: &quot;2026-10-01T00:00:02Z&quot;,
+    &quot;history_included&quot;: false,
+    &quot;id&quot;: &quot;synthetic-finished&quot;,
+    &quot;installer&quot;: &quot;C:\\synthetic\\setup.exe&quot;,
+    &quot;inventory&quot;: [],
+    &quot;name&quot;: &quot;Synthetic finished&quot;,
+    &quot;operations&quot;: [],
+    &quot;processes&quot;: [
+      {
+        &quot;confidence&quot;: &quot;Certain&quot;,
+        &quot;creation_time&quot;: &quot;134350000000000001&quot;,
+        &quot;ended_at&quot;: null,
+        &quot;evidence&quot;: {
+          &quot;ancestor_pid&quot;: null,
+          &quot;parent_pid&quot;: null,
+          &quot;pid&quot;: 100,
+          &quot;process_creation_time&quot;: &quot;134350000000000001&quot;,
+          &quot;process_image&quot;: null,
+          &quot;rule&quot;: &quot;InstallerPid&quot;,
+          &quot;session_id&quot;: &quot;synthetic-finished&quot;,
+          &quot;source&quot;: &quot;ProcessApi&quot;
+        },
+        &quot;first_seen&quot;: &quot;2026-10-01T00:00:00Z&quot;,
+        &quot;image&quot;: &quot;C:\\synthetic\\setup.exe&quot;,
+        &quot;last_seen&quot;: &quot;&quot;,
+        &quot;parent_creation_time&quot;: null,
+        &quot;parent_pid&quot;: null,
+        &quot;pid&quot;: 100,
+        &quot;reason&quot;: &quot;Synthetic owned installer identity&quot;
+      }
+    ],
+    &quot;quality&quot;: {
+      &quot;level&quot;: &quot;Degraded&quot;,
+      &quot;reasons&quot;: [
+        &quot;Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.&quot;
+      ]
+    },
+    &quot;registry&quot;: [
+      {
+        &quot;after_value&quot;: &quot;synthetic-after&quot;,
+        &quot;before_value&quot;: &quot;synthetic-before&quot;,
+        &quot;confidence&quot;: &quot;Unknown&quot;,
+        &quot;evidence&quot;: [],
+        &quot;key&quot;: &quot;HKCU\\Software\\Contain\\SyntheticViewer&quot;,
+        &quot;name&quot;: &quot;DisplayMode&quot;,
+        &quot;operation&quot;: &quot;modified&quot;,
+        &quot;reason&quot;: &quot;SYNTHETIC registry state comparison; source not observed and ownership Unknown&quot;
+      }
+    ],
+    &quot;registry_key&quot;: &quot;Software\\Contain\\SyntheticViewer&quot;,
+    &quot;schema_version&quot;: 3,
+    &quot;started_at&quot;: &quot;2026-10-01T00:00:00.120+00:00&quot;,
+    &quot;stats&quot;: {
+      &quot;capture_elapsed_ms&quot;: 0,
+      &quot;drain_timed_out&quot;: false,
+      &quot;events_dropped&quot;: 0,
+      &quot;events_normalized&quot;: 60,
+      &quot;events_received&quot;: 60,
+      &quot;events_retained&quot;: 60,
+      &quot;high_confidence_events&quot;: 60,
+      &quot;known_actor_events&quot;: 60,
+      &quot;known_resource_events&quot;: 60,
+      &quot;notification_gaps&quot;: 0,
+      &quot;phase_ms&quot;: {
+        &quot;final_persistence_commit&quot;: 10
+      },
+      &quot;snapshot_gaps&quot;: 0,
+      &quot;unknown_actor_events&quot;: 0,
+      &quot;unknown_resource_events&quot;: 0
+    },
+    &quot;summary_counts&quot;: {
+      &quot;application_records_dropped&quot;: 0,
+      &quot;decode_errors&quot;: null,
+      &quot;drain_timed_out&quot;: false,
+      &quot;events_normalized&quot;: 60,
+      &quot;events_retained&quot;: 60,
+      &quot;known_actor_events&quot;: 60,
+      &quot;notification_gaps&quot;: 0,
+      &quot;snapshot_gaps&quot;: 0,
+      &quot;unknown_actor_events&quot;: 0,
+      &quot;unknown_resource_events&quot;: 0
+    },
+    &quot;view_scope&quot;: &quot;summary&quot;,
+    &quot;warnings&quot;: [
+      &quot;SYNTHETIC model fixture; provider labels are inputs, no Windows capture was executed.&quot;,
+      &quot;SYNTHETIC desktop example: 60 model observations for pagination; no real installation or provider validation.&quot;,
+      &quot;Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.&quot;
+    ],
+    &quot;watch_roots&quot;: [
+      &quot;C:\\synthetic\\observed&quot;
+    ]
+  },
+  &quot;kind&quot;: &quot;inspect_summary&quot;,
+  &quot;schema_version&quot;: 3
+}
+</pre></details><details><summary>diff</summary><pre data-kind="diff">{
+  &quot;data&quot;: {
+    &quot;app_id&quot;: &quot;synthetic-finished&quot;,
+    &quot;files&quot;: [
+      {
+        &quot;after_hash&quot;: &quot;synthetic-after&quot;,
+        &quot;after_size&quot;: 9007199254740993,
+        &quot;before_hash&quot;: &quot;synthetic-before&quot;,
+        &quot;confidence&quot;: &quot;Unknown&quot;,
+        &quot;evidence&quot;: [],
+        &quot;notification_seen&quot;: false,
+        &quot;operation&quot;: &quot;modified&quot;,
+        &quot;path&quot;: &quot;C:\\synthetic\\observed\\recorded.tmp&quot;,
+        &quot;reason&quot;: &quot;SYNTHETIC before/after difference; final ownership is Unknown&quot;
+      }
+    ],
+    &quot;inventory&quot;: [],
+    &quot;operations&quot;: [],
+    &quot;quality&quot;: {
+      &quot;level&quot;: &quot;Degraded&quot;,
+      &quot;reasons&quot;: [
+        &quot;Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.&quot;
+      ]
+    },
+    &quot;registry&quot;: [
+      {
+        &quot;after_value&quot;: &quot;synthetic-after&quot;,
+        &quot;before_value&quot;: &quot;synthetic-before&quot;,
+        &quot;confidence&quot;: &quot;Unknown&quot;,
+        &quot;evidence&quot;: [],
+        &quot;key&quot;: &quot;HKCU\\Software\\Contain\\SyntheticViewer&quot;,
+        &quot;name&quot;: &quot;DisplayMode&quot;,
+        &quot;operation&quot;: &quot;modified&quot;,
+        &quot;reason&quot;: &quot;SYNTHETIC registry state comparison; source not observed and ownership Unknown&quot;
+      }
+    ],
+    &quot;view_scope&quot;: &quot;state_only&quot;,
+    &quot;warning&quot;: &quot;Unattributed changes are not assumed to belong to this app.&quot;
+  },
+  &quot;kind&quot;: &quot;diff&quot;,
+  &quot;schema_version&quot;: 3
+}
+</pre></details><details><summary>history</summary><pre data-kind="history">{
+  &quot;data&quot;: {
+    &quot;app_id&quot;: &quot;synthetic-finished&quot;,
+    &quot;events&quot;: [
+      {
+        &quot;confidence&quot;: &quot;High&quot;,
+        &quot;dimensions&quot;: {
+          &quot;actor&quot;: &quot;High&quot;,
+          &quot;operation&quot;: &quot;High&quot;,
+          &quot;resource&quot;: &quot;High&quot;
+        },
+        &quot;event_type&quot;: &quot;file&quot;,
+        &quot;evidence&quot;: {
+          &quot;ancestor_pid&quot;: null,
+          &quot;parent_pid&quot;: null,
+          &quot;pid&quot;: 100,
+          &quot;process_creation_time&quot;: &quot;134350000000000001&quot;,
+          &quot;process_image&quot;: null,
+          &quot;rule&quot;: &quot;InstallerPid&quot;,
+          &quot;session_id&quot;: &quot;synthetic-finished&quot;,
+          &quot;source&quot;: &quot;EtwFile&quot;
+        },
+        &quot;id&quot;: &quot;synthetic-finished-event-50&quot;,
+        &quot;operation&quot;: &quot;write_requested&quot;,
+        &quot;raw&quot;: {
+          &quot;event_id&quot;: null,
+          &quot;file_key&quot;: null,
+          &quot;file_name&quot;: {
+            &quot;current_path_verified&quot;: false,
+            &quot;observed_ticks&quot;: &quot;134350000000000061&quot;,
+            &quot;path_source&quot;: &quot;supplied_FileName&quot;,
+            &quot;source_event_id&quot;: &quot;synthetic-finished-event-50&quot;
+          },
+          &quot;file_object&quot;: &quot;synthetic-object-50&quot;,
+          &quot;header_pid&quot;: null,
+          &quot;irp&quot;: null,
+          &quot;object_generation&quot;: &quot;synthetic-generation-50&quot;,
+          &quot;parent_key&quot;: null,
+          &quot;process_key&quot;: null,
+          &quot;registry_object&quot;: null,
+          &quot;related_event&quot;: null,
+          &quot;resource_resolved&quot;: true,
+          &quot;status&quot;: 0,
+          &quot;thread_id&quot;: null
+        },
+        &quot;reason&quot;: &quot;Synthetic source request linked to the installer instance; no ownership claim&quot;,
+        &quot;resource&quot;: &quot;C:\\synthetic\\observed\\recorded.tmp&quot;,
+        &quot;sequence&quot;: 51,
+        &quot;state_validated&quot;: false,
+        &quot;success&quot;: true,
+        &quot;timestamp&quot;: &quot;2026-10-01T00:00:01.123400+00:00&quot;,
+        &quot;timestamp_ticks&quot;: &quot;134350000000000061&quot;
+      },
+      {
+        &quot;confidence&quot;: &quot;High&quot;,
+        &quot;dimensions&quot;: {
+          &quot;actor&quot;: &quot;High&quot;,
+          &quot;operation&quot;: &quot;High&quot;,
+          &quot;resource&quot;: &quot;High&quot;
+        },
+        &quot;event_type&quot;: &quot;file&quot;,
+        &quot;evidence&quot;: {
+          &quot;ancestor_pid&quot;: null,
+          &quot;parent_pid&quot;: null,
+          &quot;pid&quot;: 100,
+          &quot;process_creation_time&quot;: &quot;134350000000000001&quot;,
+          &quot;process_image&quot;: null,
+          &quot;rule&quot;: &quot;InstallerPid&quot;,
+          &quot;session_id&quot;: &quot;synthetic-finished&quot;,
+          &quot;source&quot;: &quot;EtwFile&quot;
+        },
+        &quot;id&quot;: &quot;synthetic-finished-event-51&quot;,
+        &quot;operation&quot;: &quot;write_requested&quot;,
+        &quot;raw&quot;: {
+          &quot;event_id&quot;: null,
+          &quot;file_key&quot;: null,
+          &quot;file_name&quot;: {
+            &quot;current_path_verified&quot;: false,
+            &quot;observed_ticks&quot;: &quot;134350000000000062&quot;,
+            &quot;path_source&quot;: &quot;supplied_FileName&quot;,
+            &quot;source_event_id&quot;: &quot;synthetic-finished-event-51&quot;
+          },
+          &quot;file_object&quot;: &quot;synthetic-object-51&quot;,
+          &quot;header_pid&quot;: null,
+          &quot;irp&quot;: null,
+          &quot;object_generation&quot;: &quot;synthetic-generation-51&quot;,
+          &quot;parent_key&quot;: null,
+          &quot;process_key&quot;: null,
+          &quot;registry_object&quot;: null,
+          &quot;related_event&quot;: null,
+          &quot;resource_resolved&quot;: true,
+          &quot;status&quot;: 0,
+          &quot;thread_id&quot;: null
+        },
+        &quot;reason&quot;: &quot;Synthetic source request linked to the installer instance; no ownership claim&quot;,
+        &quot;resource&quot;: &quot;C:\\synthetic\\observed\\recorded.tmp&quot;,
+        &quot;sequence&quot;: 52,
+        &quot;state_validated&quot;: false,
+        &quot;success&quot;: true,
+        &quot;timestamp&quot;: &quot;2026-10-01T00:00:01.123400+00:00&quot;,
+        &quot;timestamp_ticks&quot;: &quot;134350000000000062&quot;
+      },
+      {
+        &quot;confidence&quot;: &quot;High&quot;,
+        &quot;dimensions&quot;: {
+          &quot;actor&quot;: &quot;High&quot;,
+          &quot;operation&quot;: &quot;High&quot;,
+          &quot;resource&quot;: &quot;High&quot;
+        },
+        &quot;event_type&quot;: &quot;file&quot;,
+        &quot;evidence&quot;: {
+          &quot;ancestor_pid&quot;: null,
+          &quot;parent_pid&quot;: null,
+          &quot;pid&quot;: 100,
+          &quot;process_creation_time&quot;: &quot;134350000000000001&quot;,
+          &quot;process_image&quot;: null,
+          &quot;rule&quot;: &quot;InstallerPid&quot;,
+          &quot;session_id&quot;: &quot;synthetic-finished&quot;,
+          &quot;source&quot;: &quot;EtwFile&quot;
+        },
+        &quot;id&quot;: &quot;synthetic-finished-event-52&quot;,
+        &quot;operation&quot;: &quot;write_requested&quot;,
+        &quot;raw&quot;: {
+          &quot;event_id&quot;: null,
+          &quot;file_key&quot;: null,
+          &quot;file_name&quot;: {
+            &quot;current_path_verified&quot;: false,
+            &quot;observed_ticks&quot;: &quot;134350000000000063&quot;,
+            &quot;path_source&quot;: &quot;supplied_FileName&quot;,
+            &quot;source_event_id&quot;: &quot;synthetic-finished-event-52&quot;
+          },
+          &quot;file_object&quot;: &quot;synthetic-object-52&quot;,
+          &quot;header_pid&quot;: null,
+          &quot;irp&quot;: null,
+          &quot;object_generation&quot;: &quot;synthetic-generation-52&quot;,
+          &quot;parent_key&quot;: null,
+          &quot;process_key&quot;: null,
+          &quot;registry_object&quot;: null,
+          &quot;related_event&quot;: null,
+          &quot;resource_resolved&quot;: true,
+          &quot;status&quot;: 0,
+          &quot;thread_id&quot;: null
+        },
+        &quot;reason&quot;: &quot;Synthetic source request linked to the installer instance; no ownership claim&quot;,
+        &quot;resource&quot;: &quot;C:\\synthetic\\observed\\recorded.tmp&quot;,
+        &quot;sequence&quot;: 53,
+        &quot;state_validated&quot;: false,
+        &quot;success&quot;: true,
+        &quot;timestamp&quot;: &quot;2026-10-01T00:00:01.123400+00:00&quot;,
+        &quot;timestamp_ticks&quot;: &quot;134350000000000063&quot;
+      },
+      {
+        &quot;confidence&quot;: &quot;High&quot;,
+        &quot;dimensions&quot;: {
+          &quot;actor&quot;: &quot;High&quot;,
+          &quot;operation&quot;: &quot;High&quot;,
+          &quot;resource&quot;: &quot;High&quot;
+        },
+        &quot;event_type&quot;: &quot;file&quot;,
+        &quot;evidence&quot;: {
+          &quot;ancestor_pid&quot;: null,
+          &quot;parent_pid&quot;: null,
+          &quot;pid&quot;: 100,
+          &quot;process_creation_time&quot;: &quot;134350000000000001&quot;,
+          &quot;process_image&quot;: null,
+          &quot;rule&quot;: &quot;InstallerPid&quot;,
+          &quot;session_id&quot;: &quot;synthetic-finished&quot;,
+          &quot;source&quot;: &quot;EtwFile&quot;
+        },
+        &quot;id&quot;: &quot;synthetic-finished-event-53&quot;,
+        &quot;operation&quot;: &quot;write_requested&quot;,
+        &quot;raw&quot;: {
+          &quot;event_id&quot;: null,
+          &quot;file_key&quot;: null,
+          &quot;file_name&quot;: {
+            &quot;current_path_verified&quot;: false,
+            &quot;observed_ticks&quot;: &quot;134350000000000064&quot;,
+            &quot;path_source&quot;: &quot;supplied_FileName&quot;,
+            &quot;source_event_id&quot;: &quot;synthetic-finished-event-53&quot;
+          },
+          &quot;file_object&quot;: &quot;synthetic-object-53&quot;,
+          &quot;header_pid&quot;: null,
+          &quot;irp&quot;: null,
+          &quot;object_generation&quot;: &quot;synthetic-generation-53&quot;,
+          &quot;parent_key&quot;: null,
+          &quot;process_key&quot;: null,
+          &quot;registry_object&quot;: null,
+          &quot;related_event&quot;: null,
+          &quot;resource_resolved&quot;: true,
+          &quot;status&quot;: 0,
+          &quot;thread_id&quot;: null
+        },
+        &quot;reason&quot;: &quot;Synthetic source request linked to the installer instance; no ownership claim&quot;,
+        &quot;resource&quot;: &quot;C:\\synthetic\\observed\\recorded.tmp&quot;,
+        &quot;sequence&quot;: 54,
+        &quot;state_validated&quot;: false,
+        &quot;success&quot;: true,
+        &quot;timestamp&quot;: &quot;2026-10-01T00:00:01.123400+00:00&quot;,
+        &quot;timestamp_ticks&quot;: &quot;134350000000000064&quot;
+      },
+      {
+        &quot;confidence&quot;: &quot;High&quot;,
+        &quot;dimensions&quot;: {
+          &quot;actor&quot;: &quot;High&quot;,
+          &quot;operation&quot;: &quot;High&quot;,
+          &quot;resource&quot;: &quot;High&quot;
+        },
+        &quot;event_type&quot;: &quot;file&quot;,
+        &quot;evidence&quot;: {
+          &quot;ancestor_pid&quot;: null,
+          &quot;parent_pid&quot;: null,
+          &quot;pid&quot;: 100,
+          &quot;process_creation_time&quot;: &quot;134350000000000001&quot;,
+          &quot;process_image&quot;: null,
+          &quot;rule&quot;: &quot;InstallerPid&quot;,
+          &quot;session_id&quot;: &quot;synthetic-finished&quot;,
+          &quot;source&quot;: &quot;EtwFile&quot;
+        },
+        &quot;id&quot;: &quot;synthetic-finished-event-54&quot;,
+        &quot;operation&quot;: &quot;write_requested&quot;,
+        &quot;raw&quot;: {
+          &quot;event_id&quot;: null,
+          &quot;file_key&quot;: null,
+          &quot;file_name&quot;: {
+            &quot;current_path_verified&quot;: false,
+            &quot;observed_ticks&quot;: &quot;134350000000000065&quot;,
+            &quot;path_source&quot;: &quot;supplied_FileName&quot;,
+            &quot;source_event_id&quot;: &quot;synthetic-finished-event-54&quot;
+          },
+          &quot;file_object&quot;: &quot;synthetic-object-54&quot;,
+          &quot;header_pid&quot;: null,
+          &quot;irp&quot;: null,
+          &quot;object_generation&quot;: &quot;synthetic-generation-54&quot;,
+          &quot;parent_key&quot;: null,
+          &quot;process_key&quot;: null,
+          &quot;registry_object&quot;: null,
+          &quot;related_event&quot;: null,
+          &quot;resource_resolved&quot;: true,
+          &quot;status&quot;: 0,
+          &quot;thread_id&quot;: null
+        },
+        &quot;reason&quot;: &quot;Synthetic source request linked to the installer instance; no ownership claim&quot;,
+        &quot;resource&quot;: &quot;C:\\synthetic\\observed\\recorded.tmp&quot;,
+        &quot;sequence&quot;: 55,
+        &quot;state_validated&quot;: false,
+        &quot;success&quot;: true,
+        &quot;timestamp&quot;: &quot;2026-10-01T00:00:01.123400+00:00&quot;,
+        &quot;timestamp_ticks&quot;: &quot;134350000000000065&quot;
+      },
+      {
+        &quot;confidence&quot;: &quot;High&quot;,
+        &quot;dimensions&quot;: {
+          &quot;actor&quot;: &quot;High&quot;,
+          &quot;operation&quot;: &quot;High&quot;,
+          &quot;resource&quot;: &quot;High&quot;
+        },
+        &quot;event_type&quot;: &quot;file&quot;,
+        &quot;evidence&quot;: {
+          &quot;ancestor_pid&quot;: null,
+          &quot;parent_pid&quot;: null,
+          &quot;pid&quot;: 100,
+          &quot;process_creation_time&quot;: &quot;134350000000000001&quot;,
+          &quot;process_image&quot;: null,
+          &quot;rule&quot;: &quot;InstallerPid&quot;,
+          &quot;session_id&quot;: &quot;synthetic-finished&quot;,
+          &quot;source&quot;: &quot;EtwFile&quot;
+        },
+        &quot;id&quot;: &quot;synthetic-finished-event-55&quot;,
+        &quot;operation&quot;: &quot;write_requested&quot;,
+        &quot;raw&quot;: {
+          &quot;event_id&quot;: null,
+          &quot;file_key&quot;: null,
+          &quot;file_name&quot;: {
+            &quot;current_path_verified&quot;: false,
+            &quot;observed_ticks&quot;: &quot;134350000000000066&quot;,
+            &quot;path_source&quot;: &quot;supplied_FileName&quot;,
+            &quot;source_event_id&quot;: &quot;synthetic-finished-event-55&quot;
+          },
+          &quot;file_object&quot;: &quot;synthetic-object-55&quot;,
+          &quot;header_pid&quot;: null,
+          &quot;irp&quot;: null,
+          &quot;object_generation&quot;: &quot;synthetic-generation-55&quot;,
+          &quot;parent_key&quot;: null,
+          &quot;process_key&quot;: null,
+          &quot;registry_object&quot;: null,
+          &quot;related_event&quot;: null,
+          &quot;resource_resolved&quot;: true,
+          &quot;status&quot;: 0,
+          &quot;thread_id&quot;: null
+        },
+        &quot;reason&quot;: &quot;Synthetic source request linked to the installer instance; no ownership claim&quot;,
+        &quot;resource&quot;: &quot;C:\\synthetic\\observed\\recorded.tmp&quot;,
+        &quot;sequence&quot;: 56,
+        &quot;state_validated&quot;: false,
+        &quot;success&quot;: true,
+        &quot;timestamp&quot;: &quot;2026-10-01T00:00:01.123400+00:00&quot;,
+        &quot;timestamp_ticks&quot;: &quot;134350000000000066&quot;
+      },
+      {
+        &quot;confidence&quot;: &quot;High&quot;,
+        &quot;dimensions&quot;: {
+          &quot;actor&quot;: &quot;High&quot;,
+          &quot;operation&quot;: &quot;High&quot;,
+          &quot;resource&quot;: &quot;High&quot;
+        },
+        &quot;event_type&quot;: &quot;file&quot;,
+        &quot;evidence&quot;: {
+          &quot;ancestor_pid&quot;: null,
+          &quot;parent_pid&quot;: null,
+          &quot;pid&quot;: 100,
+          &quot;process_creation_time&quot;: &quot;134350000000000001&quot;,
+          &quot;process_image&quot;: null,
+          &quot;rule&quot;: &quot;InstallerPid&quot;,
+          &quot;session_id&quot;: &quot;synthetic-finished&quot;,
+          &quot;source&quot;: &quot;EtwFile&quot;
+        },
+        &quot;id&quot;: &quot;synthetic-finished-event-56&quot;,
+        &quot;operation&quot;: &quot;write_requested&quot;,
+        &quot;raw&quot;: {
+          &quot;event_id&quot;: null,
+          &quot;file_key&quot;: null,
+          &quot;file_name&quot;: {
+            &quot;current_path_verified&quot;: false,
+            &quot;observed_ticks&quot;: &quot;134350000000000067&quot;,
+            &quot;path_source&quot;: &quot;supplied_FileName&quot;,
+            &quot;source_event_id&quot;: &quot;synthetic-finished-event-56&quot;
+          },
+          &quot;file_object&quot;: &quot;synthetic-object-56&quot;,
+          &quot;header_pid&quot;: null,
+          &quot;irp&quot;: null,
+          &quot;object_generation&quot;: &quot;synthetic-generation-56&quot;,
+          &quot;parent_key&quot;: null,
+          &quot;process_key&quot;: null,
+          &quot;registry_object&quot;: null,
+          &quot;related_event&quot;: null,
+          &quot;resource_resolved&quot;: true,
+          &quot;status&quot;: 0,
+          &quot;thread_id&quot;: null
+        },
+        &quot;reason&quot;: &quot;Synthetic source request linked to the installer instance; no ownership claim&quot;,
+        &quot;resource&quot;: &quot;C:\\synthetic\\observed\\recorded.tmp&quot;,
+        &quot;sequence&quot;: 57,
+        &quot;state_validated&quot;: false,
+        &quot;success&quot;: true,
+        &quot;timestamp&quot;: &quot;2026-10-01T00:00:01.123400+00:00&quot;,
+        &quot;timestamp_ticks&quot;: &quot;134350000000000067&quot;
+      },
+      {
+        &quot;confidence&quot;: &quot;High&quot;,
+        &quot;dimensions&quot;: {
+          &quot;actor&quot;: &quot;High&quot;,
+          &quot;operation&quot;: &quot;High&quot;,
+          &quot;resource&quot;: &quot;High&quot;
+        },
+        &quot;event_type&quot;: &quot;file&quot;,
+        &quot;evidence&quot;: {
+          &quot;ancestor_pid&quot;: null,
+          &quot;parent_pid&quot;: null,
+          &quot;pid&quot;: 100,
+          &quot;process_creation_time&quot;: &quot;134350000000000001&quot;,
+          &quot;process_image&quot;: null,
+          &quot;rule&quot;: &quot;InstallerPid&quot;,
+          &quot;session_id&quot;: &quot;synthetic-finished&quot;,
+          &quot;source&quot;: &quot;EtwFile&quot;
+        },
+        &quot;id&quot;: &quot;synthetic-finished-event-57&quot;,
+        &quot;operation&quot;: &quot;write_requested&quot;,
+        &quot;raw&quot;: {
+          &quot;event_id&quot;: null,
+          &quot;file_key&quot;: null,
+          &quot;file_name&quot;: {
+            &quot;current_path_verified&quot;: false,
+            &quot;observed_ticks&quot;: &quot;134350000000000068&quot;,
+            &quot;path_source&quot;: &quot;supplied_FileName&quot;,
+            &quot;source_event_id&quot;: &quot;synthetic-finished-event-57&quot;
+          },
+          &quot;file_object&quot;: &quot;synthetic-object-57&quot;,
+          &quot;header_pid&quot;: null,
+          &quot;irp&quot;: null,
+          &quot;object_generation&quot;: &quot;synthetic-generation-57&quot;,
+          &quot;parent_key&quot;: null,
+          &quot;process_key&quot;: null,
+          &quot;registry_object&quot;: null,
+          &quot;related_event&quot;: null,
+          &quot;resource_resolved&quot;: true,
+          &quot;status&quot;: 0,
+          &quot;thread_id&quot;: null
+        },
+        &quot;reason&quot;: &quot;Synthetic source request linked to the installer instance; no ownership claim&quot;,
+        &quot;resource&quot;: &quot;C:\\synthetic\\observed\\recorded.tmp&quot;,
+        &quot;sequence&quot;: 58,
+        &quot;state_validated&quot;: false,
+        &quot;success&quot;: true,
+        &quot;timestamp&quot;: &quot;2026-10-01T00:00:01.123400+00:00&quot;,
+        &quot;timestamp_ticks&quot;: &quot;134350000000000068&quot;
+      },
+      {
+        &quot;confidence&quot;: &quot;High&quot;,
+        &quot;dimensions&quot;: {
+          &quot;actor&quot;: &quot;High&quot;,
+          &quot;operation&quot;: &quot;High&quot;,
+          &quot;resource&quot;: &quot;High&quot;
+        },
+        &quot;event_type&quot;: &quot;file&quot;,
+        &quot;evidence&quot;: {
+          &quot;ancestor_pid&quot;: null,
+          &quot;parent_pid&quot;: null,
+          &quot;pid&quot;: 100,
+          &quot;process_creation_time&quot;: &quot;134350000000000001&quot;,
+          &quot;process_image&quot;: null,
+          &quot;rule&quot;: &quot;InstallerPid&quot;,
+          &quot;session_id&quot;: &quot;synthetic-finished&quot;,
+          &quot;source&quot;: &quot;EtwFile&quot;
+        },
+        &quot;id&quot;: &quot;synthetic-finished-event-58&quot;,
+        &quot;operation&quot;: &quot;write_requested&quot;,
+        &quot;raw&quot;: {
+          &quot;event_id&quot;: null,
+          &quot;file_key&quot;: null,
+          &quot;file_name&quot;: {
+            &quot;current_path_verified&quot;: false,
+            &quot;observed_ticks&quot;: &quot;134350000000000069&quot;,
+            &quot;path_source&quot;: &quot;supplied_FileName&quot;,
+            &quot;source_event_id&quot;: &quot;synthetic-finished-event-58&quot;
+          },
+          &quot;file_object&quot;: &quot;synthetic-object-58&quot;,
+          &quot;header_pid&quot;: null,
+          &quot;irp&quot;: null,
+          &quot;object_generation&quot;: &quot;synthetic-generation-58&quot;,
+          &quot;parent_key&quot;: null,
+          &quot;process_key&quot;: null,
+          &quot;registry_object&quot;: null,
+          &quot;related_event&quot;: null,
+          &quot;resource_resolved&quot;: true,
+          &quot;status&quot;: 0,
+          &quot;thread_id&quot;: null
+        },
+        &quot;reason&quot;: &quot;Synthetic source request linked to the installer instance; no ownership claim&quot;,
+        &quot;resource&quot;: &quot;C:\\synthetic\\observed\\recorded.tmp&quot;,
+        &quot;sequence&quot;: 59,
+        &quot;state_validated&quot;: false,
+        &quot;success&quot;: true,
+        &quot;timestamp&quot;: &quot;2026-10-01T00:00:01.123400+00:00&quot;,
+        &quot;timestamp_ticks&quot;: &quot;134350000000000069&quot;
+      },
+      {
+        &quot;confidence&quot;: &quot;High&quot;,
+        &quot;dimensions&quot;: {
+          &quot;actor&quot;: &quot;High&quot;,
+          &quot;operation&quot;: &quot;High&quot;,
+          &quot;resource&quot;: &quot;High&quot;
+        },
+        &quot;event_type&quot;: &quot;file&quot;,
+        &quot;evidence&quot;: {
+          &quot;ancestor_pid&quot;: null,
+          &quot;parent_pid&quot;: null,
+          &quot;pid&quot;: 100,
+          &quot;process_creation_time&quot;: &quot;134350000000000001&quot;,
+          &quot;process_image&quot;: null,
+          &quot;rule&quot;: &quot;InstallerPid&quot;,
+          &quot;session_id&quot;: &quot;synthetic-finished&quot;,
+          &quot;source&quot;: &quot;EtwFile&quot;
+        },
+        &quot;id&quot;: &quot;synthetic-finished-event-59&quot;,
+        &quot;operation&quot;: &quot;write_requested&quot;,
+        &quot;raw&quot;: {
+          &quot;event_id&quot;: null,
+          &quot;file_key&quot;: null,
+          &quot;file_name&quot;: {
+            &quot;current_path_verified&quot;: false,
+            &quot;observed_ticks&quot;: &quot;134350000000000070&quot;,
+            &quot;path_source&quot;: &quot;supplied_FileName&quot;,
+            &quot;source_event_id&quot;: &quot;synthetic-finished-event-59&quot;
+          },
+          &quot;file_object&quot;: &quot;synthetic-object-59&quot;,
+          &quot;header_pid&quot;: null,
+          &quot;irp&quot;: null,
+          &quot;object_generation&quot;: &quot;synthetic-generation-59&quot;,
+          &quot;parent_key&quot;: null,
+          &quot;process_key&quot;: null,
+          &quot;registry_object&quot;: null,
+          &quot;related_event&quot;: null,
+          &quot;resource_resolved&quot;: true,
+          &quot;status&quot;: 0,
+          &quot;thread_id&quot;: null
+        },
+        &quot;reason&quot;: &quot;Synthetic source request linked to the installer instance; no ownership claim&quot;,
+        &quot;resource&quot;: &quot;C:\\synthetic\\observed\\recorded.tmp&quot;,
+        &quot;sequence&quot;: 60,
+        &quot;state_validated&quot;: false,
+        &quot;success&quot;: true,
+        &quot;timestamp&quot;: &quot;2026-10-01T00:00:01.123400+00:00&quot;,
+        &quot;timestamp_ticks&quot;: &quot;134350000000000070&quot;
+      }
+    ]
+  },
+  &quot;kind&quot;: &quot;history&quot;,
+  &quot;schema_version&quot;: 3
+}
+</pre></details><details><summary>explain</summary><pre data-kind="explain">{
+  &quot;data&quot;: {
+    &quot;app_id&quot;: &quot;synthetic-finished&quot;,
+    &quot;application&quot;: &quot;Synthetic finished&quot;,
+    &quot;edges&quot;: [
+      {
+        &quot;confidence&quot;: &quot;High&quot;,
+        &quot;from&quot;: &quot;event:synthetic-finished-event-50&quot;,
+        &quot;reason&quot;: &quot;Provider supplied this event&#39;s recorded name; this is not a handle query of the current path or physical file identity, an explicit application call, or final state ownership.&quot;,
+        &quot;relation&quot;: &quot;write_requested&quot;,
+        &quot;to&quot;: &quot;resource:C:\\synthetic\\observed\\recorded.tmp&quot;
+      },
+      {
+        &quot;confidence&quot;: &quot;High&quot;,
+        &quot;from&quot;: &quot;process:100:134350000000000001&quot;,
+        &quot;reason&quot;: &quot;Synthetic source request linked to the installer instance; no ownership claim&quot;,
+        &quot;relation&quot;: &quot;observed_actor&quot;,
+        &quot;to&quot;: &quot;event:synthetic-finished-event-50&quot;
+      },
+      {
+        &quot;confidence&quot;: &quot;Certain&quot;,
+        &quot;from&quot;: &quot;session:synthetic-finished&quot;,
+        &quot;reason&quot;: &quot;Synthetic owned installer identity&quot;,
+        &quot;relation&quot;: &quot;process_ancestry&quot;,
+        &quot;to&quot;: &quot;process:100:134350000000000001&quot;
+      }
+    ],
+    &quot;event&quot;: {
+      &quot;confidence&quot;: &quot;High&quot;,
+      &quot;dimensions&quot;: {
+        &quot;actor&quot;: &quot;High&quot;,
+        &quot;operation&quot;: &quot;High&quot;,
+        &quot;resource&quot;: &quot;High&quot;
+      },
+      &quot;event_type&quot;: &quot;file&quot;,
+      &quot;evidence&quot;: {
+        &quot;ancestor_pid&quot;: null,
+        &quot;parent_pid&quot;: null,
+        &quot;pid&quot;: 100,
+        &quot;process_creation_time&quot;: &quot;134350000000000001&quot;,
+        &quot;process_image&quot;: null,
+        &quot;rule&quot;: &quot;InstallerPid&quot;,
+        &quot;session_id&quot;: &quot;synthetic-finished&quot;,
+        &quot;source&quot;: &quot;EtwFile&quot;
+      },
+      &quot;id&quot;: &quot;synthetic-finished-event-50&quot;,
+      &quot;operation&quot;: &quot;write_requested&quot;,
+      &quot;raw&quot;: {
+        &quot;event_id&quot;: null,
+        &quot;file_key&quot;: null,
+        &quot;file_name&quot;: {
+          &quot;current_path_verified&quot;: false,
+          &quot;observed_ticks&quot;: &quot;134350000000000061&quot;,
+          &quot;path_source&quot;: &quot;supplied_FileName&quot;,
+          &quot;source_event_id&quot;: &quot;synthetic-finished-event-50&quot;
+        },
+        &quot;file_object&quot;: &quot;synthetic-object-50&quot;,
+        &quot;header_pid&quot;: null,
+        &quot;irp&quot;: null,
+        &quot;object_generation&quot;: &quot;synthetic-generation-50&quot;,
+        &quot;parent_key&quot;: null,
+        &quot;process_key&quot;: null,
+        &quot;registry_object&quot;: null,
+        &quot;related_event&quot;: null,
+        &quot;resource_resolved&quot;: true,
+        &quot;status&quot;: 0,
+        &quot;thread_id&quot;: null
+      },
+      &quot;reason&quot;: &quot;Synthetic source request linked to the installer instance; no ownership claim&quot;,
+      &quot;resource&quot;: &quot;C:\\synthetic\\observed\\recorded.tmp&quot;,
+      &quot;sequence&quot;: 51,
+      &quot;state_validated&quot;: false,
+      &quot;success&quot;: true,
+      &quot;timestamp&quot;: &quot;2026-10-01T00:00:01.123400+00:00&quot;,
+      &quot;timestamp_ticks&quot;: &quot;134350000000000061&quot;
+    },
+    &quot;operations&quot;: [
+      {
+        &quot;confidence&quot;: &quot;High&quot;,
+        &quot;id&quot;: &quot;operation-synthetic-finished-event-50&quot;,
+        &quot;operation&quot;: &quot;WriteRequested&quot;,
+        &quot;previous_path&quot;: null,
+        &quot;raw_events&quot;: [
+          &quot;synthetic-finished-event-50&quot;
+        ],
+        &quot;reason&quot;: &quot;Synthetic native request, not an explicit application API call&quot;,
+        &quot;resource&quot;: &quot;C:\\synthetic\\observed\\recorded.tmp&quot;,
+        &quot;resource_identity&quot;: null,
+        &quot;success&quot;: true
+      }
+    ],
+    &quot;quality&quot;: {
+      &quot;level&quot;: &quot;Degraded&quot;,
+      &quot;reasons&quot;: [
+        &quot;Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.&quot;
+      ]
+    }
+  },
+  &quot;kind&quot;: &quot;explain&quot;,
+  &quot;schema_version&quot;: 3
+}
+</pre></details></section></main></body></html>

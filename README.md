@@ -10,27 +10,47 @@ Contain v0.3.1 observes Windows installation sessions, links real events to veri
 
 Contain records evidence and offers a cleanup **dry run**. It does not guarantee zero leftovers or isolate an installer.
 
-## Current read-only trial status
+The [Windows desktop record viewer](desktop/README.md) opens an existing database,
+lists saved records, shows state changes and paged source events, explains a
+selected event and exports a local HTML report. It uses the packaged CLI and does
+not start recording or an installer. Ordinary viewing needs no development tools.
 
-The bounded trial is record controlled activity → save → reopen → query changes
-→ explain an event ID. Version remains **0.3.1**. Implementation, measured results
-and outstanding acceptance are separate; test counts are not feature progress.
-**The bounded read-only candidate delivery milestone is closed** for frozen
-source `2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15` and the package linked below.
+## Current delivery status
+
+Version remains **0.3.1**. The **bounded read-only candidate delivery** remains
+closed for source `2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15` and its original
+controlled-ETW package. The **desktop record viewer MVP is now closed** for frozen
+source `4b4d38764ed417e6754b5db798488227ec147e21` and the desktop package below.
+These are separate bounded results, not release or general stability acceptance.
 
 | User task | Implemented | Verified platform / scenario | Status and specific limit | Build / evidence |
 | --- | --- | --- | --- | --- |
-| Record controlled activity and save it | Native process/file/registry capture, SQLite persistence and validated original JSON text saving | Windows Server 2025 x64; one default and one dual-clock fixture, each 35 required product checks passed | Verified in these bounded cases. Both recordings finished with quality Degraded; completion does not imply full coverage | [CI 41102818151](https://github.com/LuckyLivio/Contain/actions/runs/41102818151), frozen build `2ba98b6` |
-| Reopen the database and query paged changes | Existing inspect/diff/history and strict complete-envelope comparison | Both real reports: 7/7 commands, zero field differences and byte-identical saved/readback JSON. Windows synthetic chain: 24 CLI calls, including expected mismatch rejection | Verified. A mismatch still fails acceptance while independent safe commands produce diagnostics | [Reviewed results](docs/examples/windows-read-only-trial-41102818151.json) |
-| Explain event IDs without promoting Unknown or historical names | Existing explain and cross-view identity checks | Both real reports trace the same event in history and explain; all three original synthetic scenarios retained | Verified for the controlled fixture. Execution evidence does not establish application API intent, a current path or ownership | [Default real CLI report](docs/examples/windows-trial-default-41102818151.txt), [dual-clock report](docs/examples/windows-trial-dual-clock-41102818151.txt) |
-| Distinguish diagnostic, evidence, product and formal acceptance | Versioned comparison, field-level diagnostics and independent acceptance checks | Dual-clock: 91 original-QPC links, complete evidence in the supported clock/connection scope; all required product checks passed | Historical six remain D; formal acceptance remains unmet. Earlier report failures cannot be retrospectively assigned a field-level cause | [Evidence and limits](docs/read-only-workflow.md#verified-bounded-delivery) |
-| Download and run without Rust or Visual Studio | MSVC debug binaries, runtime, prebuilt demo including `149a5e3` and shared save helper, hashes and validation manifest | Identical frozen package in preflights and both native scenarios; 18/18 required candidate checks, ZIP contents/hashes verified | **Bounded read-only candidate verified; delivery milestone closed.** No release or general installer/stability claim | [Download Windows ZIP artifact](https://github.com/LuckyLivio/Contain/actions/runs/41102818151/artifacts/13000967787) |
+| Record controlled activity → save → reopen → explain | Existing native capture, SQLite, original JSON saving and CLI views | Prior Windows Server 2025 default and dual-clock fixtures: 35 product checks and 7 report commands each; saved/readback JSON identical | **Closed and retained.** Both records finished with Degraded coverage. No new capture in the desktop round | [Original core delivery](docs/read-only-workflow.md#verified-bounded-delivery), [original CLI ZIP](https://github.com/LuckyLivio/Contain/actions/runs/41102818151/artifacts/13000967787), source `2ba98b6` |
+| Open an existing database without a terminal | Native WinForms picker, record list and overview; explicit read-only CLI; legacy compatibility in an in-memory copy | Windows Server 2025 x64, actual packaged CLI and controls; finished, historical/Unknown, interrupted and empty production-store synthetic databases | **Verified.** Missing, corrupt, unrelated and newer databases rejected; original database bytes unchanged | [Desktop CI 41122708670](https://github.com/LuckyLivio/Contain/actions/runs/41122708670), frozen source `4b4d387` |
+| Browse changes and trace an event | Separate state/source views, bounded pages, current-page event filter, explain and ID copy | Actual 50/10 event paging, same-event JSON equality and clipboard; historical names and unavailable counters retained | **Verified.** Event filtering is page-local; old unindexed history can still require a full internal read | [Actual Windows screenshot](docs/examples/viewer-41122708670-event-explanation.png), [verification](docs/examples/windows-desktop-viewer-41122708670.json) |
+| Export the selected record and event locally | Self-contained HTML from the same CLI; exact JSON, record/page/event identity checks, no upload | Actual export contains the selected record, current ten-event page and matching explain; reviewed public copy is byte-identical | **Verified.** Report contains the current unfiltered event page, not all history; local paths remain in user reports | [Actual synthetic HTML](docs/examples/viewer-41122708670-report.html), [viewer guide](desktop/README.md) |
+| Download and double-click the desktop viewer | Windows x64 viewer, core CLI, self-contained .NET/MSVC runtime, three-record synthetic sample and identity manifests | Same frozen files in native launch/control tests and final ZIP; all 22 required desktop checks passed | **Desktop MVP closed.** Unsigned trial ZIP; clean Windows 10/11 manual compatibility remains untested | [Download desktop ZIP artifact](https://github.com/LuckyLivio/Contain/actions/runs/41122708670/artifacts/13010587633) |
 
-Separate follow-up scopes remain: formal 32-attempt acceptance; 1,000/10,000-file
-scale validation; third-party installer trials; final-state ownership; and safe
-cleanup. None is implied by this read-only trial, and none starts in this round.
+Historical six clock questions remain D; formal provider/stabilization acceptance
+is still unmet. Formal 32-attempt acceptance, scale validation, third-party
+installers, final-state ownership and safe cleanup remain separate follow-up
+scopes. None is implied by the desktop viewer. Graphical recording is not started.
+The [failed desktop attempts](docs/examples/windows-desktop-viewer-attempts.json)
+remain available alongside the successful result.
 
-## Try it
+## Try the desktop viewer
+
+[Download the Windows x64 desktop artifact](https://github.com/LuckyLivio/Contain/actions/runs/41122708670/artifacts/13010587633),
+extract the complete contained ZIP, then double-click **Contain.Viewer.exe**.
+No Rust, Visual Studio, Python or separately installed .NET is needed for viewing.
+Choose **打开记录数据库**, select your database or the explicitly synthetic
+`samples/viewer-demo.db`, select a record, then open **事件与依据** and click an
+event. **导出本地报告** saves the current record/page/event to a new local HTML file.
+The application never silently fills an empty database with sample records.
+
+![Actual Windows viewer, synthetic record and selected event](docs/examples/viewer-41122708670-event-explanation.png)
+
+## Try the controlled CLI fixture
 
 The Windows x64 CI trial package contains `contain.exe`, the controlled fixture,
 required non-system runtime files, `BUILD.json`, `VALIDATION.json` and `TRY.md`.
@@ -141,7 +161,7 @@ Inspect summarizes capture quality and counters; `--verbose` and `explain` show 
 
 - `remove` requires `--dry-run`; there is no deletion executor, uninstaller execution, or rollback.
 - User data stays `USER_DATA`. A High-attributed cache may be `REVIEW`; unknown or changed files remain `UNKNOWN`. Nothing is marked `SAFE` for deletion.
-- No automatic elevation, driver, service installation, Defender changes, automated classification, or GUI.
+- No automatic elevation, driver, service installation, Defender changes or automated classification. The desktop interface only views existing records and exports local reports.
 - No account, telemetry, or uploads in the application. Databases/manifests contain local paths and possibly registry/configuration data; review them before sharing.
 - ETW providers produce system-wide activity; scoped records and verified installer lifecycle/unresolved-object evidence are retained; other resources are discarded. The scanner skips reparse points. Contain does not sandbox the installer you launch.
 
@@ -170,7 +190,12 @@ cargo build --workspace --locked
 ./scripts/demo.ps1
 ```
 
-Windows CI requires both real ETW evidence and fallback integration. Read the [architecture](docs/architecture.md), [backend ADR](docs/adr/0001-event-attribution-backend.md), [contribution guide](CONTRIBUTING.md), [security policy](SECURITY.md), and [code of conduct](CODE_OF_CONDUCT.md).
+Windows CI keeps real ETW and fallback integration separate from the desktop
+existing-records plan. Desktop validation runs the required quality gates and
+native UI/CLI checks without recording new activity. Read the
+[architecture](docs/architecture.md), [backend ADR](docs/adr/0001-event-attribution-backend.md),
+[contribution guide](CONTRIBUTING.md), [security policy](SECURITY.md), and
+[code of conduct](CODE_OF_CONDUCT.md).
 
 The next stabilization matrix is **preregistered, not executed**. With frozen
 baseline/candidate executables, one common fixture and their full source revisions,
@@ -184,7 +209,9 @@ The [protocol](docs/v04-validation.md) retains the original scores separately.
 Its new gate remains blocked until original ETW QPC and provider timing rules are
 independently validated; fallback or a clock diagnostic cannot count as a pass.
 
-Next: broader Windows validation, more registry context coverage and stronger multi-step operation evidence. GUI and real cleanup remain deferred.
+Graphical recording and real-installer trials are separate follow-up work. The
+current desktop scope ends at viewing existing records and exporting reports;
+real cleanup remains unimplemented.
 
 ## License
 
