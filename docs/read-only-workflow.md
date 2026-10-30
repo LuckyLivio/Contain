@@ -188,3 +188,43 @@ The follow-up resolves both sides identically, fails closed on an unresolved roo
 keeps the old assertion and adds an existing child/.. alias plus noncreation checks.
 It does not change event-name normalization or attribution. This Windows-only
 function cannot execute in the Linux harness; its native result is tracked below.
+
+### Verified code and handoff
+
+The code commit is **`be3b385149eaaed106b04965abf8f218dc8d9423`**, on
+**`fix/read-only-workflow`**, synchronized and verified against origin. Subsequent
+handoff-only commits do not change that code. The final local run at this commit
+passed 62 host tests (0 failed, 8 ignored), Windows-target workspace build,
+test-executable compilation, Clippy and formatting.
+
+The ordinary push triggered [Windows CI 41024587029](https://github.com/LuckyLivio/Contain/actions/runs/41024587029),
+which completed successfully at that exact code commit with Rust 1.99.1 MSVC.
+`cargo test --workspace` actually executed:
+
+| Target | Passed | Failed | Ignored |
+|---|---:|---:|---:|
+| CLI renderer | 11 | 0 | 0 |
+| contain-core | 188 | 0 | 4 |
+| contain-offline | 66 | 0 | 3 |
+| registry-noise fixture | 5 | 0 | 0 |
+| test-installer fixture | 7 | 0 | 0 |
+| write-diagnostic fixture | 9 | 0 | 0 |
+
+The offline package re-executes shared production tests; these rows are execution
+counts, not independent or unique coverage. Two helper binaries and both doctest
+targets had zero tests and are not evidence. The sidecar original/alias rejection
+test and all five platform-specific checkpoint tests passed natively. Existing
+explicit performance/spool experiments remain ignored by the normal Windows suite.
+The ten Python scripts selected by this CI ran 79 tests successfully, a subset of
+the 18-script/243-test local run. The PowerShell scorer gate also passed; it does
+not emit a unit-test count.
+
+Both existing `demo.ps1 -RequireEtw` runs and the separate `-SnapshotOnly` run
+passed, as did fixture-only artifact publication. This is native small-fixture
+validation; no 32-run acceptance was started, and no release or safe-removal claim
+follows. CI is not the complete `quality.ps1` nextest/coverage/dependency/fuzz
+workflow; those remaining Windows gates and coverage floors are still unverified.
+
+Continue from this branch, preserving the same evidence boundaries. The minimal
+Windows commands above exercise the new synthetic records through the complete
+CLI and the existing view verifier. No private historical database is required.
