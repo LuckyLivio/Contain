@@ -125,7 +125,11 @@ validator, followed by the two existing ETW fixture runs and snapshot fallback.
 packages, with a separate instrumentation directory. The offline package imports
 production source and repeats shared tests; neither execution totals nor LLVM
 source aliases represent additional unique tests. Reports retain both original
-coverage denominators and list aliases without filtering production code.
+coverage denominators and list aliases without adding any production-code
+exclusions. The LLVM tool's existing defaults omit tests/examples/benches paths;
+inline tests remain included. Selecting the installer package for execution does
+not put its examples/ source into the coverage denominator, and workspace coverage
+does not establish coverage of vendored ferrisetw internals.
 
 The native CLI validator runs 66 commands across the three synthetic databases,
 including list, inspect, verbose inspect, diff, paged history, every explanation,
@@ -134,8 +138,7 @@ Public artifacts contain only text exactly matching the reviewed examples and
 fixed-field summaries; databases and raw CLI/quality logs stay local. Every quality
 invocation records its SHA, tools, commands, exit statuses and archived logs under
 `target/quality/runs`; failed attempts are retained. The summary reports test
-execution groups and unavailable counts explicitly. These new Windows checks are
-pending until an exact CI run is recorded below.
+execution groups and unavailable counts explicitly. Exact Windows results, including failures, are recorded below.
 
 ## Offline persistence measurement (synthetic)
 
@@ -253,3 +256,96 @@ workflow; those remaining Windows gates and coverage floors are still unverified
 Continue from this branch, preserving the same evidence boundaries. The minimal
 Windows commands above exercise the new synthetic records through the complete
 CLI and the existing view verifier. No private historical database is required.
+
+## Windows closeout evidence
+
+The closeout branch `fix/windows-read-only-validation` starts from the actual
+`fa8ed67229c0ed55a9d60b8d865d0a86baf3fee9` tip. The new quality/CLI gates were
+first pushed as `448331bf983957155915d08cbeac0c74a0273cc3` for
+[Windows CI 41029089684](https://github.com/LuckyLivio/Contain/actions/runs/41029089684).
+Linux script regressions on that tree passed: CLI validator 15, quality summary
+14, existing view verifier 6; zero failures/skips. These are script checks, not
+Windows CLI results.
+
+Checking the actual later CI also found a failure that the earlier `be3b385`
+success does not supersede.
+[CI 41025410010](https://github.com/LuckyLivio/Contain/actions/runs/41025410010)
+on `fa8ed67` failed its first ETW fixture with five unmatched positive events.
+The [reviewed aggregate](examples/windows-etw-failed-41025410010.json) preserves
+the original failure and its limits. Four registry events were 8.5–10.3 µs and
+one file write was 232.1 µs after the end of a same-actor/resource/category truth
+candidate. Such a candidate does not establish the same syscall or explicit
+application operation. The unchanged scorer reproduces the original result from
+the published fixture projection. The event timestamps equal their raw FILETIME
+headers; original QPC and independent truth clocks are absent. No safe product
+fix can be inferred from that projection, and its failure remains unresolved.
+There was no production/fixture/scorer change between `be3b385` and `fa8ed67`.
+A later green run cannot erase this failure; the exact-interval scorer is unchanged.
+
+No formal 32-run, scaled-load or real third-party installer acceptance has been
+performed in this closeout. Version remains 0.3.1; these checks do not establish
+overall stabilization, safe uninstall or release acceptance.
+
+The first closeout CI completed with failures, retained without retry. It ran on
+Windows Server 2025 build 26100 (runner image 20261021.278.1), Rust/Cargo 1.99.1,
+nextest 0.9.149, llvm-cov 0.9.1, deny 0.20.2, Python 3.12.10 and PowerShell 7.6.7.
+Its quality summary records the complete commands and source-bound results.
+
+| Check at `448331b` | Actual result |
+|---|---|
+| Check: fmt/Clippy/nextest | Passed; nextest 286 passed, 0 failed, 7 skipped |
+| Doctests | 0 executed; not counted as test coverage |
+| Fuzz fmt/Clippy and seeds | Passed; 1 seed test, 0 failed/ignored |
+| PowerShell scorer / provenance | Scorer passed; provenance failed; Python gates not reached |
+| Workspace Coverage | 286 passed, 0 failed, 7 ignored; lines 13033/17567 (74.1902%), functions 1045/1387 (75.3425%) |
+| Original-package Coverage | 220 passed, 0 failed, 4 ignored; lines 9460/13112 (72.1477%), functions 755/1016 (74.3110%) |
+| Dependencies (main and fuzz) | All five gates passed |
+| Bounded companion spool | 1 passed, 0 failed/ignored; 191 filtered |
+| Actual synthetic Windows CLI | 3 scenarios, 66 commands and 33 schema checks passed; 0 failed/skipped |
+| Two ETW fixture runs | Both failed: each 5 unmatched positive events; target observation/attribution 12/17 |
+| Snapshot fallback | Passed, independently of the ETW failures |
+
+The provenance failure compared a raw custom artifact path containing a Windows
+TEMP short name against the production function's `GetFullPath` result. .NET
+expands that short name, so the test incorrectly rejected the same executable.
+The follow-up changes only the test's expected paths to canonical full paths,
+retains case-sensitive equality and all rejection checks, and adds an explicit
+absolute path with `..` regression. Production artifact selection is unchanged.
+The original failure remains above; the follow-up Check is tracked separately
+on this branch, with its exact SHA in the CI quality artifact.
+
+Windows-specific coverage was exercised, not skipped: core and offline each ran
+the four checkpoint behavior regressions (plus their child-process helper), and
+core ran native thread query, exit-race and thread snapshot checks. The original
+package report records `available_disk_bytes` 18 executions and 21/22 code regions;
+its API-error return remains uncovered. Shared tests are duplicate executions,
+not new unique cases. Original-package affected-file line coverage: renderer
+678/751, storage 562/580, path helpers 79/79, checkpoint 186/207, companion 416/687.
+The stdout adapter was not covered by instrumented unit tests; the later actual
+CLI commands execute it without instrumentation and do not increase these figures.
+
+The remaining ETW blocker cannot safely be fixed by changing the interval scorer
+or deleting unmatched records. If a local diagnostic is needed, the smallest
+existing entrypoint is one fixture run with both clocks, using native Windows and
+already available ETW permissions; this command was **not executed** in closeout:
+
+```powershell
+$out = Join-Path 'target/quality' ('etw-window-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffffffZ'))
+$oldFixtureClock = $env:CONTAIN_FIXTURE_CLOCK
+$oldRawClock = $env:CONTAIN_ETW_RAW_CLOCK_PATH
+try {
+    $env:CONTAIN_FIXTURE_CLOCK = '1'
+    $env:CONTAIN_ETW_RAW_CLOCK_PATH = [IO.Path]::GetFullPath((Join-Path $out 'raw-clock.jsonl'))
+    ./scripts/demo.ps1 -RequireEtw -KeepArtifacts -OutputDirectory $out
+} finally {
+    $env:CONTAIN_FIXTURE_CLOCK = $oldFixtureClock
+    $env:CONTAIN_ETW_RAW_CLOCK_PATH = $oldRawClock
+}
+```
+
+Preserve the failed original score, `clock-diagnostic.json`, `run-identity.json`
+and the local database/truth locations reported by `-KeepArtifacts`. Original QPC
+and independent truth-clock coverage are prerequisites for distinguishing the
+remaining causes; a missing clock makes that comparison unavailable. Keep all raw
+clocks, logs and databases local. This is not a formal acceptance or a request to
+repeat a full system diagnostic, elevate privileges or stop another trace session.

@@ -32,7 +32,12 @@ try {
     $noiseArtifact = Artifact 'contain-registry-noise' $noisePath
     $output = @('Compiling diagnostic on stderr', '{"reason":"compiler-message","message":{"rendered":"warning"}}', $containArtifact, $fixtureArtifact, $noiseArtifact)
     $selected = Get-DemoBuildExecutables -BuildOutput $output -RegistryNoise
-    if ($selected['contain'] -cne $containPath -or $selected['contain-test-installer'] -cne $fixturePath -or $selected['contain-registry-noise'] -cne $noisePath) { throw 'Custom output/target paths were not selected from this build' }
+    # Production returns full paths; Windows may expand a TEMP short name such
+    # as RUNNER~1 even when the synthetic child directories do not exist.
+    if ($selected['contain'] -cne [IO.Path]::GetFullPath($containPath) -or $selected['contain-test-installer'] -cne [IO.Path]::GetFullPath($fixturePath) -or $selected['contain-registry-noise'] -cne [IO.Path]::GetFullPath($noisePath)) { throw 'Custom output/target paths were not selected from this build' }
+    $noncanonical = Join-Path $custom 'unused\..\contain.exe'
+    $selected = Get-DemoBuildExecutables -BuildOutput @((Artifact 'contain' $noncanonical), $fixtureArtifact)
+    if ($selected['contain'] -cne [IO.Path]::GetFullPath($containPath)) { throw 'Absolute artifact normalization changed the selected executable' }
     $selected = Get-DemoBuildExecutables -BuildOutput @($containArtifact, $fixtureArtifact)
     if ($selected.Count -ne 2) { throw 'Optional noise unexpectedly required' }
     Assert-Rejected @($containArtifact)
