@@ -18,6 +18,7 @@ METRICS = ("lines", "functions", "regions", "instantiations", "branches")
 AFFECTED = {
     "crates/contain-cli/src/render.rs": {"write_str", "source_scope_text", "summary_to", "inspect_to", "diff_to", "history_to", "explain_to"},
     "crates/contain-core/src/storage.rs": {"save", "load_internal", "for_event"},
+    "crates/contain-core/src/storage/stream.rs": {"select_raw_only_registry"},
     "crates/contain-core/src/path.rs": {"normalize_path", "in_scope"},
     "crates/contain-core/src/storage/checkpoint.rs": {"available_disk_bytes"},
     "crates/contain-core/src/windows/clock/companion.rs": {"reserve"},
@@ -223,7 +224,7 @@ def build(root, directory):
                       "counts": counts(log.read_text(encoding="utf-8-sig", errors="replace")) if log.is_file() else None,
                       "log_available": log.is_file()})
     required = {
-        "Check": {"fmt", "clippy", "nextest", "doctests", "fuzz-fmt", "fuzz-clippy", "fuzz-seeds", "scorer-pwsh", "provenance-pwsh"} | {p.stem for p in (root / "scripts").glob("test-*.py")},
+        "Check": {"fmt", "clippy", "nextest", "doctests", "fuzz-fmt", "fuzz-clippy", "fuzz-seeds", "scorer-pwsh", "provenance-pwsh", "demo-checks-pwsh", "ci-clock-pwsh"} | {p.stem for p in (root / "scripts").glob("test-*.py")},
         "Coverage": {"coverage", "coverage-html", "coverage-lcov", "coverage-floor"},
         "CoverageOriginal": {"coverage-original", "coverage-original-html", "coverage-original-lcov", "coverage-original-floor"},
         "Dependencies": {"metadata", "deny", "metadata-fuzz", "fuzz-lock", "deny-fuzz"},

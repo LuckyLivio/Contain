@@ -1,6 +1,6 @@
 # Contain
 
-**Contain doesn't just see changes. It explains why they belong to an app.**
+**Record installation changes and inspect the evidence behind them.**
 
 > Unknown is safer than a wrong answer.
 
@@ -10,20 +10,51 @@ Contain v0.3.1 observes Windows installation sessions, links real events to veri
 
 Contain records evidence and offers a cleanup **dry run**. It does not guarantee zero leftovers or isolate an installer.
 
+## Current read-only trial status
+
+The bounded trial is record controlled activity → save → reopen → query changes
+→ explain an event ID. Version remains **0.3.1**. Implementation, measured results
+and outstanding acceptance are separate; test counts are not feature progress.
+
+| User task | Implemented | Verified platform / scenario | Status and specific limit | Build / evidence |
+| --- | --- | --- | --- | --- |
+| Record a controlled installer and save its source evidence | Native process/file/registry capture, bounded drain and SQLite persistence | Windows x64 controlled fixture at `7a035e6`; target source evidence retained | Implemented; this trial build awaits its two fixed runs. Finished sessions can remain Degraded; scope is not complete coverage | [Previous native evidence](docs/etw-clock-evidence.md) |
+| Reopen and inspect changes, including paged history | Existing list/inspect/diff/history and versioned JSON | Three synthetic databases through the real Windows CLI at `7a035e6` | Verified for those synthetic cases; current package verification pending | [Synthetic examples and CLI checks](docs/read-only-workflow.md) |
+| Explain a source event and distinguish Unknown / historical names | Event IDs, actor/resource/operation evidence and name provenance | Production render/storage regressions and Windows synthetic CLI | Implemented and previously verified; source actor is not current path or final ownership | [Evidence model](docs/architecture.md) |
+| Distinguish diagnostic, evidence, bounded product and formal results | Versioned diagnostic result contract, positive raw/final selection witness and independent product-check execution | Rejection and control-flow regressions run on Linux; native integration pending | Historical six time failures remain D. Formal provider acceptance remains unmet | [Versioned protocol](docs/v04-validation.md#bounded-diagnostic-result-contract) |
+| Download and run without Rust or Visual Studio | Prebuilt binary demo, PE dependency checks and file-hashed Windows x64 bundle | Synthetic packaging and binary-identity regressions passed; actual Windows package pending | Not yet a verified downloadable candidate; the frozen pair will test the actual delivered binaries | Trial artifact and actual CLI example will be linked here after CI |
+
+Separate follow-up scopes remain: formal 32-attempt acceptance; 1,000/10,000-file
+scale validation; third-party installer trials; final-state ownership; and safe
+cleanup. None is implied by this read-only trial, and none starts in this round.
+
 ## Try it
 
-Requirements: Windows x64, [Rust stable](https://rust-lang.org/tools/install/), Visual Studio C++ build tools, and PowerShell. From the repository:
+The Windows x64 CI trial package contains `contain.exe`, the controlled fixture,
+required non-system runtime files, `BUILD.json`, `VALIDATION.json` and `TRY.md`.
+Read its actual validation status before use: a diagnostic package is not a
+verified candidate. Ordinary CLI use needs neither Rust nor Visual Studio.
+The controlled demo additionally needs PowerShell 7 and Python 3.
+From the extracted package, use a new output directory:
 
 ```powershell
-./scripts/demo.ps1
+pwsh -NoProfile -File .\scripts\demo.ps1 -RequireEtw -KeepArtifacts -OutputDirectory "$PWD\demo-result-new"
 ```
 
-This builds the CLI, runs a safe parent → child → grandchild installer alongside an **independent process writing the same directory**, records independent ground truth, short-lived and detached helpers, rename/failure cases, and registry noise; checks attribution, JSON/SQLite readback and unchanged data after dry-run, then removes only the marked fixture. Files stay within `%TEMP%\contain-demo-*`; registry mutations stay within its matching `HKCU\Software\Contain\Demo\*` key. It creates no real services, tasks, or startup registrations.
+The prebuilt demo preserves its database and fixture and prints their locations.
+It records a parent → child → grandchild fixture with an independent writer,
+short-lived and detached helpers, rename/failure cases and registry noise;
+then checks attribution, database reopening, JSON, paged views, event explanation
+and unchanged data after dry-run. Files and registry changes stay within the
+marked temporary fixture and its matching `HKCU\Software\Contain\Demo\*` key.
+It creates no services, tasks or startup registrations.
+
+For development from source, install Rust stable and Visual Studio C++ build
+tools in addition to those demo tools. The original build entrypoint remains:
 
 ```powershell
-./scripts/demo.ps1 -SnapshotOnly  # explicit fallback
-./scripts/demo.ps1 -RequireEtw    # fails unless real PID-aware events are captured
-./scripts/demo.ps1 -KeepArtifacts # prints database and fixture paths for exploration
+./scripts/demo.ps1 -RequireEtw -KeepArtifacts
+./scripts/demo.ps1 -SnapshotOnly -KeepArtifacts # explicit, separate fallback
 ```
 
 ETW needs suitable Windows trace/provider permissions. Contain never opens UAC. With insufficient rights it continues with process observation and snapshots, and file/registry attribution remains `Unknown`. `-RequireEtw` is a test assertion, not an elevation request.

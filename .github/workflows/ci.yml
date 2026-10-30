@@ -1,6 +1,10 @@
 name: CI
 on:
   push:
+    paths-ignore:
+      - README.md
+      - 'docs/*.md'
+      - 'docs/**/*.md'
   pull_request:
 
 jobs:
@@ -15,6 +19,20 @@ jobs:
         with:
           components: rustfmt, clippy, llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
+      - name: Declare the bounded native capture plan
+        id: trial_plan
+        shell: pwsh
+        env:
+          TRIAL_PAIR_REQUESTED: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[trial-pair]') }}
+        run: |
+          $requested = $env:TRIAL_PAIR_REQUESTED -eq 'true'
+          "capture=$($requested.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          New-Item -ItemType Directory -Path target/quality-public -Force | Out-Null
+          [ordered]@{
+            schema_version=1; source_sha=$env:GITHUB_SHA; requested=$requested
+            configurations=@('default','dual-clock'); maximum_native_captures=2; retries=0
+            status=$(if($requested){'planned_after_quality_checks'}else{'not_requested_not_validated'})
+          } | ConvertTo-Json | Set-Content target/quality-public/capture-plan.json -Encoding utf8
       - name: Required quality tools
         shell: pwsh
         run: |
@@ -32,18 +50,22 @@ jobs:
         shell: pwsh
         run: ./scripts/quality.ps1 -Mode Check
       - name: Quality Coverage
+        id: coverage
         if: ${{ !cancelled() }}
         shell: pwsh
         run: ./scripts/quality.ps1 -Mode Coverage
       - name: Original package coverage denominator
+        id: original_coverage
         if: ${{ !cancelled() }}
         shell: pwsh
         run: ./scripts/quality.ps1 -Mode CoverageOriginal
       - name: Quality Dependencies
+        id: dependencies
         if: ${{ !cancelled() }}
         shell: pwsh
         run: ./scripts/quality.ps1 -Mode Dependencies
       - name: Bounded companion spool regression
+        id: companion
         if: ${{ !cancelled() }}
         shell: pwsh
         run: ./scripts/quality.ps1 -Mode Companion
@@ -52,6 +74,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: cargo build --workspace --locked
       - name: Synthetic read-only CLI integration
+        id: synthetic_cli
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         shell: pwsh
         run: |
@@ -67,22 +90,68 @@ jobs:
             }
           }
           Write-Host 'CLI JSON schema: 33 passed, 0 failed, 0 skipped'
-      # The one diagnostic is preserved in run 41045468693. These two fixed
-      # attempts verify its WAL-aware evidence-export repair; never retry to green.
-      - name: ETW clock evidence verification 1 of 2
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+      - name: Publish reviewed quality summary
+        id: quality_summary
+        if: always()
         shell: pwsh
-        run: ./scripts/ci-etw-clock.ps1 -Phase verification -AttemptIndex 1 -OutputDirectory ([IO.Path]::GetFullPath('target/etw-clock-verification-1')) -PublicOutputDirectory ([IO.Path]::GetFullPath('target/etw-clock-public-1'))
-      - name: ETW clock evidence verification 2 of 2
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          python scripts/quality-summary.py --root . --quality target/quality --output target/quality-public/summary.json
+          if ($LASTEXITCODE -ne 0) { throw 'Quality summary validation failed' }
+      # Only an explicitly planned push consumes the two native attempts. All
+      # independent quality gates must pass first; documentation pushes cannot
+      # accidentally repeat captures. The same frozen package runs both modes.
+      - name: Freeze the Windows x64 trial package
+        id: trial_package
+        if: ${{ !cancelled() && steps.trial_plan.outputs.capture == 'true' && steps.quality_check.outcome == 'success' && steps.coverage.outcome == 'success' && steps.original_coverage.outcome == 'success' && steps.dependencies.outcome == 'success' && steps.companion.outcome == 'success' && steps.build.outcome == 'success' && steps.synthetic_cli.outcome == 'success' && steps.quality_summary.outcome == 'success' }}
         shell: pwsh
-        run: ./scripts/ci-etw-clock.ps1 -Phase verification -AttemptIndex 2 -OutputDirectory ([IO.Path]::GetFullPath('target/etw-clock-verification-2')) -PublicOutputDirectory ([IO.Path]::GetFullPath('target/etw-clock-public-2'))
+        run: |
+          $packageArgs = @('scripts/package-trial.py','prepare','--contain','target/debug/contain.exe','--fixture','target/debug/contain-test-installer.exe','--profile','debug','--output','target/windows-trial')
+          # Copy a required redistributable from the existing MSVC installation
+          # only when PE import inspection asks for it; never assume user VS tools.
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vsRoot = & $vswhere -latest -products '*' -property installationPath
+          if ($vsRoot) {
+            $redistRoot = Join-Path $vsRoot 'VC/Redist/MSVC'
+            if (Test-Path -LiteralPath $redistRoot) {
+              $crt = Get-ChildItem -LiteralPath $redistRoot -Directory -Recurse |
+                Where-Object { $_.Name -like 'Microsoft.VC*.CRT' -and $_.FullName -match '\\x64\\' } |
+                Sort-Object FullName -Descending | Select-Object -First 1
+              if ($crt) { $packageArgs += @('--runtime-directory', $crt.FullName) }
+            }
+          }
+          python @packageArgs
+          if ($LASTEXITCODE -ne 0) { throw 'Trial package dependency or identity checks failed' }
+      - name: Native trial 1 of 2 - default product path
+        id: default_trial
+        if: ${{ !cancelled() && steps.trial_package.outcome == 'success' }}
+        shell: pwsh
+        run: ./scripts/ci-etw-clock.ps1 -Phase candidate -Configuration default -AttemptIndex 1 -TrialDirectory ([IO.Path]::GetFullPath('target/windows-trial')) -OutputDirectory ([IO.Path]::GetFullPath('target/trial-default')) -PublicOutputDirectory ([IO.Path]::GetFullPath('target/trial-public-default'))
+      - name: Native trial 2 of 2 - dual clock evidence
+        id: clock_trial
+        if: ${{ !cancelled() && steps.trial_package.outcome == 'success' }}
+        shell: pwsh
+        run: ./scripts/ci-etw-clock.ps1 -Phase candidate -Configuration dual-clock -AttemptIndex 2 -TrialDirectory ([IO.Path]::GetFullPath('target/windows-trial')) -OutputDirectory ([IO.Path]::GetFullPath('target/trial-dual-clock')) -PublicOutputDirectory ([IO.Path]::GetFullPath('target/trial-public-dual-clock'))
+      - name: Finalize the tested package and its actual validation status
+        if: ${{ !cancelled() && steps.trial_package.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          foreach($scenario in @('default','dual-clock')) {
+            $report = "target/trial-public-$scenario/report"
+            if (Test-Path -LiteralPath $report) {
+              New-Item -ItemType Directory -Path "target/windows-trial/examples/$scenario" -Force | Out-Null
+              Get-ChildItem -LiteralPath $report -File | Where-Object { $_.Name -in @('summary.json','cli-report.txt') } |
+                Copy-Item -Destination "target/windows-trial/examples/$scenario"
+            }
+          }
+          python scripts/package-trial.py finalize --package target/windows-trial --default-directory target/trial-default/capture --clock-directory target/trial-dual-clock/capture --clock-analysis target/trial-public-dual-clock/summary.json --quality-summary target/quality-public/summary.json --output target/contain-0.3.1-windows-x64.zip
+          if ($LASTEXITCODE -ne 0) { throw 'Trial candidate is unverified; retain the diagnostic package and actual failures' }
       - name: Snapshot fallback integration
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        id: fallback
+        if: ${{ !cancelled() && steps.trial_plan.outputs.capture != 'true' && steps.build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/demo.ps1 -SnapshotOnly -OutputDirectory ./target/demo-fallback
       - name: Publish fixture-only evidence after scoring
-        if: always()
+        if: ${{ !cancelled() && steps.fallback.outcome != 'skipped' }}
         shell: pwsh
         run: |
           foreach($label in @('demo-fallback')) {
@@ -90,24 +159,24 @@ jobs:
             if($LASTEXITCODE -ne 0){throw 'Fixture evidence publication failed'}
           }
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: ${{ always() && steps.fallback.outcome != 'skipped' }}
         with:
           name: fixture-evidence
           path: target/ci-fixture-public
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: ${{ always() && steps.trial_package.outcome == 'success' }}
         with:
-          name: etw-clock-evidence
+          name: read-only-trial-evidence
           path: |
-            target/etw-clock-public-1
-            target/etw-clock-public-2
+            target/trial-public-default
+            target/trial-public-dual-clock
           if-no-files-found: error
-      - name: Publish reviewed quality summary
-        if: always()
-        shell: pwsh
-        run: |
-          python scripts/quality-summary.py --root . --quality target/quality --output target/quality-public/summary.json
-          if ($LASTEXITCODE -ne 0) { throw 'Quality summary validation failed' }
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && steps.trial_package.outcome == 'success' }}
+        with:
+          name: contain-windows-x64-trial
+          path: target/contain-0.3.1-windows-x64.zip
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
         with:

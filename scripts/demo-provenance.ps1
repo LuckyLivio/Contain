@@ -73,3 +73,48 @@ function Get-DemoBuildExecutables([object[]]$BuildOutput, [switch]$RegistryNoise
     }
     return $paths
 }
+
+function Get-DemoPrebuiltExecutables {
+    param([Parameter(Mandatory)][string]$ContainExecutable,
+          [Parameter(Mandatory)][string]$FixtureExecutable,
+          [Parameter(Mandatory)][string]$BuildManifest)
+    $manifestPath = (Get-Item -LiteralPath $BuildManifest -ErrorAction Stop).FullName
+    $root = Split-Path $manifestPath
+    $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+    if ($manifest.schema_version -ne 1 -or $manifest.source_sha -cnotmatch '^[0-9a-f]{40}$' -or
+        $manifest.runtime_tree_sha256 -cnotmatch '^[0-9a-f]{64}$' -or
+        $manifest.target -ne 'x86_64-pc-windows-msvc' -or $manifest.profile -notin @('debug','release')) {
+        throw 'Unsupported or incomplete prebuilt build identity'
+    }
+    $seen = @{}
+    foreach ($item in @($manifest.binaries) + @($manifest.runtime_files) + @($manifest.scripts) + @($manifest.resources)) {
+        $relative = if ($item.PSObject.Properties['name']) { [string]$item.name } else { [string]$item.path }
+        $normalized = $relative.Replace('\','/')
+        if (-not $relative -or [IO.Path]::IsPathRooted($relative) -or $relative -match '^[A-Za-z]:' -or
+            $normalized.StartsWith('/') -or @($normalized.Split('/') | Where-Object { $_ -in @('..','.','') }).Count -gt 0 -or
+            $seen.ContainsKey($normalized) -or $item.sha256 -cnotmatch '^[0-9a-f]{64}$') {
+            throw 'Invalid or duplicate package manifest path/hash'
+        }
+        $seen[$normalized] = $true
+        $path = Join-Path $root $normalized
+        $actual = Get-DemoBinaryIdentity $path
+        if ($actual.sha256 -cne $item.sha256 -or ($item.PSObject.Properties['bytes'] -and $actual.bytes -ne $item.bytes)) {
+            throw "Packaged file does not match build manifest: $normalized"
+        }
+    }
+    foreach ($required in @('contain.exe','contain-test-installer.exe','scripts/demo.ps1','scripts/demo-provenance.ps1',
+        'scripts/demo-checks.ps1','scripts/score-fixture.ps1','scripts/score-fixture.py','scripts/demo-measure.py',
+        'scripts/v04-verify-views.py','scripts/v04-clock-protocol.py','scripts/v04-matrix.py','scripts/v04-metrics.py',
+        'docs/schema/cli-v3.schema.json')) {
+        if (-not $seen.ContainsKey($required)) { throw "Required package file lacks a manifest hash: $required" }
+    }
+    $paths = @{}
+    foreach ($pair in @(@('contain',$ContainExecutable), @('contain-test-installer',$FixtureExecutable))) {
+        $actual = Get-DemoBinaryIdentity $pair[1]
+        $expected = [IO.Path]::GetFullPath((Join-Path $root ($pair[0]+'.exe')))
+        if (-not $actual.path.Equals($expected,[StringComparison]::OrdinalIgnoreCase)) { throw 'Selected executable is outside the verified package location' }
+        $paths[$pair[0]] = $actual.path
+    }
+    [ordered]@{ executables=$paths; manifest=$manifest; manifest_path=$manifestPath;
+        manifest_sha256=(Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant() }
+}

@@ -97,6 +97,8 @@ try {
             Invoke-Gate fuzz-seeds cargo @('test', '--manifest-path', 'fuzz/Cargo.toml', '--lib', '--locked')
             Invoke-Gate scorer-pwsh pwsh @('-NoProfile', '-File', 'scripts/test-score.ps1')
             Invoke-Gate provenance-pwsh pwsh @('-NoProfile', '-File', 'scripts/test-demo-provenance.ps1')
+            Invoke-Gate demo-checks-pwsh pwsh @('-NoProfile', '-File', 'scripts/test-demo-checks.ps1')
+            Invoke-Gate ci-clock-pwsh pwsh @('-NoProfile', '-File', 'scripts/test-ci-etw-clock.ps1')
             foreach ($script in Get-ChildItem -LiteralPath scripts -Filter 'test-*.py' | Sort-Object Name) {
                 Invoke-Gate $script.BaseName python @("scripts/$($script.Name)")
             }

@@ -349,3 +349,39 @@ and independent truth-clock coverage are prerequisites for distinguishing the
 remaining causes; a missing clock makes that comparison unavailable. Keep all raw
 clocks, logs and databases local. This is not a formal acceptance or a request to
 repeat a full system diagnostic, elevate privileges or stop another trace session.
+
+
+## Bounded prebuilt trial contract
+
+The `fix/windows-read-only-candidate` branch retains 0.3.1 and packages the exact
+MSVC debug binaries tested by CI; debug is a functional diagnostic build, not a
+release performance result. `BUILD.json` fixes source, build configuration, PE
+imports, dependencies and file hashes. Ordinary CLI use needs Windows x64;
+the existing controlled demo needs PowerShell 7 and Python 3, but neither Rust
+nor Visual Studio. `scripts/demo.ps1` accepts `-ContainExecutable`,
+`-FixtureExecutable`, `-BuildManifest`, or automatically uses the extracted
+package's `BUILD.json`. It preserves prebuilt fixture/database output.
+
+Only a push explicitly marked `[trial-pair]` schedules native candidate work.
+Check, Coverage, original-package Coverage, Dependencies, companion regression,
+workspace build and all three existing synthetic CLI scenarios must pass first.
+One frozen package then runs once with optional instrumentation disabled and
+once with both independent fixture and raw ETW clocks enabled, in separate new
+absolute output directories outside the watched scope/database. These are two
+configurations, not repeated stability evidence. The existing fallback remains
+available on non-pair CI; it is not an extra capture in this two-attempt trial.
+
+The result contract separates diagnostic execution, supplied-view clock inputs
+(and a separate raw/final join check), bounded product checks and formal
+`requirements_unmet`. A diagnostic failure no longer bypasses independent
+product assertions or offline CLI readback. Missing inputs are `not_run` or
+incomplete, never passed. Raw-only registry source records need the production
+selection witness described in the architecture; absent final rows alone are
+not evidence of legitimate filtering. No actor is inferred from fixture truth.
+
+The trial ZIP includes actual CLI excerpts and per-check validation status;
+failed required checks produce an explicitly unverified diagnostic package and
+a failing CI, not a verified candidate. Full SQLite databases, ETW sidecars and
+machine inventories are excluded. Formal 32-run, scale, third-party installers,
+final ownership and safe cleanup remain separate unexecuted follow-up scopes.
+Historical six unmatched events without original QPC remain D.

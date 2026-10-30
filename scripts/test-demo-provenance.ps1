@@ -4,6 +4,7 @@ Set-StrictMode -Version Latest
 $directory = Join-Path $env:TEMP ('contain-provenance-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $directory | Out-Null
 $file = Join-Path $directory 'sample.bin'
+$package = Join-Path $directory 'package'
 try {
     [IO.File]::WriteAllText($file, 'first executable bytes')
     $before = Get-DemoBinaryIdentity $file
@@ -47,8 +48,68 @@ try {
     Assert-Rejected @((Artifact 'contain' 'target\release\contain.exe'), $fixtureArtifact)
     Write-Output 'PASS: custom target paths, optional noise, missing fixture/noise, library-only, ambiguous, and relative artifacts'
 
+    New-Item -ItemType Directory -Path $package | Out-Null
+    $packageNames=@('contain.exe','contain-test-installer.exe','scripts/demo.ps1','scripts/demo-provenance.ps1',
+        'scripts/demo-checks.ps1','scripts/score-fixture.ps1','scripts/score-fixture.py','scripts/demo-measure.py',
+        'scripts/v04-verify-views.py','scripts/v04-clock-protocol.py','scripts/v04-matrix.py','scripts/v04-metrics.py',
+        'docs/schema/cli-v3.schema.json','example-runtime.dll')
+    foreach($relative in $packageNames) {
+        $destination=Join-Path $package $relative
+        New-Item -ItemType Directory -Path (Split-Path $destination) -Force | Out-Null
+        [IO.File]::WriteAllText($destination,('synthetic package bytes: '+$relative))
+    }
+    $build=[ordered]@{schema_version=1;source_sha=('a'*40);runtime_tree_sha256=('b'*64);
+        target='x86_64-pc-windows-msvc';profile='release';binaries=@();runtime_files=@();scripts=@();resources=@()}
+    foreach($relative in $packageNames) {
+        $item=Get-DemoBinaryIdentity (Join-Path $package $relative)
+        if ($relative.EndsWith('.exe')) { $build.binaries+=@{name=$relative;sha256=$item.sha256;bytes=$item.bytes} }
+        elseif($relative.EndsWith('.dll')) { $build.runtime_files+=@{name=$relative;sha256=$item.sha256;bytes=$item.bytes} }
+        elseif($relative.StartsWith('scripts/')) { $build.scripts+=@{path=$relative;sha256=$item.sha256;bytes=$item.bytes} }
+        else { $build.resources+=@{path=$relative;sha256=$item.sha256;bytes=$item.bytes} }
+    }
+    $buildPath=Join-Path $package 'BUILD.json'
+    $goodManifest=$build | ConvertTo-Json -Depth 8
+    $goodManifest | Set-Content -LiteralPath $buildPath -Encoding utf8
+    function Select-Package {
+        Get-DemoPrebuiltExecutables -ContainExecutable (Join-Path $package 'contain.exe') -FixtureExecutable (Join-Path $package 'contain-test-installer.exe') -BuildManifest $buildPath
+    }
+    function Reject-Package {
+        $rejected=$false
+        try { $null=Select-Package } catch { $rejected=$true }
+        if(-not $rejected){throw 'Invalid prebuilt package was accepted'}
+    }
+    $selection=Select-Package
+    if ($selection.manifest.source_sha -ne ('a'*40) -or $selection.executables.Count -ne 2 -or $selection.manifest_sha256.Length -ne 64) { throw 'Prebuilt manifest selection lost source/binary identity' }
+    # Pure package selection must never require a source checkout or a Cargo build.
+    function Get-DemoSourceIdentity { throw 'Unexpected Git source lookup for a prebuilt package' }
+    $null=Select-Package
+    foreach($relative in @('contain.exe','scripts/demo-checks.ps1','example-runtime.dll','docs/schema/cli-v3.schema.json')) {
+        $path=Join-Path $package $relative
+        $bytes=[IO.File]::ReadAllBytes($path)
+        [IO.File]::WriteAllText($path,'changed')
+        Reject-Package
+        [IO.File]::WriteAllBytes($path,$bytes)
+    }
+    foreach($kind in @('missing-script','duplicate','escape','wrong-target','invalid-source')) {
+        $bad=$goodManifest | ConvertFrom-Json
+        switch($kind) {
+            'missing-script' { $bad.scripts=@($bad.scripts | Where-Object path -ne 'scripts/demo-checks.ps1') }
+            'duplicate' { $bad.binaries=@($bad.binaries)+@($bad.binaries[0]) }
+            'escape' { $bad.scripts[0].path='../outside.py' }
+            'wrong-target' { $bad.target='x86_64-unknown-linux-gnu' }
+            'invalid-source' { $bad.source_sha='unknown' }
+        }
+        $bad | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $buildPath -Encoding utf8
+        Reject-Package
+    }
+    $goodManifest | Set-Content -LiteralPath $buildPath -Encoding utf8
+    $null=Select-Package
+    Write-Output 'PASS: prebuilt package identity; changed executable/script/runtime/schema, missing script, duplicate, escape, wrong target and invalid source rejected'
+
 } finally {
     # Only the exact file and directory created above are touched; no recursive cleanup.
     if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file }
+    # This nested package contains only files created by this synthetic test.
+    if (Test-Path -LiteralPath $package) { Remove-Item -LiteralPath $package -Recurse }
     Remove-Item -LiteralPath $directory
 }
