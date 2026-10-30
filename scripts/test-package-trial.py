@@ -123,9 +123,23 @@ class TrialTests(unittest.TestCase):
                 with self.assertRaises(ValueError): TRIAL.pe_imports(self.contain)
 
     def test_non_system_and_debug_runtime_are_not_silently_assumed_installed(self):
-        self.contain.write_bytes(synthetic_pe(imports=("VCRUNTIME140D.dll",)))
-        with self.assertRaisesRegex(ValueError, "unprovided_non_system_runtime_dependency"):
-            self.prepare()
+        for name in ("VCRUNTIME140D.dll", "unrecognized-library.dll"):
+            with self.subTest(dependency=name):
+                self.package = self.root / ("package-" + name)
+                self.contain.write_bytes(synthetic_pe(imports=(name,)))
+                with self.assertRaisesRegex(ValueError, "unprovided_non_system_runtime_dependency"):
+                    self.prepare()
+
+    def test_windows_etw_and_performance_system_imports_need_no_redist(self):
+        # Locked ferrisetw and sysinfo bindings link TDH and PDH respectively.
+        # This synthetic PE verifies packaging policy, not native DLL loading.
+        self.contain.write_bytes(synthetic_pe(imports=("TDH.dll",), delayed=("PDH.dll",)))
+        manifest = self.prepare()
+        self.assertEqual(manifest["pe_dependencies"]["contain.exe"]["imports"], ["tdh.dll"])
+        self.assertEqual(manifest["pe_dependencies"]["contain.exe"]["delay_imports"], ["pdh.dll"])
+        self.assertEqual(manifest["runtime_files"], [])
+        self.assertFalse((self.package / "tdh.dll").exists())
+        self.assertFalse((self.package / "pdh.dll").exists())
 
     def test_explicit_runtime_is_packaged_and_recursively_inspected(self):
         self.contain.write_bytes(synthetic_pe(imports=("VCRUNTIME140.dll",)))

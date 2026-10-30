@@ -416,3 +416,18 @@ non-SetValue registry early return, missing-raw query error propagation and
 witness serialization error propagation. Zero-execution duplicate instances
 remain in the artifact. Region coverage is not branch coverage, and these tests
 do not establish every real SQLite I/O failure behavior.
+
+
+Before any collection, a static dependency review found two Windows system DLLs
+missing from the packaging allowlist: `tdh.dll` (locked ferrisetw/windows TDH
+bindings) and `pdh.dll` (locked sysinfo/windows performance bindings). Both also
+appear in the existing GNU Windows PE imports; that binary is supporting static
+evidence, not the delivered MSVC build or a native test. A new synthetic PE
+regression first failed, then passed after adding exactly those system DLLs.
+Unknown DLLs and Debug VC runtime imports remain rejected; system DLLs are not
+copied into the package. Package regressions now contain 20 tests.
+The preparation-only CI [41065051721](https://github.com/LuckyLivio/Contain/actions/runs/41065051721)
+at `e14ac36594fcf9fc6876077b8b0b0ebb337c24d5` was cancelled during quality-tool
+preparation for this concrete fix, before tests or native captures. Its cancelled
+result remains recorded; it is not a pass or an ETW attempt. The final MSVC
+imports and runtime loading still require the frozen candidate CI.

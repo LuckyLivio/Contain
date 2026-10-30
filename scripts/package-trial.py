@@ -37,9 +37,9 @@ RESOURCES = ("LICENSE", "docs/schema/cli-v3.schema.json",
 SYSTEM_DLLS = frozenset("advapi32.dll bcrypt.dll bcryptprimitives.dll cabinet.dll cfgmgr32.dll "
     "comctl32.dll comdlg32.dll crypt32.dll dbghelp.dll dnsapi.dll dwmapi.dll gdi32.dll "
     "imm32.dll iphlpapi.dll kernel32.dll kernelbase.dll mpr.dll msimg32.dll msvcrt.dll "
-    "ncrypt.dll netapi32.dll ntdll.dll ole32.dll oleaut32.dll powrprof.dll propsys.dll "
+    "ncrypt.dll netapi32.dll ntdll.dll ole32.dll oleaut32.dll pdh.dll powrprof.dll propsys.dll "
     "psapi.dll rpcrt4.dll secur32.dll setupapi.dll shell32.dll shlwapi.dll user32.dll "
-    "userenv.dll ucrtbase.dll version.dll wevtapi.dll wer.dll winhttp.dll wininet.dll "
+    "tdh.dll userenv.dll ucrtbase.dll version.dll wevtapi.dll wer.dll winhttp.dll wininet.dll "
     "winmm.dll winspool.drv wintrust.dll wldap32.dll ws2_32.dll wtsapi32.dll".split())
 RUNTIME_DLL = re.compile(r"(?:vcruntime140(?:_1)?|msvcp140(?:_[12]|_atomic_wait|_codecvt_ids)?|concrt140)\.dll")
 SAFE_LIMITATIONS = frozenset({
