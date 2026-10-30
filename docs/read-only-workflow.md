@@ -709,5 +709,98 @@ production save/readback mismatch.
 That attempt is retained: package tests 32 passed / 1 failed; 15 later quality
 gates not run; coverage, original-package coverage, dependencies and companion
 passed. Neither new report preflight nor native capture nor package delivery ran.
-The next freeze follows this specific correction; native attempts consumed so
-far remain zero. No field equality, privacy check or acceptance floor is relaxed.
+At that point, native attempts consumed remained zero. The next freeze followed
+this specific correction. No field equality, privacy check or acceptance floor
+was relaxed.
+
+## Verified bounded delivery
+
+**The bounded read-only candidate delivery milestone is closed.** Frozen source
+`2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15`, branch `fix/trial-json-save`, passed
+[CI 41102818151](https://github.com/LuckyLivio/Contain/actions/runs/41102818151).
+The [Windows x64 ZIP artifact](https://github.com/LuckyLivio/Contain/actions/runs/41102818151/artifacts/13000967787)
+contains the exact debug binaries and scripts tested below, both actual real-ETW
+controlled-fixture reports, the three existing synthetic examples, runtime DLL,
+usage instructions, `BUILD.json`, `CONTENTS.json` and `VALIDATION.json`.
+All 18 required candidate checks passed. Version remains 0.3.1; this is not a
+release, repeated stability proof or third-party installer validation.
+
+| Frozen-source check / command | Result and scope |
+| --- | --- |
+| `./scripts/quality.ps1 -Mode Check` | Passed: nextest 291 passed / 0 failed / 7 skipped; Python 340 passed / 0 failed / 0 skipped across 22 suites; PowerShell demo 15 passed / 0 failed / 0 skipped, CI wrapper 36 assertions; fmt, Clippy, scorer/provenance and fuzz seed checks passed. Doctests executed zero tests and are not feature evidence. |
+| `./scripts/quality.ps1 -Mode Coverage` | 291 passed / 0 failed / 7 ignored; lines 13,461 / 18,005 = 74.762566%, functions 1,077 / 1,419 = 75.898520%. Shared production tests also execute in `contain-offline`; these are execution counts, not unique tests. |
+| `./scripts/quality.ps1 -Mode CoverageOriginal` | Original packages: 222 passed / 0 failed / 4 ignored; lines 9,591 / 13,244 = 72.417699%, functions 767 / 1,028 = 74.610895%. Both scopes retain the 66.5% line / 70% function floors, including the existing inline-test coverage convention. No production exclusions were added. |
+| `./scripts/quality.ps1 -Mode Dependencies`; `-Mode Companion` | Five dependency gates passed with locked inputs; companion spool regression 1 passed / 0 failed / 0 ignored, 193 filtered. All 48 required quality gates passed, none missing. |
+| `python scripts/test-report-paths.py` | Native Windows filesystem: 7 passed / 0 failed / 0 skipped, including an actual OS-provided 8.3 alias. This is separate from the 340 Python tests. |
+| `python scripts/verify-trial-report.py --package target/windows-trial --generator target/debug/read-only-examples.exe --output target/trial-report-preflight --public-output target/quality-public/trial-report-preflight` | Complete synthetic save/export/collection chain passed: 24 actual CLI calls = 3 initial inspect calls + 14 normal/extended report calls + 7 negative report calls. Three shared PowerShell save calls preserved the original JSON bytes. No command failed or was unexecuted. Full-export volume supplied no distinct 8.3 alias; that optional case remains not covered. |
+| Negative synthetic integration, same preflight | Changing only `/data/events/0/id` produced exactly one string-value difference, no truncation, exporter exit 2 and failed report acceptance. All 7 independent CLI report commands ran; the marked report was collected; the production candidate-report gate rejected it. This expected rejection is a passed regression, not an accepted report. |
+| Default real capture, attempt 1 of 2 | `demo.ps1 -RequireEtw -KeepArtifacts` with packaged binaries and a new output directory, clocks disabled: 35 required product checks passed / 0 failed / 0 not run; 7 report commands passed / 0 failed / 0 not run. Saved/readback JSON: zero strict field differences and identical bytes. |
+| Dual-clock real capture, attempt 2 of 2 | Same package and fixture, distinct new directory, `CONTAIN_FIXTURE_CLOCK=1` and a new absolute `CONTAIN_ETW_RAW_CLOCK_PATH`: 35 required product checks passed / 0 failed / 0 not run, one required clock diagnostic passed; 7 report commands passed / 0 failed / 0 not run. Zero strict field differences and identical bytes. |
+| Package finalization and review | `candidate_verified=true`; 27 ZIP members, all 26 content-manifest entries verified, all 11 packaged scripts match frozen source. Both reports match the separate CI evidence byte for byte. No databases, full traces, raw clock streams or private logs are included. |
+
+Windows Server 2025 x64 used Rust/Cargo 1.99.1, PowerShell 7.6.7, Python 3.12.10,
+nextest 0.9.149, llvm-cov 0.9.1 and cargo-deny 0.20.2. Build command was
+`cargo build --workspace --locked`, target `x86_64-pc-windows-msvc`, debug profile.
+The [reviewed aggregate](examples/windows-read-only-trial-41102818151.json)
+retains exact commands, identities, counts, the first failed CI attempt and
+links to the full reviewed quality/evidence artifacts. The original three
+synthetic CLI regressions also passed 66 commands and 33 JSON-schema checks.
+They are separate from the new 24-call report preflight and real captures.
+
+The [default real CLI report](examples/windows-trial-default-41102818151.txt)
+and [dual-clock real CLI report](examples/windows-trial-dual-clock-41102818151.txt)
+are actual packaged CLI excerpts, with private roots replaced and free-form
+machine details omitted. Their generated bytes are preserved. The default
+report observes five verified process links, 337 timeline observations,
+40 normalized source operations, 14 file differences and four registry-value
+differences. State differences remain Unknown. Both sessions are **finished /
+Degraded**, not Complete. In the default report, history offset 54 and explain
+trace event `8574ea29-779b-4c2f-a583-a1e5f37b2117`: a High source actor for
+`write_requested` on `<fixture-root>\short.txt`. Its cached historical open name
+does not establish a current path; explicit application API intent is unavailable,
+and final state is not validated. This is a real ETW controlled fixture, not a
+third-party installer. Required independent-writer, JSON, paging, readback and
+unchanged-data dry-run checks actually executed.
+
+The unchanged original scorer for each real capture reports 21 expected,
+19 observed, 17 correctly attributed, four Unknown and zero incorrect attribution
+or extra positives. The dual-clock supported projection has 91 original-QPC
+links and zero missing links/QPC in that scope. Selection accounting retains
+315 same-ID final links, 59 proven raw-only Unknown records and 169 records
+outside the clock-operation scope. The companion drained all 46,729 records
+without timeout; its consumer loss counters are unavailable, not zero.
+`source_original_qpc_or_actor_missing` remains an unresolved reason category,
+not an event count. Formal provider/stabilization acceptance stays
+`requirements_unmet`, and the historical six remain D. Neither current success
+nor the independently reproduced timestamp-spelling defect assigns a confirmed
+cause to the two old report failures whose field evidence is unavailable.
+
+Optional registry-noise-fixture and snapshot-state checks were not run in these
+ETW configurations; the snapshot fallback was not run in this pair. Formal
+32-attempt acceptance, scale, third-party installers, final ownership and safe
+cleanup remain separate future work. They do not reopen this completed bounded
+delivery milestone. Exactly two native captures ran in this round, without
+retry; the earlier failed quality attempt ran zero captures. No scripts changed
+after the successful freeze, and this evidence-only handoff schedules no capture.
+
+Package SHA-256:
+`3ded107c82d83abaaf70b98db5cf4fdd584117353d794c1e1fc0ede118c9d3ed`.
+`contain.exe` SHA-256:
+`cb382fc8985e5d8d57dd1a73e2fd571f6d9def48bfcd7c936b2e1f2295027501`.
+`BUILD.json` binds the source, build inputs, runtime, exporter and each script;
+the shared save helper hash is
+`34991eb6c5a40f5c2527209b4cf6e527e1fdae11746c845222b0ca6e070d729d`.
+The ZIP includes the unchanged `149a5e3` stdout/stderr/host redirection fix,
+whose normal and failure regressions passed on Windows. Ordinary CLI use needs
+no Rust or Visual Studio. The prebuilt controlled demo additionally needs
+PowerShell 7, Python 3 and existing ETW permissions; it requests no elevation.
+From the extracted ZIP, run with a fresh directory:
+
+```powershell
+pwsh -NoProfile -File .\scripts\demo.ps1 -RequireEtw -KeepArtifacts -OutputDirectory "$PWD\demo-result-new"
+```
+
+Use the printed saved database with existing inspect/diff/history/explain commands;
+the package's `TRY.md` has examples. The final documentation commit is only a
+handoff: binary and script validation remains tied to frozen `2ba98b6`, not to a
+later documentation SHA.
