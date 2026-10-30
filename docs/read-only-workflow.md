@@ -111,3 +111,80 @@ Windows-native execution, its full quality/coverage gates and real ETW remain
 unexecuted here. Cross-target compilation and Linux model tests do not establish
 those results. No 32-run acceptance, third-party installer, elevated diagnostic,
 real cleanup, uninstall or rollback is part of this handoff.
+
+## Offline persistence measurement (synthetic)
+
+Baseline `8f3ab7c7818e3607279cc276290c72c85027034a` and candidate
+`0b97805ccac20f0524a0471f39f9a5fb9dfc9a12` were built with the same Rust 1.99.1,
+locked dependencies, Linux x86_64 release profile and bundled SQLite 3.50.2.
+Five state/process INSERT statements now reuse their prepared forms within the
+existing transaction. SQL, row associations, evidence copies, quota and durability
+policy are unchanged. A late registry-detail failure regression checks complete
+rollback, retry with cached statements, reopened values and foreign-key integrity.
+
+The fixed-seed paired workload has 10,000 source events, 10,000 file states,
+10,000 registry states, 10,000 operations, four process instances and 18,575 edges.
+Seven pairs alternate baseline/candidate order. Every full input, summary, page,
+list and reopened view is checked; three explanations per sample also compare
+the exact event, operation and ancestry/resource graph. Input/semantic hashes and
+counts match across every pair. All 14 paired samples and six preliminary samples
+passed. Every sample, including the slower preliminary run, is retained in the
+[reviewed aggregate](examples/read-only-storage-comparison.json).
+
+| Pair | Order | Baseline save (ms) | Candidate save (ms) |
+|---|---|---:|---:|
+| 1 | baseline / candidate | 596.355 | 463.169 |
+| 2 | candidate / baseline | 552.928 | 512.488 |
+| 3 | baseline / candidate | 569.062 | 453.917 |
+| 4 | candidate / baseline | 558.110 | 468.519 |
+| 5 | baseline / candidate | 564.532 | 439.797 |
+| 6 | candidate / baseline | 543.874 | 458.024 |
+| 7 | baseline / candidate | 598.132 | 441.060 |
+
+Save median: **564.532 → 458.024 ms (18.87% lower)**. This is an offline
+synthetic save measurement, not live Windows ETW throughput or installer speed.
+Full-query medians were 129.289 / 126.113 ms and summary medians 59.647 / 58.726 ms;
+no query optimization is claimed. The same input produced 56,926,208-byte DBs and
+57,523,472-byte WAL files immediately after save in every paired sample. These are
+file-size observations, not sampled peaks. CPU, peak RSS and I/O counters were
+unavailable and remain null. Shared-host scheduling and caches remain limitations.
+
+Reproduce at each exact source revision, retaining both built executables before
+alternating runs; do not run builds or coverage concurrently with measurement:
+
+```bash
+cargo build -p contain-offline --bin storage-bench --release --locked --offline --target x86_64-unknown-linux-gnu
+# Run a frozen candidate binary built from the exact revision below:
+./target/x86_64-unknown-linux-gnu/release/storage-bench --revision 0b97805ccac20f0524a0471f39f9a5fb9dfc9a12 --records 10000 --samples 1 --output target/storage-candidate-new
+```
+
+After comparison, all three pre-existing ignored storage experiments were run
+individually in release mode: state readback scaling, multi-session readback and
+16,384-record synthetic raw replay; each passed one test with zero failures.
+The replay retained all 16,384 records, zero write/quota drops and 64 batches.
+Its single write/postprocessing timings (78.631 / 889.094 ms) are diagnostics, not
+a before/after comparison. The normal final native suite has 62 passed, 0 failed
+and 8 ignored; the three separately executed experiments are not silently counted
+as ordinary suite passes. Five Win32-specific checkpoint experiments remain
+unexecuted locally. Commands and all local logs are under target/quality/storage-comparison.
+
+Final scoped instrumented run at `0b97805` also passed 62 tests with eight ignores;
+source hashes stayed unchanged. Storage coverage, including inline tests, is
+562/580 lines (96.90%) and 30/34 functions (88.24%); `Storage::save` ran 48 times.
+Other begin/prepare/commit/metadata-update error returns remain unexercised.
+Renderer/path coverage is unchanged. The unrelated companion path repair was not
+compiled into either offline benchmark executable or counted as host coverage.
+
+## Windows CI follow-up
+
+The ordinary push of `8f3ab7c` triggered [CI run 41023074320](https://github.com/LuckyLivio/Contain/actions/runs/41023074320).
+Formatting and Clippy passed; 11 CLI renderer tests passed, then core reported
+186 passed, one failed, four ignored. The existing sidecar same-directory rejection
+assertion failed; remaining workspace targets and ETW/fallback steps were not run.
+Its destination parent was canonicalized while watched roots were only normalized
+lexically, so different aliases could miss the same directory. This asymmetry
+already exists at `600151d`; the log does not establish which alias occurred.
+The follow-up resolves both sides identically, fails closed on an unresolved root,
+keeps the old assertion and adds an existing child/.. alias plus noncreation checks.
+It does not change event-name normalization or attribution. This Windows-only
+function cannot execute in the Linux harness; its native result is tracked below.

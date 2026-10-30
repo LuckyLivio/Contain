@@ -191,8 +191,15 @@ fn reserve(path: &Path, roots: &[String]) -> Result<(PathBuf, File), String> {
     let normalized = native::normalize_path(&path.to_string_lossy(), &[]);
     let roots: Vec<_> = roots
         .iter()
-        .map(|root| native::normalize_path(root, &[]))
-        .collect();
+        .map(|root| {
+            // Compare both sides after the same filesystem resolution. Lexical
+            // normalization alone cannot expand a short-name or directory alias.
+            let root = Path::new(root)
+                .canonicalize()
+                .map_err(|e| format!("resolving raw clock watched root: {e}"))?;
+            Ok(native::normalize_path(&root.to_string_lossy(), &[]))
+        })
+        .collect::<Result<_, String>>()?;
     if native::in_scope(&normalized, &roots) {
         return Err("raw clock destination must be outside watched roots".into());
     }
@@ -741,9 +748,32 @@ mod tests {
             )
             .is_err()
         );
+        assert!(!folder.join("watched.json").exists());
+        let child = folder.join("child");
+        std::fs::create_dir(&child).unwrap();
+        let alias_destination = folder.join("watched-alias.json");
+        assert!(
+            reserve(
+                &alias_destination,
+                &[child.join("..").to_string_lossy().into_owned()]
+            )
+            .is_err()
+        );
+        assert!(!alias_destination.exists());
+        let unresolved_destination = folder.join("unresolved-root.json");
+        assert!(
+            reserve(
+                &unresolved_destination,
+                &[folder.join("missing-root").to_string_lossy().into_owned()]
+            )
+            .unwrap_err()
+            .contains("resolving raw clock watched root")
+        );
+        assert!(!unresolved_destination.exists());
         for name in ["original.json:stream", "ambiguous.json.", "ambiguous.json "] {
             assert!(reserve(&folder.join(name), &[]).is_err());
         }
+        std::fs::remove_dir(child).unwrap();
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(folder).unwrap();
     }
