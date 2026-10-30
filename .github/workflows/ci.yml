@@ -67,16 +67,12 @@ jobs:
             }
           }
           Write-Host 'CLI JSON schema: 33 passed, 0 failed, 0 skipped'
-      - name: ETW fixture integration
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        env:
-          RUST_LOG: contain_core::windows::etw=debug
-        shell: pwsh
-        run: ./scripts/demo.ps1 -RequireEtw -OutputDirectory ./target/demo-etw
-      - name: ETW immediate-launch regression repeat
+      # One predeclared diagnostic capture. Restore the two verification attempts
+      # only after reviewing this attempt's original clocks and any minimal fix.
+      - name: ETW clock evidence diagnostic (one attempt)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         shell: pwsh
-        run: ./scripts/demo.ps1 -RequireEtw -OutputDirectory ./target/demo-etw-repeat
+        run: ./scripts/ci-etw-clock.ps1 -OutputDirectory ([IO.Path]::GetFullPath('target/etw-clock-diagnostic')) -PublicOutputDirectory ([IO.Path]::GetFullPath('target/etw-clock-public'))
       - name: Snapshot fallback integration
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         shell: pwsh
@@ -85,7 +81,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          foreach($label in @('demo-etw','demo-etw-repeat','demo-fallback')) {
+          foreach($label in @('demo-fallback')) {
             python scripts/hotpath-artifact.py "./target/$label" "./target/ci-fixture-public/$label" D0
             if($LASTEXITCODE -ne 0){throw 'Fixture evidence publication failed'}
           }
@@ -94,6 +90,12 @@ jobs:
         with:
           name: fixture-evidence
           path: target/ci-fixture-public
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: etw-clock-evidence
+          path: target/etw-clock-public
+          if-no-files-found: error
       - name: Publish reviewed quality summary
         if: always()
         shell: pwsh
