@@ -56,10 +56,13 @@ impl Storage {
         tx.execute("INSERT INTO installation_sessions(id,application_id,started_at,finished_at,exit_code,watch_roots_json,registry_key,warnings_json) VALUES (?1,?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(id) DO UPDATE SET started_at=excluded.started_at,finished_at=excluded.finished_at,exit_code=excluded.exit_code,warnings_json=excluded.warnings_json",
             params![capture.id, capture.started_at, capture.finished_at, capture.exit_code,
                 serde_json::to_string(&capture.watch_roots)?, capture.registry_key, serde_json::to_string(&capture.warnings)?])?;
-        for process in &capture.processes {
-            tx.execute(
-                "INSERT OR IGNORE INTO processes VALUES (?1,?2,?3,?4,?5,?6,?7)",
-                params![
+        // Reuse each statement throughout this transaction. These compatibility
+        // state rows are still written atomically with their evidence documents.
+        {
+            let mut insert =
+                tx.prepare_cached("INSERT OR IGNORE INTO processes VALUES (?1,?2,?3,?4,?5,?6,?7)")?;
+            for process in &capture.processes {
+                insert.execute(params![
                     capture.id,
                     process.pid,
                     process.parent_pid,
@@ -67,38 +70,54 @@ impl Storage {
                     process.first_seen,
                     process.confidence.as_str(),
                     process.reason
-                ],
-            )?;
+                ])?;
+            }
         }
-        for file in &capture.files {
-            tx.execute("INSERT INTO system_events(session_id,event_type,resource,operation,observed_at,process_id,confidence,reason) VALUES (?1,'file',?2,?3,?4,NULL,?5,?6)",
-                params![capture.id, file.path, file.operation, capture.finished_at, file.confidence.as_str(), file.reason])?;
-            let id = tx.last_insert_rowid();
-            tx.execute(
-                "INSERT INTO file_changes VALUES (?1,?2,?3,?4,?5)",
-                params![
+        {
+            let mut event = tx.prepare_cached("INSERT INTO system_events(session_id,event_type,resource,operation,observed_at,process_id,confidence,reason) VALUES (?1,'file',?2,?3,?4,NULL,?5,?6)")?;
+            let mut detail =
+                tx.prepare_cached("INSERT INTO file_changes VALUES (?1,?2,?3,?4,?5)")?;
+            for file in &capture.files {
+                event.execute(params![
+                    capture.id,
+                    file.path,
+                    file.operation,
+                    capture.finished_at,
+                    file.confidence.as_str(),
+                    file.reason
+                ])?;
+                let id = tx.last_insert_rowid();
+                detail.execute(params![
                     id,
                     file.before_hash,
                     file.after_hash,
                     file.after_size,
                     file.notification_seen
-                ],
-            )?;
+                ])?;
+            }
         }
-        for change in &capture.registry {
-            tx.execute("INSERT INTO system_events(session_id,event_type,resource,operation,observed_at,process_id,confidence,reason) VALUES (?1,'registry',?2,?3,?4,NULL,?5,?6)",
-                params![capture.id, format!("{}\\{}", change.key, change.name), change.operation, capture.finished_at, change.confidence.as_str(), change.reason])?;
-            let id = tx.last_insert_rowid();
-            tx.execute(
-                "INSERT INTO registry_changes VALUES (?1,?2,?3,?4,?5)",
-                params![
+        {
+            let mut event = tx.prepare_cached("INSERT INTO system_events(session_id,event_type,resource,operation,observed_at,process_id,confidence,reason) VALUES (?1,'registry',?2,?3,?4,NULL,?5,?6)")?;
+            let mut detail =
+                tx.prepare_cached("INSERT INTO registry_changes VALUES (?1,?2,?3,?4,?5)")?;
+            for change in &capture.registry {
+                event.execute(params![
+                    capture.id,
+                    format!("{}\\{}", change.key, change.name),
+                    change.operation,
+                    capture.finished_at,
+                    change.confidence.as_str(),
+                    change.reason
+                ])?;
+                let id = tx.last_insert_rowid();
+                detail.execute(params![
                     id,
                     change.key,
                     change.name,
                     change.before_value,
                     change.after_value
-                ],
-            )?;
+                ])?;
+            }
         }
         evidence::save(&tx, capture)?;
         reliability::save(&tx, capture)?;
@@ -324,6 +343,125 @@ mod tests {
             0
         );
         assert!(Storage::from_connection(connection).is_err());
+    }
+
+    #[test]
+    fn state_insert_failure_rolls_back_and_cached_statements_recover_after_reopen() {
+        let path = std::env::temp_dir().join(format!(
+            "contain-state-transaction-{}.db",
+            uuid::Uuid::new_v4()
+        ));
+        let mut db = Storage::open(&path).unwrap();
+        db.save(&Capture {
+            id: "retained".into(),
+            name: "retained".into(),
+            schema_version: 3,
+            ..Default::default()
+        })
+        .unwrap();
+        let capture = Capture {
+            id: "state-transaction".into(),
+            name: "state-transaction".into(),
+            schema_version: 3,
+            processes: vec![
+                ProcessRecord {
+                    pid: 11,
+                    creation_time: Some(101),
+                    ..Default::default()
+                },
+                ProcessRecord {
+                    pid: 12,
+                    creation_time: Some(102),
+                    ..Default::default()
+                },
+            ],
+            files: vec![
+                FileChange {
+                    path: "synthetic-b".into(),
+                    after_hash: Some("hash-b".into()),
+                    after_size: Some(22),
+                    ..Default::default()
+                },
+                FileChange {
+                    path: "synthetic-a".into(),
+                    before_hash: Some("before-a".into()),
+                    after_hash: Some("hash-a".into()),
+                    after_size: Some(11),
+                    ..Default::default()
+                },
+            ],
+            registry: vec![
+                RegistryChange {
+                    key: "synthetic-key".into(),
+                    name: "accepted".into(),
+                    after_value: Some("value-a".into()),
+                    ..Default::default()
+                },
+                RegistryChange {
+                    key: "synthetic-key".into(),
+                    name: "reject".into(),
+                    before_value: Some("before-b".into()),
+                    after_value: Some("value-b".into()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        db.connection.execute_batch("CREATE TRIGGER reject_last_state BEFORE INSERT ON registry_changes WHEN NEW.value_name='reject' BEGIN SELECT RAISE(ABORT,'injected final state failure'); END;").unwrap();
+        let error = db.save(&capture).unwrap_err();
+        assert!(error.to_string().contains("injected final state failure"));
+        assert_eq!(db.list().unwrap().len(), 1);
+        assert!(db.load(&capture.id).is_err());
+        // The error happens after both files and one registry row. No partially
+        // saved state or detached detail row may survive the transaction rollback.
+        for table in [
+            "processes",
+            "system_events",
+            "file_changes",
+            "registry_changes",
+        ] {
+            let rows: u64 = db
+                .connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(rows, 0, "rollback left rows in {table}");
+        }
+        db.connection
+            .execute_batch("DROP TRIGGER reject_last_state")
+            .unwrap();
+        db.save(&capture).unwrap();
+        drop(db);
+        let reopened = Storage::open(&path).unwrap();
+        let restored = reopened.load_summary(&capture.id).unwrap();
+        assert_eq!(reopened.list().unwrap().len(), 2);
+        assert_eq!(restored.processes.len(), 2);
+        assert_eq!(restored.files.len(), 2);
+        assert_eq!(restored.registry.len(), 2);
+        let mut files = capture.files;
+        files.sort_by(|a, b| a.path.cmp(&b.path));
+        assert_eq!(
+            serde_json::to_value(&restored.files).unwrap(),
+            serde_json::to_value(&files).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(&restored.registry).unwrap(),
+            serde_json::to_value(&capture.registry).unwrap()
+        );
+        assert!(
+            reopened
+                .connection
+                .query_row("PRAGMA foreign_key_check", [], |_| Ok(()))
+                .optional()
+                .unwrap()
+                .is_none()
+        );
+        drop(reopened);
+        for suffix in ["", "-wal", "-shm"] {
+            let owned = std::path::PathBuf::from(format!("{}{suffix}", path.display()));
+            if owned.exists() {
+                std::fs::remove_file(owned).unwrap();
+            }
+        }
     }
 
     #[test]
