@@ -1,8 +1,10 @@
 """Windows offline report preflight, using saved synthetic models and real CLI.
 
 No installer, provider or registry operation is executed. Production RawBuffer /
-Storage generates the database; package-trial's production report and collection
-functions execute all seven actual packaged CLI commands. Full model databases,
+Storage generates the database. Actual inspect stdout passes through the packaged
+production demo save function before package-trial reopens it and executes all
+seven report commands. A deliberately corrupted saved copy must fail strict
+comparison while independent report commands and collection still run. Full model databases,
 paths and CLI stderr remain in --output; --public-output contains safe summaries.
 """
 import argparse
@@ -18,7 +20,7 @@ import sys
 import uuid
 
 
-PROTOCOL = "contain-synthetic-report-preflight-1"
+PROTOCOL = "contain-synthetic-report-preflight-2"
 COMMANDS = ("inspect-json", "history-json", "explain-json", "inspect-text",
             "diff-text", "history-text", "explain-text")
 SPEC = importlib.util.spec_from_file_location("trial_report", Path(__file__).with_name("package-trial.py"))
@@ -87,15 +89,19 @@ def synthetic_identity(package, manifest, root, database):
         note="SYNTHETIC saved model; package files hashed, no native fixture or provider executed")
 
 
-def assert_report(summary, text, capture, private, roots):
-    require(summary.get("complete") is True and summary.get("scope") == "synthetic_windows_cli_report",
+def assert_report(summary, text, capture, private, roots, consistent=True):
+    require(summary.get("report_generated") is True
+            and summary.get("complete") is consistent
+            and summary.get("scope") == "synthetic_windows_cli_report",
             "synthetic_report_incomplete_or_mislabelled")
     require(summary.get("candidate_verified") is False, "synthetic_report_claims_candidate_validation")
     commands = summary.get("commands", [])
     require([row.get("name") for row in commands] == list(COMMANDS)
             and all(row.get("exit_code") == 0 for row in commands), "all_seven_report_commands_required")
     actual = TRIAL.json_document((private / "inspect-json.stdout.txt").read_text(encoding="utf-8"), "inspect")
-    require(actual == capture, "preflight_inspect_json_changed")
+    require((actual == capture) is consistent, "preflight_inspect_json_comparison_incorrect")
+    require(summary.get("checks", {}).get("reopen_json_equal") is consistent,
+            "preflight_comparison_status_incorrect")
     event = actual["events"][0]
     require(summary.get("event_id") == event["id"] and event["confidence"] == "High",
             "preflight_historical_event_not_selected")
@@ -143,11 +149,65 @@ def assert_report(summary, text, capture, private, roots):
             "preflight_public_private_identity_leaked")
 
 
-def run_case(label, alias, root, package, generator, manifest, output, public):
+def serialization_sensitive_values(capture):
+    """These values come from production Storage and the actual CLI, not edits."""
+    require(capture["started_at"] == "2026-10-01T00:00:00.120+00:00"
+            and capture["events"][0]["timestamp"] == "2026-10-01T00:00:01.123400+00:00",
+            "preflight_sensitive_time_strings_missing")
+    require(type(capture["files"][1]["after_size"]) is int
+            and capture["files"][1]["after_size"] == 9007199254740993
+            and capture["events"][0]["timestamp_ticks"] == "134350000000000011",
+            "preflight_precise_integer_missing")
+    require(capture["files"][0]["after_size"] is None
+            and capture["events"][1]["success"] is None
+            and isinstance(capture["events"], list)
+            and isinstance(capture["events"][0]["raw"]["file_name"], dict),
+            "preflight_null_array_nested_inputs_missing")
+
+
+def save_actual_cli_capture(package, database, capture_directory, local, result):
+    """Run the CLI, then the exact packaged demo save entrypoint and schema."""
+    completed = subprocess.run([str(package / "contain.exe"), "--db", str(database),
+                                "inspect", "SyntheticReport", "--json"],
+                               capture_output=True, timeout=120)
+    source = local / "save-source-inspect.stdout.json"
+    source.write_bytes(completed.stdout)
+    (local / "save-source-inspect.stderr.txt").write_bytes(completed.stderr)
+    source_result = dict(name="save-source-inspect-json", exit_code=completed.returncode,
+                         stdout_sha256=TRIAL.sha(source))
+    result["save_commands"].append(source_result)
+    require(completed.returncode == 0, "preflight_save_source_inspect_failed")
+    # Independently parse only for checks; PowerShell validates and writes the
+    # original text. Keep the generator's previous direct export as private
+    # provenance, so it cannot silently satisfy the actual demo save chain.
+    original = TRIAL.json_document(completed.stdout.decode("utf-8"), "inspect")
+    serialization_sensitive_values(original)
+    (capture_directory / "capture.json").rename(capture_directory / "generator-capture.json")
+    saved = capture_directory / "capture.json"
+    script = package / "scripts" / "demo-save-capture.ps1"
+    command = ["pwsh", "-NoProfile", "-File", str(script), "-InputPath", str(source),
+               "-OutputPath", str(saved), "-SchemaPath", str(package / "docs/schema/cli-v3.schema.json")]
+    save = subprocess.run(command, capture_output=True, timeout=120)
+    (local / "demo-save.stdout.txt").write_bytes(save.stdout)
+    (local / "demo-save.stderr.txt").write_bytes(save.stderr)
+    require(save.returncode == 0, "shared_demo_save_failed")
+    expected = completed.stdout.decode("utf-8").replace("\r\n", "\n")
+    if not expected.endswith("\n"):
+        expected += "\n"
+    require(saved.read_bytes() == expected.encode("utf-8"), "preflight_raw_json_text_changed")
+    capture = TRIAL.read(saved)["data"]
+    require(capture == original, "preflight_shared_save_changed_json_content")
+    return capture, dict(exit_code=save.returncode,
+        implementation_sha256=TRIAL.sha(script), source_sha256=TRIAL.sha(source),
+        saved_sha256=TRIAL.sha(saved), encoding="utf-8-no-bom", newline="CRLF_to_LF_append_missing_final_LF")
+
+
+def run_case(label, alias, root, package, generator, manifest, output, public, negative=False):
     local = output / label
     local.mkdir()
     capture_directory = local / "capture"
-    result = dict(case=label, scope="synthetic_windows_cli_report", status="failed", commands=[], failure=None)
+    result = dict(case=label, scope="synthetic_windows_cli_report", status="failed", commands=[],
+                  save_commands=[], failure=None)
     try:
         completed = subprocess.run([str(generator), "--report-fixture", str(capture_directory), str(root), alias,
                                     str(package / "contain-test-installer.exe")],
@@ -156,9 +216,19 @@ def run_case(label, alias, root, package, generator, manifest, output, public):
         (local / "generator.stderr.txt").write_text(completed.stderr, encoding="utf-8")
         result["generator_exit_code"] = completed.returncode
         require(completed.returncode == 0, "synthetic_generator_failed")
-        capture = TRIAL.read(capture_directory / "capture.json")["data"]
+        capture, saved = save_actual_cli_capture(package, capture_directory / "report.db",
+                                                               capture_directory, local, result)
+        result["shared_save"] = saved
         json_write(capture_directory / "run-identity.json",
                    synthetic_identity(package, manifest, alias, capture_directory / "report.db"))
+        if negative:
+            # Intentional synthetic corruption AFTER the actual shared save.
+            # Preserve the clean file. The database and CLI output are untouched.
+            shutil.copyfile(capture_directory / "capture.json", local / "capture-before-mutation.json")
+            document = TRIAL.read(capture_directory / "capture.json")
+            document["data"]["events"][0]["id"] = "synthetic-altered-event-id"
+            (capture_directory / "capture.json").write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+            capture = document["data"]
         exported = local / "approved-report"
         command_output = local / "private-cli"
         result["report_exit_code"] = TRIAL.report(argparse.Namespace(package=package,
@@ -167,10 +237,31 @@ def run_case(label, alias, root, package, generator, manifest, output, public):
         summary = TRIAL.read(exported / "summary.json")
         result["commands"] = summary.get("commands", [])
         result["report_failure"] = summary.get("failure")
-        require(result["report_exit_code"] == 0, "synthetic_report_export_failed")
+        require(result["report_exit_code"] == (2 if negative else 0), "synthetic_report_exit_contract_failed")
         text = (exported / "cli-report.txt").read_text(encoding="utf-8")
         assert_report(summary, text, capture, command_output,
-                      [alias, str(root), *capture["watch_roots"], capture["installer"]])
+                      [alias, str(root), *capture["watch_roots"], capture["installer"]], consistent=not negative)
+        require(TRIAL.report_matches(summary, manifest, "synthetic", exported / "cli-report.txt") is (not negative),
+                "preflight_candidate_report_gate_incorrect")
+        if negative:
+            comparison = summary.get("comparison", {})
+            differences = comparison.get("differences", [])
+            require(summary.get("acceptance_passed") is False
+                    and summary.get("failure") == "report_reopened_capture_changed"
+                    and comparison.get("json_equal") is False
+                    and comparison.get("difference_count") == 1
+                    and comparison.get("truncated") is False
+                    and len(differences) == 1
+                    and differences[0].get("category") == "value_changed"
+                    and differences[0].get("path") == "/data/events/0/id"
+                    and differences[0].get("before_type") == differences[0].get("after_type") == "string",
+                    "preflight_exact_field_difference_missing")
+            require("CAPTURE/REOPEN CONSISTENCY: FAILED" in text, "preflight_inconsistent_report_unlabelled")
+            # The actual finalize() calls this same predicate; a generated
+            # report with failed consistency must never meet its report gate.
+            require(TRIAL.report_matches(summary, manifest, "synthetic", exported / "cli-report.txt") is False,
+                    "preflight_failed_report_accepted_by_candidate_gate")
+            result["comparison"] = comparison
         require(not (root / "historical-deleted.tmp").exists(), "historical_child_was_created")
         require((root / ".contain-demo-marker").read_bytes() == b"Contain test fixture", "fixture_marker_changed")
         # Exercise the same approved-file collection used for the actual ZIP.
@@ -188,15 +279,35 @@ def run_case(label, alias, root, package, generator, manifest, output, public):
         approved.mkdir()
         for name in ("summary.json", "cli-report.txt"):
             shutil.copyfile(collected / name, approved / name)
+        checks = dict(real_contain_exe=True, all_seven_commands=True, shared_demo_save=True,
+            serialization_sensitive_values=True, save_raw_text_preserved=True,
+            same_event_paged_and_explained=True, historical_child_absent=True, unknown_preserved=True,
+            all_four_sections=True, private_paths_redacted=True, production_collection=True)
+        if negative:
+            checks.update(strict_mismatch_rejected=True, exact_field_difference=True,
+                independent_commands_completed=True, report_marked_inconsistent=True,
+                production_candidate_report_gate_rejected=True)
+        else:
+            checks["reopened_json_equal"] = True
         result.update(status="passed", source_sha=manifest["source_sha"], event_id=summary["event_id"],
             report_sha256=summary["report_sha256"], collected_report_sha256=TRIAL.sha(collected / "cli-report.txt"),
-            checks=dict(real_contain_exe=True, all_seven_commands=True, reopened_json_equal=True,
-                same_event_paged_and_explained=True, historical_child_absent=True, unknown_preserved=True,
-                all_four_sections=True, private_paths_redacted=True, production_collection=True))
+            checks=checks)
     except (OSError, ValueError, KeyError, TypeError, IndexError, subprocess.SubprocessError) as error:
         (local / "failure.txt").write_text(repr(error), encoding="utf-8")
         result["failure"] = str(error) if isinstance(error, ValueError) and re.fullmatch(r"[a-z_]+", str(error)) else "preflight_failed_private_details_retained"
     return result
+
+
+def command_counts(rows, planned):
+    # Report preserves planned-but-unexecuted commands as explicit rows. A
+    # failed process launch is an attempted failure, not a CLI execution.
+    executed = sum("exit_code" in row for row in rows)
+    attempted = sum(row.get("status") != "not_run" for row in rows)
+    return dict(executed=executed,
+        passed=sum(row.get("status") == "passed" and row.get("exit_code") == 0 for row in rows),
+        failed=sum(row.get("status") == "failed" for row in rows),
+        launch_failed=sum(row.get("status") == "failed" and "exit_code" not in row for row in rows),
+        not_run=planned - attempted)
 
 
 def main():
@@ -211,7 +322,10 @@ def main():
     summary = dict(schema_version=1, protocol_revision=PROTOCOL,
         scope="synthetic_windows_cli_report_preflight", synthetic=True, native_windows=os.name == "nt",
         native_capture_executed=False, candidate_verified=False, complete=False, passed=False,
-        collection_verified=False, report_commands_executed=0, cases=[],
+        collection_verified=False, report_commands_executed=0, cases=[], negative_case=None,
+        negative_verified=False, negative_report_commands_executed=0, save_commands_executed=0,
+        all_cli_commands_executed=0, save_commands_passed=0, save_commands_failed=0,
+        save_commands_not_run=3, negative_report_commands_failed=0, negative_report_commands_not_run=7,
         commands_executed=0, commands_passed=0, commands_failed=0, commands_not_run=2 * len(COMMANDS),
         cases_passed=0, cases_failed=0, cases_not_covered=1,
         python_version=sys.version.split()[0], preflight_sha256=TRIAL.sha(Path(__file__)), failure=None)
@@ -222,6 +336,7 @@ def main():
         summary.update(source_sha=manifest["source_sha"], build_manifest_sha256=TRIAL.sha(package / "BUILD.json"),
             contain_sha256=TRIAL.sha(package / "contain.exe"), generator_sha256=TRIAL.sha(generator),
             exporter_sha256=TRIAL.sha(Path(TRIAL.__file__)), exporter=TRIAL.exporter_identity(),
+            save_implementation_sha256=TRIAL.sha(package / "scripts/demo-save-capture.ps1"),
             target=manifest["target"], profile=manifest["profile"])
         parent = output / "synthetic fixture with long directory name"
         parent.mkdir()
@@ -236,18 +351,32 @@ def main():
         for label, alias in aliases:
             require(Path(alias).samefile(root), "preflight_alias_identity_mismatch")
             summary["cases"].append(run_case(label, alias, root, package, generator, manifest, output, public))
+        summary["negative_case"] = run_case("changed-event-id", plain_path(root), root, package,
+                                            generator, manifest, output, public, negative=True)
+        summary["negative_verified"] = summary["negative_case"]["status"] == "passed"
+        negative_counts = command_counts(summary["negative_case"]["commands"], len(COMMANDS))
+        for field, count in negative_counts.items():
+            summary["negative_report_commands_" + field] = count
+        all_cases = [*summary["cases"], summary["negative_case"]]
+        save_commands = [row for case in all_cases for row in case["save_commands"]]
+        summary["save_commands_executed"] = len(save_commands)
+        summary["save_commands_passed"] = sum(row["exit_code"] == 0 for row in save_commands)
+        summary["save_commands_failed"] = sum(row["exit_code"] != 0 for row in save_commands)
+        summary["save_commands_not_run"] = len(all_cases) - len(save_commands)
         commands = [row for case in summary["cases"] for row in case["commands"]]
-        summary.update(commands_executed=len(commands), commands_passed=sum(row["exit_code"] == 0 for row in commands),
-            commands_failed=sum(row["exit_code"] != 0 for row in commands),
-            commands_not_run=len(aliases) * len(COMMANDS) - len(commands),
-            cases_passed=sum(case["status"] == "passed" for case in summary["cases"]),
+        counts = command_counts(commands, len(aliases) * len(COMMANDS))
+        summary.update({"commands_" + field: count for field, count in counts.items()})
+        summary.update(cases_passed=sum(case["status"] == "passed" for case in summary["cases"]),
             cases_failed=sum(case["status"] == "failed" for case in summary["cases"]),
             cases_not_covered=0 if short else 1)
-        summary["complete"] = all(case["status"] == "passed" for case in summary["cases"]) and bool(summary["cases"])
+        summary["complete"] = (all(case["status"] == "passed" for case in summary["cases"])
+                               and bool(summary["cases"]) and summary["negative_verified"])
         summary["passed"] = summary["complete"]
         summary["collection_verified"] = summary["complete"] and all(
             case.get("checks", {}).get("production_collection") is True for case in summary["cases"])
-        summary["report_commands_executed"] = len(commands)
+        summary["report_commands_executed"] = counts["executed"]
+        summary["all_cli_commands_executed"] = (counts["executed"]
+            + summary["negative_report_commands_executed"] + summary["save_commands_executed"])
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         (output / "failure.txt").write_text(repr(error), encoding="utf-8")
         summary["failure"] = str(error) if isinstance(error, ValueError) and re.fullmatch(r"[a-z_]+", str(error)) else "preflight_failed_private_details_retained"

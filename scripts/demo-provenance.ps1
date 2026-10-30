@@ -103,7 +103,7 @@ function Get-DemoPrebuiltExecutables {
         }
     }
     foreach ($required in @('contain.exe','contain-test-installer.exe','scripts/demo.ps1','scripts/demo-provenance.ps1',
-        'scripts/demo-checks.ps1','scripts/score-fixture.ps1','scripts/score-fixture.py','scripts/demo-measure.py',
+        'scripts/demo-checks.ps1','scripts/demo-save-capture.ps1','scripts/score-fixture.ps1','scripts/score-fixture.py','scripts/demo-measure.py',
         'scripts/v04-verify-views.py','scripts/v04-clock-protocol.py','scripts/v04-matrix.py','scripts/v04-metrics.py',
         'docs/schema/cli-v3.schema.json')) {
         if (-not $seen.ContainsKey($required)) { throw "Required package file lacks a manifest hash: $required" }

@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 . "$PSScriptRoot/demo-checks.ps1"
+if (Test-Path -LiteralPath "$PSScriptRoot/demo-save-capture.ps1") { . "$PSScriptRoot/demo-save-capture.ps1" }
 class DemoModelRegistryKey {
     [hashtable]$Values=@{Installed='baseline';NoiseOnly='observed noise'}
     [hashtable]$Kinds=@{Installed='String';NoiseOnly='String'}
@@ -244,6 +245,106 @@ Regression 'actual dry-run check rejects changed observed registry data' {
         $result=Get-DemoCheckSummary -Checks $checks
         if($result.bounded_pass -or $result.product.required_failed -ne 1 -or $checks[0].status -ne 'failed'){throw 'Actual dry-run assertion ignored scoped registry mutation'}
     } finally { Remove-Item -LiteralPath $root }
+}
+# Explicitly synthetic input for the real demo save block. This is a text/save
+# regression; the Windows preflight separately exercises the real CLI + database.
+$syntheticCaptureJson=@'
+{
+  "schema_version": 3, "kind": "inspect", "synthetic": true,
+  "data": {
+    "schema_version": 3, "id": "synthetic-save", "name": "SyntheticSave",
+    "installer": "synthetic-fixture.exe",
+    "started_at": "2026-07-16T09:10:20.120+00:00",
+    "finished_at": "2026-07-16T09:10:20.123400+00:00", "exit_code": null,
+    "watch_roots": [], "registry_key": null, "processes": [], "files": [],
+    "registry": [], "warnings": [], "events": [], "inventory": [],
+    "backend": { "etw_file": "not_requested", "etw_registry": "not_requested",
+      "etw_process": "not_requested", "dropped_events": 0, "etw_events_lost": null,
+      "decode_errors": 0, "warnings": [], "registry_path_gaps": 0,
+      "etw_buffers_lost": null, "events_received": 0 },
+    "stats": { "events_received": 0, "events_retained": 0, "events_normalized": 0,
+      "events_dropped": 0, "known_actor_events": 0, "unknown_actor_events": 0,
+      "known_resource_events": 0, "unknown_resource_events": 0,
+      "high_confidence_events": 0, "capture_elapsed_ms": 9007199254740993,
+      "drain_timed_out": false },
+    "quality": { "level": "Degraded", "reasons": ["synthetic save regression"] },
+    "operations": [], "edges": [],
+    "synthetic_nested": { "exact_integer": 18446744073709551615,
+      "array": [null, 7, {"timestamp": "2026-07-16T09:10:20.123450+00:00",
+        "escaped": "literal\\r\\n", "unicode": "合成"}] }
+  }
+}
+'@
+Regression 'actual demo inspect save preserves validated CLI field representations' {
+    $temporary=Join-Path ([IO.Path]::GetTempPath()) ('contain-demo-save-'+[guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $temporary | Out-Null
+    try {
+        $errors=$null;$tokens=$null
+        $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'demo.ps1'),[ref]$tokens,[ref]$errors)
+        $commands=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.CommandAst] -and
+            $node.GetCommandName() -eq 'Invoke-DemoCheck' -and $node.Extent.Text -match '-Name inspect_json\s'},$true))
+        if($errors.Count -ne 0 -or $commands.Count -ne 1){throw 'Production inspect check is missing or malformed'}
+        $checks=[Collections.Generic.List[object]]::new();$OutputDirectory=$temporary
+        $db='synthetic.db';$contain='Invoke-SyntheticInspectForSave';$observation=@{document=$null;manifest=$null}
+        function Invoke-SyntheticInspectForSave { $syntheticCaptureJson; $global:LASTEXITCODE=0 }
+        function Assert-JsonContract([string]$text) {
+            if(-not (Test-Json -Json $text -SchemaFile (Join-Path $PSScriptRoot '../docs/schema/cli-v3.schema.json'))){throw 'Synthetic contract failed'}
+        }
+        Invoke-Expression $commands[0].Extent.Text
+        if($checks[0].status -ne 'passed'){throw ('Production inspect check did not pass: '+$checks[0].reason)}
+        $saved=[IO.File]::ReadAllText((Join-Path $temporary 'capture.json'))
+        if($saved -cne ($syntheticCaptureJson+"`n")){throw 'Production save changed validated JSON text or field representations'}
+        if($null -eq $observation.manifest){throw 'Parsed object is unavailable to product checks'}
+    } finally {
+        if(Test-Path -LiteralPath (Join-Path $temporary 'capture.json')){Remove-Item -LiteralPath (Join-Path $temporary 'capture.json')}
+        Remove-Item -LiteralPath $temporary
+    }
+}
+Regression 'shared capture save uses UTF8 without BOM and only documented physical newlines' {
+    $temporary=Join-Path ([IO.Path]::GetTempPath()) ('contain-demo-save-bytes-'+[guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $temporary | Out-Null
+    $path=Join-Path $temporary 'capture.json'
+    try {
+        $crlf=$syntheticCaptureJson.Replace("`n","`r`n")+"`r`n`r`n "
+        $result=@(Save-DemoCaptureJson -Json $crlf -Path $path -SchemaPath (Join-Path $PSScriptRoot '../docs/schema/cli-v3.schema.json'))
+        if($result.Count -ne 0){throw 'Save emitted data into stdout'}
+        $expected=$syntheticCaptureJson+"`n`n `n"
+        $bytes=[IO.File]::ReadAllBytes($path)
+        $wanted=[Text.UTF8Encoding]::new($false).GetBytes($expected)
+        if([Convert]::ToBase64String($bytes) -cne [Convert]::ToBase64String($wanted)){throw 'Encoding, physical newline or field representation changed'}
+    } finally {
+        if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path}
+        Remove-Item -LiteralPath $temporary
+    }
+}
+Regression 'shared capture save rejects invalid contract before creating an output' {
+    $temporary=Join-Path ([IO.Path]::GetTempPath()) ('contain-demo-save-invalid-'+[guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $temporary | Out-Null
+    $path=Join-Path $temporary 'capture.json'
+    try {
+        if(-not (Get-Command Save-DemoCaptureJson -ErrorAction SilentlyContinue)){throw 'Shared save function unavailable'}
+        $rejected=$false
+        try { Save-DemoCaptureJson -Json '{"schema_version":3,"kind":"inspect","data":{}}' -Path $path -SchemaPath (Join-Path $PSScriptRoot '../docs/schema/cli-v3.schema.json') } catch { $rejected=$true }
+        if(-not $rejected -or (Test-Path -LiteralPath $path)){throw 'Invalid input created saved evidence'}
+    } finally {
+        if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path}
+        Remove-Item -LiteralPath $temporary
+    }
+}
+Regression 'shared save CLI entrypoint preserves the same synthetic stdout text' {
+    $temporary=Join-Path ([IO.Path]::GetTempPath()) ('contain-demo-save-entry-'+[guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $temporary | Out-Null
+    $inputPath=Join-Path $temporary 'inspect.stdout.txt';$outputPath=Join-Path $temporary 'capture.json'
+    try {
+        [IO.File]::WriteAllText($inputPath,$syntheticCaptureJson,[Text.UTF8Encoding]::new($false))
+        $pwsh=Join-Path $PSHOME $(if($IsWindows){'pwsh.exe'}else{'pwsh'})
+        $output=@(& $pwsh -NoProfile -File (Join-Path $PSScriptRoot 'demo-save-capture.ps1') -InputPath $inputPath -OutputPath $outputPath -SchemaPath (Join-Path $PSScriptRoot '../docs/schema/cli-v3.schema.json') 2>&1)
+        if($LASTEXITCODE -ne 0 -or $output.Count -ne 0){throw 'Shared save entrypoint failed or leaked output'}
+        if([IO.File]::ReadAllText($outputPath) -cne ($syntheticCaptureJson+"`n")){throw 'Shared entrypoint changed input field representation'}
+    } finally {
+        foreach($path in @($inputPath,$outputPath)){if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path}}
+        Remove-Item -LiteralPath $temporary
+    }
 }
 Write-Output "Demo check regressions: $passed passed, $failed failed, 0 ignored"
 if ($failed -ne 0) { throw "$failed demo check regressions failed" }

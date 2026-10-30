@@ -662,3 +662,37 @@ for the missing real ETW report. The updated diagnostic package includes the
 prebuilt demo, required `vcruntime140.dll`, both failed report summaries and usage
 instructions. Ordinary CLI use still needs no Rust or Visual Studio; the controlled
 demo needs PowerShell 7, Python 3 and existing ETW permissions, with no elevation.
+
+## Capture save and report consistency
+
+The `fix/trial-json-save` continuation keeps version 0.3.1 and the bounded trial
+scope. Demo and the Windows synthetic report preflight now share
+`scripts/demo-save-capture.ps1`: after the existing JSON schema check, it saves
+the CLI text as UTF-8 without BOM, converts physical CRLF to LF, and appends a
+final LF only when absent. Escaped string contents, timestamp spelling, precise
+integers, nulls, arrays and nested fields are not reserialized. Parsed objects
+remain available for checks and scoring.
+
+Report exporter `contain-trial-report-3` separates `report_generated` from
+`acceptance_passed` and retains the original failure. Comparison protocol
+`contain-capture-comparison-1` strictly compares the complete inspect envelope,
+including JSON types. It reports byte equality separately from field equality.
+Private diagnostics retain exact pointers, values and file locations; the public
+summary includes only reviewed structural field names, array indices, types,
+counts, truncation and build/input hashes. Unknown object keys are redacted.
+An inconsistent saved document does not suppress independent read-only commands
+once package, fixture, database and reopened scope identities have been verified.
+The report marks the failed consistency check, while candidate acceptance stays
+failed. History/explain use an independently checked event from the new readback.
+
+Synthetic preflight protocol 2 executes actual packaged CLI stdout through that
+same save entrypoint before all seven report commands and production collection.
+It includes a deliberately changed event ID: the exact field difference must be
+reported, independent commands must execute, and the production acceptance gate
+must reject it. This synthetic result never satisfies either real-report gate.
+
+The fixed native plan remains one default and one dual-clock capture, using one
+frozen package after quality and both Windows preflights. No retry is scheduled.
+The independently reproduced PowerShell timestamp formatting defect is not a
+confirmed explanation of the two historical failures: their missing field-level
+evidence remains unavailable, and the earlier six timing doubts remain D.

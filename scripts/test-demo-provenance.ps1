@@ -50,7 +50,7 @@ try {
 
     New-Item -ItemType Directory -Path $package | Out-Null
     $packageNames=@('contain.exe','contain-test-installer.exe','scripts/demo.ps1','scripts/demo-provenance.ps1',
-        'scripts/demo-checks.ps1','scripts/score-fixture.ps1','scripts/score-fixture.py','scripts/demo-measure.py',
+        'scripts/demo-checks.ps1','scripts/demo-save-capture.ps1','scripts/score-fixture.ps1','scripts/score-fixture.py','scripts/demo-measure.py',
         'scripts/v04-verify-views.py','scripts/v04-clock-protocol.py','scripts/v04-matrix.py','scripts/v04-metrics.py',
         'docs/schema/cli-v3.schema.json','example-runtime.dll')
     foreach($relative in $packageNames) {
@@ -83,17 +83,18 @@ try {
     # Pure package selection must never require a source checkout or a Cargo build.
     function Get-DemoSourceIdentity { throw 'Unexpected Git source lookup for a prebuilt package' }
     $null=Select-Package
-    foreach($relative in @('contain.exe','scripts/demo-checks.ps1','example-runtime.dll','docs/schema/cli-v3.schema.json')) {
+    foreach($relative in @('contain.exe','scripts/demo-checks.ps1','scripts/demo-save-capture.ps1','example-runtime.dll','docs/schema/cli-v3.schema.json')) {
         $path=Join-Path $package $relative
         $bytes=[IO.File]::ReadAllBytes($path)
         [IO.File]::WriteAllText($path,'changed')
         Reject-Package
         [IO.File]::WriteAllBytes($path,$bytes)
     }
-    foreach($kind in @('missing-script','duplicate','escape','wrong-target','invalid-source')) {
+    foreach($kind in @('missing-script','missing-save','duplicate','escape','wrong-target','invalid-source')) {
         $bad=$goodManifest | ConvertFrom-Json
         switch($kind) {
             'missing-script' { $bad.scripts=@($bad.scripts | Where-Object path -ne 'scripts/demo-checks.ps1') }
+            'missing-save' { $bad.scripts=@($bad.scripts | Where-Object path -ne 'scripts/demo-save-capture.ps1') }
             'duplicate' { $bad.binaries=@($bad.binaries)+@($bad.binaries[0]) }
             'escape' { $bad.scripts[0].path='../outside.py' }
             'wrong-target' { $bad.target='x86_64-unknown-linux-gnu' }
@@ -104,7 +105,7 @@ try {
     }
     $goodManifest | Set-Content -LiteralPath $buildPath -Encoding utf8
     $null=Select-Package
-    Write-Output 'PASS: prebuilt package identity; changed executable/script/runtime/schema, missing script, duplicate, escape, wrong target and invalid source rejected'
+    Write-Output 'PASS: prebuilt package identity; changed executable/script/runtime/schema, missing check/save script, duplicate, escape, wrong target and invalid source rejected'
 
 } finally {
     # Only the exact file and directory created above are touched; no recursive cleanup.

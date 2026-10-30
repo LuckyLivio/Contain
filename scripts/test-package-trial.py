@@ -167,10 +167,10 @@ class TrialTests(unittest.TestCase):
             root = self.package / "examples" / name; root.mkdir(parents=True)
             (root / "cli-report.txt").write_text("Synthetic test report; not ETW\n")
             TRIAL.write(root / "summary.json", dict(schema_version=1, protocol_revision=TRIAL.PROTOCOL,
-                scenario=name, scope="real_etw_controlled_fixture_cli_excerpt", source_sha=self.source, complete=True, event_id="synthetic-event",
+                scenario=name, scope="real_etw_controlled_fixture_cli_excerpt", source_sha=self.source, complete=True, report_generated=True, acceptance_passed=True, failures=[], comparison=dict(json_equal=True), event_id="synthetic-event",
                 exporter=TRIAL.exporter_identity(), commands=[dict(name=name, exit_code=0) for name in
                     ("inspect-json", "history-json", "explain-json", "inspect-text", "diff-text", "history-text", "explain-text")],
-                checks={name: True for name in ("fixture_directory_identity", "reopen_json_equal", "history_page_equal",
+                checks={name: True for name in ("fixture_directory_identity", "reopened_scope_identity", "reopen_json_equal", "history_page_equal",
                     "explain_event_equal", "json_stdout_only", "all_seven_commands_executed", "text_json_agree",
                     "fixture_diff_present", "public_paths_redacted")},
                 report_sha256=TRIAL.sha(root / "cli-report.txt")))
@@ -186,16 +186,25 @@ class TrialTests(unittest.TestCase):
         commands = [dict(name=name, exit_code=0) for name in ("inspect-json", "history-json", "explain-json",
                     "inspect-text", "diff-text", "history-text", "explain-text")]
         TRIAL.write(preflight / "summary.json", dict(schema_version=1,
-            protocol_revision="contain-synthetic-report-preflight-1", scope="synthetic_windows_cli_report_preflight",
+            protocol_revision="contain-synthetic-report-preflight-2", scope="synthetic_windows_cli_report_preflight",
             synthetic=True, native_capture_executed=False, native_windows=True, passed=True, complete=True,
-            collection_verified=True, source_sha=self.source, build_manifest_sha256=TRIAL.sha(self.package / "BUILD.json"),
+            collection_verified=True, negative_verified=True, save_commands_executed=3,
+            negative_report_commands_executed=7,
+            save_implementation_sha256=TRIAL.sha(self.package / "scripts/demo-save-capture.ps1"),
+            negative_case=dict(case="changed-event-id", status="passed", report_exit_code=2, commands=commands,
+                checks={name: True for name in ("real_contain_exe", "shared_demo_save", "strict_mismatch_rejected",
+                    "exact_field_difference", "independent_commands_completed", "report_marked_inconsistent",
+                    "production_collection", "production_candidate_report_gate_rejected")},
+                comparison=dict(json_equal=False, difference_count=1, differences=[dict(path="/data/events/0/id")])),
+            source_sha=self.source, build_manifest_sha256=TRIAL.sha(self.package / "BUILD.json"),
             contain_sha256=TRIAL.sha(self.package / "contain.exe"), exporter=TRIAL.exporter_identity(),
             preflight_sha256=TRIAL.sha(Path(TRIAL.__file__).with_name("verify-trial-report.py")),
             windows_8dot3=dict(status="not_covered"), commands_executed=14, report_commands_executed=14,
             commands_failed=0, commands_not_run=0, cases=[dict(case=name, status="passed", commands=commands,
                 checks={check: True for check in ("real_contain_exe", "all_seven_commands", "reopened_json_equal",
                     "same_event_paged_and_explained", "historical_child_absent", "unknown_preserved",
-                    "all_four_sections", "private_paths_redacted", "production_collection")}) for name in ("normal", "extended")]))
+                    "all_four_sections", "private_paths_redacted", "production_collection", "shared_demo_save",
+                    "serialization_sensitive_values", "save_raw_text_preserved")}) for name in ("normal", "extended")]))
         paths = self.root / "report-paths.json"
         TRIAL.write(paths, dict(schema_version=1, scope="synthetic_native_windows_directory_identity",
             native_windows=True, passed=True, exporter=TRIAL.exporter_identity(),
@@ -318,7 +327,7 @@ class TrialTests(unittest.TestCase):
         native = TRIAL.read(args.report_paths); preflight = TRIAL.read(args.report_preflight / "summary.json")
         cases = ("native_missing", "native_failed", "native_exporter", "native_zero_tests",
                  "preflight_missing", "preflight_failed", "preflight_source", "preflight_binary",
-                 "preflight_commands", "preflight_synthetic_label")
+                 "preflight_commands", "preflight_synthetic_label", "negative_missing", "negative_commands", "negative_empty_differences", "save_missing")
         for case in cases:
             native_value, preflight_value = copy.deepcopy(native), copy.deepcopy(preflight)
             if case == "native_missing": native_value = {}
@@ -330,6 +339,10 @@ class TrialTests(unittest.TestCase):
             elif case == "preflight_source": preflight_value["source_sha"] = "0" * 40
             elif case == "preflight_binary": preflight_value["contain_sha256"] = "0" * 64
             elif case == "preflight_commands": preflight_value["cases"][0]["commands"].pop()
+            elif case == "negative_missing": preflight_value.pop("negative_case")
+            elif case == "negative_commands": preflight_value["negative_case"]["commands"].pop()
+            elif case == "negative_empty_differences": preflight_value["negative_case"]["comparison"]["differences"] = []
+            elif case == "save_missing": preflight_value["save_commands_executed"] = 0
             else: preflight_value["synthetic"] = False
             args.report_paths.write_text(json.dumps(native_value))
             (args.report_preflight / "summary.json").write_text(json.dumps(preflight_value))
@@ -378,7 +391,8 @@ class TrialTests(unittest.TestCase):
         self.assertEqual(TRIAL.report(args), 2)
         summary = TRIAL.read(args.public_output / "summary.json")
         self.assertEqual(summary["failure"], "report_exporter_not_frozen")
-        self.assertEqual(summary["commands"], [])
+        self.assertEqual(summary["commands_executed"], 0)
+        self.assertEqual(summary["commands_not_run"], 7)
         self.assertTrue((args.private_output / "failure-context.json").is_file())
 
     def test_failed_scope_diagnosis_still_executes_independent_same_database_readback(self):
@@ -487,6 +501,48 @@ class TrialTests(unittest.TestCase):
             with self.subTest(json_suffix=suffix), self.assertRaises(ValueError):
                 TRIAL.public_text(json.dumps(root + suffix), {root: "<fixture-root>"})
 
+    def test_comparison_locates_strict_changes_and_redacts_unknown_keys(self):
+        before = dict(schema_version=3, kind="inspect", data=dict(events=[dict(id="one", timestamp="2026-07-16T09:10:20.120+00:00")],
+            stats=dict(events_retained=9007199254740993), warnings=[None], private_mapping={"C:\\PRIVATE\\name": "secret"}))
+        after = copy.deepcopy(before)
+        after["data"]["events"][0].update(id="two", timestamp="2026-07-16T09:10:20.12+00:00")
+        after["data"]["stats"]["events_retained"] += 1
+        after["data"]["warnings"] = ["changed", False]
+        after["data"]["private_mapping"] = {"SECRET_KEY": "other"}
+        public, private = TRIAL.compare_json_documents(before, after)
+        self.assertFalse(public["json_equal"])
+        paths = {row["path"] for row in public["differences"]}
+        self.assertIn("/data/events/0/id", paths)
+        self.assertIn("/data/events/0/timestamp", paths)
+        self.assertIn("/data/stats/events_retained", paths)
+        self.assertIn("/data/warnings/0", paths)
+        self.assertEqual(public["counts"]["array_length_changed"], 1)
+        self.assertEqual(public["counts"]["type_changed"], 1)
+        self.assertEqual(public["counts"]["field_added"], 1)
+        self.assertEqual(public["counts"]["field_missing"], 1)
+        self.assertNotIn("PRIVATE", json.dumps(public)); self.assertNotIn("SECRET_KEY", json.dumps(public))
+        self.assertIn("PRIVATE", json.dumps(private)); self.assertIn("SECRET_KEY", json.dumps(private))
+        hidden, _ = TRIAL.compare_json_documents({"data": {"private_mapping": {"id": "old"}}}, {"data": {"private_mapping": {"id": "new"}}})
+        self.assertEqual(hidden["differences"][0]["path"], "/data/<unreviewed-key>/<unreviewed-key>")
+        self.assertFalse(TRIAL.compare_json_documents({"data": 1}, {"data": True})[0]["json_equal"])
+        self.assertFalse(TRIAL.compare_json_documents({"data": 1}, {"data": 1.0})[0]["json_equal"])
+
+    def test_comparison_records_byte_only_difference_and_full_truncation_count(self):
+        left = self.root / "left.json"; right = self.root / "right.json"
+        left.write_bytes(b'{"data": [1, null]}\n'); right.write_bytes(b'{ "data": [1,null] }\r\n')
+        database = self.root / "PRIVATE-database.sqlite"; database.write_bytes(b"synthetic database identity")
+        public, private = TRIAL.compare_capture_files(left, right, dict(source_sha=self.source), self.package, database)
+        self.assertTrue(public["json_equal"]); self.assertFalse(public["bytes_equal"])
+        self.assertEqual(public["difference_count"], 0)
+        self.assertNotIn(str(self.root), json.dumps(public))
+        self.assertIn(str(left), json.dumps(private))
+        self.assertIn(str(database), json.dumps(private))
+        self.assertNotIn("PRIVATE", json.dumps(public))
+        public, private = TRIAL.compare_json_documents(list(range(8)), [None] * 8, limit=3)
+        self.assertEqual(public["difference_count"], 8)
+        self.assertEqual(len(public["differences"]), 3)
+        self.assertTrue(public["truncated"])
+
     def test_json_requires_one_clean_machine_readable_document(self):
         good = json.dumps(dict(schema_version=3, kind="inspect", data={"id": "synthetic"}))
         self.assertEqual(TRIAL.json_document(good, "inspect"), {"id": "synthetic"})
@@ -572,7 +628,7 @@ class TrialTests(unittest.TestCase):
             backend=dict(etw_process="active", etw_file="active", etw_registry="active"), events=[event],
             processes=[dict(pid=100, creation_time="134350000000000001", image=installer)],
             capture_state="finished", quality=dict(level="Degraded"))
-        TRIAL.write(directory / "capture.json", dict(data=capture))
+        TRIAL.write(directory / "capture.json", dict(schema_version=3, kind="inspect", data=capture))
         TRIAL.write(directory / "ground-truth.json", [dict(pid=100, creation_time="134350000000000001")] * 21)
         def command(argv, **kwargs):
             self.assertEqual(argv[0], str(self.package.resolve() / "contain.exe"))
@@ -604,6 +660,53 @@ class TrialTests(unittest.TestCase):
         self.assertEqual(result["omitted_limitation_lines"], 1)
         self.assertEqual(result["omitted_explain_limitation_lines"], 1)
         self.assertFalse(result["candidate_verified"])
+        # Mutate only the saved capture: selection must use the actual reopened
+        # event, every independent command still runs, and acceptance stays false.
+        saved = copy.deepcopy(capture); saved["events"][0]["id"] = "changed-saved-id"
+        (directory / "capture.json").write_text(json.dumps(dict(schema_version=3, kind="inspect", data=saved)))
+        args.private_output = self.root / "mismatch-private"
+        args.public_output = self.root / "mismatch-public"
+        with mock.patch.object(TRIAL, "snapshot"), mock.patch.object(TRIAL.subprocess, "run", side_effect=command):
+            self.assertEqual(TRIAL.report(args), 2)
+        failed = TRIAL.read(args.public_output / "summary.json")
+        self.assertFalse(failed["complete"]); self.assertFalse(failed["acceptance_passed"])
+        self.assertTrue(failed["report_generated"]); self.assertEqual(len(failed["commands"]), 7)
+        self.assertEqual(failed["event_id"], event["id"])
+        self.assertEqual(failed["comparison"]["differences"][0]["path"], "/data/events/0/id")
+        self.assertIn("CONSISTENCY CHECK FAILED", (args.public_output / "cli-report.txt").read_text())
+        self.assertFalse(TRIAL.report_matches(failed, manifest, "default", args.public_output / "cli-report.txt"))
+        collected = TRIAL.collect_report(self.package, "default", args.public_output)
+        self.assertTrue((collected / "cli-report.txt").is_file())
+        self.assertFalse(TRIAL.read(collected / "summary.json")["complete"])
+        (directory / "capture.json").write_text(json.dumps(dict(schema_version=3, kind="inspect", data=capture)))
+        # A JSON view conflict is kept private, while independent text commands
+        # execute and the public report marks that event section unverified.
+        def wrong_explanation(argv, **kwargs):
+            result = command(argv, **kwargs)
+            if argv[3] == "explain" and "--json" in argv:
+                doc = json.loads(result.stdout); doc["data"]["event"]["resource"] = "C:\\PRIVATE\\other"
+                result.stdout = json.dumps(doc)
+            return result
+        args.private_output = self.root / "conflict-private"; args.public_output = self.root / "conflict-public"
+        with mock.patch.object(TRIAL, "snapshot"), mock.patch.object(TRIAL.subprocess, "run", side_effect=wrong_explanation):
+            self.assertEqual(TRIAL.report(args), 2)
+        conflict = TRIAL.read(args.public_output / "summary.json")
+        self.assertEqual(conflict["commands_executed"], 7); self.assertTrue(conflict["report_generated"])
+        self.assertFalse(conflict["checks"]["explain_event_equal"])
+        public = (args.public_output / "cli-report.txt").read_text()
+        self.assertIn("NOT PUBLISHED", public); self.assertNotIn("PRIVATE", public)
+        # No verified event does not skip independent inspect/diff or fabricate
+        # event identity. Four dependent commands are explicitly not run.
+        original_confidence = event["confidence"]; event["confidence"] = "Unknown"
+        (directory / "capture.json").write_text(json.dumps(dict(schema_version=3, kind="inspect", data=capture)))
+        args.private_output = self.root / "unknown-private"; args.public_output = self.root / "unknown-public"
+        with mock.patch.object(TRIAL, "snapshot"), mock.patch.object(TRIAL.subprocess, "run", side_effect=command):
+            self.assertEqual(TRIAL.report(args), 2)
+        unknown = TRIAL.read(args.public_output / "summary.json")
+        self.assertEqual(unknown["commands_executed"], 3); self.assertEqual(unknown["commands_not_run"], 4)
+        self.assertTrue(unknown["report_generated"]); self.assertIsNone(unknown["event_id"])
+        event["confidence"] = original_confidence
+        (directory / "capture.json").write_text(json.dumps(dict(schema_version=3, kind="inspect", data=capture)))
         # A post-command package change invalidates report success too.
         args.private_output = self.root / "changed-private"
         args.public_output = self.root / "changed-public"

@@ -24,11 +24,11 @@ import zipfile
 
 REPO = Path(__file__).resolve().parent.parent
 PROTOCOL = "contain-read-only-trial-1"
-REPORT_PROTOCOL = "contain-trial-report-2"
+REPORT_PROTOCOL = "contain-trial-report-3"
 TARGET = "x86_64-pc-windows-msvc"
 BINARIES = ("contain.exe", "contain-test-installer.exe")
 SCRIPTS = (
-    "demo.ps1", "demo-provenance.ps1", "demo-checks.ps1", "demo-measure.py",
+    "demo.ps1", "demo-save-capture.ps1", "demo-provenance.ps1", "demo-checks.ps1", "demo-measure.py",
     "score-fixture.ps1", "score-fixture.py", "v04-verify-views.py",
     "v04-clock-protocol.py", "v04-matrix.py", "v04-metrics.py",
 )
@@ -607,6 +607,113 @@ def legacy_score_result(directory):
                 row_order="unchanged_legacy_scorer_order", failure_reasons=sorted(failures))
 
 
+# Reviewed structural locations only. Unknown object keys are never published,
+# even if a private map happens to use a familiar schema property name.
+PUBLIC_FIELDS = {
+    (): frozenset({'schema_version', 'kind', 'data'}),
+    ('data',): frozenset({'id', 'schema_version', 'name', 'installer', 'started_at', 'finished_at', 'watch_roots',
+        'registry_key', 'capture_state', 'backend', 'stats', 'quality', 'events', 'processes', 'operations',
+        'edges', 'warnings', 'files', 'registry', 'inventory', 'exit_code'}),
+    ('data', 'events', '*'): frozenset({'id', 'timestamp', 'timestamp_ticks', 'sequence', 'event_type',
+        'operation', 'resource', 'confidence', 'evidence', 'raw', 'dimensions', 'reason', 'state_validated', 'success'}),
+    ('data', 'events', '*', 'evidence'): frozenset({'source', 'pid', 'process_creation_time', 'reason', 'timestamp'}),
+    ('data', 'stats'): frozenset({'events_received', 'events_dropped', 'events_retained', 'source_events',
+        'events_normalized', 'high_confidence_events', 'capture_elapsed_ms', 'drain_timed_out',
+        'known_actor_events', 'known_resource_events', 'unknown_actor_events', 'unknown_resource_events'}),
+    ('data', 'quality'): frozenset({'level', 'reasons'}),
+    ('data', 'backend'): frozenset({'etw_process', 'etw_file', 'etw_registry', 'etw_events_lost',
+        'etw_buffers_lost', 'pipeline', 'stream'}),
+    ('data', 'processes', '*'): frozenset({'pid', 'creation_time', 'image', 'parent_pid', 'parent_creation_time'}),
+}
+
+
+def json_type(value):
+    return {type(None): 'null', bool: 'boolean', int: 'integer', float: 'number', str: 'string',
+            list: 'array', dict: 'object'}[type(value)]
+
+
+def json_pointer(parts, public=False):
+    result, context, reviewed = [], [], True
+    for part in parts:
+        if type(part) is int:
+            result.append(str(part)); context.append('*')
+        else:
+            allowed = reviewed and part in PUBLIC_FIELDS.get(tuple(context), ())
+            result.append(part if not public or allowed else '<unreviewed-key>')
+            context.append(part); reviewed = allowed
+    return '/' + '/'.join(part.replace('~', '~0').replace('/', '~1') for part in result) if result else ''
+
+
+def compare_json_documents(before, after, limit=512):
+    """Strict typed JSON comparison; no clock, number or field normalization.
+
+    Counts cover the whole document even if retained differences are truncated.
+    Public paths contain only reviewed structural names and array positions.
+    Full JSON pointers and changed values remain in the private projection.
+    """
+    counts, public_rows, private_rows = Counter(), [], []
+    def add(category, path, left=None, right=None, left_present=True, right_present=True):
+        counts[category] += 1
+        if len(public_rows) >= limit:
+            return
+        row = dict(index=sum(counts.values()) - 1, category=category, path=json_pointer(path, public=True),
+            before_type=json_type(left) if left_present else 'missing',
+            after_type=json_type(right) if right_present else 'missing')
+        if category == 'array_length_changed':
+            row.update(before_length=len(left), after_length=len(right))
+        public_rows.append(row)
+        private_rows.append(dict(row, path=json_pointer(path), before=left, after=right,
+                                 before_present=left_present, after_present=right_present))
+    def visit(left, right, path):
+        if type(left) is not type(right):
+            add('type_changed', path, left, right)
+        elif isinstance(left, dict):
+            for key in sorted(left.keys() | right.keys()):
+                if key not in left: add('field_added', path + [key], right=right[key], left_present=False)
+                elif key not in right: add('field_missing', path + [key], left=left[key], right_present=False)
+                else: visit(left[key], right[key], path + [key])
+        elif isinstance(left, list):
+            if len(left) != len(right): add('array_length_changed', path, left, right)
+            for index in range(max(len(left), len(right))):
+                if index >= len(left): add('array_element_added', path + [index], right=right[index], left_present=False)
+                elif index >= len(right): add('array_element_missing', path + [index], left=left[index], right_present=False)
+                else: visit(left[index], right[index], path + [index])
+        elif left != right:
+            add('value_changed', path, left, right)
+    visit(before, after, [])
+    common = dict(protocol_revision='contain-capture-comparison-1', json_equal=not counts,
+        comparison_scope='complete_inspect_envelope_strict_types_and_values',
+        difference_count=sum(counts.values()), counts=dict(sorted(counts.items())),
+        retained_count=len(public_rows), truncated=sum(counts.values()) > len(public_rows), limit=limit)
+    return dict(common, differences=public_rows), dict(common, differences=private_rows)
+
+
+def compare_capture_files(saved, reopened, manifest, package, database=None):
+    public, private = compare_json_documents(read(saved), read(reopened))
+    public['bytes_equal'] = safe_file(saved).read_bytes() == safe_file(reopened).read_bytes()
+    public['byte_representation'] = 'saved_UTF8_file_vs_native_CLI_stdout_bytes'
+    public['source_sha'] = manifest['source_sha']
+    public['exporter'] = exporter_identity()
+    public['build_manifest_sha256'] = sha(package / 'BUILD.json') if (package / 'BUILD.json').is_file() else None
+    public['contain_sha256'] = sha(package / 'contain.exe') if (package / 'contain.exe').is_file() else None
+    public['save_implementation_sha256'] = sha(package / 'scripts/demo-save-capture.ps1') if (package / 'scripts/demo-save-capture.ps1').is_file() else None
+    public['inputs'] = [dict(identity(path, role), source=source) for path, role, source in (
+        (saved, 'saved_capture_json', 'demo_validated_CLI_stdout_save'),
+        (reopened, 'reopened_inspect_json', 'packaged_CLI_private_database_snapshot'))]
+    if database is not None:
+        public['database_snapshot'] = identity(database, 'private_read_only_snapshot')
+    private.update({key: value for key, value in public.items() if key != 'differences'})
+    private['inputs'] = [dict(row, path=str(path.absolute()), filesystem_identity=list((path.stat().st_dev, path.stat().st_ino)))
+                        for row, path in zip(public['inputs'], (saved, reopened))]
+    if database is not None: private['database_snapshot'] = dict(public['database_snapshot'], path=str(database.absolute()))
+    return public, private
+
+
+def safe_report_event_id(value, synthetic=False):
+    return isinstance(value, str) and bool(re.fullmatch(
+        r'synthetic-report-event-[0-9]+' if synthetic else r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', value))
+
+
 def report(args):
     package = args.package.resolve()
     manifest, _ = verify_package(package)
@@ -615,14 +722,15 @@ def report(args):
     summary = dict(schema_version=1, protocol_revision=PROTOCOL, source_sha=manifest["source_sha"],
         scenario=args.scenario, scope="synthetic_windows_cli_report" if args.scenario == "synthetic"
             else "real_etw_controlled_fixture_cli_excerpt", complete=False, exporter=exporter_identity(),
-        candidate_verified=False, commands=[], checks={}, failure=None,
+        candidate_verified=False, report_generated=False, acceptance_passed=False, commands=[], checks={}, failure=None, failures=[],
         legacy_score=legacy_score_result(args.capture_directory))
     stage = "run_identity"
     try:
         require(manifest.get("report_exporter") == summary["exporter"], "report_exporter_not_frozen")
         same, observed = run_identity_matches(args.capture_directory, manifest, sha(package / "BUILD.json"))
         require(same, "report_run_identity_not_package")
-        capture = read(args.capture_directory / "capture.json")["data"]
+        capture_path = safe_file(args.capture_directory / "capture.json")
+        capture = json_document(capture_path.read_text(encoding="utf-8-sig"), "inspect")
         truth = read(args.capture_directory / "ground-truth.json")
         if args.scenario == "synthetic":
             require(capture.get("name") == "SyntheticReport" and isinstance(truth, list) and bool(truth)
@@ -645,49 +753,110 @@ def report(args):
         stage = "database_snapshot"
         copy = local / "read-only.db"; snapshot(database, copy)
         executable = package / "contain.exe"
+        def failure(code):
+            if code not in summary["failures"]: summary["failures"].append(code)
+            if summary["failure"] is None: summary["failure"] = code
         def command(label, kind, *arguments, json_output=False):
             nonlocal stage
             stage = label
             argv = [str(executable), "--db", str(copy), kind, *arguments] + (["--json"] if json_output else [])
-            completed = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", timeout=120)
-            (local / (label + ".stdout.txt")).write_text(completed.stdout, encoding="utf-8")
-            (local / (label + ".stderr.txt")).write_text(completed.stderr, encoding="utf-8")
-            summary["commands"].append(dict(name=label, exit_code=completed.returncode,
-                stdout_sha256=hashlib.sha256(completed.stdout.encode()).hexdigest()))
-            require(completed.returncode == 0, "report_cli_failed")
-            return json_document(completed.stdout, kind) if json_output else completed.stdout
+            row = dict(name=label, status="failed")
+            try:
+                completed = subprocess.run(argv, capture_output=True, timeout=120)
+                stdout = completed.stdout.encode("utf-8") if isinstance(completed.stdout, str) else completed.stdout
+                stderr = completed.stderr.encode("utf-8") if isinstance(completed.stderr, str) else completed.stderr
+                (local / (label + ".stdout.txt")).write_bytes(stdout)
+                (local / (label + ".stderr.txt")).write_bytes(stderr)
+                row.update(exit_code=completed.returncode, stdout_sha256=hashlib.sha256(stdout).hexdigest())
+                require(completed.returncode == 0, "report_cli_failed")
+                text = stdout.decode("utf-8")
+                value = json_document(text, kind) if json_output else text
+                row["status"] = "passed"
+                return value
+            except (OSError, UnicodeError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+                code = str(error) if isinstance(error, ValueError) and re.fullmatch(r"[a-z_]+", str(error)) else "report_cli_failed"
+                failure(code); row["failure"] = code
+                (local / (label + ".failure.txt")).write_text(repr(error), encoding="utf-8")
+                return None
+            finally:
+                summary["commands"].append(row)
+        def skipped(label, reason):
+            summary["commands"].append(dict(name=label, status="not_run", reason=reason))
         reopened = command("inspect-json", "inspect", app_name, json_output=True)
-        require(reopened == capture, "report_reopened_capture_changed")
-        summary["checks"]["reopen_json_equal"] = True
+        require(reopened is not None, "report_reopened_inspect_unavailable")
+        comparison, private_comparison = compare_capture_files(capture_path, local / "inspect-json.stdout.txt",
+            manifest, package, copy if copy.is_file() else None)
+        summary["comparison"] = comparison
+        write(local / "comparison-details.json", private_comparison)
+        summary["checks"]["reopen_json_equal"] = comparison["json_equal"]
+        if not comparison["json_equal"]: failure("report_reopened_capture_changed")
+        # Re-establish scope from this readback. A mismatching saved document
+        # never supplies the event, process whitelist or redaction identities.
+        stage = "reopened_scope"
+        require(reopened.get("name") == app_name and reopened.get("id") == capture.get("id"), "report_reopened_identity_changed")
+        require(reopened.get("registry_key") == key, "report_reopened_registry_changed")
+        reopened_scope = fixture_scope(observed["fixture_root"], reopened["watch_roots"], reopened["registry_key"])
+        require(directory_identity(Path(reopened_scope.canonical)) == directory_identity(Path(scope.canonical)),
+                "report_reopened_scope_changed")
+        scope.aliases.update(reopened_scope.aliases)
+        if args.scenario != "synthetic":
+            require(all(reopened["backend"].get(key) == "active" for key in ("etw_process", "etw_file", "etw_registry")), "report_not_real_etw")
         fixture_actors = {(row["pid"], str(row["creation_time"])) for row in truth}
+        for process in reopened["processes"]:
+            require((process["pid"], str(process["creation_time"])) in fixture_actors, "report_process_outside_fixture")
+        require(reopened.get("capture_state") in {None, "capturing", "finalizing", "finished", "failed"}
+                and reopened.get("quality", {}).get("level") in {"Complete", "Degraded", "Incomplete"},
+                "report_state_or_quality_invalid")
+        summary["checks"]["reopened_scope_identity"] = True
         for row in reopened["events"]:
-            if row["event_type"] == "file":
-                scope.observe(row["resource"])
+            if row["event_type"] == "file": scope.observe(row["resource"])
         selected = next((row for row in reopened["events"] if row["event_type"] == "file"
             and row["confidence"] in {"High", "Certain"} and row["operation"] == "write_requested"
-            and row["evidence"].get("source") == "EtwFile"
-            and scope.contains_file(row["resource"])
+            and row["evidence"].get("source") == "EtwFile" and scope.contains_file(row["resource"])
+            and safe_report_event_id(row.get("id"), args.scenario == "synthetic")
             and (row["evidence"].get("pid"), str(row["evidence"].get("process_creation_time"))) in fixture_actors), None)
-        require(selected is not None, "report_no_known_fixture_source")
-        event_id = selected["id"]; index = reopened["events"].index(selected)
-        history = command("history-json", "history", app_name, "--limit", "1", "--offset", str(index), json_output=True)
-        require(history["events"] == [selected], "report_history_page_mismatch")
-        explanation = command("explain-json", "explain", event_id, json_output=True)
-        require(explanation["event"] == selected and explanation["app_id"] == reopened["id"], "report_explain_mismatch")
-        summary["checks"].update(history_page_equal=True, explain_event_equal=True, json_stdout_only=True)
+        event_id = selected["id"] if selected else None
+        index = reopened["events"].index(selected) if selected else None
+        if selected:
+            require(sum(row.get("id") == event_id for row in reopened["events"]) == 1, "report_event_id_ambiguous")
+            history = command("history-json", "history", app_name, "--limit", "1", "--offset", str(index), json_output=True)
+            explanation = command("explain-json", "explain", event_id, json_output=True)
+            summary["checks"]["history_page_equal"] = history is not None and history.get("events") == [selected]
+            summary["checks"]["explain_event_equal"] = explanation is not None and explanation.get("event") == selected and explanation.get("app_id") == reopened["id"]
+            if not summary["checks"]["history_page_equal"]: failure("report_history_page_mismatch")
+            if not summary["checks"]["explain_event_equal"]: failure("report_explain_mismatch")
+        else:
+            failure("report_no_known_fixture_source")
+            skipped("history-json", "verified_event_unavailable"); skipped("explain-json", "verified_event_unavailable")
         inspect_text = command("inspect-text", "inspect", app_name)
         diff_text = command("diff-text", "diff", app_name)
-        history_text = command("history-text", "history", app_name, "--limit", "1", "--offset", str(index))
-        explain_text = command("explain-text", "explain", event_id)
-        require(event_id in history_text and event_id in explain_text, "report_text_missing_event_id")
+        if selected:
+            history_text = command("history-text", "history", app_name, "--limit", "1", "--offset", str(index))
+            explain_text = command("explain-text", "explain", event_id)
+        else:
+            history_text = explain_text = None
+            skipped("history-text", "verified_event_unavailable"); skipped("explain-text", "verified_event_unavailable")
+        summary["checks"]["json_stdout_only"] = all(row.get("status") == "passed" for row in summary["commands"] if row["name"].endswith("-json"))
+        inspect_available, diff_available = inspect_text is not None, diff_text is not None
+        if not inspect_available: inspect_text = "NOT AVAILABLE: inspect text command failed; see command result.\n"
+        if not diff_available: diff_text = "NOT AVAILABLE: diff text command failed; see command result.\n"
+        history_verified = selected is not None and summary["checks"].get("history_page_equal") is True
+        explain_verified = selected is not None and summary["checks"].get("explain_event_equal") is True
+        for label, text_value, verified in (("history", history_text, history_verified), ("explain", explain_text, explain_verified)):
+            if verified and (text_value is None or event_id not in text_value or selected["operation"] not in text_value):
+                failure("report_text_missing_event_id")
+                if label == "history": history_verified = False
+                else: explain_verified = False
+        if not history_verified: history_text = "NOT PUBLISHED: this event view was unavailable or did not match the verified readback.\n"
+        if not explain_verified: explain_text = "NOT PUBLISHED: this event view was unavailable or did not match the verified readback.\n"
         stage = "public_excerpt"
         for line in diff_text.splitlines():
             match = re.fullmatch(r"  FILE \S+ (.+) \[[^\]]+\]", line)
             if match:
                 scope.observe(match[1])
         replacements = scope.replacements()
-        replacements[capture["installer"]] = "<fixture-bin>\\contain-test-installer.exe"
-        for process in capture["processes"]:
+        replacements[reopened["installer"]] = "<fixture-bin>\\contain-test-installer.exe"
+        for process in reopened["processes"]:
             require((process["pid"], str(process["creation_time"])) in fixture_actors,
                     "report_process_outside_fixture")
             if process.get("image"):
@@ -699,7 +868,10 @@ def report(args):
         inspect_safe = "\n".join(line for line in lines if line not in warning_lines) + "\n"
         diff_lines = [line for line in diff_text.splitlines() if line.startswith(("STATE DIFFERENCES", "State differences"))
                       or scope.includes_diff(line)]
-        require(any(scope.includes_diff(line) for line in diff_lines), "report_fixture_diff_missing")
+        fixture_diff_present = diff_available and any(scope.includes_diff(line) for line in diff_lines)
+        if not fixture_diff_present:
+            failure("report_fixture_diff_missing")
+            if not diff_lines: diff_lines = ["NOT AVAILABLE: no verified fixture diff excerpt; see command result."]
         # Explain is restricted to a verified fixture source and its ancestry.
         # Omit free-form general warnings rather than guess their sensitivity.
         explanation_warnings = [line for line in explain_text.splitlines()
@@ -710,16 +882,18 @@ def report(args):
             HISTORY=public_text(history_text, replacements),
             EXPLAIN=public_text("\n".join(explanation_lines) + "\n", replacements))
         require(all(content.strip() for content in sections.values()), "report_section_empty")
-        require(app_name in inspect_text and selected["operation"] in history_text
-                and selected["operation"] in explain_text
-                and f"Recording: {reopened['capture_state']} | Quality: {reopened['quality']['level']}" in inspect_text,
-                "report_text_json_disagree")
-        summary["checks"].update(all_seven_commands_executed=len(summary["commands"]) == 7,
-            text_json_agree=True, fixture_diff_present=True, public_paths_redacted=True)
+        inspect_agrees = inspect_available and app_name in inspect_text and f"Recording: {reopened['capture_state']} | Quality: {reopened['quality']['level']}" in inspect_text
+        if not inspect_agrees: failure("report_text_json_disagree")
+        summary["checks"].update(all_seven_commands_executed=len(summary["commands"]) == 7 and all("exit_code" in row for row in summary["commands"]),
+            text_json_agree=inspect_agrees and history_verified and explain_verified,
+            fixture_diff_present=fixture_diff_present, public_paths_redacted=True)
         title = ("SYNTHETIC WINDOWS CLI REPORT — production storage and packaged contain.exe; not ETW or an installation.\n"
                  if args.scenario == "synthetic" else
                  "REAL ETW CONTROLLED FIXTURE — actual packaged contain.exe output; not a third-party installer.\n")
-        text = (title +
+        consistency = "PASSED" if comparison["json_equal"] else "FAILED — CONSISTENCY CHECK FAILED; candidate acceptance failed"
+        text = (title + f"CAPTURE/REOPEN CONSISTENCY: {consistency}.\n" +
+                f"Report acceptance: {'FAILED' if summary['failures'] else 'PASSED'}; report generation and candidate acceptance are separate.\n" +
+                f"Strict JSON differences: {comparison['difference_count']}; retained: {comparison['retained_count']}; truncated: {comparison['truncated']}. Byte-identical: {comparison['bytes_equal']}.\n" +
                 "Fixture paths are replaced consistently; no database or system trace is published.\n"
                 f"Source: {manifest['source_sha']} | configuration: {args.scenario} | event: {event_id}\n"
                 f"Public excerpt omits {len(warning_lines)} inspect and {len(explanation_warnings)} explain free-form limitation lines; recording quality and measured gaps below are unchanged.\n"
@@ -727,21 +901,34 @@ def report(args):
                 "See local inspect --verbose for all warnings. Source confidence does not establish explicit API intent or ownership.\n\n")
         for name, content in sections.items():
             display = dict(INSPECT=f"inspect {app_name}", DIFF=f"diff {app_name}",
-                HISTORY=f"history {app_name} --limit 1 --offset {index}", EXPLAIN=f"explain {event_id}")
+                HISTORY=f"history {app_name} --limit 1 --offset {index}" if index is not None else "history: no verified event selected",
+                EXPLAIN=f"explain {event_id}" if event_id else "explain: no verified event selected")
             text += name + "\n> .\\contain.exe --db <saved-db> " + display[name] + "\n" + content + "\n"
         verify_package(package)
         (public / "cli-report.txt").write_text(text, encoding="utf-8", newline="\n")
-        summary.update(complete=True, event_id=event_id, capture_state=reopened["capture_state"],
+        summary.update(complete=not summary["failures"], acceptance_passed=not summary["failures"], report_generated=True, event_id=event_id, capture_state=reopened["capture_state"],
             quality=reopened["quality"]["level"], omitted_limitation_lines=len(warning_lines),
             omitted_explain_limitation_lines=len(explanation_warnings),
             report_sha256=sha(public / "cli-report.txt"),
             interpretation="Actual read-only commands on a backup; excerpt/JSON agreement only, not product or formal acceptance")
     except (OSError, ValueError, KeyError, TypeError, StopIteration, sqlite3.Error, subprocess.SubprocessError) as error:
         summary["complete"] = False
-        summary["failure"] = str(error) if isinstance(error, ValueError) and re.fullmatch(r"[a-z_]+", str(error)) else "report_failed_private_details_retained"
+        code = str(error) if isinstance(error, ValueError) and re.fullmatch(r"[a-z_]+", str(error)) else "report_failed_private_details_retained"
+        if code not in summary["failures"]: summary["failures"].append(code)
+        if summary["failure"] is None: summary["failure"] = code
         (local / "failure.txt").write_text(repr(error), encoding="utf-8")
         write(local / "failure-context.json", dict(stage=stage, capture_directory=str(args.capture_directory),
             commands=summary["commands"], exporter=summary["exporter"], exception=repr(error)))
+    if summary["failure"] and not (local / "failure-context.json").exists():
+        write(local / "failure-context.json", dict(stage=stage, capture_directory=str(args.capture_directory),
+            commands=summary["commands"], exporter=summary["exporter"], failures=summary["failures"]))
+    planned = ["inspect-json", "history-json", "explain-json", "inspect-text", "diff-text", "history-text", "explain-text"]
+    present = {row["name"] for row in summary["commands"]}
+    for label in planned:
+        if label not in present: summary["commands"].append(dict(name=label, status="not_run", reason="required_identity_scope_or_input_unavailable"))
+    summary["commands_executed"] = sum("exit_code" in row for row in summary["commands"])
+    summary["commands_not_run"] = sum(row.get("status") == "not_run" for row in summary["commands"])
+    summary["commands_failed"] = sum(row.get("status") == "failed" for row in summary["commands"])
     summary["last_stage"] = stage
     write(public / "summary.json", summary)
     print(json.dumps(dict(protocol=PROTOCOL, phase="report", complete=summary["complete"], failure=summary["failure"])))
@@ -753,12 +940,15 @@ def report_matches(item, manifest, scenario, text_path):
     commands = item.get("commands", [])
     return bool(item.get("schema_version") == 1 and item.get("protocol_revision") == PROTOCOL
         and item.get("scenario") == scenario and item.get("scope") == expected_scope
-        and item.get("complete") is True and item.get("source_sha") == manifest["source_sha"]
+        and item.get("complete") is True and item.get("acceptance_passed") is True
+        and item.get("report_generated") is True and not item.get("failures")
+        and item.get("comparison", {}).get("json_equal") is True
+        and item.get("source_sha") == manifest["source_sha"]
         and item.get("exporter") == manifest.get("report_exporter") == exporter_identity()
         and isinstance(commands, list) and [row.get("name") for row in commands] == ["inspect-json", "history-json",
             "explain-json", "inspect-text", "diff-text", "history-text", "explain-text"]
         and all(row.get("exit_code") == 0 for row in commands)
-        and all(item.get("checks", {}).get(key) is True for key in ("fixture_directory_identity", "reopen_json_equal",
+        and all(item.get("checks", {}).get(key) is True for key in ("fixture_directory_identity", "reopened_scope_identity", "reopen_json_equal",
             "history_page_equal", "explain_event_equal", "json_stdout_only", "all_seven_commands_executed",
             "text_json_agree", "fixture_diff_present", "public_paths_redacted"))
         and text_path.is_file() and item.get("report_sha256") == sha(safe_file(text_path)))
@@ -777,6 +967,16 @@ def collect_report(package, scenario, source):
     text_path = source / "cli-report.txt"
     if item.get("complete") is True:
         require(report_matches(item, manifest, scenario, text_path), "report_collection_contract_failed")
+    elif item.get("report_generated") is True:
+        require(item.get("complete") is False and item.get("acceptance_passed") is False
+                and item.get("failure") is not None and item.get("failures")
+                and item.get("checks", {}).get("fixture_directory_identity") is True
+                and item.get("checks", {}).get("reopened_scope_identity") is True
+                and item.get("checks", {}).get("public_paths_redacted") is True
+                and item.get("scenario") == scenario and item.get("source_sha") == manifest["source_sha"]
+                and item.get("exporter") == manifest.get("report_exporter") == exporter_identity()
+                and text_path.is_file() and item.get("report_sha256") == sha(safe_file(text_path)),
+                "failed_report_collection_contract_failed")
     else:
         require(not text_path.exists() and item.get("scenario") == scenario
                 and item.get("source_sha") == manifest["source_sha"]
@@ -932,12 +1132,13 @@ def finalize(args):
     def preflight_passed():
         try:
             cases = preflight["cases"]
+            negative = preflight["negative_case"]
             labels = [case["case"] for case in cases]
             eight = preflight["windows_8dot3"]["status"]
             expected = ["normal", "extended"] + (["actual-8dot3"] if eight == "covered" else [])
             command_names = ["inspect-json", "history-json", "explain-json", "inspect-text", "diff-text", "history-text", "explain-text"]
             return bool(preflight.get("schema_version") == 1
-                and preflight.get("protocol_revision") == "contain-synthetic-report-preflight-1"
+                and preflight.get("protocol_revision") == "contain-synthetic-report-preflight-2"
                 and preflight.get("scope") == "synthetic_windows_cli_report_preflight"
                 and preflight.get("synthetic") is True and preflight.get("native_capture_executed") is False
                 and preflight.get("native_windows") is True and preflight.get("passed") is True
@@ -948,15 +1149,30 @@ def finalize(args):
                 and preflight.get("preflight_sha256") == sha(Path(__file__).with_name("verify-trial-report.py"))
                 and preflight.get("exporter") == manifest.get("report_exporter") == exporter_identity()
                 and eight in {"covered", "not_covered"} and labels == expected
+                and preflight.get("negative_verified") is True
+                and preflight.get("save_implementation_sha256") == sha(package / "scripts/demo-save-capture.ps1")
+                and preflight.get("save_commands_executed") == len(cases) + 1
+                and preflight.get("negative_report_commands_executed") == 7
+                and negative.get("case") == "changed-event-id" and negative.get("status") == "passed"
+                and negative.get("report_exit_code") == 2
+                and [row.get("name") for row in negative["commands"]] == command_names
+                and all(row.get("exit_code") == 0 for row in negative["commands"])
+                and all(negative.get("checks", {}).get(name) is True for name in ("real_contain_exe", "shared_demo_save",
+                    "strict_mismatch_rejected", "exact_field_difference", "independent_commands_completed",
+                    "report_marked_inconsistent", "production_collection", "production_candidate_report_gate_rejected"))
+                and negative.get("comparison", {}).get("json_equal") is False
+                and negative.get("comparison", {}).get("difference_count") == 1
+                and negative.get("comparison", {}).get("differences", [{}])[0].get("path") == "/data/events/0/id"
                 and preflight.get("commands_executed") == preflight.get("report_commands_executed") == 7 * len(cases)
                 and preflight.get("commands_failed") == preflight.get("commands_not_run") == 0
                 and all(case.get("status") == "passed"
                     and all(case.get("checks", {}).get(name) is True for name in ("real_contain_exe", "all_seven_commands",
                         "reopened_json_equal", "same_event_paged_and_explained", "historical_child_absent", "unknown_preserved",
-                        "all_four_sections", "private_paths_redacted", "production_collection"))
+                        "all_four_sections", "private_paths_redacted", "production_collection", "shared_demo_save",
+                        "serialization_sensitive_values", "save_raw_text_preserved"))
                     and [row.get("name") for row in case["commands"]] == command_names
                     and all(row.get("exit_code") == 0 for row in case["commands"]) for case in cases))
-        except (OSError, KeyError, TypeError, ValueError):
+        except (OSError, KeyError, IndexError, TypeError, ValueError):
             return False
     short = native_paths.get("short_alias", {})
     native_paths_passed = bool(native_paths.get("schema_version") == 1
@@ -1011,7 +1227,9 @@ def finalize(args):
                 for item in analysis["missing_evidence"]] if isinstance(analysis.get("missing_evidence"), list) else None),
         formal=dict(status="requirements_unmet", accepted=False),
         validation_platform=platform_summary(),
-        actual_cli_reports={key: dict(complete=row.get("complete"), event_id=row.get("event_id"), report_sha256=row.get("report_sha256")) for key, row in reports.items()},
+        actual_cli_reports={key: dict(complete=row.get("complete"), report_generated=row.get("report_generated"),
+            acceptance_passed=row.get("acceptance_passed"), consistency=row.get("comparison", {}).get("json_equal"),
+            event_id=row.get("event_id"), report_sha256=row.get("report_sha256")) for key, row in reports.items()},
         report_preflights=dict(native_paths_passed=checks["windows_report_paths"],
             synthetic_cli_passed=checks["complete_synthetic_report_preflight"],
             native_paths_summary_sha256=sha(native_path) if native_path and native_path.is_file() else None,

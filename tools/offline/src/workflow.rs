@@ -217,6 +217,9 @@ pub fn generate_report_fixture(
     ensure!(installer.is_file(), "packaged fixture executable missing");
     let mut c = capture("report");
     c.name = "SyntheticReport".into();
+    // Exercise the production CLI -> PowerShell save path with representations
+    // that object reserialization can alter. They remain model inputs only.
+    c.started_at = "2026-10-01T00:00:00.120+00:00".into();
     c.watch_roots = vec![root.to_string_lossy().into_owned()];
     c.installer = installer.canonicalize()?.to_string_lossy().into_owned();
     c.processes[0].image = c.installer.clone();
@@ -225,6 +228,7 @@ pub fn generate_report_fixture(
     // Reuse all three historical/unknown/old-record model cases. These labels
     // are synthetic inputs, and never attest to a running Windows provider.
     let mut raw = events(&c, true);
+    raw[0].timestamp = "2026-10-01T00:00:01.123400+00:00".into();
     raw[0].resource = format!(r"{observed_root}\historical-deleted.tmp");
     raw[1].resource = format!(r"{}\recorded.tmp", c.watch_roots[0]);
     raw[2].resource = format!(r"{observed_root}\recorded.tmp");
@@ -241,7 +245,7 @@ pub fn generate_report_fixture(
             operation: "modified".into(),
             before_hash: Some("synthetic-before".into()),
             after_hash: Some("synthetic-after".into()),
-            after_size: Some(32),
+            after_size: Some(9_007_199_254_740_993),
             reason: "SYNTHETIC state difference; final ownership is Unknown".into(),
             ..Default::default()
         },
@@ -332,6 +336,15 @@ mod tests {
         let saved: serde_json::Value =
             serde_json::from_slice(&std::fs::read(output.join("capture.json")).unwrap()).unwrap();
         assert_eq!(saved["data"], serde_json::to_value(&full).unwrap());
+        assert_eq!(full.started_at, "2026-10-01T00:00:00.120+00:00");
+        assert_eq!(full.events[0].timestamp, "2026-10-01T00:00:01.123400+00:00");
+        assert_eq!(full.files[1].after_size, Some(9_007_199_254_740_993));
+        assert_eq!(
+            saved["data"]["events"][0]["timestamp_ticks"],
+            (BIRTH + 10).to_string()
+        );
+        assert!(saved["data"]["files"][0]["after_size"].is_null());
+        assert!(saved["data"]["events"][1]["success"].is_null());
         assert_eq!(full.events.len(), 3);
         assert_eq!(full.files.len(), 2);
         assert_eq!(full.events[0].confidence, Confidence::High);

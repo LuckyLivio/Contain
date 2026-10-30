@@ -27,6 +27,7 @@ if ($prebuilt) {
 Push-Location (Join-Path $PSScriptRoot '..')
 . "$PSScriptRoot/demo-provenance.ps1"
 . "$PSScriptRoot/demo-checks.ps1"
+. "$PSScriptRoot/demo-save-capture.ps1"
 $previousTruth=$env:CONTAIN_FIXTURE_TRUTH
 $runIdentity=$null
 $identityPath=$null
@@ -198,7 +199,9 @@ try {
             $document=$raw | ConvertFrom-Json
             if ($document.schema_version -ne 3 -or $document.kind -ne 'inspect') { throw 'inspect JSON contract failed' }
             $observation.document=$document; $observation.manifest=$document.data
-            if ($OutputDirectory) { $document | ConvertTo-Json -Depth 40 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'capture.json') -Encoding utf8 }
+            if ($OutputDirectory) {
+                Save-DemoCaptureJson -Json $raw -Path (Join-Path $OutputDirectory 'capture.json') -SchemaPath './docs/schema/cli-v3.schema.json'
+            }
         }
         $manifest=$observation.manifest
         $manifestReady=$null -ne $manifest
