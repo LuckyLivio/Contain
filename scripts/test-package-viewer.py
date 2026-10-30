@@ -177,7 +177,9 @@ class ViewerPackageTests(unittest.TestCase):
                 self.assertEqual(VIEWER.hashlib.sha256(value).hexdigest(),entry['sha256'])
 
     def test_native_required_plan_matches_actual_harness(self):
-        source=(Path(__file__).parent.parent/'desktop/Contain.Viewer.Tests/Program.cs').read_text()
+        # Exercise the Windows non-UTF-8 default even on the Linux preflight.
+        with mock.patch('io.text_encoding', lambda encoding, *args: encoding or 'cp1252'):
+            source=(Path(__file__).parent.parent/'desktop/Contain.Viewer.Tests/Program.cs').read_text(encoding='utf-8')
         section=source.split('PlannedChecks =',1)[1].split('];',1)[0]
         names=set(VIEWER.re.findall(r'"([a-z_]+)"',section))
         self.assertEqual(names,VIEWER.REQUIRED_CHECKS)

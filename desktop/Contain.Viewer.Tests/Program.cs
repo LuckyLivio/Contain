@@ -287,7 +287,11 @@ internal sealed class Runner
             Require(Control<DataGridView>(form, "Sessions").Rows.Count == 1, "one record listed through actual UI");
             Require(AllText(form).Contains("Synthetic finished", StringComparison.Ordinal), "real record name visible");
             Require(AllText(form).Contains("Degraded", StringComparison.Ordinal), "coverage remains Degraded");
-            Require(Control<Label>(form, "DatabasePath").Text.Contains("finished", StringComparison.Ordinal), "chosen database shown");
+            var databaseLabel = Control<Label>(form, "DatabasePath");
+            Require(databaseLabel.Text == "当前数据库：" + databases["finished"], "exact selected database path shown");
+            Require(databaseLabel.Text.Contains('&'), "special-character fixture includes literal ampersand");
+            foreach (var name in new[] { "DatabasePath", "SessionTitle", "Status" })
+                Require(!Control<Label>(form, name).UseMnemonic, "dynamic label preserves literal ampersands: " + name);
             Require(Control<Button>(form, "ExportReport").Enabled, "report available after record open");
             SelectTab(form, 0);
             Screenshot(form, "finished-overview.png");

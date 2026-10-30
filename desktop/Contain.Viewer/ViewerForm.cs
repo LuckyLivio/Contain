@@ -547,7 +547,7 @@ public sealed class ViewerForm : Form
         layout.Controls.Add(previous, 0, 0); layout.Controls.Add(page, 1, 0); layout.Controls.Add(next, 2, 0);
         return layout;
     }
-    private static Label Label(string name, string text, Color color) => new() { Name = name, Text = text, ForeColor = color, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoSize = false };
+    private static Label Label(string name, string text, Color color) => new() { Name = name, Text = text, UseMnemonic = false, ForeColor = color, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoSize = false };
     private static Button Button(string name, string text, bool primary = false) => new()
     {
         Name = name, Text = text, Dock = DockStyle.Fill, Height = 34, Margin = new Padding(4, 8, 4, 8),

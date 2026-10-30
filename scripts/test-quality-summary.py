@@ -167,6 +167,43 @@ class SummaryTests(unittest.TestCase):
             self.assertNotIn("PRIVATE_NAME", json.dumps(result))
             self.assertNotIn("SECRET", json.dumps(result))
 
+    def test_viewer_read_only_and_summary_function_regions_are_exported_without_changing_totals(self):
+        # Synthetic LLVM records exercise the actual public exporter. They are
+        # not coverage evidence for the production functions named here.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sources = {
+                "crates/contain-core/src/storage.rs": ["open_read_only", "list_details", "events_page_compatible", "unreviewed_helper"],
+                "crates/contain-cli/src/render.rs": ["summary_counts", "unreviewed_helper"],
+            }
+            functions = []
+            for source, names in sources.items():
+                path = root / source
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("".join(f"pub fn {name}() {{\n    synthetic();\n}}\n" for name in names), encoding="utf-8")
+                for index, name in enumerate(names):
+                    start = index * 3 + 1
+                    count = 0 if name == "list_details" else 3
+                    functions.append(dict(name="PRIVATE_MANGLED_SYMBOL", filenames=[str(path)], count=count,
+                                          regions=[[start, 1, start + 1, 10, count, 0, 0, 0],
+                                                   [start + 1, 11, start + 1, 20, 0, 0, 0, 0]]))
+            totals = {"lines": {"count": 100, "covered": 70, "percent": 70}}
+            report = root / "coverage.json"
+            report.write_text(json.dumps({"data": [{"totals": totals, "functions": functions}]}), encoding="utf-8")
+            result = SUMMARY.coverage(report, root)
+            self.assertEqual(result["export_totals"], [totals])
+            affected = {row["enclosing_function"]: row for row in result["affected_functions"]}
+            self.assertEqual(set(affected), {"open_read_only", "list_details", "events_page_compatible", "summary_counts"})
+            for name, row in affected.items():
+                with self.subTest(function=name):
+                    self.assertEqual(row["code_regions"], 2)
+                    self.assertEqual(row["execution_count"], 0 if name == "list_details" else 3)
+                    self.assertEqual(row["covered_code_regions"], 0 if name == "list_details" else 1)
+                    self.assertEqual(len(row["uncovered_code_regions"]), 2 if name == "list_details" else 1)
+                    self.assertEqual(row["uncovered_code_regions"][-1]["start"], [row["definition_line"] + 1, 11])
+            self.assertNotIn("PRIVATE_MANGLED_SYMBOL", json.dumps(result))
+            self.assertNotIn(str(root), json.dumps(result))
+
 
 if __name__ == "__main__":
     unittest.main()

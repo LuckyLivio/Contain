@@ -16,8 +16,8 @@ import xml.etree.ElementTree as ET
 MODES = {"Setup", "Check", "Coverage", "CoverageOriginal", "Dependencies", "Companion", "Bench", "Fuzz"}
 METRICS = ("lines", "functions", "regions", "instantiations", "branches")
 AFFECTED = {
-    "crates/contain-cli/src/render.rs": {"write_str", "source_scope_text", "summary_to", "inspect_to", "diff_to", "history_to", "explain_to"},
-    "crates/contain-core/src/storage.rs": {"save", "load_internal", "for_event"},
+    "crates/contain-cli/src/render.rs": {"write_str", "source_scope_text", "summary_counts", "summary_to", "inspect_to", "diff_to", "history_to", "explain_to"},
+    "crates/contain-core/src/storage.rs": {"open_read_only", "list_details", "events_page_compatible", "save", "load_internal", "for_event"},
     "crates/contain-core/src/storage/stream.rs": {"select_raw_only_registry"},
     "crates/contain-core/src/path.rs": {"normalize_path", "in_scope"},
     "crates/contain-core/src/storage/checkpoint.rs": {"available_disk_bytes"},
