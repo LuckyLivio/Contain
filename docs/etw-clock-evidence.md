@@ -150,3 +150,139 @@ summaries. Their manifest phase/index identifies the fixed pair. They verify
 this definite export-chain repair and clock acquisition; they do not presume
 that the historical time failure has been repaired. Both results are retained,
 including failed original scores. No additional diagnostic or retry loop is added.
+
+## Fixed pair result: clock acquisition works; adjudication remains blocked
+
+The two planned attempts ran once each at
+`7a035e6b261051f60eb50da6a88e8a8fdd2485da`, branch
+`fix/etw-clock-evidence`, in
+[CI 41050244512](https://github.com/LuckyLivio/Contain/actions/runs/41050244512).
+The complete CI failed: both ETW steps failed, with demo exit 1 and analyzer exit 2.
+No retry or additional capture followed. The earlier failed diagnostic
+41045468693 and the six historical failures remain unchanged.
+
+| Observed result | Attempt 1 | Attempt 2 |
+| --- | ---: | ---: |
+| Independent fixture rows with actual QPC boundaries | 21/21 | 21/21 |
+| Primary records with exact key + descriptor original-QPC links | 33/33 | 33/33 |
+| Primary missing links / supported sources missing QPC | 0 / 0 | 0 / 0 |
+| Primary and companion frequency (Hz) | 10000000 | 10000000 |
+| Same machine / boot provenance verified | true | true |
+| Companion stored records | 52265 | 7829 |
+| Companion binary bytes | 3344960 | 501056 |
+| Source DB/WAL byte stability through snapshot and close | true | true |
+| Original scorer target success: observed and correct | 17/17 | 17/17 |
+| Original scorer additional target positives / wrong attribution | 0 / 0 | 0 / 0 |
+| Original scorer total observed / expected | 19/21 | 19/21 |
+| Original scorer Unknown | 4 | 4 |
+| Bound existing final-view clock report: unique candidates / no interval source | 19 / 2 | 19 / 2 |
+| Complete raw/final evidence analysis | rejected | rejected |
+
+The WAL repair succeeded in both attempts: source hashes, snapshot hashes and raw
+export hashes were retained, and the original score recomputed exactly. Both
+clocks were actually enabled and produced data. The real headers record primary
+mode `268435712`, companion mode `268439808`, and clock type flag `1`. All 27
+capture/provider/drop/drain checks passed. Queue, quota and writer-drop counters
+were zero; both writers finished and drained without timeout. The companion's
+final consumer-loss counters remain **unavailable** (the report records false),
+and its manifest duplicate-key counter remains null. These are not zero-loss
+claims for an unobserved counter; exact per-primary links were independently
+checked. No offsets, tolerance, inverse conversion or reconstructed old QPC were
+used.
+
+The actual blocker is `supported_raw_event_without_unique_final_view`, followed
+by `source_original_qpc_or_actor_missing`. With zero missing QPC, the latter must
+not be described as failure to acquire the clock. The new analyzer currently
+requires every supported raw record to have a final view, and any violation
+blocks all interval comparisons. Its `clock_unavailable` label therefore also
+means that the join was rejected; it does not erase the measured QPC values.
+
+That blanket join requirement is not a general production contract:
+`crates/contain-core/src/capture.rs` explicitly keeps unresolved non-High registry
+records in committed raw evidence while omitting them from final `events`.
+However, this run's public projection did not retain the missing-final event IDs
+or their individual selection reasons. The 33-to-31/32 private/public event-count
+difference is publication filtering, **not** the number missing final views.
+The current artifacts cannot establish which specific records took that branch
+or whether another defect was involved. No raw record was deleted or promoted
+from fixture truth to make the check pass.
+
+Both original scores have zero additional positives, so the six historical time
+failures were not reproduced. The separately hash-bound final-view clock reports
+each contain 19 unique interval candidates, whose measured QPC and FILETIME both
+lie in the corresponding intervals, and two rows without interval sources. These
+are final-view observations, not successful raw/final adjudication or proof of
+call causality. The old scorer also retains one unobserved noise operation and
+one unobserved failed operation per attempt. The public raw projection retains
+8 and 9 actor-Unknown native Writes respectively. Each attempt also retains four
+High records without an independent truth candidate: three controls excluded by
+the existing scorer and one transient registry diagnostic record. They are not
+newly matched application calls. The two missing-interval truth rows are the
+unrelated `set_value` (row 2 in each attempt) and the failed delete (rows 13 and 9).
+Clock instrumentation was enabled
+for these attempts; their passing old scores cannot retroactively clear the
+unclocked historical runs. **D remains the conclusion**: no current evidence
+selects A (conversion/comparison), B (provider timing), or C (attribution) as the
+cause of those historical failures. No scoring-protocol change was justified.
+
+The demo also stops at the existing v04 clock readiness check. That check keeps
+the general provider emission contract unverified and returns 2, independently
+of whether QPC acquisition worked. Assertions after that call, including the
+later ETW smoke and original-score assertions, were **not executed**. The stored
+score values above are actual computed results, not claims that those assertions
+ran. Neither readiness nor the failed ETW step was downgraded to a warning.
+
+The minimum next action is confined to the analyzer: add a regression using the
+existing production raw/final selection contract, retain each raw-only record's
+selection status/reason before a global rejection, and distinguish a legitimate
+raw-only Unknown from duplicate IDs or conflicting facts. Preserve all raw facts;
+do not manufacture a final actor or infer one from truth. The current public
+artifacts are not a replayable database and cannot recover omitted membership
+details. Resolving those exact records would require retained private evidence
+or a separately planned future capture. This round does neither and starts no
+queue/cache/WPR/storage redesign.
+
+### Checks and retained artifacts
+
+All following results belong to code SHA `7a035e6`, on Windows Server 2025,
+runner image `windows-2025-vs2026` version `20261021.278.1`. Tools: Rust/Cargo
+1.99.1, nextest 0.9.149, llvm-cov 0.9.1, deny 0.20.2, Python 3.12.10,
+PowerShell 7.6.7.
+
+The unchanged CI ran `./scripts/quality.ps1 -Mode Check`, `Coverage`,
+`CoverageOriginal`, `Dependencies`, and `Companion`, each successfully.
+Nextest: 286 passed, 0 failed, 7 skipped, zero retries. Python: 21 scripts,
+291 passed, 0 failed/errors/skipped, including the 19 clock-audit regressions.
+The two PowerShell regression scripts passed; they do not emit structured
+assertion counts. The fuzz seed regression and explicit companion spool
+regression each passed one test (the spool invocation filtered 191 others).
+Doctests executed zero tests. No new fuzz campaign or performance benchmark was
+needed for the script-only repair; neither was run.
+
+Workspace coverage: 13032/17567 lines (74.18455%), 1045/1387 functions (75.34247%).
+Original packages: 9458/13112 lines (72.13240%), 755/1016 functions (74.31102%).
+Both original 66.5% line / 70% function floors passed. Inline tests and shared
+offline-package source instantiations remain in the unchanged denominators;
+these are not production-only or independent-unique-test counts.
+All 66 synthetic native CLI commands and 33 JSON schema checks passed, as did
+the separate snapshot fallback. These do not replace the two failed ETW steps.
+
+The exact capture commands were the two `ci-etw-clock.ps1 -Phase verification
+-AttemptIndex 1|2` invocations in `.github/workflows/ci.yml`, each using a new
+absolute `target/etw-clock-verification-1|2` private directory and separate
+`target/etw-clock-public-1|2` publication directory. CI artifact
+`etw-clock-evidence` contains both reviewed `summary.json` files; artifact
+`windows-read-only-quality` contains exact tool/command/count/coverage evidence
+and the three synthetic CLI examples. Their full traces, companion binaries,
+databases, host paths and unrelated process identities were not uploaded.
+The two published clock-summary SHA-256 values, in attempt order, are:
+
+```text
+bc9026b7f52a0d238c17b3fd57efdd60145330d3c0f08e9d3aebc040f49c0c62
+5d43ff1a43262ad5922e77616bbeb5b1ee61d47e4f545ce360265e0c536d15aa
+```
+
+This report-only follow-up uses a skipped-CI commit to avoid exceeding the fixed
+capture budget. It does not change code or replace the failed CI at `7a035e6`.
+Version remains 0.3.1. Formal 32-run, scale and real-installer validation were not
+started, and no stabilization or release acceptance is claimed.
