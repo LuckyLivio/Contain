@@ -57,6 +57,7 @@ internal sealed class TestDialogs : IViewerDialogs
 internal sealed record CheckResult(string Name, string Status, string? ErrorType = null, string? SafeReason = null);
 internal sealed class TestFailureException(string message) : Exception(message);
 internal sealed record ImageResult(string Name, string Sha256, int Width, int Height);
+internal sealed record UiObservation(string Phase, bool IsBusy, bool NextEnabled, bool PendingOperationCompleted);
 
 internal sealed class Runner
 {
@@ -88,6 +89,7 @@ internal sealed class Runner
     private readonly Options options;
     private readonly List<CheckResult> results = [];
     private readonly List<ImageResult> images = [];
+    private readonly List<UiObservation> uiObservations = [];
     private readonly Dictionary<string, string> initialHashes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> databases = new(StringComparer.Ordinal);
     private readonly Dictionary<string, CoreResponse> summaries = new(StringComparer.Ordinal);
@@ -324,6 +326,13 @@ internal sealed class Runner
         await Check("ui_page_then_select_and_explain_same_event", async () =>
         {
             SelectTab(form, 2);
+            // Activating the real grid can select its first row and start the
+            // production asynchronous explain handler. Assert navigation only
+            // after that operation settles; keep both states as safe evidence.
+            ObserveEventUi(form, "event_tab_selected");
+            await WaitIdle(form);
+            ObserveEventUi(form, "event_tab_idle");
+            Require(!form.IsBusy && form.PendingOperation.IsCompleted, "event tab work completed before navigation assertion");
             var grid = Control<DataGridView>(form, "Events");
             Require(grid.Rows.Count == 50, "first UI page bounded at fifty");
             Require(Control<Button>(form, "NextEvents").Enabled, "next enabled on first page");
@@ -420,7 +429,10 @@ internal sealed class Runner
             await Open(form, databases["interrupted"]);
             SelectTab(form, 0);
             var overview = Control<TextBox>(form, "Overview").Text;
-            Require(overview.Contains("记录状态：未结束（capturing）", StringComparison.Ordinal), "unfinished actual capture state indicated");
+            var currentSummary = await Client.SummaryAsync(databases["interrupted"], "synthetic-interrupted");
+            var actualState = currentSummary.Data.GetProperty("capture_state").GetString();
+            Require(actualState == "finalizing", "interrupted fixture stopped after raw drain and before derived finalization");
+            Require(overview.Contains("记录状态：未结束（" + actualState + "）", StringComparison.Ordinal), "unfinished actual capture state indicated");
             Require(overview.Contains("覆盖质量：Incomplete · 证据不完整", StringComparison.Ordinal), "unfinished quality is not finished or Complete");
             Require(overview.Contains("ETW 丢失事件：未提供", StringComparison.Ordinal), "missing ETW measurements not zero");
             Require(overview.Contains("规范化源操作：未提供", StringComparison.Ordinal), "unmeasured normalized operations visibly unavailable");
@@ -569,6 +581,9 @@ internal sealed class Runner
 
     private static void SelectTab(ViewerForm form, int index) => Control<TabControl>(form, "Tabs").SelectedIndex = index;
 
+    private void ObserveEventUi(ViewerForm form, string phase) => uiObservations.Add(new(
+        phase, form.IsBusy, Control<Button>(form, "NextEvents").Enabled, form.PendingOperation.IsCompleted));
+
     private void Screenshot(ViewerForm form, string name)
     {
         form.Refresh();
@@ -646,6 +661,7 @@ internal sealed class Runner
             accepted = Success && completed && OperatingSystem.IsWindows(),
             checks = results,
             screenshots = images,
+            ui_observations = uiObservations,
             screenshot_method = "Actual production WinForms controls rendered by Windows DrawToBitmap after real button/selection actions; synthetic data only.",
             report_generated = reportPath is not null && File.Exists(reportPath),
             report_sha256 = reportPath is not null && File.Exists(reportPath) ? Hash(reportPath) : null,
