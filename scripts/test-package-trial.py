@@ -534,9 +534,14 @@ class TrialTests(unittest.TestCase):
         public, private = TRIAL.compare_capture_files(left, right, dict(source_sha=self.source), self.package, database)
         self.assertTrue(public["json_equal"]); self.assertFalse(public["bytes_equal"])
         self.assertEqual(public["difference_count"], 0)
-        self.assertNotIn(str(self.root), json.dumps(public))
-        self.assertIn(str(left), json.dumps(private))
-        self.assertIn(str(database), json.dumps(private))
+        # Compare path values structurally: JSON escapes Windows backslashes.
+        # Both literal and JSON-escaped private roots must stay out of public output.
+        public_text = json.dumps(public)
+        self.assertNotIn(str(self.root), public_text)
+        self.assertNotIn(json.dumps(str(self.root))[1:-1], public_text)
+        self.assertEqual(private["inputs"][0]["path"], str(left.absolute()))
+        self.assertEqual(private["inputs"][1]["path"], str(right.absolute()))
+        self.assertEqual(private["database_snapshot"]["path"], str(database.absolute()))
         self.assertNotIn("PRIVATE", json.dumps(public))
         public, private = TRIAL.compare_json_documents(list(range(8)), [None] * 8, limit=3)
         self.assertEqual(public["difference_count"], 8)

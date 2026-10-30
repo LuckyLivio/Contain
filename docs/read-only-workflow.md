@@ -696,3 +696,18 @@ frozen package after quality and both Windows preflights. No retry is scheduled.
 The independently reproduced PowerShell timestamp formatting defect is not a
 confirmed explanation of the two historical failures: their missing field-level
 evidence remains unavailable, and the earlier six timing doubts remain D.
+
+The first frozen attempt, source `189b0f3fef28885a2cf47209831d26d845a0b3e8`
+and [CI 41099959322](https://github.com/LuckyLivio/Contain/actions/runs/41099959322),
+failed one new Windows unit assertion: it searched for an unescaped Windows path
+inside serialized JSON. The private structured path was correct; JSON field
+comparison passed and the intentional byte difference was detected. The fix
+compares private path values directly and rejects both literal and JSON-escaped
+paths in public output. This is a test representation error, not evidence of a
+production save/readback mismatch.
+
+That attempt is retained: package tests 32 passed / 1 failed; 15 later quality
+gates not run; coverage, original-package coverage, dependencies and companion
+passed. Neither new report preflight nor native capture nor package delivery ran.
+The next freeze follows this specific correction; native attempts consumed so
+far remain zero. No field equality, privacy check or acceptance floor is relaxed.
