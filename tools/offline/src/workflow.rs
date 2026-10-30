@@ -134,16 +134,7 @@ pub fn write_fixture(path: &Path, case: &str) -> Result<String> {
             .push("Synthetic interrupted capture: final provider counters unavailable".into());
     }
     let raw_events = events(&c, case == "historical");
-    let mut db = Storage::open(path)?;
-    let mut writer = RawBuffer::new(&mut db, &c, DEFAULT_QUOTA)?;
-    writer.append(&mut db, raw_events.clone());
-    c.backend.stream = Some(writer.finish(&mut db)?);
     if case != "interrupted" {
-        db.prepare_raw(&c.id)?;
-        c.events = raw_events;
-        c.finished_at = "2026-10-01T00:00:02Z".into();
-        c.exit_code = Some(0);
-        c.backend.events_received = c.events.len() as u64;
         c.files.push(FileChange {
             path: c.watch_roots[0].clone() + r"\recorded.tmp",
             operation: "modified".into(),
@@ -153,6 +144,31 @@ pub fn write_fixture(path: &Path, case: &str) -> Result<String> {
             reason: "Synthetic before/after difference; final ownership is Unknown".into(),
             ..Default::default()
         });
+    }
+    persist_fixture(path, c, raw_events, case == "interrupted")
+}
+
+fn persist_fixture(
+    path: &Path,
+    mut c: Capture,
+    raw_events: Vec<SystemEvent>,
+    interrupted: bool,
+) -> Result<String> {
+    ensure!(!path.exists(), "refusing to replace an existing database");
+    // State differences belong to finalization. Persisting them in both the
+    // initial stream document and the final save would duplicate their rows.
+    let files = std::mem::take(&mut c.files);
+    let mut db = Storage::open(path)?;
+    let mut writer = RawBuffer::new(&mut db, &c, DEFAULT_QUOTA)?;
+    writer.append(&mut db, raw_events.clone());
+    c.backend.stream = Some(writer.finish(&mut db)?);
+    if !interrupted {
+        db.prepare_raw(&c.id)?;
+        c.files = files;
+        c.events = raw_events;
+        c.finished_at = "2026-10-01T00:00:02Z".into();
+        c.exit_code = Some(0);
+        c.backend.events_received = c.events.len() as u64;
         for event in &c.events {
             c.operations.push(NormalizedOperation {
                 id: format!("operation-{}", event.id),
@@ -170,6 +186,96 @@ pub fn write_fixture(path: &Path, case: &str) -> Result<String> {
         db.mark_finished(&c)?;
     }
     Ok(c.id)
+}
+
+/// Bind the existing historical model to an actual disposable fixture directory.
+/// The alias is supplied by the Windows preflight after filesystem verification;
+/// the production report independently verifies that directory identity again.
+/// Neither the modeled child paths nor their historical names must exist now.
+pub fn generate_report_fixture(
+    directory: &Path,
+    fixture_root: &Path,
+    observed_root: &str,
+    installer: &Path,
+) -> Result<()> {
+    ensure!(!directory.exists(), "choose a new output directory");
+    let root = fixture_root.canonicalize()?;
+    ensure!(root.is_dir(), "fixture root must be a directory");
+    ensure!(
+        std::fs::read(root.join(".contain-demo-marker"))? == b"Contain test fixture",
+        "fixture marker mismatch"
+    );
+    let leaf = root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    let guid = leaf.strip_prefix("contain-demo-").unwrap_or("");
+    ensure!(
+        guid.len() == 32 && guid.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        "fixture GUID missing"
+    );
+    ensure!(installer.is_file(), "packaged fixture executable missing");
+    let mut c = capture("report");
+    c.name = "SyntheticReport".into();
+    c.watch_roots = vec![root.to_string_lossy().into_owned()];
+    c.installer = installer.canonicalize()?.to_string_lossy().into_owned();
+    c.processes[0].image = c.installer.clone();
+    c.processes[0].evidence.process_image = Some(c.installer.clone());
+    c.registry_key = Some(format!(r"Software\Contain\Demo\{leaf}"));
+    // Reuse all three historical/unknown/old-record model cases. These labels
+    // are synthetic inputs, and never attest to a running Windows provider.
+    let mut raw = events(&c, true);
+    raw[0].resource = format!(r"{observed_root}\historical-deleted.tmp");
+    raw[1].resource = format!(r"{}\recorded.tmp", c.watch_roots[0]);
+    raw[2].resource = format!(r"{observed_root}\recorded.tmp");
+    c.files = vec![
+        FileChange {
+            path: raw[0].resource.clone(),
+            operation: "deleted".into(),
+            before_hash: Some("synthetic-before".into()),
+            reason: "SYNTHETIC deleted state; final ownership is Unknown".into(),
+            ..Default::default()
+        },
+        FileChange {
+            path: format!(r"{}\recorded.tmp", c.watch_roots[0]),
+            operation: "modified".into(),
+            before_hash: Some("synthetic-before".into()),
+            after_hash: Some("synthetic-after".into()),
+            after_size: Some(32),
+            reason: "SYNTHETIC state difference; final ownership is Unknown".into(),
+            ..Default::default()
+        },
+    ];
+    let truth: Vec<_> = raw
+        .iter()
+        .map(|event| {
+            serde_json::json!({"synthetic":true, "pid":100, "creation_time":BIRTH.to_string(),
+                "operation":event.operation, "resource":event.resource,
+                "note":"SYNTHETIC model inputs, not an independently observed installer"})
+        })
+        .collect();
+    std::fs::create_dir(directory)?;
+    let database = directory.join("report.db");
+    let id = persist_fixture(&database, c, raw, false)?;
+    // Reopen through production Storage rather than serializing a parallel
+    // model representation. The actual CLI must agree with this saved view.
+    let reopened = Storage::open(&database)?.load(&id)?;
+    for (name, value) in [
+        (
+            "capture.json",
+            serde_json::json!({"schema_version":3,"kind":"inspect","data":reopened}),
+        ),
+        ("ground-truth.json", serde_json::to_value(truth)?),
+        (
+            "metadata.json",
+            serde_json::json!({"kind":"synthetic_report_fixture", "schema_version":1,
+                "source":"existing historical model + production RawBuffer/Storage",
+                "event_count":3, "real_etw":false}),
+        ),
+    ] {
+        std::fs::write(directory.join(name), serde_json::to_vec_pretty(&value)?)?;
+    }
+    Ok(())
 }
 
 pub fn generate(directory: &Path) -> Result<()> {
@@ -207,6 +313,76 @@ pub fn generate(directory: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn report_fixture_uses_saved_views_and_preserves_historical_unknown_evidence() {
+        let directory =
+            std::env::temp_dir().join(format!("contain-report-model-{}", uuid::Uuid::new_v4()));
+        let root = directory.join(format!("contain-demo-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&root).unwrap();
+        let marker = root.join(".contain-demo-marker");
+        std::fs::write(&marker, b"Contain test fixture").unwrap();
+        let installer = directory.join("fixture.exe");
+        std::fs::write(&installer, b"SYNTHETIC test input, never executed").unwrap();
+        let output = directory.join("output");
+        let alias = root.to_str().unwrap();
+        generate_report_fixture(&output, &root, alias, &installer).unwrap();
+        let db = Storage::open(&output.join("report.db")).unwrap();
+        let full = db.load("SyntheticReport").unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(output.join("capture.json")).unwrap()).unwrap();
+        assert_eq!(saved["data"], serde_json::to_value(&full).unwrap());
+        assert_eq!(full.events.len(), 3);
+        assert_eq!(full.files.len(), 2);
+        assert_eq!(full.events[0].confidence, Confidence::High);
+        assert_eq!(
+            full.events[0].evidence.process_image.as_deref(),
+            Some(full.installer.as_str())
+        );
+        assert_eq!(full.events[1].confidence, Confidence::Unknown);
+        assert!(full.events[2].raw.file_name.is_none());
+        assert_eq!(
+            full.events[0].resource,
+            format!(r"{alias}\historical-deleted.tmp")
+        );
+        assert!(!root.join("historical-deleted.tmp").exists());
+        assert!(
+            full.files
+                .iter()
+                .all(|f| f.confidence == Confidence::Unknown)
+        );
+        assert!(full.events.iter().all(|e| !e.state_validated));
+        let summary = db.load_summary(&full.id).unwrap();
+        assert_eq!(render::summary_text(&summary), render::summary_text(&full));
+        for (index, event) in full.events.iter().enumerate() {
+            let page = db.events_page(&full.id, index as u64, 1).unwrap();
+            assert_eq!(page[0].id, event.id);
+            let focused = db.for_event(&event.id).unwrap();
+            assert_eq!(
+                render::explanation(&full, &event.id).unwrap(),
+                render::explanation(&focused, &event.id).unwrap()
+            );
+        }
+        let explanation = render::explain_text(&full, &full.events[0].id).unwrap();
+        assert!(explanation.contains("historical"));
+        assert!(
+            !full.events[0]
+                .raw
+                .file_name
+                .as_ref()
+                .unwrap()
+                .current_path_verified
+        );
+        assert_eq!(std::fs::read(&marker).unwrap(), b"Contain test fixture");
+        assert!(generate_report_fixture(&output, &root, alias, &installer).is_err());
+        drop(db);
+        std::fs::write(&marker, b"wrong marker").unwrap();
+        assert!(
+            generate_report_fixture(&directory.join("refused"), &root, alias, &installer).is_err()
+        );
+        assert!(!directory.join("refused").exists());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn synthetic_workflow_reopens_and_preserves_summary_page_explanation_agreement() {
@@ -249,6 +425,7 @@ mod tests {
                 );
             } else {
                 assert_eq!(summary.capture_state.as_deref(), Some("finished"));
+                assert_eq!(full.files.len(), 1);
                 assert_eq!(full.files[0].confidence, Confidence::Unknown);
                 assert_eq!(full.events[0].confidence, Confidence::High);
                 assert!(full.events.iter().all(|e| !e.state_validated));

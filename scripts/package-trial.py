@@ -24,6 +24,7 @@ import zipfile
 
 REPO = Path(__file__).resolve().parent.parent
 PROTOCOL = "contain-read-only-trial-1"
+REPORT_PROTOCOL = "contain-trial-report-2"
 TARGET = "x86_64-pc-windows-msvc"
 BINARIES = ("contain.exe", "contain-test-installer.exe")
 SCRIPTS = (
@@ -274,6 +275,7 @@ def prepare(args):
         binaries=[], scripts=[], resources=[], runtime_files=[], pe_dependencies={},
         runtime_requirement="Windows x64 system DLLs/API sets plus only the listed packaged runtime files",
         validation_at_freeze="not_run", loaded_image_attestation=False)
+    manifest["report_exporter"] = exporter_identity()
     manifest["toolchain"] = {program: subprocess.check_output([program, "--version"], text=True, encoding="utf-8").strip()
                              for program in ("rustc", "cargo")}
     manifest["build_input_sha256"] = {name: sha(repo / name) for name in
@@ -386,13 +388,19 @@ def public_text(text, replacements):
     """Replace only known fixture values, then reject residual machine paths."""
     for original, alias in sorted(replacements.items(), key=lambda row: len(row[0]), reverse=True):
         if original:
-            text = re.sub(re.escape(original), lambda match: alias, text, flags=re.IGNORECASE)
-            text = re.sub(re.escape(original.replace("\\", "\\\\")), lambda match: alias, text, flags=re.IGNORECASE)
+            # A verified directory does not authorize a neighbouring prefix such
+            # as root-other. Keep that private spelling intact so rejection below
+            # can catch it instead of disguising it as an approved fixture path.
+            boundary = r"(?=$|[\\/\"\r\n])" if alias in {"<fixture-root>", "<fixture-registry-key>"} else ""
+            text = re.sub(re.escape(original) + boundary, lambda match: alias, text, flags=re.IGNORECASE)
+            text = re.sub(re.escape(original.replace("\\", "\\\\")) + boundary, lambda match: alias, text, flags=re.IGNORECASE)
     # Rust's text explanation quotes paths as JSON strings. After replacing a
     # known fixture root, normalize only that alias's escaped path separators;
     # an unrelated UNC path elsewhere must still be rejected below.
     text = re.sub(r"<fixture-(?:root|bin|registry-key)>(?:\\{1,2}[A-Za-z0-9_.-]+)*",
                   lambda match: match[0].replace("\\\\", "\\"), text)
+    require(not re.search(r"<fixture-root>(?:[\\/]+[^\\/\r\n\"]+)*[\\/]+\.{1,2}(?=[\\/\r\n\"]|$)", text),
+            "public_text_ambiguous_relative_path")
     require(not re.search(r"[A-Za-z]:[\\/]|\\\\|S-1-5-\d|\\Device\\|\\Registry\\", text, re.IGNORECASE), "public_text_contains_private_path")
     return text
 
@@ -403,6 +411,116 @@ def windows_spelling(value):
         if value.startswith(prefix):
             value = value[len(prefix):]
     return value.casefold().rstrip("\\")
+
+
+def exporter_identity():
+    return dict(protocol_revision=REPORT_PROTOCOL, sha256=sha(Path(__file__)))
+
+
+def directory_identity(path):
+    """Use the live OS directory identity (Windows volume/file ID via stat).
+
+    Zero/absent file IDs cannot prove same-directory identity. Resolve obtains
+    the canonical long Windows spelling; neither short names nor file children
+    are guessed. The IDs and paths are private diagnostic evidence only.
+    """
+    try:
+        value = path.stat()
+        require(stat.S_ISDIR(value.st_mode) and type(value.st_ino) is int and value.st_ino > 0
+                and type(value.st_dev) is int and value.st_dev >= 0, "fixture_directory_identity_unavailable")
+        return value.st_dev, value.st_ino
+    except (OSError, ValueError):
+        return None
+
+
+class FixtureScope:
+    """Only verified root aliases, shared by selection, diff and redaction.
+
+    Matching names restricts this public fixture excerpt, not resource identity
+    or ownership. Historical/deleted children never have to exist today.
+    """
+    def __init__(self, canonical, aliases, registry_key):
+        self.canonical = canonical
+        self.aliases = set(aliases) | {canonical}
+        self.registry_key = registry_key
+
+    def contains_file(self, resource):
+        if not isinstance(resource, str):
+            return False
+        value = windows_spelling(resource)
+        for root in self.aliases:
+            prefix = windows_spelling(root) + "\\"
+            if value.startswith(prefix) and not {".", ".."}.intersection(value[len(prefix):].split("\\")):
+                return True
+        return False
+
+    def observe(self, resource):
+        # Only inspect directory ancestors, never a recorded/deleted child.
+        # Additional aliases need the same live OS identity as the proved root.
+        if not isinstance(resource, str) or self.contains_file(resource):
+            return
+        canonical = Path(self.canonical)
+        expected = directory_identity(canonical)
+        require(expected is not None, "fixture_directory_identity_unavailable")
+        for parent in Path(resource).parents:
+            if directory_identity(parent) != expected:
+                continue
+            try:
+                if parent.samefile(canonical):
+                    self.aliases.add(str(parent))
+                    return
+            except OSError:
+                pass
+
+    def includes_diff(self, line):
+        match = re.fullmatch(r"  (FILE|REGISTRY) \S+ (.+) \[[^\]]+\]", line)
+        if not match:
+            return False
+        kind, resource = match.groups()
+        if kind == "FILE":
+            return self.contains_file(resource)
+        key = self.registry_key.casefold()
+        return resource.casefold() == key or resource.casefold().startswith(key + "\\")
+
+    def replacements(self):
+        result = {self.registry_key: "<fixture-registry-key>"}
+        for original in self.aliases:
+            # These are representations of an already verified root, not guessed
+            # 8.3 names. Include full prefixes before replacing embedded roots.
+            result[original] = "<fixture-root>"
+            normalized = original.replace("/", "\\")
+            for prefix in ("\\\\?\\", "\\??\\"):
+                if normalized.startswith(prefix):
+                    normalized = normalized[len(prefix):]
+                    break
+            for value in (normalized, normalized.replace("\\", "/")):
+                result[value] = "<fixture-root>"
+            if re.match(r"^[A-Za-z]:\\", normalized):
+                result["\\\\?\\" + normalized] = "<fixture-root>"
+                result["\\??\\" + normalized] = "<fixture-root>"
+        return result
+
+
+def fixture_scope(observed_root, captured_roots, registry_key):
+    require(isinstance(observed_root, str) and observed_root and isinstance(captured_roots, list)
+            and len(captured_roots) == 1 and isinstance(captured_roots[0], str), "not_fixed_fixture_scope")
+    roots = [Path(observed_root), Path(captured_roots[0])]
+    identities = [directory_identity(root) for root in roots]
+    require(all(value is not None for value in identities), "fixture_directory_identity_unavailable")
+    try:
+        require(identities[0] == identities[1] and roots[0].samefile(roots[1]), "fixture_directory_identity_mismatch")
+        canonical = roots[0].resolve(strict=True)
+        require(not redirected(roots[0]) and not redirected(roots[1]), "fixture_directory_redirected")
+        require(re.fullmatch(r"contain-demo-[0-9a-f]{32}", canonical.name), "not_fixed_fixture_scope")
+        require(registry_key == "Software\\Contain\\Demo\\" + canonical.name, "not_fixed_fixture_registry")
+        require(safe_file(canonical / ".contain-demo-marker").read_bytes() == b"Contain test fixture",
+                "fixture_marker_invalid")
+        aliases = [observed_root, captured_roots[0]] + [str(root) for root in roots] + [str(root.resolve(strict=True)) for root in roots]
+        require(all(directory_identity(root) == identities[0] for root in roots + [canonical]),
+                "fixture_directory_identity_changed")
+    except OSError as error:
+        raise ValueError("fixture_directory_identity_unavailable") from error
+    return FixtureScope(str(canonical), aliases, registry_key)
 
 
 def legacy_score_result(directory):
@@ -495,25 +613,41 @@ def report(args):
     local = new_directory(args.private_output)
     public = new_directory(args.public_output)
     summary = dict(schema_version=1, protocol_revision=PROTOCOL, source_sha=manifest["source_sha"],
-        scenario=args.scenario, scope="real_etw_controlled_fixture_cli_excerpt", complete=False,
+        scenario=args.scenario, scope="synthetic_windows_cli_report" if args.scenario == "synthetic"
+            else "real_etw_controlled_fixture_cli_excerpt", complete=False, exporter=exporter_identity(),
         candidate_verified=False, commands=[], checks={}, failure=None,
         legacy_score=legacy_score_result(args.capture_directory))
+    stage = "run_identity"
     try:
+        require(manifest.get("report_exporter") == summary["exporter"], "report_exporter_not_frozen")
         same, observed = run_identity_matches(args.capture_directory, manifest, sha(package / "BUILD.json"))
         require(same, "report_run_identity_not_package")
         capture = read(args.capture_directory / "capture.json")["data"]
         truth = read(args.capture_directory / "ground-truth.json")
-        require(capture.get("name") == "TestFixture" and len(truth) == 21, "not_fixed_controlled_fixture")
-        require(all(capture["backend"].get(key) == "active" for key in ("etw_process", "etw_file", "etw_registry")), "report_not_real_etw")
-        root = observed["fixture_root"]
-        require(len(capture["watch_roots"]) == 1 and windows_spelling(capture["watch_roots"][0]) == windows_spelling(root)
-                and re.fullmatch(r"contain-demo-[0-9a-f]{32}", PureWindowsPath(root).name), "not_fixed_fixture_scope")
+        if args.scenario == "synthetic":
+            require(capture.get("name") == "SyntheticReport" and isinstance(truth, list) and bool(truth)
+                    and observed.get("synthetic") is True
+                    and read(args.capture_directory / "metadata.json").get("kind") == "synthetic_report_fixture"
+                    and any(isinstance(warning, str) and warning.startswith("SYNTHETIC")
+                            for warning in capture.get("warnings", [])), "report_synthetic_marker_missing")
+        else:
+            require(observed.get("synthetic") is not True and capture.get("name") == "TestFixture"
+                    and len(truth) == 21, "not_fixed_controlled_fixture")
+            require(all(capture["backend"].get(key) == "active" for key in ("etw_process", "etw_file", "etw_registry")), "report_not_real_etw")
+        app_name = capture["name"]
         key = capture.get("registry_key")
-        require(key == "Software\\Contain\\Demo\\" + PureWindowsPath(root).name, "not_fixed_fixture_registry")
+        stage = "fixture_scope"
+        scope = fixture_scope(observed["fixture_root"], capture["watch_roots"], key)
+        write(local / "fixture-scope.json", dict(canonical=scope.canonical, aliases=sorted(scope.aliases),
+              identity=directory_identity(Path(scope.canonical))))
+        summary["checks"]["fixture_directory_identity"] = True
         database = Path(observed["database"])
+        stage = "database_snapshot"
         copy = local / "read-only.db"; snapshot(database, copy)
         executable = package / "contain.exe"
         def command(label, kind, *arguments, json_output=False):
+            nonlocal stage
+            stage = label
             argv = [str(executable), "--db", str(copy), kind, *arguments] + (["--json"] if json_output else [])
             completed = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", timeout=120)
             (local / (label + ".stdout.txt")).write_text(completed.stdout, encoding="utf-8")
@@ -522,29 +656,37 @@ def report(args):
                 stdout_sha256=hashlib.sha256(completed.stdout.encode()).hexdigest()))
             require(completed.returncode == 0, "report_cli_failed")
             return json_document(completed.stdout, kind) if json_output else completed.stdout
-        reopened = command("inspect-json", "inspect", "TestFixture", json_output=True)
+        reopened = command("inspect-json", "inspect", app_name, json_output=True)
         require(reopened == capture, "report_reopened_capture_changed")
         summary["checks"]["reopen_json_equal"] = True
         fixture_actors = {(row["pid"], str(row["creation_time"])) for row in truth}
+        for row in reopened["events"]:
+            if row["event_type"] == "file":
+                scope.observe(row["resource"])
         selected = next((row for row in reopened["events"] if row["event_type"] == "file"
             and row["confidence"] in {"High", "Certain"} and row["operation"] == "write_requested"
             and row["evidence"].get("source") == "EtwFile"
-            and windows_spelling(row["resource"]).startswith(windows_spelling(root) + "\\")
+            and scope.contains_file(row["resource"])
             and (row["evidence"].get("pid"), str(row["evidence"].get("process_creation_time"))) in fixture_actors), None)
         require(selected is not None, "report_no_known_fixture_source")
         event_id = selected["id"]; index = reopened["events"].index(selected)
-        history = command("history-json", "history", "TestFixture", "--limit", "1", "--offset", str(index), json_output=True)
+        history = command("history-json", "history", app_name, "--limit", "1", "--offset", str(index), json_output=True)
         require(history["events"] == [selected], "report_history_page_mismatch")
         explanation = command("explain-json", "explain", event_id, json_output=True)
         require(explanation["event"] == selected and explanation["app_id"] == reopened["id"], "report_explain_mismatch")
         summary["checks"].update(history_page_equal=True, explain_event_equal=True, json_stdout_only=True)
-        inspect_text = command("inspect-text", "inspect", "TestFixture")
-        diff_text = command("diff-text", "diff", "TestFixture")
-        history_text = command("history-text", "history", "TestFixture", "--limit", "1", "--offset", str(index))
+        inspect_text = command("inspect-text", "inspect", app_name)
+        diff_text = command("diff-text", "diff", app_name)
+        history_text = command("history-text", "history", app_name, "--limit", "1", "--offset", str(index))
         explain_text = command("explain-text", "explain", event_id)
         require(event_id in history_text and event_id in explain_text, "report_text_missing_event_id")
-        replacements = {root: "<fixture-root>", capture["watch_roots"][0]: "<fixture-root>", key: "<fixture-registry-key>",
-                        capture["installer"]: "<fixture-bin>\\contain-test-installer.exe"}
+        stage = "public_excerpt"
+        for line in diff_text.splitlines():
+            match = re.fullmatch(r"  FILE \S+ (.+) \[[^\]]+\]", line)
+            if match:
+                scope.observe(match[1])
+        replacements = scope.replacements()
+        replacements[capture["installer"]] = "<fixture-bin>\\contain-test-installer.exe"
         for process in capture["processes"]:
             require((process["pid"], str(process["creation_time"])) in fixture_actors,
                     "report_process_outside_fixture")
@@ -556,7 +698,8 @@ def report(args):
         warning_lines = [line for line in lines if line.startswith("Limitation:") and line not in SAFE_LIMITATIONS]
         inspect_safe = "\n".join(line for line in lines if line not in warning_lines) + "\n"
         diff_lines = [line for line in diff_text.splitlines() if line.startswith(("STATE DIFFERENCES", "State differences"))
-                      or (line.startswith(("  FILE ", "  REGISTRY ")) and (root.lower() in line.lower() or key.lower() in line.lower()))]
+                      or scope.includes_diff(line)]
+        require(any(scope.includes_diff(line) for line in diff_lines), "report_fixture_diff_missing")
         # Explain is restricted to a verified fixture source and its ancestry.
         # Omit free-form general warnings rather than guess their sensitivity.
         explanation_warnings = [line for line in explain_text.splitlines()
@@ -566,15 +709,25 @@ def report(args):
             DIFF=public_text("\n".join(diff_lines) + "\n", replacements),
             HISTORY=public_text(history_text, replacements),
             EXPLAIN=public_text("\n".join(explanation_lines) + "\n", replacements))
-        text = ("REAL ETW CONTROLLED FIXTURE — actual packaged contain.exe output; not a third-party installer.\n"
+        require(all(content.strip() for content in sections.values()), "report_section_empty")
+        require(app_name in inspect_text and selected["operation"] in history_text
+                and selected["operation"] in explain_text
+                and f"Recording: {reopened['capture_state']} | Quality: {reopened['quality']['level']}" in inspect_text,
+                "report_text_json_disagree")
+        summary["checks"].update(all_seven_commands_executed=len(summary["commands"]) == 7,
+            text_json_agree=True, fixture_diff_present=True, public_paths_redacted=True)
+        title = ("SYNTHETIC WINDOWS CLI REPORT — production storage and packaged contain.exe; not ETW or an installation.\n"
+                 if args.scenario == "synthetic" else
+                 "REAL ETW CONTROLLED FIXTURE — actual packaged contain.exe output; not a third-party installer.\n")
+        text = (title +
                 "Fixture paths are replaced consistently; no database or system trace is published.\n"
                 f"Source: {manifest['source_sha']} | configuration: {args.scenario} | event: {event_id}\n"
                 f"Public excerpt omits {len(warning_lines)} inspect and {len(explanation_warnings)} explain free-form limitation lines; recording quality and measured gaps below are unchanged.\n"
                 "Diff excerpt shows fixture file/registry changes only; inventory details are omitted.\n"
                 "See local inspect --verbose for all warnings. Source confidence does not establish explicit API intent or ownership.\n\n")
         for name, content in sections.items():
-            display = dict(INSPECT="inspect TestFixture", DIFF="diff TestFixture",
-                HISTORY=f"history TestFixture --limit 1 --offset {index}", EXPLAIN=f"explain {event_id}")
+            display = dict(INSPECT=f"inspect {app_name}", DIFF=f"diff {app_name}",
+                HISTORY=f"history {app_name} --limit 1 --offset {index}", EXPLAIN=f"explain {event_id}")
             text += name + "\n> .\\contain.exe --db <saved-db> " + display[name] + "\n" + content + "\n"
         verify_package(package)
         (public / "cli-report.txt").write_text(text, encoding="utf-8", newline="\n")
@@ -587,9 +740,124 @@ def report(args):
         summary["complete"] = False
         summary["failure"] = str(error) if isinstance(error, ValueError) and re.fullmatch(r"[a-z_]+", str(error)) else "report_failed_private_details_retained"
         (local / "failure.txt").write_text(repr(error), encoding="utf-8")
+        write(local / "failure-context.json", dict(stage=stage, capture_directory=str(args.capture_directory),
+            commands=summary["commands"], exporter=summary["exporter"], exception=repr(error)))
+    summary["last_stage"] = stage
     write(public / "summary.json", summary)
     print(json.dumps(dict(protocol=PROTOCOL, phase="report", complete=summary["complete"], failure=summary["failure"])))
     return 0 if summary["complete"] else 2
+
+
+def report_matches(item, manifest, scenario, text_path):
+    expected_scope = "synthetic_windows_cli_report" if scenario == "synthetic" else "real_etw_controlled_fixture_cli_excerpt"
+    commands = item.get("commands", [])
+    return bool(item.get("schema_version") == 1 and item.get("protocol_revision") == PROTOCOL
+        and item.get("scenario") == scenario and item.get("scope") == expected_scope
+        and item.get("complete") is True and item.get("source_sha") == manifest["source_sha"]
+        and item.get("exporter") == manifest.get("report_exporter") == exporter_identity()
+        and isinstance(commands, list) and [row.get("name") for row in commands] == ["inspect-json", "history-json",
+            "explain-json", "inspect-text", "diff-text", "history-text", "explain-text"]
+        and all(row.get("exit_code") == 0 for row in commands)
+        and all(item.get("checks", {}).get(key) is True for key in ("fixture_directory_identity", "reopen_json_equal",
+            "history_page_equal", "explain_event_equal", "json_stdout_only", "all_seven_commands_executed",
+            "text_json_agree", "fixture_diff_present", "public_paths_redacted"))
+        and text_path.is_file() and item.get("report_sha256") == sha(safe_file(text_path)))
+
+
+def collect_report(package, scenario, source):
+    """The shared package collection step accepts only the reviewed report pair.
+
+    Synthetic preflight uses the identical collector in a package copy. Its
+    separate scope/scenario cannot satisfy either real-report candidate gate.
+    """
+    require(scenario in {"default", "dual-clock", "synthetic"}, "report_scenario_invalid")
+    package = Path(package).resolve(); source = Path(source)
+    manifest, _ = verify_package(package)
+    item = read(safe_file(source / "summary.json"))
+    text_path = source / "cli-report.txt"
+    if item.get("complete") is True:
+        require(report_matches(item, manifest, scenario, text_path), "report_collection_contract_failed")
+    else:
+        require(not text_path.exists() and item.get("scenario") == scenario
+                and item.get("source_sha") == manifest["source_sha"]
+                and item.get("exporter") == manifest.get("report_exporter") == exporter_identity(),
+                "failed_report_collection_contract_failed")
+    examples = package / "examples"
+    examples.mkdir(exist_ok=True)
+    destination = new_directory(examples / scenario)
+    for name in ("summary.json", "cli-report.txt"):
+        if (source / name).is_file():
+            shutil.copyfile(safe_file(source / name), destination / name)
+    return destination
+
+
+def diagnose_report(args):
+    """One read-only investigation of the same retained database, never a retry.
+
+    Independent CLI readback still runs when fixture scope verification fails.
+    Nothing here can promote the original report or candidate verdict.
+    """
+    local = new_directory(args.private_output); public = new_directory(args.public_output)
+    result = dict(schema_version=1, protocol_revision=REPORT_PROTOCOL, exporter=exporter_identity(),
+        scenario=args.scenario, scope="same_capture_offline_diagnosis", candidate_verified=False,
+        original_report_unchanged=True, commands=[], failures=[], directory_identity_verified=False,
+        original_failure_context_available=(local.parent / "report" / "failure-context.json").is_file(),
+        completed=False)
+    details = {}
+    def failed(error):
+        code = str(error) if isinstance(error, ValueError) and re.fullmatch(r"[a-z_]+", str(error)) else "diagnosis_failed_private_details_retained"
+        result["failures"].append(code)
+        details.setdefault("exceptions", []).append(repr(error))
+    try:
+        package = args.package.resolve(); manifest, _ = verify_package(package)
+        result["source_sha"] = manifest["source_sha"]
+        result["frozen_exporter_matches"] = manifest.get("report_exporter") == result["exporter"]
+        same, observed = run_identity_matches(args.capture_directory, manifest, sha(package / "BUILD.json"))
+        require(same, "diagnosis_run_identity_not_package")
+        capture = read(args.capture_directory / "capture.json")["data"]
+        details["observed"] = observed
+        details["watch_roots"] = capture.get("watch_roots")
+        try:
+            scope = fixture_scope(observed["fixture_root"], capture["watch_roots"], capture.get("registry_key"))
+            details["scope"] = dict(canonical=scope.canonical, aliases=sorted(scope.aliases),
+                                    identity=directory_identity(Path(scope.canonical)))
+            result["directory_identity_verified"] = True
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            failed(error)
+        copy = local / "read-only.db"; snapshot(Path(observed["database"]), copy)
+        app_name = "SyntheticReport" if args.scenario == "synthetic" else "TestFixture"
+        event_id = None
+        for label, kind, arguments in (("inspect-json", "inspect", [app_name, "--json"]),
+                ("diff-text", "diff", [app_name]), ("history-json", "history", [app_name, "--limit", "1", "--offset", "0", "--json"]),
+                ("explain-json", "explain", None)):
+            if kind == "explain":
+                if not event_id:
+                    result["commands"].append(dict(name=label, status="not_run", reason="no_readable_event_id"))
+                    continue
+                arguments = [event_id, "--json"]
+            try:
+                completed = subprocess.run([str(package / "contain.exe"), "--db", str(copy), kind, *arguments],
+                    capture_output=True, text=True, encoding="utf-8", timeout=120)
+                (local / (label + ".stdout.txt")).write_text(completed.stdout, encoding="utf-8")
+                (local / (label + ".stderr.txt")).write_text(completed.stderr, encoding="utf-8")
+                row = dict(name=label, status="passed" if completed.returncode == 0 else "failed", exit_code=completed.returncode,
+                    stdout_sha256=hashlib.sha256(completed.stdout.encode()).hexdigest())
+                result["commands"].append(row)
+                if completed.returncode == 0 and "--json" in arguments:
+                    value = json_document(completed.stdout, kind)
+                    if kind == "inspect" and value.get("events"):
+                        event_id = value["events"][0]["id"]
+            except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+                failed(error)
+        result["completed"] = True
+    except (OSError, ValueError, KeyError, TypeError, sqlite3.Error, subprocess.SubprocessError) as error:
+        failed(error)
+    write(local / "details.json", details)
+    result["commands_executed"] = sum("exit_code" in row for row in result["commands"])
+    write(public / "summary.json", result)
+    print(json.dumps(dict(phase="diagnose-report", completed=result["completed"],
+                         commands_executed=result["commands_executed"], candidate_verified=False)))
+    return 0 if result["completed"] else 2
 
 
 def product_result(directory):
@@ -657,10 +925,56 @@ def finalize(args):
         except (OSError, ValueError): return {}
     analysis = optional(args.clock_analysis)
     quality = optional(args.quality_summary)
+    preflight_directory = getattr(args, "report_preflight", None)
+    preflight = optional(preflight_directory / "summary.json") if preflight_directory else {}
+    native_path = getattr(args, "report_paths", None)
+    native_paths = optional(native_path) if native_path else {}
+    def preflight_passed():
+        try:
+            cases = preflight["cases"]
+            labels = [case["case"] for case in cases]
+            eight = preflight["windows_8dot3"]["status"]
+            expected = ["normal", "extended"] + (["actual-8dot3"] if eight == "covered" else [])
+            command_names = ["inspect-json", "history-json", "explain-json", "inspect-text", "diff-text", "history-text", "explain-text"]
+            return bool(preflight.get("schema_version") == 1
+                and preflight.get("protocol_revision") == "contain-synthetic-report-preflight-1"
+                and preflight.get("scope") == "synthetic_windows_cli_report_preflight"
+                and preflight.get("synthetic") is True and preflight.get("native_capture_executed") is False
+                and preflight.get("native_windows") is True and preflight.get("passed") is True
+                and preflight.get("complete") is True and preflight.get("collection_verified") is True
+                and preflight.get("source_sha") == manifest["source_sha"]
+                and preflight.get("build_manifest_sha256") == sha(package / "BUILD.json")
+                and preflight.get("contain_sha256") == sha(package / "contain.exe")
+                and preflight.get("preflight_sha256") == sha(Path(__file__).with_name("verify-trial-report.py"))
+                and preflight.get("exporter") == manifest.get("report_exporter") == exporter_identity()
+                and eight in {"covered", "not_covered"} and labels == expected
+                and preflight.get("commands_executed") == preflight.get("report_commands_executed") == 7 * len(cases)
+                and preflight.get("commands_failed") == preflight.get("commands_not_run") == 0
+                and all(case.get("status") == "passed"
+                    and all(case.get("checks", {}).get(name) is True for name in ("real_contain_exe", "all_seven_commands",
+                        "reopened_json_equal", "same_event_paged_and_explained", "historical_child_absent", "unknown_preserved",
+                        "all_four_sections", "private_paths_redacted", "production_collection"))
+                    and [row.get("name") for row in case["commands"]] == command_names
+                    and all(row.get("exit_code") == 0 for row in case["commands"]) for case in cases))
+        except (OSError, KeyError, TypeError, ValueError):
+            return False
+    short = native_paths.get("short_alias", {})
+    native_paths_passed = bool(native_paths.get("schema_version") == 1
+        and native_paths.get("scope") == "synthetic_native_windows_directory_identity"
+        and native_paths.get("native_windows") is True and native_paths.get("passed") is True
+        and native_paths.get("exporter") == manifest.get("report_exporter") == exporter_identity()
+        and native_paths.get("test_script_sha256") == sha(Path(__file__).with_name("test-report-paths.py"))
+        and native_paths.get("tests_run") == 7 and native_paths.get("failed_count") == 0
+        and ((short.get("status") == "covered" and short.get("old_string_comparison_equal") is False
+                and short.get("native_samefile") is True and native_paths.get("passed_count") == 7
+                and native_paths.get("skipped_count") == 0)
+            or (short.get("status") == "unavailable" and native_paths.get("passed_count") == 6
+                and native_paths.get("skipped_count") == 1)))
     default_mode = default_identity.get("fixture_clock") in (None, "") and default_identity.get("raw_clock_path") in (None, "") and default.get("clock_requested") is False
     dual_mode = clock_identity.get("fixture_clock") == "1" and bool(clock_identity.get("raw_clock_path")) and clock.get("clock_requested") is True
     # This is a bounded candidate gate, separate from the retained formal status.
-    checks = dict(default_product=default["passed"], dual_clock_product=clock["passed"],
+    checks = dict(windows_report_paths=native_paths_passed, complete_synthetic_report_preflight=preflight_passed(),
+        default_product=default["passed"], dual_clock_product=clock["passed"],
         default_legacy_score_available=legacy["default"]["status"] == "available",
         dual_clock_legacy_score_available=legacy["dual-clock"]["status"] == "available",
         default_package_identity=default_same, dual_clock_package_identity=clock_same,
@@ -679,11 +993,7 @@ def finalize(args):
         root = package / "examples" / scenario
         item = optional(root / "summary.json")
         text_path = root / "cli-report.txt"
-        checks[scenario + "_actual_cli_report"] = bool(item.get("schema_version") == 1
-            and item.get("protocol_revision") == PROTOCOL and item.get("scenario") == scenario
-            and item.get("scope") == "real_etw_controlled_fixture_cli_excerpt"
-            and item.get("complete") is True and item.get("source_sha") == manifest["source_sha"]
-            and text_path.is_file() and item.get("report_sha256") == sha(safe_file(text_path)))
+        checks[scenario + "_actual_cli_report"] = report_matches(item, manifest, scenario, text_path)
         if (root / "summary.json").is_file():
             files.append((root / "summary.json").relative_to(package).as_posix())
             reports[scenario] = item
@@ -702,6 +1012,11 @@ def finalize(args):
         formal=dict(status="requirements_unmet", accepted=False),
         validation_platform=platform_summary(),
         actual_cli_reports={key: dict(complete=row.get("complete"), event_id=row.get("event_id"), report_sha256=row.get("report_sha256")) for key, row in reports.items()},
+        report_preflights=dict(native_paths_passed=checks["windows_report_paths"],
+            synthetic_cli_passed=checks["complete_synthetic_report_preflight"],
+            native_paths_summary_sha256=sha(native_path) if native_path and native_path.is_file() else None,
+            synthetic_cli_summary_sha256=sha(preflight_directory / "summary.json")
+                if preflight_directory and (preflight_directory / "summary.json").is_file() else None),
         scope="Two different configurations of one controlled real-ETW fixture using identical packaged binaries; not repeated stability, a third-party installer, scale, ownership or cleanup acceptance",
         historical_six_event_timing="D_unresolved", loaded_image_attestation=False,
         commands=dict(default="demo.ps1 -RequireEtw -KeepArtifacts with package executables and BUILD.json; clocks disabled",
@@ -732,22 +1047,32 @@ def main():
     freeze.add_argument("--profile", choices=("debug", "release"), required=True)
     freeze.add_argument("--runtime-directory", type=Path)
     freeze.add_argument("--output", type=Path, required=True)
-    export = sub.add_parser("report")
-    export.add_argument("--package", type=Path, required=True)
-    export.add_argument("--capture-directory", type=Path, required=True)
-    export.add_argument("--private-output", type=Path, required=True)
-    export.add_argument("--public-output", type=Path, required=True)
-    export.add_argument("--scenario", choices=("default", "dual-clock"), required=True)
+    for action in ("report", "diagnose-report"):
+        export = sub.add_parser(action)
+        export.add_argument("--package", type=Path, required=True)
+        export.add_argument("--capture-directory", type=Path, required=True)
+        export.add_argument("--private-output", type=Path, required=True)
+        export.add_argument("--public-output", type=Path, required=True)
+        export.add_argument("--scenario", choices=("default", "dual-clock", "synthetic"), required=True)
+    collect = sub.add_parser("collect-report")
+    collect.add_argument("--package", type=Path, required=True)
+    collect.add_argument("--scenario", choices=("default", "dual-clock", "synthetic"), required=True)
+    collect.add_argument("--public-output", type=Path, required=True)
     finish = sub.add_parser("finalize")
     finish.add_argument("--package", type=Path, required=True)
     finish.add_argument("--default-directory", type=Path, required=True)
     finish.add_argument("--clock-directory", type=Path, required=True)
     finish.add_argument("--clock-analysis", type=Path, required=True)
     finish.add_argument("--quality-summary", type=Path, required=True)
+    finish.add_argument("--report-preflight", type=Path, required=True)
+    finish.add_argument("--report-paths", type=Path, required=True)
     finish.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
-        return {"prepare": prepare, "report": report, "finalize": finalize}[args.action](args)
+        if args.action == "collect-report":
+            collect_report(args.package, args.scenario, args.public_output)
+            return 0
+        return {"prepare": prepare, "report": report, "diagnose-report": diagnose_report, "finalize": finalize}[args.action](args)
     except (OSError, ValueError, KeyError, TypeError, struct.error, UnicodeError, subprocess.SubprocessError) as error:
         # Full errors can contain private paths. CI retains the command's local
         # input/output directory; public stdout only names the failed phase.

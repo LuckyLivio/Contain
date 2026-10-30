@@ -9,6 +9,20 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $PSNativeCommandUseErrorActionPreference = $false
+$privateFailureRoot = $null
+trap {
+    # PowerShell's default error rendering includes source/private paths. Keep
+    # the original exception only in the directory this invocation created.
+    $privateErrorSaved = $false
+    if ($null -ne $privateFailureRoot) {
+        try {
+            $_ | Out-String | Set-Content -LiteralPath (Join-Path $privateFailureRoot 'entrypoint.error.txt') -Encoding utf8
+            $privateErrorSaved = $true
+        } catch { }
+    }
+    Write-Host ('ETW entrypoint failed; error_code=clock_entrypoint_failed; private_error_saved=' + $privateErrorSaved.ToString().ToLowerInvariant() + '.')
+    exit 1
+}
 if (-not $IsWindows) { throw 'The fixed ETW clock diagnostic requires native Windows.' }
 
 function Get-ClockAttemptPlan([string]$Phase, [int]$Index, [string]$Configuration, [string]$Trial) {
@@ -45,7 +59,7 @@ function Restore-ClockAttemptEnvironment([Collections.IDictionary]$Previous) {
     foreach ($name in $Previous.Keys) { Set-Item -LiteralPath ('Env:' + $name) -Value $Previous[$name] }
 }
 
-function Invoke-ClockFollowups([bool]$ClockRequested, [bool]$ReportRequested, [scriptblock]$Analyze, [scriptblock]$Report) {
+function Invoke-ClockFollowups([bool]$ClockRequested, [bool]$ReportRequested, [scriptblock]$Analyze, [scriptblock]$Report, [scriptblock]$DiagnoseReport) {
     $result = [ordered]@{ passed=$true }
     foreach ($stage in @(
         @{ name='analysis'; requested=$ClockRequested; run=$Analyze },
@@ -65,6 +79,24 @@ function Invoke-ClockFollowups([bool]$ClockRequested, [bool]$ReportRequested, [s
         }
         $result[$stage.name] = $outcome
     }
+    # Inspect the retained capture once before this runner disappears. This is
+    # an independent offline diagnosis, never a report retry or a passing gate.
+    $diagnostic = [ordered]@{ status='not_requested'; exit_code=$null; error_type=$null }
+    if ($ReportRequested -and $result.report.status -eq 'failed') {
+        $diagnostic.status = 'not_run'
+        if ($null -ne $DiagnoseReport) {
+            try {
+                $code = & $DiagnoseReport
+                if ($code -isnot [int]) { throw 'The diagnostic did not return an exit code.' }
+                $diagnostic.exit_code = $code
+                $diagnostic.status = if ($code -eq 0) { 'passed' } else { 'failed' }
+            } catch {
+                $diagnostic.status = 'failed'
+                $diagnostic.error_type = $_.Exception.GetType().Name
+            }
+        }
+    }
+    $result.report_diagnostic = $diagnostic
     return $result
 }
 
@@ -148,6 +180,7 @@ Push-Location (Join-Path $PSScriptRoot '..')
 try {
     # No Force: refuse an existing directory rather than overwriting an attempt.
     New-Item -ItemType Directory -Path $privateRoot | Out-Null
+    $privateFailureRoot = $privateRoot
     $attemptPath = Join-Path $privateRoot 'attempt.json'
     $rawClock = Join-Path $privateRoot 'raw-clock.json'
     $captureDirectory = Join-Path $privateRoot 'capture'
@@ -225,6 +258,9 @@ try {
             if (-not (Test-Path -LiteralPath $publicRoot)) { New-Item -ItemType Directory -Path $publicRoot | Out-Null }
             python (Join-Path $PSScriptRoot 'package-trial.py') report --package $packageRoot --capture-directory $captureDirectory --private-output (Join-Path $privateRoot 'report') --public-output (Join-Path $publicRoot 'report') --scenario $Configuration *> (Join-Path $privateRoot 'report.log')
             return $LASTEXITCODE
+        } {
+            python (Join-Path $PSScriptRoot 'package-trial.py') diagnose-report --package $packageRoot --capture-directory $captureDirectory --private-output (Join-Path $privateRoot 'report-diagnostic') --public-output (Join-Path $publicRoot 'report-diagnostic') --scenario $Configuration *> (Join-Path $privateRoot 'report-diagnostic.log')
+            return $LASTEXITCODE
         }
         # The analyzer hashes attempt.json as an input; leave it immutable.
         [ordered]@{ schema_version=1; status=$followups.analysis.status; exit_code=$followups.analysis.exit_code } |
@@ -233,7 +269,8 @@ try {
         if (-not (Test-Path -LiteralPath $publicRoot)) { New-Item -ItemType Directory -Path $publicRoot | Out-Null }
         [ordered]@{ schema_version=1; phase=$Phase; configuration=$Configuration; attempt_index=$AttemptIndex;
             planned_attempts=$plan.planned_attempts; source_sha=$attempt.source_sha; demo_exit_code=$demoExit;
-            analysis=$followups.analysis; report=$followups.report; source_unchanged=$attempt.source_unchanged;
+            analysis=$followups.analysis; report=$followups.report; report_diagnostic=$followups.report_diagnostic;
+            source_unchanged=$attempt.source_unchanged;
             scripts_unchanged=$attempt.scripts_unchanged; build_manifest_sha256=$attempt.build_manifest_sha256;
             build_manifest_unchanged=$attempt.build_manifest_unchanged; package_files_unchanged=$attempt.package_files_unchanged;
             optional_environment_isolated=$attempt.optional_environment_isolated; wpr_started=$false;

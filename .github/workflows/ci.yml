@@ -31,7 +31,7 @@ jobs:
           [ordered]@{
             schema_version=1; source_sha=$env:GITHUB_SHA; requested=$requested
             configurations=@('default','dual-clock'); maximum_native_captures=2; retries=0
-            status=$(if($requested){'planned_after_quality_checks'}else{'not_requested_not_validated'})
+            status=$(if($requested){'planned_after_quality_and_windows_report_preflights'}else{'not_requested_not_validated'})
           } | ConvertTo-Json | Set-Content target/quality-public/capture-plan.json -Encoding utf8
       - name: Required quality tools
         shell: pwsh
@@ -98,7 +98,7 @@ jobs:
           python scripts/quality-summary.py --root . --quality target/quality --output target/quality-public/summary.json
           if ($LASTEXITCODE -ne 0) { throw 'Quality summary validation failed' }
       # Only an explicitly planned push consumes the two native attempts. All
-      # independent quality gates must pass first; documentation pushes cannot
+      # independent quality and Windows report preflights must pass first; documentation pushes cannot
       # accidentally repeat captures. The same frozen package runs both modes.
       - name: Freeze the Windows x64 trial package
         id: trial_package
@@ -121,16 +121,39 @@ jobs:
           }
           python @packageArgs
           if ($LASTEXITCODE -ne 0) { throw 'Trial package dependency or identity checks failed' }
+      - name: Windows filesystem report scope preflight
+        id: report_paths
+        if: ${{ !cancelled() && steps.trial_package.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path target/trial-preflight-private -Force | Out-Null
+          python scripts/test-report-paths.py --summary target/quality-public/report-paths.json --private-log target/trial-preflight-private/filesystem-detail.log *> target/trial-preflight-private/filesystem.log
+          $code = $LASTEXITCODE
+          Write-Host "Windows filesystem report preflight exit code: $code"
+          if ($code -ne 0) { exit $code }
+      - name: Full synthetic report through the frozen Windows CLI
+        id: report_preflight
+        if: ${{ !cancelled() && steps.trial_package.outcome == 'success' && steps.report_paths.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          python scripts/verify-trial-report.py --package target/windows-trial --generator target/debug/read-only-examples.exe --output target/trial-report-preflight --public-output target/quality-public/trial-report-preflight *> target/trial-preflight-private/integration.log
+          $code = $LASTEXITCODE
+          Write-Host "Synthetic report integration preflight exit code: $code"
+          if ($code -ne 0) { exit $code }
       - name: Native trial 1 of 2 - default product path
         id: default_trial
-        if: ${{ !cancelled() && steps.trial_package.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.trial_package.outcome == 'success' && steps.report_paths.outcome == 'success' && steps.report_preflight.outcome == 'success' }}
         shell: pwsh
-        run: ./scripts/ci-etw-clock.ps1 -Phase candidate -Configuration default -AttemptIndex 1 -TrialDirectory ([IO.Path]::GetFullPath('target/windows-trial')) -OutputDirectory ([IO.Path]::GetFullPath('target/trial-default')) -PublicOutputDirectory ([IO.Path]::GetFullPath('target/trial-public-default'))
+        run: |
+          ./scripts/ci-etw-clock.ps1 -Phase candidate -Configuration default -AttemptIndex 1 -TrialDirectory ([IO.Path]::GetFullPath('target/windows-trial')) -OutputDirectory ([IO.Path]::GetFullPath('target/trial-default')) -PublicOutputDirectory ([IO.Path]::GetFullPath('target/trial-public-default'))
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Native trial 2 of 2 - dual clock evidence
         id: clock_trial
-        if: ${{ !cancelled() && steps.trial_package.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.trial_package.outcome == 'success' && steps.report_paths.outcome == 'success' && steps.report_preflight.outcome == 'success' }}
         shell: pwsh
-        run: ./scripts/ci-etw-clock.ps1 -Phase candidate -Configuration dual-clock -AttemptIndex 2 -TrialDirectory ([IO.Path]::GetFullPath('target/windows-trial')) -OutputDirectory ([IO.Path]::GetFullPath('target/trial-dual-clock')) -PublicOutputDirectory ([IO.Path]::GetFullPath('target/trial-public-dual-clock'))
+        run: |
+          ./scripts/ci-etw-clock.ps1 -Phase candidate -Configuration dual-clock -AttemptIndex 2 -TrialDirectory ([IO.Path]::GetFullPath('target/windows-trial')) -OutputDirectory ([IO.Path]::GetFullPath('target/trial-dual-clock')) -PublicOutputDirectory ([IO.Path]::GetFullPath('target/trial-public-dual-clock'))
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Finalize the tested package and its actual validation status
         if: ${{ !cancelled() && steps.trial_package.outcome == 'success' }}
         shell: pwsh
@@ -138,12 +161,11 @@ jobs:
           foreach($scenario in @('default','dual-clock')) {
             $report = "target/trial-public-$scenario/report"
             if (Test-Path -LiteralPath $report) {
-              New-Item -ItemType Directory -Path "target/windows-trial/examples/$scenario" -Force | Out-Null
-              Get-ChildItem -LiteralPath $report -File | Where-Object { $_.Name -in @('summary.json','cli-report.txt') } |
-                Copy-Item -Destination "target/windows-trial/examples/$scenario"
+              python scripts/package-trial.py collect-report --package target/windows-trial --scenario $scenario --public-output $report
+              if ($LASTEXITCODE -ne 0) { Write-Host "Report collection failed for configuration $scenario; candidate finalization will preserve the failed gate." }
             }
           }
-          python scripts/package-trial.py finalize --package target/windows-trial --default-directory target/trial-default/capture --clock-directory target/trial-dual-clock/capture --clock-analysis target/trial-public-dual-clock/summary.json --quality-summary target/quality-public/summary.json --output target/contain-0.3.1-windows-x64.zip
+          python scripts/package-trial.py finalize --package target/windows-trial --default-directory target/trial-default/capture --clock-directory target/trial-dual-clock/capture --clock-analysis target/trial-public-dual-clock/summary.json --quality-summary target/quality-public/summary.json --report-paths target/quality-public/report-paths.json --report-preflight target/quality-public/trial-report-preflight --output target/contain-0.3.1-windows-x64.zip
           if ($LASTEXITCODE -ne 0) { throw 'Trial candidate is unverified; retain the diagnostic package and actual failures' }
       - name: Snapshot fallback integration
         id: fallback

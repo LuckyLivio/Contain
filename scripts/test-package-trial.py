@@ -168,6 +168,11 @@ class TrialTests(unittest.TestCase):
             (root / "cli-report.txt").write_text("Synthetic test report; not ETW\n")
             TRIAL.write(root / "summary.json", dict(schema_version=1, protocol_revision=TRIAL.PROTOCOL,
                 scenario=name, scope="real_etw_controlled_fixture_cli_excerpt", source_sha=self.source, complete=True, event_id="synthetic-event",
+                exporter=TRIAL.exporter_identity(), commands=[dict(name=name, exit_code=0) for name in
+                    ("inspect-json", "history-json", "explain-json", "inspect-text", "diff-text", "history-text", "explain-text")],
+                checks={name: True for name in ("fixture_directory_identity", "reopen_json_equal", "history_page_equal",
+                    "explain_event_equal", "json_stdout_only", "all_seven_commands_executed", "text_json_agree",
+                    "fixture_diff_present", "public_paths_redacted")},
                 report_sha256=TRIAL.sha(root / "cli-report.txt")))
 
     def finalize_args(self, default, clock):
@@ -175,8 +180,30 @@ class TrialTests(unittest.TestCase):
         TRIAL.write(analysis, dict(source_sha=self.source, diagnostic_evidence_complete=True, missing_evidence=[]))
         quality = self.root / "quality.json"
         TRIAL.write(quality, dict(source_revision=self.source, current_required_gates_passed=True))
+        # Synthetic metadata unit inputs only. Native evidence is produced by
+        # the Windows scripts, never these tests.
+        preflight = self.root / "preflight"; preflight.mkdir()
+        commands = [dict(name=name, exit_code=0) for name in ("inspect-json", "history-json", "explain-json",
+                    "inspect-text", "diff-text", "history-text", "explain-text")]
+        TRIAL.write(preflight / "summary.json", dict(schema_version=1,
+            protocol_revision="contain-synthetic-report-preflight-1", scope="synthetic_windows_cli_report_preflight",
+            synthetic=True, native_capture_executed=False, native_windows=True, passed=True, complete=True,
+            collection_verified=True, source_sha=self.source, build_manifest_sha256=TRIAL.sha(self.package / "BUILD.json"),
+            contain_sha256=TRIAL.sha(self.package / "contain.exe"), exporter=TRIAL.exporter_identity(),
+            preflight_sha256=TRIAL.sha(Path(TRIAL.__file__).with_name("verify-trial-report.py")),
+            windows_8dot3=dict(status="not_covered"), commands_executed=14, report_commands_executed=14,
+            commands_failed=0, commands_not_run=0, cases=[dict(case=name, status="passed", commands=commands,
+                checks={check: True for check in ("real_contain_exe", "all_seven_commands", "reopened_json_equal",
+                    "same_event_paged_and_explained", "historical_child_absent", "unknown_preserved",
+                    "all_four_sections", "private_paths_redacted", "production_collection")}) for name in ("normal", "extended")]))
+        paths = self.root / "report-paths.json"
+        TRIAL.write(paths, dict(schema_version=1, scope="synthetic_native_windows_directory_identity",
+            native_windows=True, passed=True, exporter=TRIAL.exporter_identity(),
+            test_script_sha256=TRIAL.sha(Path(TRIAL.__file__).with_name("test-report-paths.py")),
+            tests_run=7, passed_count=6, failed_count=0, skipped_count=1, short_alias=dict(status="unavailable")))
         return argparse.Namespace(package=self.package, default_directory=default, clock_directory=clock,
-            clock_analysis=analysis, quality_summary=quality, output=self.root / "trial.zip")
+            clock_analysis=analysis, quality_summary=quality, report_preflight=preflight,
+            report_paths=paths, output=self.root / "trial.zip")
 
     def test_actual_pe_imports_and_delayed_dependencies_are_read(self):
         self.contain.write_bytes(synthetic_pe(delayed=("VCRUNTIME140.dll",)))
@@ -284,6 +311,98 @@ class TrialTests(unittest.TestCase):
         self.assertEqual(TRIAL.finalize(args), 2)
         self.assertFalse(TRIAL.read(self.package / "VALIDATION.json")["checks"]["default_actual_cli_report"])
 
+    def test_missing_failed_or_changed_preflights_cannot_verify_candidate(self):
+        manifest = self.prepare(); default = self.run_evidence("default", manifest)
+        clock = self.run_evidence("clock", manifest, clock=True); self.reports()
+        args = self.finalize_args(default, clock)
+        native = TRIAL.read(args.report_paths); preflight = TRIAL.read(args.report_preflight / "summary.json")
+        cases = ("native_missing", "native_failed", "native_exporter", "native_zero_tests",
+                 "preflight_missing", "preflight_failed", "preflight_source", "preflight_binary",
+                 "preflight_commands", "preflight_synthetic_label")
+        for case in cases:
+            native_value, preflight_value = copy.deepcopy(native), copy.deepcopy(preflight)
+            if case == "native_missing": native_value = {}
+            elif case == "native_failed": native_value["passed"] = False
+            elif case == "native_exporter": native_value["exporter"]["sha256"] = "0" * 64
+            elif case == "native_zero_tests": native_value["tests_run"] = 0
+            elif case == "preflight_missing": preflight_value = {}
+            elif case == "preflight_failed": preflight_value["passed"] = False
+            elif case == "preflight_source": preflight_value["source_sha"] = "0" * 40
+            elif case == "preflight_binary": preflight_value["contain_sha256"] = "0" * 64
+            elif case == "preflight_commands": preflight_value["cases"][0]["commands"].pop()
+            else: preflight_value["synthetic"] = False
+            args.report_paths.write_text(json.dumps(native_value))
+            (args.report_preflight / "summary.json").write_text(json.dumps(preflight_value))
+            args.output = self.root / (case + ".zip")
+            with self.subTest(case=case):
+                self.assertEqual(TRIAL.finalize(args), 2)
+                self.assertFalse(TRIAL.read(self.package / "VALIDATION.json")["candidate_verified"])
+            (self.package / "VALIDATION.json").unlink(); (self.package / "CONTENTS.json").unlink()
+
+    def test_synthetic_or_different_exporter_report_cannot_satisfy_real_candidate(self):
+        manifest = self.prepare(); default = self.run_evidence("default", manifest)
+        clock = self.run_evidence("clock", manifest, clock=True); self.reports()
+        args = self.finalize_args(default, clock)
+        path = self.package / "examples/default/summary.json"
+        original = TRIAL.read(path)
+        for kind in ("synthetic", "changed_exporter", "not_all_commands", "missing_checks"):
+            value = copy.deepcopy(original)
+            if kind == "synthetic": value["scope"] = "synthetic_windows_cli_report"
+            elif kind == "changed_exporter": value["exporter"]["sha256"] = "0" * 64
+            elif kind == "not_all_commands": value["commands"].pop()
+            else: value["checks"]["fixture_diff_present"] = False
+            path.write_text(json.dumps(value)); args.output = self.root / (kind + ".zip")
+            with self.subTest(kind=kind):
+                self.assertEqual(TRIAL.finalize(args), 2)
+                self.assertFalse(TRIAL.read(self.package / "VALIDATION.json")["checks"]["default_actual_cli_report"])
+            (self.package / "VALIDATION.json").unlink(); (self.package / "CONTENTS.json").unlink()
+
+    def test_shared_collector_keeps_only_approved_synthetic_report_pair(self):
+        self.prepare(); self.reports()
+        source = self.package / "examples/default"
+        value = TRIAL.read(source / "summary.json")
+        value.update(scenario="synthetic", scope="synthetic_windows_cli_report")
+        (source / "summary.json").write_text(json.dumps(value))
+        (source / "private.db").write_text("PRIVATE sentinel")
+        collected = TRIAL.collect_report(self.package, "synthetic", source)
+        self.assertEqual({path.name for path in collected.iterdir()}, {"summary.json", "cli-report.txt"})
+        with self.assertRaisesRegex(ValueError, "report_collection_contract_failed"):
+            TRIAL.collect_report(self.package, "dual-clock", source)
+
+    def test_report_requires_frozen_exporter_and_keeps_failure_context(self):
+        manifest = self.prepare(); directory = self.run_evidence("default", manifest)
+        path = self.package / "BUILD.json"; manifest["report_exporter"]["sha256"] = "0" * 64
+        path.write_text(json.dumps(manifest))
+        args = argparse.Namespace(package=self.package, capture_directory=directory,
+            private_output=self.root / "private-report", public_output=self.root / "public-report", scenario="default")
+        self.assertEqual(TRIAL.report(args), 2)
+        summary = TRIAL.read(args.public_output / "summary.json")
+        self.assertEqual(summary["failure"], "report_exporter_not_frozen")
+        self.assertEqual(summary["commands"], [])
+        self.assertTrue((args.private_output / "failure-context.json").is_file())
+
+    def test_failed_scope_diagnosis_still_executes_independent_same_database_readback(self):
+        manifest = self.prepare(); directory = self.run_evidence("default", manifest)
+        path = directory / "run-identity.json"; observed = TRIAL.read(path)
+        observed["fixture_root"] = str(self.root / "missing"); path.write_text(json.dumps(observed))
+        TRIAL.write(directory / "capture.json", dict(data=dict(watch_roots=[observed["fixture_root"]], registry_key="wrong")))
+        args = argparse.Namespace(package=self.package, capture_directory=directory,
+            private_output=self.root / "diagnostic-private", public_output=self.root / "diagnostic-public", scenario="default")
+        def command(argv, **kwargs):
+            kind = argv[3]
+            data = dict(events=[dict(id="synthetic-event")]) if kind == "inspect" else {}
+            text = json.dumps(dict(schema_version=3, kind=kind, data=data)) if "--json" in argv else "PRIVATE details"
+            return subprocess.CompletedProcess(argv, 0, text, "PRIVATE stderr")
+        with mock.patch.object(TRIAL, "snapshot"), mock.patch.object(TRIAL.subprocess, "run", side_effect=command):
+            self.assertEqual(TRIAL.diagnose_report(args), 0)
+        summary = TRIAL.read(args.public_output / "summary.json")
+        self.assertEqual(summary["commands_executed"], 4)
+        self.assertFalse(summary["directory_identity_verified"])
+        self.assertFalse(summary["candidate_verified"])
+        self.assertTrue(summary["original_report_unchanged"])
+        self.assertIn("fixture_directory_identity_unavailable", summary["failures"])
+        self.assertNotIn("PRIVATE", json.dumps(summary))
+
     def test_missing_planned_checks_and_changed_required_counts_are_rejected(self):
         manifest = self.prepare(); default = self.run_evidence("default", manifest)
         path = default / "product-checks.json"; original = TRIAL.read(path)
@@ -361,6 +480,12 @@ class TrialTests(unittest.TestCase):
         for text in (r"C:\Users\OTHER\secret", r"\\server\share", "S-1-5-21-12345"):
             with self.subTest(text=text), self.assertRaisesRegex(ValueError, "private_path"):
                 TRIAL.public_text(text, {root: "<fixture-root>"})
+        for suffix in ("-other\\private.txt", " backup\\private.txt", "(other)\\private.txt", "'backup\\private.txt",
+                       "\\..\\outside.txt", "\\folder\\..\\outside.txt", "\\sub dir\\..\\outside.txt"):
+            with self.subTest(suffix=suffix), self.assertRaises(ValueError):
+                TRIAL.public_text(root + suffix, {root: "<fixture-root>"})
+            with self.subTest(json_suffix=suffix), self.assertRaises(ValueError):
+                TRIAL.public_text(json.dumps(root + suffix), {root: "<fixture-root>"})
 
     def test_json_requires_one_clean_machine_readable_document(self):
         good = json.dumps(dict(schema_version=3, kind="inspect", data={"id": "synthetic"}))
@@ -372,18 +497,78 @@ class TrialTests(unittest.TestCase):
         self.assertEqual(TRIAL.windows_spelling(r"\\?\C:\Fixture\Child"), r"c:\fixture\child")
         self.assertNotEqual(TRIAL.windows_spelling(r"C:\Fixture\..\Other"), r"c:\other")
 
+    def fixture_scope(self):
+        root = self.root / ("contain-demo-" + "d" * 32)
+        root.mkdir()
+        (root / ".contain-demo-marker").write_bytes(b"Contain test fixture")
+        return root, "Software\\Contain\\Demo\\" + root.name
+
+    def test_existing_directory_identity_accepts_verified_alias_through_all_report_stages(self):
+        root, key = self.fixture_scope()
+        observed = str(root.parent / "unused" / ".." / root.name)
+        (root.parent / "unused").mkdir()
+        self.assertNotEqual(TRIAL.windows_spelling(observed), TRIAL.windows_spelling(str(root)))
+        self.assertTrue(Path(observed).samefile(root))
+        scope = TRIAL.fixture_scope(observed, [str(root)], key)
+        # Historical/deleted children must not be resolved on today's disk.
+        for alias in (observed, str(root)):
+            resource = alias + "\\deleted-historical.txt"
+            self.assertTrue(scope.contains_file(resource))
+            self.assertFalse(scope.contains_file(alias + "-other\\private.txt"))
+            self.assertFalse(scope.contains_file(alias + "\\..\\private.txt"))
+            line = "  FILE Modified " + resource + " [Unknown]"
+            self.assertTrue(scope.includes_diff(line))
+            clean = TRIAL.public_text(line + "\n" + json.dumps(resource), scope.replacements())
+            self.assertNotIn(str(root.parent), clean)
+            self.assertIn("<fixture-root>", clean)
+        self.assertFalse(scope.includes_diff("  FILE Modified C:\\OTHER\\private [Unknown]"))
+
+    def test_scope_rejects_missing_different_wrong_guid_marker_and_unknown_identity(self):
+        root, key = self.fixture_scope()
+        other = self.root / ("contain-demo-" + "e" * 32); other.mkdir()
+        (other / ".contain-demo-marker").write_bytes(b"Contain test fixture")
+        for observed, captured, registry in ((str(root), str(other), key),
+                (str(root), str(self.root / "missing"), key),
+                (str(root), str(root), key[:-1] + "f")):
+            with self.subTest(kind=registry), self.assertRaises(ValueError):
+                TRIAL.fixture_scope(observed, [captured], registry)
+        (root / ".contain-demo-marker").write_bytes(b"wrong marker")
+        with self.assertRaises(ValueError): TRIAL.fixture_scope(str(root), [str(root)], key)
+        (root / ".contain-demo-marker").write_bytes(b"Contain test fixture")
+        with mock.patch.object(TRIAL, "directory_identity", return_value=None), self.assertRaises(ValueError):
+            TRIAL.fixture_scope(str(root), [str(root)], key)
+
+    def test_root_alias_redaction_covers_literal_and_json_extended_spellings(self):
+        root = r"C:\Users\PRIVATE\Temp\contain-demo-" + "a" * 32
+        scope = TRIAL.FixtureScope(root, [root, r"C:\Users\PRIVAT~1\Temp\CONTAl~1"],
+                                   "Software\\Contain\\Demo\\" + "contain-demo-" + "a" * 32)
+        for alias in scope.aliases:
+            for prefix in ("", "\\\\?\\", "\\??\\"):
+                path = prefix + alias + "\\old.txt"
+                for text in (path, json.dumps(path)):
+                    with self.subTest(text=text):
+                        clean = TRIAL.public_text(text, scope.replacements())
+                        self.assertIn("<fixture-root>", clean)
+                        self.assertNotIn("PRIVATE", clean)
+                        self.assertNotIn("PRIVAT~1", clean)
+
     def test_report_executes_packaged_cli_and_preserves_text_with_explicit_redaction(self):
         # The command responses here are synthetic unit data, never CI evidence.
         manifest = self.prepare(); directory = self.run_evidence("default", manifest)
-        root = r"C:\Users\PRIVATE\Temp\contain-demo-" + "d" * 32
+        real_root, registry = self.fixture_scope()
+        root = str(real_root)
+        (self.root / "unused").mkdir()
+        observed_alias = str(self.root / "unused" / ".." / real_root.name)
+        self.assertTrue(Path(observed_alias).samefile(real_root))
+        self.assertNotEqual(TRIAL.windows_spelling(observed_alias), TRIAL.windows_spelling(root))
         installer = r"\\?\D:\PRIVATE_BUILD\contain-test-installer.exe"
         identity_path = directory / "run-identity.json"; value = TRIAL.read(identity_path)
-        value["fixture_root"] = root; identity_path.write_text(json.dumps(value))
+        value["fixture_root"] = observed_alias; identity_path.write_text(json.dumps(value))
         event = dict(id="11111111-1111-1111-1111-111111111111", event_type="file", confidence="High",
             operation="write_requested", resource=root + "\\settings.txt",
             evidence=dict(pid=100, process_creation_time="134350000000000001", source="EtwFile"))
         capture = dict(id="22222222-2222-2222-2222-222222222222", name="TestFixture", installer=installer,
-            watch_roots=["\\\\?\\" + root], registry_key="Software\\Contain\\Demo\\" + Path(root.replace("\\", "/")).name,
+            watch_roots=[root], registry_key=registry,
             backend=dict(etw_process="active", etw_file="active", etw_registry="active"), events=[event],
             processes=[dict(pid=100, creation_time="134350000000000001", image=installer)],
             capture_state="finished", quality=dict(level="Degraded"))
@@ -396,13 +581,13 @@ class TrialTests(unittest.TestCase):
                 payload = capture if kind == "inspect" else dict(events=[event]) if kind == "history" else dict(event=event, app_id=capture["id"])
                 stdout = json.dumps(dict(schema_version=3, kind=kind, data=payload))
             elif kind == "inspect":
-                stdout = "TestFixture\nInstaller: " + installer + "\nWatched directories: \\\\?\\" + root + "\nRecording: finished | Quality: Degraded\nLimitation: C:\\PRIVATE_WARNING\\error\n"
+                stdout = "TestFixture\nInstaller: " + installer + "\nWatched directories: " + root + "\nRecording: finished | Quality: Degraded\nLimitation: C:\\PRIVATE_WARNING\\error\n"
             elif kind == "diff":
-                stdout = "STATE DIFFERENCES WITH UNKNOWN ATTRIBUTION\n  FILE modified " + root + "\\settings.txt [Unknown]\n  INVENTORY changed C:\\PRIVATE_MACHINE\\service\n"
+                stdout = "STATE DIFFERENCES WITH UNKNOWN ATTRIBUTION\n  FILE modified " + observed_alias + "\\settings.txt [Unknown]\n  INVENTORY changed C:\\PRIVATE_MACHINE\\service\n"
             elif kind == "history":
                 stdout = "time | event=" + event["id"] + " | write_requested [High] " + root + "\\settings.txt\n"
             else:
-                stdout = "Event " + event["id"] + "\nRecorded name/resource: " + json.dumps(root + "\\settings.txt") + "\nExplicit application API intent: unavailable; final state validated: false (not ownership)\nLimitation: operation completion was not observed.\nLimitation: C:\\PRIVATE_WARNING\\details\n"
+                stdout = "Event " + event["id"] + "\nSource operation: write_requested\nRecorded name/resource: " + json.dumps(root + "\\settings.txt") + "\nExplicit application API intent: unavailable; final state validated: false (not ownership)\nLimitation: operation completion was not observed.\nLimitation: C:\\PRIVATE_WARNING\\details\n"
             return subprocess.CompletedProcess(argv, 0, stdout, "")
         args = argparse.Namespace(package=self.package, capture_directory=directory,
             private_output=self.root / "report-private", public_output=self.root / "report-public", scenario="default")

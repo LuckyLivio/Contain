@@ -46,4 +46,69 @@ $result = Invoke-ClockFollowups $true $false { return 0 } { throw 'must not run'
 Assert-Clock ($result.analysis.status -eq 'passed' -and $result.report.status -eq 'not_requested' -and $result.passed) 'Legacy analysis-only behavior changed'
 $result = Invoke-ClockFollowups $true $true { return 0 } { return $null }
 Assert-Clock ($result.report.status -eq 'failed' -and -not $result.passed) 'Missing report outcome was counted as success'
+Assert-Clock ($result.report_diagnostic.status -eq 'not_run' -and $null -eq $result.report_diagnostic.exit_code) 'Unavailable offline diagnosis was counted as executed'
+$script:diagnosticCalls = 0
+$result = Invoke-ClockFollowups $false $true { throw 'must not run' } { return 2 } { $script:diagnosticCalls++; return 0 }
+Assert-Clock ($diagnosticCalls -eq 1 -and $result.report_diagnostic.status -eq 'passed') 'Failed export did not receive exactly one offline diagnosis'
+Assert-Clock ($result.report.status -eq 'failed' -and $result.report.exit_code -eq 2 -and -not $result.passed) 'Offline diagnosis replaced the original export failure'
+$result = Invoke-ClockFollowups $false $true { throw 'must not run' } { return 0 } { $script:diagnosticCalls++; throw 'must not run' }
+Assert-Clock ($diagnosticCalls -eq 1 -and $result.report_diagnostic.status -eq 'not_requested' -and $result.passed) 'Successful export unnecessarily ran a diagnostic'
+$result = Invoke-ClockFollowups $false $true { throw 'must not run' } { throw 'private-report-error' } { $script:diagnosticCalls++; throw 'private-diagnostic-error' }
+Assert-Clock ($diagnosticCalls -eq 2 -and $result.report.status -eq 'failed' -and $result.report_diagnostic.status -eq 'failed' -and -not $result.passed) 'Report/diagnostic exceptions were not preserved independently'
+Assert-Clock (($result | ConvertTo-Json -Depth 5) -notmatch 'private-report-error|private-diagnostic-error') 'Private exception messages escaped into the public stage result'
+$result = Invoke-ClockFollowups $false $true { throw 'must not run' } { return 2 } { $script:diagnosticCalls++; return $null }
+Assert-Clock ($diagnosticCalls -eq 3 -and $result.report_diagnostic.status -eq 'failed' -and -not $result.passed) 'Missing diagnostic outcome counted as success'
+$result = Invoke-ClockFollowups $true $false { return 0 } { throw 'must not run' } { $script:diagnosticCalls++; throw 'must not run' }
+Assert-Clock ($diagnosticCalls -eq 3 -and $result.report_diagnostic.status -eq 'not_requested' -and $result.passed) 'Historical analysis-only plans started report diagnostics'
+$temporary=Join-Path ([IO.Path]::GetTempPath()) ('contain-clock-boundary-'+[guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $temporary | Out-Null
+$pwsh=Join-Path $PSHOME $(if($IsWindows){'pwsh.exe'}else{'pwsh'})
+try {
+    # This is the real entrypoint, stopped by platform/setup validation before
+    # any native capture. PowerShell must not render its private path or stack.
+    $console=(& $pwsh -NoLogo -NoProfile -File (Join-Path $PSScriptRoot 'ci-etw-clock.ps1') `
+        -Phase candidate -Configuration default -AttemptIndex 1 `
+        -TrialDirectory (Join-Path $temporary 'missing-private-package') `
+        -OutputDirectory (Join-Path $temporary 'private') -PublicOutputDirectory (Join-Path $temporary 'public') 2>&1) -join "`n"
+    Assert-Clock ($LASTEXITCODE -eq 1) 'Entrypoint setup failure lost its nonzero exit code'
+    Assert-Clock ($console.Trim() -ceq 'ETW entrypoint failed; error_code=clock_entrypoint_failed; private_error_saved=false.') 'Entrypoint setup failure leaked private context'
+    Assert-Clock (-not (Test-Path -LiteralPath (Join-Path $temporary 'private'))) 'Invalid setup created an unvalidated private destination'
+    $trap=@($syntax.FindAll({param($node) $node -is [Management.Automation.Language.TrapStatementAst]},$true))
+    Assert-Clock ($trap.Count -eq 1) 'Entrypoint private exception boundary is missing or ambiguous'
+    $childScript=Join-Path $temporary 'failure.ps1'
+    @'
+param([string]$PrivateRoot,[switch]$OwnDirectory)
+$ErrorActionPreference='Stop'
+Set-StrictMode -Version Latest
+$privateFailureRoot=$null
+if($OwnDirectory){
+    New-Item -ItemType Directory -Path $PrivateRoot | Out-Null
+    $privateFailureRoot=$PrivateRoot
+}
+'@ + "`n" + $trap[0].Extent.Text + "`n" + 'throw (''private-machine-marker: '' + $PrivateRoot)' |
+        Set-Content -LiteralPath $childScript -Encoding utf8
+    foreach($ownDirectory in @($true,$false)) {
+        $private=Join-Path $temporary $(if($ownDirectory){'owned-private'}else{'existing-private'})
+        if(-not $ownDirectory){New-Item -ItemType Directory -Path $private | Out-Null}
+        $childArguments=@('-NoLogo','-NoProfile','-File',$childScript,'-PrivateRoot',$private)
+        if($ownDirectory){$childArguments+='-OwnDirectory'}
+        $console=(& $pwsh @childArguments 2>&1) -join "`n"
+        Assert-Clock ($LASTEXITCODE -eq 1) 'Entrypoint exception boundary swallowed failure'
+        $saved=$ownDirectory.ToString().ToLowerInvariant()
+        Assert-Clock ($console.Trim() -ceq "ETW entrypoint failed; error_code=clock_entrypoint_failed; private_error_saved=$saved.") 'Entrypoint exception or log failure escaped to the console'
+        $privateError=Join-Path $private 'entrypoint.error.txt'
+        if($ownDirectory) {
+            $detail=Get-Content -LiteralPath $privateError -Raw
+            Assert-Clock ($detail.Contains('private-machine-marker') -and $detail.Contains($private)) 'Original exception was not retained in the owned private directory'
+            Remove-Item -LiteralPath $privateError
+        } else {
+            Assert-Clock (-not (Test-Path -LiteralPath $privateError)) 'Entrypoint wrote into a caller-owned destination'
+        }
+        Remove-Item -LiteralPath $private
+    }
+} finally {
+    $childScript=Join-Path $temporary 'failure.ps1'
+    if(Test-Path -LiteralPath $childScript){Remove-Item -LiteralPath $childScript}
+    Remove-Item -LiteralPath $temporary
+}
 Write-Output "CI clock wrapper: $checks assertions passed; no native collection executed."

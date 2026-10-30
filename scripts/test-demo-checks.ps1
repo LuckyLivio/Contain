@@ -34,17 +34,25 @@ Regression 'action output stays in a redirected private log without changing che
 param([string]$Helper,[string]$PrivateLog,[string]$StatePath)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
+$PSNativeCommandUseErrorActionPreference=$false
 . $Helper
 $checks=[Collections.Generic.List[object]]::new()
+$pwsh=Join-Path $PSHOME $(if($IsWindows){'pwsh.exe'}else{'pwsh'})
 & {
     Invoke-DemoCheck -Checks $checks -Name first -Action {
         Write-Output 'private-success-marker'
         Write-Host 'private-host-marker'
         Write-Warning 'private-warning-marker'
+        & $pwsh -NoLogo -NoProfile -Command "[Console]::Out.WriteLine('private-native-success-stdout'); [Console]::Error.WriteLine('private-native-success-stderr'); exit 0"
+        if($LASTEXITCODE -ne 0){throw 'unexpected-native-success-exit'}
     }
     Invoke-DemoCheck -Checks $checks -Name failed -Action {
         Write-Output 'private-before-failure-marker'
-        throw 'expected-action-failure'
+        Write-Host 'private-failure-host-marker'
+        Write-Warning 'private-failure-warning-marker'
+        & $pwsh -NoLogo -NoProfile -Command "[Console]::Out.WriteLine('private-native-failure-stdout'); [Console]::Error.WriteLine('private-native-failure-stderr'); exit 7"
+        if($LASTEXITCODE -ne 7){throw 'unexpected-native-failure-exit'}
+        throw 'expected-native-exit-7'
     }
     Invoke-DemoCheck -Checks $checks -Name independent -Action { Write-Output 'private-independent-marker' }
 } *> $PrivateLog
@@ -58,13 +66,16 @@ Write-Output 'public-complete'
         $consoleOutput=(& $pwsh -NoLogo -NoProfile -File $childScript -Helper (Join-Path $PSScriptRoot 'demo-checks.ps1') -PrivateLog $privateLog -StatePath $statePath 2>&1) -join "`n"
         if($LASTEXITCODE -ne 0){throw 'Redirected check subprocess failed'}
         $privateOutput=Get-Content -LiteralPath $privateLog -Raw
-        foreach($marker in @('private-success-marker','private-host-marker','private-warning-marker','private-before-failure-marker','private-independent-marker')) {
+        foreach($marker in @('private-success-marker','private-host-marker','private-warning-marker',
+            'private-native-success-stdout','private-native-success-stderr','private-before-failure-marker',
+            'private-failure-host-marker','private-failure-warning-marker','private-native-failure-stdout',
+            'private-native-failure-stderr','private-independent-marker')) {
             if($consoleOutput.Contains($marker) -or -not $privateOutput.Contains($marker)){throw 'Action output escaped the private log'}
         }
         if($consoleOutput.Trim() -ne 'public-complete'){throw 'Unexpected output escaped the private log'}
         $rows=@(Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json)
         if($rows.Count -ne 3 -or $rows[0].status -ne 'passed' -or $rows[1].status -ne 'failed' -or
-            $rows[1].reason -ne 'expected-action-failure' -or $rows[2].status -ne 'passed') {
+            $rows[1].reason -ne 'expected-native-exit-7' -or $rows[2].status -ne 'passed') {
             throw 'Redirection changed failure recording or independent check execution'
         }
     } finally {
