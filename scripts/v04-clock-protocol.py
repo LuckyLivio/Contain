@@ -19,7 +19,8 @@ RAW_TIMESTAMP = 0x1000
 SUPPORTED = {"write_requested", "rename_requested", "delete_requested", "set_value"}
 COMPANION_PROTOCOL = "contain-raw-clock-companion-1"
 COMPANION_BINARY_PROTOCOL = "contain-raw-clock-companion-2"
-PROTOCOL_REVISION = "contain-clock-observability-4"
+PROTOCOL_REVISION = "contain-clock-observability-5"
+RESULT_CONTRACT = "contain-clock-result-1"
 BINARY_ROW = struct.Struct("<QQq16sHBBBBHQII")
 BINARY_DISK_LIMIT = 128 * 1024 * 1024
 BINARY_METADATA_LIMIT = 64 * 1024
@@ -711,7 +712,45 @@ def analyze(capture, truth, sid="", raw_clock_bytes=None, raw_clock_path=None):
                             "Missing actor identity is retained as Unknown and blocks every matching operation/resource/QPC interval. "
                             "Native provenance comparisons are limited to independently sampled local observations, not tamper or cloned-VM attestation. "
                             "FILETIME samples diagnose clocks only; no inverse conversion or tolerance is used.")
+    report["result_contract"] = result_contract(report)
     return report
+
+
+def result_contract(report, failure=None):
+    """Separate execution, supplied-view evidence, product checks and formal gates.
+
+    This tool neither performs the raw/final selection join nor runs product
+    assertions. Unknown actors remain in the original interval analysis; an
+    Unknown competitor still makes its row unavailable. Noncompeting Unknowns
+    do not turn otherwise measured clocks into missing data.
+    """
+    reasons = []
+    if report.get("status") != "diagnostic_ready":
+        reasons.append("clock_or_interval_inputs_incomplete")
+    if report.get("same_machine_boot_provenance_verified") is not True:
+        reasons.append("native_clock_provenance_unverified")
+    if type(report.get("source_event_count")) is not int or report["source_event_count"] <= 0:
+        reasons.append("supported_source_events_unavailable")
+    if "control_markers" in report and report["control_markers"].get("status") != "measured":
+        reasons.append("control_marker_inputs_unavailable_or_invalid")
+    return dict(revision=RESULT_CONTRACT,
+        execution=dict(status="failed", **failure) if failure else dict(status="completed"),
+        evidence=dict(scope="supplied_event_view_clock_inputs",
+            status="not_evaluated" if failure else "incomplete" if reasons else "complete",
+            raw_final_join="not_evaluated", reasons=["diagnostic_execution_failed"] if failure else reasons),
+        product=dict(status="not_evaluated", reason="product_assertions_are_owned_by_the_caller"),
+        formal=dict(status=report.get("validation_readiness", {}).get("status", "requirements_unmet"),
+            requirements=report.get("validation_readiness", {}).get("requirements", {})),
+        definition="A completed diagnostic and complete supplied-view clock inputs do not establish raw/final selection agreement, product correctness, provider semantics or formal acceptance. Each scope needs its own actual result.")
+
+
+def exit_status(report, contract):
+    if contract == "diagnostic-v1":
+        stages = report["result_contract"]
+        return 0 if stages["execution"]["status"] == "completed" and stages["evidence"]["status"] == "complete" else 2
+    # Preserve the historical CLI gate unless the caller explicitly selects the
+    # versioned diagnostic contract. Formal readiness is never relaxed here.
+    return 0 if report["status"] == "diagnostic_ready" and report["validation_readiness"]["status"] == "ready" else 2
 
 
 def main():
@@ -723,41 +762,62 @@ def main():
     parser.add_argument("--sid", default="")
     parser.add_argument("--raw-clock", type=Path, help="Private same-session original-QPC companion; exact-key links only")
     parser.add_argument("--marker-root", type=Path, help="Independent clock-marker-*.jsonl files; never included in scored truth rows")
+    parser.add_argument("--exit-contract", choices=("legacy-formal", "diagnostic-v1"), default="legacy-formal",
+                        help="Explicit diagnostic-v1 exit checks execution and supplied-view clock inputs; product and formal results stay separate")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    capture = json.loads(args.capture.read_text(encoding="utf-8-sig"))
-    if "data" in capture:
-        capture = capture["data"]
-    sources = [args.truth] if args.truth else sorted(args.truth_root.glob("ground-truth-*.jsonl"))
-    if args.truth:
-        truth = json.loads(args.truth.read_text(encoding="utf-8-sig"))
-    else:
-        truth = [json.loads(line) for source in sources
-                 for line in source.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
-    raw_clock_bytes = None
-    if args.raw_clock:
-        with args.raw_clock.open("rb") as raw_source:
-            raw_clock_bytes = raw_source.read(BINARY_DISK_LIMIT + 1)
-    result = analyze(capture, truth, args.sid, raw_clock_bytes, args.raw_clock)
-    result["input_sha256"] = dict(capture=hashlib.sha256(args.capture.read_bytes()).hexdigest(),
-                                 truth=[hashlib.sha256(source.read_bytes()).hexdigest() for source in sources])
-    if raw_clock_bytes is not None:
-        result["input_sha256"]["raw_clock"] = hashlib.sha256(raw_clock_bytes).hexdigest()
-    if args.marker_root:
-        marker_files = sorted(args.marker_root.glob("clock-marker-*.jsonl"))
-        markers = [json.loads(line) for source in marker_files
-                   for line in source.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
-        result["control_markers"] = marker_diagnostics(capture, markers)
-        result["input_sha256"]["control_markers"] = [hashlib.sha256(source.read_bytes()).hexdigest() for source in marker_files]
+    input_hashes = {}
+    result = None
+    stage = "capture_input"
+    try:
+        capture_bytes = args.capture.read_bytes()
+        input_hashes["capture"] = hashlib.sha256(capture_bytes).hexdigest()
+        capture = json.loads(capture_bytes.decode("utf-8-sig"))
+        if isinstance(capture, dict) and "data" in capture:
+            capture = capture["data"]
+        stage = "truth_input"
+        sources = [args.truth] if args.truth else sorted(args.truth_root.glob("ground-truth-*.jsonl"))
+        truth_bytes = [source.read_bytes() for source in sources]
+        input_hashes["truth"] = [hashlib.sha256(value).hexdigest() for value in truth_bytes]
+        truth = (json.loads(truth_bytes[0].decode("utf-8-sig")) if args.truth else
+                 [json.loads(line) for value in truth_bytes for line in value.decode("utf-8-sig").splitlines() if line.strip()])
+        raw_clock_bytes = None
+        stage = "raw_clock_input"
+        if args.raw_clock:
+            with args.raw_clock.open("rb") as raw_source:
+                raw_clock_bytes = raw_source.read(BINARY_DISK_LIMIT + 1)
+            input_hashes["raw_clock"] = hashlib.sha256(raw_clock_bytes).hexdigest()
+        stage = "clock_analysis"
+        result = analyze(capture, truth, args.sid, raw_clock_bytes, args.raw_clock)
+        if args.marker_root:
+            stage = "control_marker_input"
+            marker_bytes = [source.read_bytes() for source in sorted(args.marker_root.glob("clock-marker-*.jsonl"))]
+            input_hashes["control_markers"] = [hashlib.sha256(value).hexdigest() for value in marker_bytes]
+            markers = [json.loads(line) for value in marker_bytes for line in value.decode("utf-8-sig").splitlines() if line.strip()]
+            result["control_markers"] = marker_diagnostics(capture, markers)
+        result["result_contract"] = result_contract(result)
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError) as error:
+        # Record a fixed failure stage/type, not a private path or input value.
+        if result is None:
+            result = dict(schema_version=1, protocol_revision=PROTOCOL_REVISION,
+                purpose="independent_clock_observability", release_gate=None,
+                source_event_count=None, truth_rows=[], counts={},
+                validation_readiness=dict(status="requirements_unmet", requirements={}))
+        # A later optional-input failure must retain already computed clock facts.
+        result["status"] = "execution_failed"
+        result["result_contract"] = result_contract(result, dict(stage=stage, error_type=type(error).__name__))
+    result["input_sha256"] = input_hashes
     result["script_lf_sha256"] = hashlib.sha256(Path(__file__).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+    result["exit_contract"] = args.exit_contract
     args.output.parent.mkdir(parents=True, exist_ok=True)
     # Refuse to overwrite any historical diagnostic, score or other evidence.
     with args.output.open("x", encoding="utf-8") as output:
         json.dump(result, output, indent=2, allow_nan=False)
         output.write("\n")
     print(json.dumps({"status": result["status"], "validation_readiness": result["validation_readiness"]["status"],
-                      "counts": result["counts"], "release_gate": None}))
-    return 0 if result["status"] == "diagnostic_ready" and result["validation_readiness"]["status"] == "ready" else 2
+                      "counts": result["counts"], "release_gate": None, "result_contract": result["result_contract"],
+                      "exit_contract": args.exit_contract}))
+    return exit_status(result, args.exit_contract)
 
 
 if __name__ == "__main__":

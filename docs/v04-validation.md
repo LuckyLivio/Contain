@@ -693,3 +693,23 @@ Retain failed operations and unchanged scoring rules. Until then this experiment
 establishes the retained-handle defect and its narrow repair only; live ETW
 interference, universal noninterference and vendor-installer validation remain
 unvalidated.
+## Bounded diagnostic result contract
+
+`contain-clock-observability-5` adds `contain-clock-result-1` without changing
+timestamp comparisons or the formal `requirements_unmet` gate. The old default
+CLI exit remains tied to formal readiness. Callers doing the bounded read-only
+fixture may explicitly select `--exit-contract diagnostic-v1` and must read four
+separate results: execution, supplied-view clock evidence, product checks, and
+formal acceptance. This tool leaves raw/final joining and product checks
+`not_evaluated`; their actual callers must supply those results. Diagnostic exit
+zero means execution completed and the supplied-view clock inputs are complete,
+not that the product or provider contract passed. Missing clocks/provenance,
+Unknown competing records, invalid inputs and empty source evidence still fail.
+
+Input or analysis failures now retain an explicit failed result (without private
+error text) so independent product checks can continue. Later optional-input
+failures preserve already measured clock facts. This correction is separately
+versioned because the prior formal-only exit made `demo.ps1` stop before product
+assertions even when the diagnostic itself completed. The historical six time
+failures remain D; this change does not adjudicate or rescore them. Focused
+regressions first failed, then passed with the unchanged rejection tests.

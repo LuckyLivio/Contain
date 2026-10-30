@@ -72,6 +72,102 @@ class ClockProtocolTests(unittest.TestCase):
         self.assertEqual(observed["semantics"], "file_operation_request")
         self.assertFalse(observed["completion_proven_by_timestamp"])
 
+    def run_result_cli(self, directory, *arguments):
+        directory = Path(directory)
+        capture, truth, output = (directory / name for name in ("capture.json", "truth.json", "result.json"))
+        capture.write_text(json.dumps(self.capture))
+        truth.write_text(json.dumps([self.truth]))
+        process = subprocess.run([sys.executable, str(Path(CLOCK.__file__)), "--capture", str(capture),
+            "--truth", str(truth), "--output", str(output), *arguments], capture_output=True, text=True)
+        return process, json.loads(output.read_text()) if output.exists() else None
+
+    def test_diagnostic_exit_contract_separates_completion_evidence_product_and_formal(self):
+        self.native_provenance()
+        with tempfile.TemporaryDirectory() as temporary:
+            process, result = self.run_result_cli(temporary, "--exit-contract", "diagnostic-v1")
+            self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+            contract = result["result_contract"]
+            self.assertEqual(contract["revision"], "contain-clock-result-1")
+            self.assertEqual(contract["execution"]["status"], "completed")
+            self.assertEqual(contract["evidence"]["status"], "complete")
+            self.assertEqual(contract["evidence"]["scope"], "supplied_event_view_clock_inputs")
+            self.assertEqual(contract["evidence"]["raw_final_join"], "not_evaluated")
+            self.assertEqual(contract["product"]["status"], "not_evaluated")
+            self.assertEqual(contract["formal"]["status"], "requirements_unmet")
+            self.assertEqual(result["validation_readiness"]["status"], "requirements_unmet")
+            self.assertIsNone(result["release_gate"])
+        with tempfile.TemporaryDirectory() as temporary:
+            process, result = self.run_result_cli(temporary)
+            self.assertEqual(process.returncode, 2, "Legacy formal exit must remain closed")
+            self.assertEqual(result["result_contract"]["evidence"]["status"], "complete")
+
+    def test_completed_diagnostic_with_missing_evidence_still_fails_new_contract(self):
+        for defect in ("raw_qpc", "provenance", "unknown_competitor"):
+            with self.subTest(defect=defect), tempfile.TemporaryDirectory() as temporary:
+                self.setUp(); self.native_provenance()
+                if defect == "raw_qpc": self.event["raw"]["clock"].pop("raw_qpc")
+                elif defect == "provenance": self.truth["clock"].pop("provenance")
+                else:
+                    competitor = copy.deepcopy(self.event)
+                    competitor.update(id="unknown-competitor", evidence={})
+                    self.capture["events"].append(competitor)
+                process, result = self.run_result_cli(temporary, "--exit-contract", "diagnostic-v1")
+                self.assertEqual(process.returncode, 2, process.stdout + process.stderr)
+                self.assertIsNotNone(result, "A rejected diagnostic must retain its results")
+                self.assertEqual(result["result_contract"]["execution"]["status"], "completed")
+                self.assertEqual(result["result_contract"]["evidence"]["status"], "incomplete")
+                self.assertEqual(result["result_contract"]["product"]["status"], "not_evaluated")
+
+    def test_input_failure_retains_explicit_execution_failure_without_promoting_other_stages(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            capture, truth, output = (root / name for name in ("capture.json", "truth.json", "result.json"))
+            capture.write_text('{"private_path":"C:\\SECRET_USER\\private.db", malformed')
+            truth.write_text(json.dumps([self.truth]))
+            process = subprocess.run([sys.executable, str(Path(CLOCK.__file__)), "--capture", str(capture),
+                "--truth", str(truth), "--output", str(output), "--exit-contract", "diagnostic-v1"],
+                capture_output=True, text=True)
+            self.assertEqual(process.returncode, 2, process.stderr)
+            self.assertTrue(output.is_file(), "Execution failure must not silently omit the result")
+            result = json.loads(output.read_text())
+            self.assertEqual(result["result_contract"]["execution"]["status"], "failed")
+            self.assertEqual(result["result_contract"]["evidence"]["status"], "not_evaluated")
+            self.assertEqual(result["result_contract"]["product"]["status"], "not_evaluated")
+            self.assertEqual(result["result_contract"]["formal"]["status"], "requirements_unmet")
+            self.assertNotIn("SECRET_USER", json.dumps(result) + process.stdout + process.stderr)
+            self.assertIsNone(result["source_event_count"])
+
+    def test_noncompeting_unknown_retains_facts_but_empty_sources_are_not_complete(self):
+        self.native_provenance()
+        unknown = copy.deepcopy(self.event)
+        unknown.update(id="outside-interval-unknown", evidence={})
+        unknown["raw"]["clock"].update(raw_qpc="300", header_timestamp="300")
+        self.capture["events"].append(unknown)
+        with tempfile.TemporaryDirectory() as temporary:
+            process, result = self.run_result_cli(temporary, "--exit-contract", "diagnostic-v1")
+            self.assertEqual(process.returncode, 0, process.stderr)
+            self.assertEqual(result["source_actor_unknown_events"][0]["event_id"], unknown["id"])
+            self.assertEqual(result["truth_rows"][0]["status"], "unique_interval_candidate")
+            self.assertEqual(result["result_contract"]["product"]["status"], "not_evaluated")
+        self.capture["events"] = []
+        with tempfile.TemporaryDirectory() as temporary:
+            process, result = self.run_result_cli(temporary, "--exit-contract", "diagnostic-v1")
+            self.assertEqual(process.returncode, 2, process.stderr)
+            self.assertIn("supported_source_events_unavailable", result["result_contract"]["evidence"]["reasons"])
+
+    def test_later_marker_failure_preserves_prior_clock_facts_and_marks_execution_failed(self):
+        self.native_provenance()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "clock-marker-1.jsonl").write_text("not-json")
+            process, result = self.run_result_cli(root, "--exit-contract", "diagnostic-v1", "--marker-root", str(root))
+            self.assertEqual(process.returncode, 2, process.stderr)
+            self.assertEqual(result["result_contract"]["execution"]["status"], "failed")
+            self.assertEqual(result["result_contract"]["execution"]["stage"], "control_marker_input")
+            self.assertEqual(result["result_contract"]["evidence"]["status"], "not_evaluated")
+            self.assertEqual(result["truth_rows"][0]["event_ids"], ["source"])
+            self.assertEqual(result["source_events_with_raw_qpc"], 1)
+
     def test_native_provenance_rejects_mismatch_failure_truncation_or_fabrication(self):
         for field, invalid in (("schema_version", True), ("status", "unavailable"),
                 ("returned_bytes", True), ("returned_bytes", 31), ("returned_bytes", 33),
@@ -190,7 +286,7 @@ class ClockProtocolTests(unittest.TestCase):
         original = copy.deepcopy(self.capture)
         result = CLOCK.analyze(self.capture, [self.truth], raw_clock_bytes=raw)
         self.assertEqual(result["status"], "diagnostic_ready")
-        self.assertEqual(result["protocol_revision"], "contain-clock-observability-4")
+        self.assertEqual(result["protocol_revision"], "contain-clock-observability-5")
         self.assertEqual(result["raw_companion"]["start_time_observation"], dict(
             primary="0", companion="0", status="unavailable_at_realtime_open",
             available=False, used_as_clock_origin=False))
