@@ -405,6 +405,90 @@ def windows_spelling(value):
     return value.casefold().rstrip("\\")
 
 
+def legacy_score_result(directory):
+    """Publish the unchanged scorer's fixed fields, even without a CLI report.
+
+    Numeric/group/UUID fields follow analyze-etw-clock.py's legacy projection.
+    Rows add only fixed enums and event IDs, never resources, actors or reasons
+    supplied as free text. This is preservation, not a replacement score.
+    """
+    path = directory / "reliability.json"
+    try:
+        value = read(safe_file(path))
+        require(isinstance(value, dict), "legacy_score_document_invalid")
+        digest = sha(path)
+    except (OSError, ValueError, TypeError):
+        return dict(status="unavailable", source_sha256=None, score=None,
+                    failure_reasons=["legacy_score_missing_or_unreadable"])
+    failures = set()
+    def number(source, key, nullable=False, rate=False):
+        item = source.get(key)
+        numeric = (type(item) in (int, float) and 0 <= item <= 1) if rate else type(item) is int and item >= 0
+        valid = key in source and ((item is None and nullable) or numeric)
+        if not valid:
+            failures.add("legacy_score_numeric_field_invalid")
+        return item if valid else None
+    def event_id(item, nullable=False):
+        if item is None and nullable:
+            return None
+        if isinstance(item, str) and re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", item):
+            return item
+        failures.add("legacy_score_event_id_invalid")
+        return None
+    def choice(source, key, allowed, nullable=False):
+        item = source.get(key)
+        if key in source and ((item is None and nullable) or isinstance(item, str) and item in allowed):
+            return item
+        failures.add("legacy_score_row_enum_invalid")
+        return None
+    counts = ("schema_version", "expected", "observed", "correctly_attributed", "unknown", "incorrect_attribution",
+              "positive_raw_predictions", "false_positive_target_events", "supporting_duplicate_raw_events",
+              "excluded_control_positive_events", "dropped")
+    score = {key: number(value, key) for key in counts}
+    score.update({key: number(value, key, nullable=True) for key in ("etw_events_lost", "etw_buffers_lost")})
+    score["precision"] = number(value, "precision", nullable=True, rate=True)
+    if score["schema_version"] != 2:
+        failures.add("legacy_score_schema_invalid")
+    extra = value.get("unexpected_positive_events")
+    score["unexpected_positive_events"] = [event_id(item) for item in extra] if isinstance(extra, list) else None
+    if not isinstance(extra, list) or len(extra) != score["false_positive_target_events"]:
+        failures.add("legacy_score_extra_positive_count_invalid")
+    group_names = {"target_success", "noise_success", "failed", "unsupported"}
+    group_keys = ("expected", "observed", "unobserved", "unsupported_out_of_scope", "correctly_attributed",
+                  "incorrectly_attributed", "observed_but_unresolved", "correctly_not_assigned_to_target_app")
+    groups = value.get("groups"); score["groups"] = {}
+    for name in sorted(group_names):
+        group = groups.get(name) if isinstance(groups, dict) else None
+        group = group if isinstance(group, dict) else {}
+        score["groups"][name] = {key: number(group, key) for key in group_keys}
+        score["groups"][name].update({key: number(group, key, nullable=True, rate=True)
+            for key in ("observation_rate", "correct_attribution_rate")})
+    rows = value.get("rows"); score["rows"] = [] if isinstance(rows, list) else None
+    if not isinstance(rows, list) or len(rows) != score["expected"]:
+        failures.add("legacy_score_row_count_invalid")
+    for index, original in enumerate(rows if isinstance(rows, list) else []):
+        row = original if isinstance(original, dict) else {}
+        public = dict(score_row=index,
+            role=choice(row, "role", {"parent", "child", "grandchild", "unrelated", "detached", "short", "stress", "worker", "noise", "burst"}),
+            group=choice(row, "group", group_names),
+            operation=choice(row, "operation", {"write_requested", "rename_requested", "delete_requested", "set_value"}),
+            observation=choice(row, "observation", {"unsupported_out_of_scope", "observed", "unobserved"}),
+            attribution=choice(row, "attribution", {"correctly_attributed", "incorrectly_attributed",
+                "correctly_not_assigned_to_target_app", "observed_but_unresolved"}, nullable=True),
+            outcome=choice(row, "outcome", {"Correct", "Incorrect", "Unknown"}),
+            matched_event_id=event_id(row.get("matched_event_id"), nullable=row.get("observed") is False),
+            raw_matches=number(row, "raw_matches"))
+        for key in ("success", "observed"):
+            public[key] = row.get(key) if type(row.get(key)) is bool else None
+            if public[key] is None:
+                failures.add("legacy_score_row_boolean_invalid")
+        # Original enum outcomes are the reason codes; no new matching inference.
+        public["reason_codes"] = [item for item in (public["observation"], public["attribution"]) if item]
+        score["rows"].append(public)
+    return dict(status="invalid" if failures else "available", source_sha256=digest, score=score,
+                row_order="unchanged_legacy_scorer_order", failure_reasons=sorted(failures))
+
+
 def report(args):
     package = args.package.resolve()
     manifest, _ = verify_package(package)
@@ -412,7 +496,8 @@ def report(args):
     public = new_directory(args.public_output)
     summary = dict(schema_version=1, protocol_revision=PROTOCOL, source_sha=manifest["source_sha"],
         scenario=args.scenario, scope="real_etw_controlled_fixture_cli_excerpt", complete=False,
-        candidate_verified=False, commands=[], checks={}, failure=None)
+        candidate_verified=False, commands=[], checks={}, failure=None,
+        legacy_score=legacy_score_result(args.capture_directory))
     try:
         same, observed = run_identity_matches(args.capture_directory, manifest, sha(package / "BUILD.json"))
         require(same, "report_run_identity_not_package")
@@ -566,6 +651,7 @@ def finalize(args):
     default_same, default_identity = run_identity_matches(args.default_directory, manifest, sha(package / "BUILD.json"))
     clock_same, clock_identity = run_identity_matches(args.clock_directory, manifest, sha(package / "BUILD.json"))
     default = product_result(args.default_directory); clock = product_result(args.clock_directory)
+    legacy = {"default": legacy_score_result(args.default_directory), "dual-clock": legacy_score_result(args.clock_directory)}
     def optional(path):
         try: return read(path)
         except (OSError, ValueError): return {}
@@ -575,6 +661,8 @@ def finalize(args):
     dual_mode = clock_identity.get("fixture_clock") == "1" and bool(clock_identity.get("raw_clock_path")) and clock.get("clock_requested") is True
     # This is a bounded candidate gate, separate from the retained formal status.
     checks = dict(default_product=default["passed"], dual_clock_product=clock["passed"],
+        default_legacy_score_available=legacy["default"]["status"] == "available",
+        dual_clock_legacy_score_available=legacy["dual-clock"]["status"] == "available",
         default_package_identity=default_same, dual_clock_package_identity=clock_same,
         default_clocks_disabled=default_mode, dual_clocks_enabled=dual_mode,
         dual_clock_diagnostic_executed=clock.get("diagnostic_execution_status") == "completed",
@@ -607,6 +695,7 @@ def finalize(args):
         build_manifest_sha256=sha(package / "BUILD.json"), build_profile=manifest["profile"], target=TARGET,
         candidate_status="bounded_read_only_trial_verified" if complete else "diagnostic_build_unverified",
         candidate_verified=complete, checks=checks, default_product=default, dual_clock_product=clock,
+        legacy_scores=legacy,
         clock_evidence=dict(complete=checks["clock_evidence_complete"],
             missing_evidence=[item if isinstance(item, str) and re.fullmatch(r"[a-z0-9_]+", item) else "private_detail_omitted"
                 for item in analysis["missing_evidence"]] if isinstance(analysis.get("missing_evidence"), list) else None),

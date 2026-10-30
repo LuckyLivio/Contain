@@ -15,6 +15,9 @@ import zipfile
 SPEC = importlib.util.spec_from_file_location("trial_package", Path(__file__).with_name("package-trial.py"))
 TRIAL = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(TRIAL)
+SCORE_SPEC = importlib.util.spec_from_file_location("trial_legacy_score", Path(__file__).with_name("score-fixture.py"))
+SCORE = importlib.util.module_from_spec(SCORE_SPEC)
+SCORE_SPEC.loader.exec_module(SCORE)
 
 
 def synthetic_pe(imports=("KERNEL32.dll", "api-ms-win-core-synch-l1-2-0.dll"), delayed=()):
@@ -68,6 +71,21 @@ class TrialTests(unittest.TestCase):
             self.assertEqual(TRIAL.prepare(args), 0)
         return TRIAL.read(self.package / "BUILD.json")
 
+    def legacy_score(self, failing=False):
+        # Use the unchanged production scorer with synthetic events. Preserve
+        # its failure and Unknown rows, never substitute a hand-written verdict.
+        resource = r"C:\PRIVATE\fixture\settings.txt"
+        event = dict(id="11111111-1111-1111-1111-111111111111", event_type="file",
+            operation="write_requested", resource=resource, timestamp_ticks=20,
+            confidence="High", evidence=dict(pid=789123, process_creation_time=10))
+        truth = [dict(role="parent", operation="write_requested", resource=resource, pid=789123,
+            creation_time=10, start_ticks=1, end_ticks=2, success=True)]
+        observed = dict(event, id="22222222-2222-2222-2222-222222222222", timestamp_ticks=3)
+        truth.append(dict(truth[0], start_ticks=3, end_ticks=4))
+        return SCORE.score(dict(events=[event, observed] if failing else [observed], watch_roots=[r"C:\PRIVATE\fixture"],
+            stats=dict(events_dropped=0), backend=dict(etw_events_lost=None, etw_buffers_lost=None),
+            quality=dict(level="Degraded")), truth if failing else truth[1:])
+
     def run_evidence(self, name, manifest, clock=False, product_status="passed"):
         directory = self.root / name; directory.mkdir()
         binaries = [dict(path="C:\\synthetic-package\\" + row["name"], bytes=row["bytes"], sha256=row["sha256"])
@@ -80,6 +98,7 @@ class TrialTests(unittest.TestCase):
             source_before_build=source, source_after_build=source, fixture_clock="1" if clock else None,
             raw_clock_path="C:\\synthetic-output\\clock.json" if clock else None, database=f"C:\\synthetic-output\\{name}.db")
         TRIAL.write(directory / "run-identity.json", identity)
+        TRIAL.write(directory / "reliability.json", self.legacy_score())
         TRIAL.write(directory / "product-checks.json", dict(schema_version=1, protocol_revision="contain-demo-result-1",
             planned_check_names=sorted(TRIAL.DEMO_PLAN), missing_planned_checks=[],
             checks=[dict(name=name, domain="product", required=True, status=product_status) for name in sorted(TRIAL.DEMO_PRODUCT_PLAN)]
@@ -91,6 +110,57 @@ class TrialTests(unittest.TestCase):
             diagnostic_execution=dict(status="completed" if clock else "not_requested"),
             evidence=dict(status="complete" if clock else "not_evaluated")))
         return directory
+
+    def test_cli_report_failure_still_preserves_original_score_without_private_fields(self):
+        manifest = self.prepare(); directory = self.run_evidence("default", manifest)
+        (directory / "reliability.json").write_text(json.dumps(self.legacy_score(failing=True)))
+        args = argparse.Namespace(package=self.package, capture_directory=directory,
+            private_output=self.root / "report-private", public_output=self.root / "report-public", scenario="default")
+        # Capture is deliberately missing: independent legacy evidence survives.
+        self.assertEqual(TRIAL.report(args), 2)
+        summary = TRIAL.read(args.public_output / "summary.json")
+        original = TRIAL.read(directory / "reliability.json")
+        score = summary["legacy_score"]
+        self.assertEqual(score["status"], "available")
+        self.assertEqual(score["score"]["false_positive_target_events"], 1)
+        self.assertEqual(score["score"]["unexpected_positive_events"], original["unexpected_positive_events"])
+        self.assertEqual(score["score"]["rows"][0]["observation"], "unobserved")
+        self.assertIsNone(score["score"]["rows"][0]["matched_event_id"])
+        self.assertEqual(score["score"]["rows"][1]["matched_event_id"], "22222222-2222-2222-2222-222222222222")
+        self.assertEqual(score["score"]["rows"][1]["reason_codes"], ["observed", "correctly_attributed"])
+        self.assertIsNone(score["score"]["etw_events_lost"])
+        self.assertEqual(score["source_sha256"], TRIAL.sha(directory / "reliability.json"))
+        text = json.dumps(summary)
+        for private in ("PRIVATE", "789123", "resource", "definition"):
+            self.assertNotIn(private, text)
+        self.assertFalse(summary["complete"])
+
+    def test_missing_legacy_score_cannot_be_counted_as_verified(self):
+        manifest = self.prepare(); default = self.run_evidence("default", manifest)
+        clock = self.run_evidence("clock", manifest, clock=True); self.reports()
+        (clock / "reliability.json").write_text(json.dumps(self.legacy_score(failing=True)))
+        (default / "reliability.json").unlink()
+        self.assertEqual(TRIAL.finalize(self.finalize_args(default, clock)), 2)
+        result = TRIAL.read(self.package / "VALIDATION.json")
+        self.assertFalse(result["candidate_verified"])
+        self.assertEqual(result["legacy_scores"]["default"]["status"], "unavailable")
+        self.assertIsNone(result["legacy_scores"]["default"]["score"])
+        self.assertEqual(result["legacy_scores"]["dual-clock"]["score"]["false_positive_target_events"], 1)
+
+    def test_invalid_legacy_score_fields_never_publish_arbitrary_text_or_claim_complete(self):
+        directory = self.root / "score-only"; directory.mkdir()
+        score = self.legacy_score(failing=True)
+        score["rows"][0].update(role=r"C:\PRIVATE\role", matched_event_id=r"C:\PRIVATE\event", reason="PRIVATE_REASON")
+        score["unexpected_positive_events"].append(r"C:\PRIVATE\extra")
+        score["etw_events_lost"] = "PRIVATE_LOSS"
+        TRIAL.write(directory / "reliability.json", score)
+        public = TRIAL.legacy_score_result(directory)
+        self.assertEqual(public["status"], "invalid")
+        self.assertEqual(len(public["score"]["unexpected_positive_events"]), 2)
+        self.assertEqual(public["score"]["unexpected_positive_events"][0], score["unexpected_positive_events"][0])
+        self.assertIsNone(public["score"]["unexpected_positive_events"][1])
+        self.assertNotIn("PRIVATE", json.dumps(public))
+        self.assertTrue(public["failure_reasons"])
 
     def reports(self):
         for name in ("default", "dual-clock"):

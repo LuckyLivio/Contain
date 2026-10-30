@@ -431,3 +431,16 @@ at `e14ac36594fcf9fc6876077b8b0b0ebb337c24d5` was cancelled during quality-tool
 preparation for this concrete fix, before tests or native captures. Its cancelled
 result remains recorded; it is not a pass or an ETW attempt. The final MSVC
 imports and runtime loading still require the frozen candidate CI.
+
+
+A final public-artifact review found that default-mode scoring was private-only:
+its check name survived, but its original counts and extra-positive event IDs
+would disappear with the runner. CI [41066223519](https://github.com/LuckyLivio/Contain/actions/runs/41066223519)
+at `818d6a548096708aad84e68087dddec92bcc65fa` was therefore cancelled during
+quality-tool preparation, again before tests or collection. The correction
+preserves each configuration's original score as a reviewed fixed-field
+projection, independent of CLI report success, without publishing paths, process
+identifiers or arbitrary error text. The score is not recomputed or relaxed;
+missing original scoring remains unavailable and cannot satisfy the candidate.
+Both preparation-only cancellations remain distinct from the initial quality
+failure and from the still-unconsumed pair of native attempts.
