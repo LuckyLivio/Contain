@@ -24,6 +24,54 @@ Regression 'diagnostic failure does not skip independent product checks' {
         throw 'Independent product check did not execute after diagnostic failure'
     }
 }
+Regression 'action output stays in a redirected private log without changing check results' {
+    $temporary=Join-Path ([IO.Path]::GetTempPath()) ('contain-demo-redirection-'+[guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $temporary | Out-Null
+    $childScript=Join-Path $temporary 'redirect.ps1'
+    $privateLog=Join-Path $temporary 'private.log'
+    $statePath=Join-Path $temporary 'checks.json'
+    @'
+param([string]$Helper,[string]$PrivateLog,[string]$StatePath)
+$ErrorActionPreference='Stop'
+Set-StrictMode -Version Latest
+. $Helper
+$checks=[Collections.Generic.List[object]]::new()
+& {
+    Invoke-DemoCheck -Checks $checks -Name first -Action {
+        Write-Output 'private-success-marker'
+        Write-Host 'private-host-marker'
+        Write-Warning 'private-warning-marker'
+    }
+    Invoke-DemoCheck -Checks $checks -Name failed -Action {
+        Write-Output 'private-before-failure-marker'
+        throw 'expected-action-failure'
+    }
+    Invoke-DemoCheck -Checks $checks -Name independent -Action { Write-Output 'private-independent-marker' }
+} *> $PrivateLog
+$checks.ToArray() | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $StatePath
+Write-Output 'public-complete'
+'@ | Set-Content -LiteralPath $childScript -Encoding utf8
+    try {
+        # A child console reproduces CI: Out-Host bypasses the inner *> redirect
+        # and reaches the parent's captured stdout instead of the private log.
+        $pwsh=Join-Path $PSHOME $(if($IsWindows){'pwsh.exe'}else{'pwsh'})
+        $consoleOutput=(& $pwsh -NoLogo -NoProfile -File $childScript -Helper (Join-Path $PSScriptRoot 'demo-checks.ps1') -PrivateLog $privateLog -StatePath $statePath 2>&1) -join "`n"
+        if($LASTEXITCODE -ne 0){throw 'Redirected check subprocess failed'}
+        $privateOutput=Get-Content -LiteralPath $privateLog -Raw
+        foreach($marker in @('private-success-marker','private-host-marker','private-warning-marker','private-before-failure-marker','private-independent-marker')) {
+            if($consoleOutput.Contains($marker) -or -not $privateOutput.Contains($marker)){throw 'Action output escaped the private log'}
+        }
+        if($consoleOutput.Trim() -ne 'public-complete'){throw 'Unexpected output escaped the private log'}
+        $rows=@(Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json)
+        if($rows.Count -ne 3 -or $rows[0].status -ne 'passed' -or $rows[1].status -ne 'failed' -or
+            $rows[1].reason -ne 'expected-action-failure' -or $rows[2].status -ne 'passed') {
+            throw 'Redirection changed failure recording or independent check execution'
+        }
+    } finally {
+        foreach($path in @($childScript,$privateLog,$statePath)){if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path}}
+        Remove-Item -LiteralPath $temporary
+    }
+}
 function Complete-ClockResult {
     @{ result_contract=@{ revision='contain-clock-result-1'; execution=@{status='completed'};
         evidence=@{status='complete';scope='supplied_event_view_clock_inputs';raw_final_join='not_evaluated'};

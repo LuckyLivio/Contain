@@ -379,7 +379,8 @@ incomplete, never passed. Raw-only registry source records need the production
 selection witness described in the architecture; absent final rows alone are
 not evidence of legitimate filtering. No actor is inferred from fixture truth.
 
-The trial ZIP includes actual CLI excerpts and per-check validation status;
+The trial ZIP includes actual CLI excerpts when export succeeds, and otherwise
+retains the export failure alongside per-check validation status;
 failed required checks produce an explicitly unverified diagnostic package and
 a failing CI, not a verified candidate. Full SQLite databases, ETW sidecars and
 machine inventories are excluded. Formal 32-run, scale, third-party installers,
@@ -444,3 +445,90 @@ identifiers or arbitrary error text. The score is not recomputed or relaxed;
 missing original scoring remains unavailable and cannot satisfy the candidate.
 Both preparation-only cancellations remain distinct from the initial quality
 failure and from the still-unconsumed pair of native attempts.
+
+
+## Bounded trial result
+
+The actual deliverable is a **diagnostic build, not a verified trial candidate**:
+[download the CI artifact](https://github.com/LuckyLivio/Contain/actions/runs/41067439514/artifacts/12984204005)
+and extract its `contain-0.3.1-windows-x64.zip`. Source is
+`e84f9b9d5c35ed62a0b2ecf06aee7addc9a31fc7`, MSVC x64 debug, version 0.3.1.
+`contain.exe` SHA-256 is
+`fb1a5aebce7402114b15af342800d1721666a3540f1db00dde7d47e1a95823cf`;
+ZIP SHA-256 is `c4e70f07042780f6daf1fac8e7264dd703172ddb02e35e7278e2f8a19705b1f8`.
+The downloaded ZIP was read back and all 23 manifest-listed file hashes/lengths
+verified (24 archive members including CONTENTS.json). Actual PE dependencies
+were inspected; the required `vcruntime140.dll` is included. Both native runs used
+these exact binaries/scripts. No Release, tag or version change was made.
+
+Windows Server 2025 build 26100, AMD64, image `win25-vs2026` / 20261021.278.1;
+Rust/Cargo 1.99.1, nextest 0.9.149, llvm-cov 0.9.1, deny 0.20.2,
+PowerShell 7.6.7 and Python 3.12.10 produced the following results in
+[CI 41067439514](https://github.com/LuckyLivio/Contain/actions/runs/41067439514).
+The [reviewed machine-readable summary](examples/windows-read-only-trial-41067439514.json)
+retains each product check, original scores, the raw-only selection and one event
+comparison. It is a diagnostic projection, **not fabricated CLI explain output**.
+
+| Gate / exact entrypoint | Result |
+| --- | --- |
+| `./scripts/quality.ps1 -Mode Check` | Passed: nextest 290 passed / 0 failed / 7 skipped; 22 Python suites, 330 passed / 0 failed / 0 skipped; four PowerShell gates passed (demo 10 tests, wrapper 18 assertions). Doctests executed 0 and are not counted as coverage. |
+| `-Mode Coverage` | 290 passed / 0 failed / 7 ignored; lines 13297/17833 (74.5640%), functions 1069/1411 (75.7619%). |
+| `-Mode CoverageOriginal` | 222 passed / 0 failed / 4 ignored; lines 9590/13244 (72.4101%), functions 767/1028 (74.6109%). Shared offline tests remain duplicate executions, with inline tests included. Floors remain 66.5% / 70%. |
+| `-Mode Dependencies`, `-Mode Companion` | Passed; main/fuzz dependency gates retained; companion 1 passed / 0 failed / 0 ignored, 193 filtered. |
+| `cargo build --workspace --locked`; synthetic CLI + schema | Passed; three existing synthetic scenarios, 66 commands and 33 schema checks passed, 0 failed/skipped. |
+| `ci-etw-clock.ps1 -Phase candidate -Configuration default -AttemptIndex 1` with frozen package and new absolute directories | Real ETW; 35 required product checks passed / 0 failed / 0 not-run. Clocks not requested. |
+| Same entrypoint, `-Configuration dual-clock -AttemptIndex 2` | Real ETW; 35 required product checks and one diagnostic passed. Original clocks and raw/final connection evidence complete in the supported source-operation scope. |
+| Actual CLI text report export, each configuration | **Blocked**: `not_fixed_fixture_scope`; 0 report CLI commands executed. Existing demo readback/explain checks above did execute. |
+| Package finalization / overall CI | ZIP generated as `diagnostic_build_unverified`; finalization exit 2 and overall CI failed. No additional capture or retry. Snapshot fallback was not run in this pair. |
+
+Each original scorer observed 19/21 instrumented operations: all 17 target
+successes attributed correctly, two independent-writer operations observed and
+not attributed to the target, one independent operation unobserved, and one
+failed deletion unobserved. Both runs retained four Unknown outcomes, zero wrong
+attributions and zero extra positive source events. Provider and application
+loss counters were measured as zero; that does not establish complete coverage.
+The dual-clock audit linked 32 original QPC records at 10,000,000 Hz. One registry
+raw-only Unknown has its positive production selection witness; the unresolved
+source remains explicit. No truth was used to fill its actor.
+
+The blocker is the **report validator**, not the passed product checks. The demo
+stores a TEMP-derived fixture root, while capture stores its canonical spelling.
+The exporter only removes Windows prefixes and folds case; it cannot recognize
+valid 8.3 short-name/long-name aliases. Both runs failed that precondition before
+snapshot/CLI export. The private input spellings and databases were not published
+and the runner has ended, so the alias defect is a source-confirmed limitation
+and likely trigger, not a reconstructed comparison of this run's private paths.
+The subsequent event/diff selection also uses the original spelling. The next
+minimal fix is a real Windows same-directory identity check, then using the
+canonical captured root for selection/redaction while retaining its observed
+aliases. Regressions must reject different/missing directories and different
+fixture GUIDs. Do not guess 8.3 mappings or weaken source attribution. The missing
+real CLI text report cannot be recreated from the safe aggregates; the synthetic
+examples remain explicitly synthetic.
+
+The public console also exposed runner boot identity/clock metadata because
+`Out-Host` bypassed the wrapper's private redirection. A post-capture fix removes
+that bypass and adds a real PowerShell child-process redirection regression:
+first 10 passed / 1 failed, then 11 passed / 0 failed / 0 ignored on Linux
+PowerShell 7.6.9. Failure recording and independent checks remain intact. This
+fix is **not in the frozen downloadable package and has not run native Windows
+capture**. Raw console logs were saved privately; a reviewed replacement summary
+preserves the failures without publishing machine identifiers. Their public-log
+removal status is recorded in that summary. Package/local demo output should not
+be uploaded unreviewed.
+
+From the extracted package, with Windows x64, PowerShell 7 and Python 3, use:
+
+```powershell
+pwsh -NoProfile -File .\scripts\demo.ps1 -RequireEtw -KeepArtifacts -OutputDirectory "$PWD\demo-result-new"
+.\contain.exe --db <printed-database-path> inspect TestFixture
+.\contain.exe --db <printed-database-path> history TestFixture --limit 20 --offset 0
+.\contain.exe --db <printed-database-path> explain <event-id-from-history> --json
+```
+
+The ordinary CLI needs neither Rust nor Visual Studio; the demo needs existing
+ETW permissions and never elevates. Keep the printed database and outputs after
+failure. Event IDs from CI belong to its private session and are not IDs in a new
+user capture. Formal 32-run, scale, third-party installers, final ownership and
+safe cleanup remain separate unexecuted scopes. Historical six timing failures
+remain D. No further collection is authorized or scheduled by this closeout.

@@ -1,0 +1,1702 @@
+{
+  "schema_version": 1,
+  "scope": "reviewed_real_etw_controlled_fixture_results_not_cli_text_output",
+  "source_sha": "e84f9b9d5c35ed62a0b2ecf06aee7addc9a31fc7",
+  "ci_run": "https://github.com/LuckyLivio/Contain/actions/runs/41067439514",
+  "ci_conclusion": "failure",
+  "version": "0.3.1",
+  "candidate_status": "diagnostic_build_unverified",
+  "build": {
+    "target": "x86_64-pc-windows-msvc",
+    "profile": "debug",
+    "binaries": [
+      {
+        "name": "contain.exe",
+        "bytes": 12392960,
+        "sha256": "fb1a5aebce7402114b15af342800d1721666a3540f1db00dde7d47e1a95823cf"
+      },
+      {
+        "name": "contain-test-installer.exe",
+        "bytes": 2180608,
+        "sha256": "d2ce2e22c50d785d9187af5524bb48e87b6d1159ac5f9d99df0c52ddb1dd8fe7"
+      }
+    ],
+    "runtime_files": [
+      {
+        "name": "vcruntime140.dll",
+        "bytes": 178616,
+        "sha256": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7"
+      }
+    ],
+    "zip_sha256": "c4e70f07042780f6daf1fac8e7264dd703172ddb02e35e7278e2f8a19705b1f8"
+  },
+  "platform": {
+    "system": "Windows",
+    "release": "2025Server",
+    "version": "10.0.26100",
+    "architecture": "AMD64",
+    "runner_image": "win25-vs2026",
+    "runner_image_version": "20261021.278.1",
+    "ci_run_url": "https://github.com/LuckyLivio/Contain/actions/runs/41067439514"
+  },
+  "tools": {
+    "deny": "cargo-deny 0.20.2",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "nextest": "cargo-nextest 0.9.149 (3fe4ef319 2026-10-20)",
+    "pwsh": "PowerShell 7.6.7",
+    "llvm_cov": "cargo-llvm-cov 0.9.1",
+    "python": "Python 3.12.10",
+    "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)"
+  },
+  "commands": {
+    "default": "demo.ps1 -RequireEtw -KeepArtifacts with package executables and BUILD.json; clocks disabled",
+    "dual_clock": "same demo/build/fixture with CONTAIN_FIXTURE_CLOCK=1 and a new absolute CONTAIN_ETW_RAW_CLOCK_PATH"
+  },
+  "native_attempts": 2,
+  "additional_native_attempts": 0,
+  "product_results": {
+    "default_product": {
+      "status": "passed",
+      "passed": true,
+      "required_passed": 35,
+      "required_failed": 0,
+      "required_not_run": 0,
+      "diagnostic_execution_status": "not_requested",
+      "supplied_view_clock_evidence": "not_evaluated",
+      "required_diagnostic_passed": 0,
+      "required_diagnostic_failed": 0,
+      "required_diagnostic_not_run": 0,
+      "bounded_pass": true,
+      "clock_requested": false,
+      "checks": [
+        {
+          "name": "capture_execution",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "independent_fixture",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "detached_fixture",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "registry_noise_fixture",
+          "domain": "product",
+          "required": false,
+          "status": "not_run"
+        },
+        {
+          "name": "inspect_json",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "capture_finished",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "source_loss_accounting",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "independent_score",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "view_consistency",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "process_family_count",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "installer_certain",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "descendant_ancestry",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "independent_process_excluded",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "file_modified",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "file_deleted",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "registry_modified",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "unrelated_state_unknown",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "providers_active",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "source_events",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "file_high_source",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "independent_source_unknown",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "snapshot_state_unknown",
+          "domain": "product",
+          "required": false,
+          "status": "not_run"
+        },
+        {
+          "name": "failed_delete_preserved",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "rename_identity",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "registry_noise_unknown",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "truth_count",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "independent_source_not_promoted",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "scorer_attribution",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "short_actor",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "detached_actor",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "detached_after_exit",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "history_stability",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "explain_json",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "diff_json",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "history_json",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "doctor_json",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "dry_run_unchanged",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "clock_diagnostic",
+          "domain": "diagnostic",
+          "required": false,
+          "status": "not_run"
+        }
+      ],
+      "missing_planned_checks": [],
+      "source_summary_sha256": "3ab6eb0df2524d6d2f3511928c82455776132a2ea38b505fb9de1427c29b81e7"
+    },
+    "dual_clock_product": {
+      "status": "passed",
+      "passed": true,
+      "required_passed": 35,
+      "required_failed": 0,
+      "required_not_run": 0,
+      "diagnostic_execution_status": "completed",
+      "supplied_view_clock_evidence": "complete",
+      "required_diagnostic_passed": 1,
+      "required_diagnostic_failed": 0,
+      "required_diagnostic_not_run": 0,
+      "bounded_pass": true,
+      "clock_requested": true,
+      "checks": [
+        {
+          "name": "capture_execution",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "independent_fixture",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "detached_fixture",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "registry_noise_fixture",
+          "domain": "product",
+          "required": false,
+          "status": "not_run"
+        },
+        {
+          "name": "inspect_json",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "capture_finished",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "source_loss_accounting",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "independent_score",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "view_consistency",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "process_family_count",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "installer_certain",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "descendant_ancestry",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "independent_process_excluded",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "file_modified",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "file_deleted",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "registry_modified",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "unrelated_state_unknown",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "providers_active",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "source_events",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "file_high_source",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "independent_source_unknown",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "snapshot_state_unknown",
+          "domain": "product",
+          "required": false,
+          "status": "not_run"
+        },
+        {
+          "name": "failed_delete_preserved",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "rename_identity",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "registry_noise_unknown",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "truth_count",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "independent_source_not_promoted",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "scorer_attribution",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "short_actor",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "detached_actor",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "detached_after_exit",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "history_stability",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "explain_json",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "diff_json",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "history_json",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "doctor_json",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "dry_run_unchanged",
+          "domain": "product",
+          "required": true,
+          "status": "passed"
+        },
+        {
+          "name": "clock_diagnostic",
+          "domain": "diagnostic",
+          "required": true,
+          "status": "passed"
+        }
+      ],
+      "missing_planned_checks": [],
+      "source_summary_sha256": "1271abe1744554b6db29fb5a1cdfc9c6dacc75936bdd585a307f7998c4d9d77f"
+    }
+  },
+  "legacy_scores": {
+    "default": {
+      "status": "available",
+      "source_sha256": "f242eaa69a4b3e68165b7e9ec44410d49379cbe887c955cb73652fd6c9c7c7f4",
+      "score": {
+        "schema_version": 2,
+        "expected": 21,
+        "observed": 19,
+        "correctly_attributed": 17,
+        "unknown": 4,
+        "incorrect_attribution": 0,
+        "positive_raw_predictions": 17,
+        "false_positive_target_events": 0,
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 3,
+        "dropped": 0,
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0,
+        "precision": 1.0,
+        "unexpected_positive_events": [],
+        "groups": {
+          "failed": {
+            "expected": 1,
+            "observed": 0,
+            "unobserved": 1,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 3,
+            "observed": 2,
+            "unobserved": 1,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 2,
+            "observation_rate": 0.6666666666666666,
+            "correct_attribution_rate": 0.0
+          },
+          "target_success": {
+            "expected": 17,
+            "observed": 17,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 17,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 1.0,
+            "correct_attribution_rate": 1.0
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "rows": [
+          {
+            "score_row": 0,
+            "role": "short",
+            "group": "target_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "4ff1e568-771f-4523-9a71-507d094073e3",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 1,
+            "role": "parent",
+            "group": "target_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "12162b42-f290-46fd-824a-6ae5119d55b0",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 2,
+            "role": "parent",
+            "group": "failed",
+            "operation": "delete_requested",
+            "observation": "unobserved",
+            "attribution": null,
+            "outcome": "Unknown",
+            "matched_event_id": null,
+            "raw_matches": 0,
+            "success": false,
+            "observed": false,
+            "reason_codes": [
+              "unobserved"
+            ]
+          },
+          {
+            "score_row": 3,
+            "role": "parent",
+            "group": "target_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "b874d588-cafb-488d-b65c-8269578b91a7",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 4,
+            "role": "parent",
+            "group": "target_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "c5879e2c-7cfe-4f8a-a19e-2e4dfdf4063a",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 5,
+            "role": "parent",
+            "group": "target_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "f7de7852-7578-4506-925d-c9c8b7f03682",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 6,
+            "role": "parent",
+            "group": "target_success",
+            "operation": "rename_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "3fb232e4-ebd1-4781-a4c1-3859020ce8fc",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 7,
+            "role": "parent",
+            "group": "target_success",
+            "operation": "rename_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "6a4874bb-9cc8-4f2b-af92-931e4e9c3da1",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 8,
+            "role": "parent",
+            "group": "target_success",
+            "operation": "delete_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "3fbb7e76-78ba-43c8-a14c-efd9862657ed",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 9,
+            "role": "parent",
+            "group": "target_success",
+            "operation": "set_value",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "d4f6bb3a-7a7b-4203-854a-c9857e3c27d4",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 10,
+            "role": "child",
+            "group": "target_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "b22f93aa-7d80-4f56-983d-a1601d737046",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 11,
+            "role": "child",
+            "group": "target_success",
+            "operation": "set_value",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "5f73a769-0f58-4204-8dbc-cd9a92844acc",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 12,
+            "role": "child",
+            "group": "target_success",
+            "operation": "set_value",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "9ea9f5de-6aab-4e60-b6a8-bb6f25fb0d48",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 13,
+            "role": "grandchild",
+            "group": "target_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "5944672d-8ca7-4fe9-a943-d2f2eba16c8e",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 14,
+            "role": "grandchild",
+            "group": "target_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "dd3c16c7-3797-4686-ac00-54ef20946dce",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 15,
+            "role": "grandchild",
+            "group": "target_success",
+            "operation": "delete_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "e4ea3782-b5cb-435a-aebf-e7c1a135ec00",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 16,
+            "role": "grandchild",
+            "group": "target_success",
+            "operation": "set_value",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "1d68636c-130e-4689-a6a6-a21ecaf8a7c4",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 17,
+            "role": "unrelated",
+            "group": "noise_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_not_assigned_to_target_app",
+            "outcome": "Unknown",
+            "matched_event_id": "1b275560-1b61-4899-a6b9-775bfd0324f0",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_not_assigned_to_target_app"
+            ]
+          },
+          {
+            "score_row": 18,
+            "role": "unrelated",
+            "group": "noise_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_not_assigned_to_target_app",
+            "outcome": "Unknown",
+            "matched_event_id": "8b5f63ee-1a7c-40d2-88a1-d1421c2bb4b9",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_not_assigned_to_target_app"
+            ]
+          },
+          {
+            "score_row": 19,
+            "role": "unrelated",
+            "group": "noise_success",
+            "operation": "set_value",
+            "observation": "unobserved",
+            "attribution": null,
+            "outcome": "Unknown",
+            "matched_event_id": null,
+            "raw_matches": 0,
+            "success": true,
+            "observed": false,
+            "reason_codes": [
+              "unobserved"
+            ]
+          },
+          {
+            "score_row": 20,
+            "role": "detached",
+            "group": "target_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "19c8a7f1-4622-401a-b112-e9c3898770d4",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          }
+        ]
+      },
+      "row_order": "unchanged_legacy_scorer_order",
+      "failure_reasons": []
+    },
+    "dual-clock": {
+      "status": "available",
+      "source_sha256": "30d67df6284cc0e771fe705c0f08f40bdc0bc61e8b6324625e959ef5932d39e2",
+      "score": {
+        "schema_version": 2,
+        "expected": 21,
+        "observed": 19,
+        "correctly_attributed": 17,
+        "unknown": 4,
+        "incorrect_attribution": 0,
+        "positive_raw_predictions": 17,
+        "false_positive_target_events": 0,
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 3,
+        "dropped": 0,
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0,
+        "precision": 1.0,
+        "unexpected_positive_events": [],
+        "groups": {
+          "failed": {
+            "expected": 1,
+            "observed": 0,
+            "unobserved": 1,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "noise_success": {
+            "expected": 3,
+            "observed": 2,
+            "unobserved": 1,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 2,
+            "observation_rate": 0.6666666666666666,
+            "correct_attribution_rate": 0.0
+          },
+          "target_success": {
+            "expected": 17,
+            "observed": 17,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 17,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 1.0,
+            "correct_attribution_rate": 1.0
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "rows": [
+          {
+            "score_row": 0,
+            "role": "short",
+            "group": "target_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "dcfa1aa7-1a2b-4435-9631-6ba314ca1fc7",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 1,
+            "role": "parent",
+            "group": "target_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "b2ae1ef3-67ca-4b7e-9ae8-ec246fe0845f",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 2,
+            "role": "parent",
+            "group": "failed",
+            "operation": "delete_requested",
+            "observation": "unobserved",
+            "attribution": null,
+            "outcome": "Unknown",
+            "matched_event_id": null,
+            "raw_matches": 0,
+            "success": false,
+            "observed": false,
+            "reason_codes": [
+              "unobserved"
+            ]
+          },
+          {
+            "score_row": 3,
+            "role": "parent",
+            "group": "target_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "fc09b6bd-7943-42a2-b9b3-2fa9b1a96bfc",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 4,
+            "role": "parent",
+            "group": "target_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "dad19c98-4831-462b-93e2-74808fe1c4fc",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 5,
+            "role": "parent",
+            "group": "target_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "cd5cf736-c017-4aa0-90c1-07767dba8644",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 6,
+            "role": "parent",
+            "group": "target_success",
+            "operation": "rename_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "cf155fca-a897-46d1-8608-852023dac72b",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 7,
+            "role": "parent",
+            "group": "target_success",
+            "operation": "rename_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "0855d713-1c05-4ff2-b4a4-bb5ae2903e26",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 8,
+            "role": "parent",
+            "group": "target_success",
+            "operation": "delete_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "d0d7e0a3-7981-4988-82d1-24bbb81594ae",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 9,
+            "role": "parent",
+            "group": "target_success",
+            "operation": "set_value",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "90373592-d2c8-49e8-b495-94fa502175f6",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 10,
+            "role": "child",
+            "group": "target_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "417924a2-e38c-44d1-b4e3-5cf93b72593e",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 11,
+            "role": "child",
+            "group": "target_success",
+            "operation": "set_value",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "d4a834c4-2b5e-406e-a41f-94cebc0007f3",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 12,
+            "role": "child",
+            "group": "target_success",
+            "operation": "set_value",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "abe20d17-fd5e-4519-9115-8f88c7c5e403",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 13,
+            "role": "grandchild",
+            "group": "target_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "1cefd30e-233c-48fb-903f-e09a89931256",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 14,
+            "role": "grandchild",
+            "group": "target_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "e28f4190-54f1-4821-b44e-39a6c83aad9b",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 15,
+            "role": "grandchild",
+            "group": "target_success",
+            "operation": "delete_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "8b11b739-5cb7-4e58-aead-65def40f4e2d",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 16,
+            "role": "grandchild",
+            "group": "target_success",
+            "operation": "set_value",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "869d6892-cf53-45d6-bf7d-2aa1f2e51a2f",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          },
+          {
+            "score_row": 17,
+            "role": "unrelated",
+            "group": "noise_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_not_assigned_to_target_app",
+            "outcome": "Unknown",
+            "matched_event_id": "58f68bd7-6352-4226-abd4-d285909f065d",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_not_assigned_to_target_app"
+            ]
+          },
+          {
+            "score_row": 18,
+            "role": "unrelated",
+            "group": "noise_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_not_assigned_to_target_app",
+            "outcome": "Unknown",
+            "matched_event_id": "8ac392d1-6b44-4530-9f64-0945b5f71d59",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_not_assigned_to_target_app"
+            ]
+          },
+          {
+            "score_row": 19,
+            "role": "unrelated",
+            "group": "noise_success",
+            "operation": "set_value",
+            "observation": "unobserved",
+            "attribution": null,
+            "outcome": "Unknown",
+            "matched_event_id": null,
+            "raw_matches": 0,
+            "success": true,
+            "observed": false,
+            "reason_codes": [
+              "unobserved"
+            ]
+          },
+          {
+            "score_row": 20,
+            "role": "detached",
+            "group": "target_success",
+            "operation": "write_requested",
+            "observation": "observed",
+            "attribution": "correctly_attributed",
+            "outcome": "Correct",
+            "matched_event_id": "69fc1491-6ede-4d9f-bef5-636448a4c3a4",
+            "raw_matches": 1,
+            "success": true,
+            "observed": true,
+            "reason_codes": [
+              "observed",
+              "correctly_attributed"
+            ]
+          }
+        ]
+      },
+      "row_order": "unchanged_legacy_scorer_order",
+      "failure_reasons": []
+    }
+  },
+  "reports": {
+    "default": {
+      "status": "blocked_before_cli",
+      "failure": "not_fixed_fixture_scope",
+      "executed_commands": 0
+    },
+    "dual-clock": {
+      "status": "blocked_before_cli",
+      "failure": "not_fixed_fixture_scope",
+      "executed_commands": 0
+    }
+  },
+  "clock": {
+    "evidence_complete": true,
+    "missing_evidence": [],
+    "original_qpc_links": 32,
+    "source_events_without_qpc": 0,
+    "qpc_frequency": "10000000",
+    "same_machine_boot_verified": true,
+    "join_status": "accounted_with_proven_raw_only",
+    "selection_status_counts": {
+      "same_id_final_connected": 320,
+      "outside_clock_operation_scope": 41,
+      "raw_only_unknown": 1
+    },
+    "unresolved_source_observations": [
+      "source_original_qpc_or_actor_missing"
+    ],
+    "raw_only_selections": [
+      {
+        "event_id": "db1a4ea9-46a8-494b-8367-5228ee173221",
+        "raw_count": 1,
+        "final_count": 0,
+        "witness_count": 1,
+        "status": "raw_only_unknown",
+        "reasons": [],
+        "basis": "production_post_resolve_post_attribute",
+        "raw_document_sha256": "5d95a22fcbe905c657fd070848b84f97305f19ca798bd070559f6fa2150ca07f",
+        "selection_reason": "unresolved_registry_non_high"
+      }
+    ],
+    "integrity": {
+      "backend.dropped_events": {
+        "actual": 0,
+        "satisfied": true
+      },
+      "backend.context_losses": {
+        "actual": 0,
+        "satisfied": true
+      },
+      "backend.decode_errors": {
+        "actual": 0,
+        "satisfied": true
+      },
+      "backend.etw_events_lost": {
+        "actual": 0,
+        "satisfied": true
+      },
+      "backend.etw_buffers_lost": {
+        "actual": 0,
+        "satisfied": true
+      },
+      "stats.events_dropped": {
+        "actual": 0,
+        "satisfied": true
+      },
+      "pipeline.queue_overflow": {
+        "actual": 0,
+        "satisfied": true
+      },
+      "pipeline.enqueue_disconnected": {
+        "actual": 0,
+        "satisfied": true
+      },
+      "pipeline.queue_pending": {
+        "actual": 0,
+        "satisfied": true
+      },
+      "pipeline.context_evictions": {
+        "actual": 0,
+        "satisfied": true
+      },
+      "pipeline.retention_dropped": {
+        "actual": 0,
+        "satisfied": true
+      },
+      "pipeline.failed_without_output": {
+        "actual": 0,
+        "satisfied": true
+      },
+      "handoff.overflow": {
+        "actual": 0,
+        "satisfied": true
+      },
+      "handoff.oversized": {
+        "actual": 0,
+        "satisfied": true
+      },
+      "handoff.disconnected": {
+        "actual": 0,
+        "satisfied": true
+      },
+      "handoff.serialize_failed": {
+        "actual": 0,
+        "satisfied": true
+      },
+      "handoff.pending": {
+        "actual": 0,
+        "satisfied": true
+      },
+      "stream.failed": {
+        "actual": 0,
+        "satisfied": true
+      },
+      "stream.quota_dropped": {
+        "actual": 0,
+        "satisfied": true
+      },
+      "capture_state": {
+        "actual": "finished",
+        "satisfied": true
+      },
+      "drain_timed_out": {
+        "actual": false,
+        "satisfied": true
+      },
+      "file_provider": {
+        "actual": "active",
+        "satisfied": true
+      },
+      "process_provider": {
+        "actual": "active",
+        "satisfied": true
+      },
+      "registry_provider": {
+        "actual": "active",
+        "satisfied": true
+      },
+      "receiver_finished": {
+        "actual": true,
+        "satisfied": true
+      },
+      "writer_finished": {
+        "actual": true,
+        "satisfied": true
+      },
+      "stream_error_absent": {
+        "actual": true,
+        "satisfied": true
+      }
+    }
+  },
+  "event_example": {
+    "scope": "diagnostic_projection_not_cli_explain_output",
+    "event_id": "dcfa1aa7-1a2b-4435-9631-6ba314ca1fc7",
+    "event_type": "file",
+    "operation": "write_requested",
+    "source": "EtwFile",
+    "confidence": "High",
+    "name": {
+      "path_source": "file_object_cache",
+      "observed_ticks": "134378436193111063",
+      "source_event_id": "f223136c-0581-4590-86da-acc684aaa6dc",
+      "current_path_verified": false
+    },
+    "original_qpc": "15550374695",
+    "comparison": {
+      "truth_row": 10,
+      "same_actor": true,
+      "same_resource": true,
+      "same_operation": true,
+      "qpc_relation": "inside",
+      "filetime_relation": "inside",
+      "qpc_start": "15550371169",
+      "qpc_end": "15550376324",
+      "filetime_start": "134378436193108108",
+      "filetime_end": "134378436193113269",
+      "start_margin_qpc": "3526",
+      "end_margin_qpc": "1629",
+      "filetime_after_end_100ns": "-1634"
+    },
+    "selection_status": "same_id_final_connected",
+    "unique_qpc_candidate": true,
+    "scope_limit": "Source actor and native operation evidence do not establish explicit API intent, verified current path or final ownership"
+  },
+  "quality": {
+    "current_required_gates_passed": true,
+    "nextest": {
+      "runner": "nextest",
+      "executed": 290,
+      "passed": 290,
+      "failed": 0,
+      "skipped": 7,
+      "leaky": 0
+    },
+    "python_passed": 330,
+    "python_failed": 0,
+    "python_skipped": 0,
+    "workspace": [
+      {
+        "lines": {
+          "count": 17833,
+          "covered": 13297,
+          "percent": 74.56401054225313
+        },
+        "functions": {
+          "count": 1411,
+          "covered": 1069,
+          "percent": 75.76187101346564
+        },
+        "regions": {
+          "count": 29447,
+          "covered": 21224,
+          "percent": 72.07525384589262
+        },
+        "instantiations": {
+          "count": 2283,
+          "covered": 1200,
+          "percent": 52.56241787122208
+        },
+        "branches": {
+          "count": 0,
+          "covered": 0,
+          "percent": 0
+        }
+      }
+    ],
+    "original_packages": [
+      {
+        "lines": {
+          "count": 13244,
+          "covered": 9590,
+          "percent": 72.41014799154334
+        },
+        "functions": {
+          "count": 1028,
+          "covered": 767,
+          "percent": 74.61089494163424
+        },
+        "regions": {
+          "count": 21467,
+          "covered": 15208,
+          "percent": 70.84362044067639
+        },
+        "instantiations": {
+          "count": 1871,
+          "covered": 875,
+          "percent": 46.766435061464456
+        },
+        "branches": {
+          "count": 0,
+          "covered": 0,
+          "percent": 0
+        }
+      }
+    ],
+    "floors": {
+      "lines_percent": 66.5,
+      "functions_percent": 70
+    },
+    "synthetic_cli_commands": 66,
+    "synthetic_json_schema_checks": 33,
+    "snapshot_fallback": "not_run",
+    "native_windows_api_tests": [
+      {
+        "test": "initial_thread_handle_query_binds_current_owner_and_completion",
+        "passed": true
+      },
+      {
+        "test": "initial_thread_query_rejects_exit_during_handle_validation",
+        "passed": true
+      },
+      {
+        "test": "thread_enumeration_is_only_a_candidate_list_and_reports_current_thread",
+        "passed": true
+      }
+    ]
+  },
+  "formal": {
+    "status": "requirements_unmet",
+    "accepted": false
+  },
+  "historical_six_event_timing": "D_unresolved",
+  "public_console": {
+    "issue": "Out-Host bypassed private redirect; boot identifier and machine/clock metadata reached CI log",
+    "credentials_or_full_traces_found": false,
+    "raw_log_removal": "pending_after_reviewed_evidence_preservation",
+    "code_fix_scope": "post-capture pure PowerShell redirect regression; not in the downloaded frozen package"
+  }
+}

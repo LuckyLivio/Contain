@@ -24,7 +24,8 @@ function Invoke-DemoCheck {
         return
     }
     try {
-        & $Action | Out-Host
+        # Preserve the caller's stream redirection; Out-Host bypasses private logs.
+        & $Action
         $row.status = 'passed'; $row.reason = $null
     } catch {
         $row.status = 'failed'; $row.reason = $_.Exception.Message
