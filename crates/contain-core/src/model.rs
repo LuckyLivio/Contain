@@ -1,8 +1,14 @@
 use serde::{Deserialize, Serialize};
+#[path = "model/clock.rs"]
 mod clock;
+#[path = "model/handoff.rs"]
+mod handoff;
+#[path = "model/reliability.rs"]
 mod reliability;
+#[path = "model/ticks.rs"]
 mod ticks;
 pub use clock::*;
+pub use handoff::HandoffStats;
 pub use reliability::*;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -204,7 +210,7 @@ pub struct BackendReport {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_diagnostics: Option<FileDiagnosticReport>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub handoff: Option<crate::ingest::HandoffStats>,
+    pub handoff: Option<HandoffStats>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clock: Option<TraceClockMetadata>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

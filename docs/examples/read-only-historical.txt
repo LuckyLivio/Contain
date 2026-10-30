@@ -1,0 +1,131 @@
+SYNTHETIC — production storage and text-rendering functions; not the Windows CLI or ETW.
+
+INSPECT
+Synthetic historical
+Session: synthetic-historical
+Installer: C:\synthetic\setup.exe
+Started: 2026-10-01T00:00:00Z | Recorded end: 2026-10-01T00:00:02Z | Installer exit: 0
+Recording: finished | Quality: Degraded
+Watched directories: C:\synthetic\observed
+HKCU registry scope: not selected / not recorded
+Sources: ETW process=active | file=active | registry=not_requested
+Processes: 1 recorded; 1 Certain/High links with birth identity; 0 other/unresolved
+  PID 100 birth=134350000000000001 [Certain] C:\synthetic\setup.exe
+Recorded timeline: 3 observations (includes state/lifecycle); 3 normalized operations
+File/registry source observations: 2 known actors | 1 unknown actors | 0 unresolved names/resources
+Recorded state differences: 1 files (1 Unknown), 0 registry values (0 Unknown), 0 inventory entries
+Loss: ETW events=0 | ETW buffers=0 | application records=0 | decode errors=unavailable
+Coverage gaps: snapshot=0 | notification=0 | drain timed out=no
+Raw journal: 3 persisted | 0 write failures | 0 quota refusals
+Limitation: Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.
+Limitation: SYNTHETIC model fixture; provider labels are inputs, no Windows capture was executed.
+State differences are not ownership. A recorded name may be historical; source confidence does not prove an explicit application API call or a current path.
+Next (reuse the same --db): inspect synthetic-historical --verbose; diff synthetic-historical; history synthetic-historical --limit 20 --offset 0; explain <event-id>.
+
+DETAIL
+Synthetic historical
+Session: synthetic-historical
+Installer: C:\synthetic\setup.exe
+Started: 2026-10-01T00:00:00Z | Recorded end: 2026-10-01T00:00:02Z | Installer exit: 0
+Recording: finished | Quality: Degraded
+Watched directories: C:\synthetic\observed
+HKCU registry scope: not selected / not recorded
+Sources: ETW process=active | file=active | registry=not_requested
+Processes: 1 recorded; 1 Certain/High links with birth identity; 0 other/unresolved
+  PID 100 birth=134350000000000001 [Certain] C:\synthetic\setup.exe
+Recorded timeline: 3 observations (includes state/lifecycle); 3 normalized operations
+File/registry source observations: 2 known actors | 1 unknown actors | 0 unresolved names/resources
+Recorded state differences: 1 files (1 Unknown), 0 registry values (0 Unknown), 0 inventory entries
+Loss: ETW events=0 | ETW buffers=0 | application records=0 | decode errors=unavailable
+Coverage gaps: snapshot=0 | notification=0 | drain timed out=no
+Raw journal: 3 persisted | 0 write failures | 0 quota refusals
+Limitation: Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.
+Limitation: SYNTHETIC model fixture; provider labels are inputs, no Windows capture was executed.
+State differences are not ownership. A recorded name may be historical; source confidence does not prove an explicit application API call or a current path.
+Next (reuse the same --db): inspect synthetic-historical --verbose; diff synthetic-historical; history synthetic-historical --limit 20 --offset 0; explain <event-id>.
+
+Installer: C:\synthetic\setup.exe
+Exit code: Some(0)
+PROCESSES
+  PID 100 birth=Some(134350000000000001) parent=None [Certain] C:\synthetic\setup.exe
+    Synthetic owned installer identity
+
+STATE DIFFERENCES WITH ATTRIBUTION EVIDENCE
+
+STATE DIFFERENCES WITH UNKNOWN ATTRIBUTION
+  FILE modified C:\synthetic\observed\recorded.tmp [Unknown]
+State differences are not ownership. Unattributed changes are not assumed to belong to Synthetic historical.
+
+SOURCE EVENTS
+  Event synthetic-historical-event-0: write_requested recorded name/resource: C:\synthetic\observed\recorded.tmp
+    Source actor: None PID Some(100)
+    [actor attribution High] Synthetic source request linked to the installer instance; no ownership claim
+    Source: EtwFile; state validated: false
+    Name source: file_object_cache; name observation FILETIME: 134350000000000002; source event: synthetic-earlier-open
+Name scope: Recorded historical open name from the FileObject cache; not a verified current path or physical file identity. It does not establish an explicit application call or final state ownership.
+Native request result: Some(true); NTSTATUS: Some(0); actor fields: PID Some(100) birth Some(134350000000000001); identity confidence High
+Issuing TID (source field, not a thread birth): None; event/open generation: Some("synthetic-generation-0")
+Explicit application API intent: unavailable; final state validated: false (not ownership)
+  Event synthetic-historical-event-1: write_requested recorded name/resource: C:\synthetic\observed\recorded.tmp
+    Source actor: None PID None
+    [actor attribution Unknown] Synthetic unresolved writer and conflicting completion evidence
+    Source: EtwFile; state validated: false
+    Name source: supplied_FileName; name observation FILETIME: 134350000000000012; source event: synthetic-historical-event-1
+Name scope: Provider supplied this event's recorded name; this is not a handle query of the current path or physical file identity, an explicit application call, or final state ownership.
+Native request result: None; NTSTATUS: None; actor fields: PID None birth None; identity confidence Unknown
+Issuing TID (source field, not a thread birth): None; event/open generation: Some("synthetic-generation-1")
+Explicit application API intent: unavailable; final state validated: false (not ownership)
+  Event synthetic-historical-event-2: write_requested recorded name/resource: C:\synthetic\observed\recorded.tmp
+    Source actor: None PID Some(100)
+    [actor attribution High] Synthetic source request linked to the installer instance; no ownership claim
+    Source: EtwFile; state validated: false
+    Name source: unavailable; name observation FILETIME: unavailable; source event: unavailable
+Name scope: Recorded file name; provider/cache provenance and current path verification are unavailable. Name resolution does not establish physical identity, an explicit application call, or final state ownership.
+Native request result: Some(true); NTSTATUS: Some(0); actor fields: PID Some(100) birth Some(134350000000000001); identity confidence High
+Issuing TID (source field, not a thread birth): None; event/open generation: Some("synthetic-generation-2")
+Explicit application API intent: unavailable; final state validated: false (not ownership)
+
+Warnings
+  Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.
+  SYNTHETIC model fixture; provider labels are inputs, no Windows capture was executed.
+
+HISTORY
+Source confidence describes actor attribution, recorded-name resolution and request result separately. It does not establish an explicit application API call, current path, final state ownership or permission to delete.
+2026-10-01T00:00:01Z | event=synthetic-historical-event-0 | write_requested      EtwFile PID=Some(100) [High] C:\synthetic\observed\recorded.tmp
+  Name source: file_object_cache; name observation FILETIME: 134350000000000002; source event: synthetic-earlier-open
+Name scope: Recorded historical open name from the FileObject cache; not a verified current path or physical file identity. It does not establish an explicit application call or final state ownership.
+Native request result: Some(true); NTSTATUS: Some(0); actor fields: PID Some(100) birth Some(134350000000000001); identity confidence High
+Issuing TID (source field, not a thread birth): None; event/open generation: Some("synthetic-generation-0")
+Explicit application API intent: unavailable; final state validated: false (not ownership)
+2026-10-01T00:00:01Z | event=synthetic-historical-event-1 | write_requested      EtwFile PID=None [Unknown] C:\synthetic\observed\recorded.tmp
+  Name source: supplied_FileName; name observation FILETIME: 134350000000000012; source event: synthetic-historical-event-1
+Name scope: Provider supplied this event's recorded name; this is not a handle query of the current path or physical file identity, an explicit application call, or final state ownership.
+Native request result: None; NTSTATUS: None; actor fields: PID None birth None; identity confidence Unknown
+Issuing TID (source field, not a thread birth): None; event/open generation: Some("synthetic-generation-1")
+Explicit application API intent: unavailable; final state validated: false (not ownership)
+2026-10-01T00:00:01Z | event=synthetic-historical-event-2 | write_requested      EtwFile PID=Some(100) [High] C:\synthetic\observed\recorded.tmp
+  Name source: unavailable; name observation FILETIME: unavailable; source event: unavailable
+Name scope: Recorded file name; provider/cache provenance and current path verification are unavailable. Name resolution does not establish physical identity, an explicit application call, or final state ownership.
+Native request result: Some(true); NTSTATUS: Some(0); actor fields: PID Some(100) birth Some(134350000000000001); identity confidence High
+Issuing TID (source field, not a thread birth): None; event/open generation: Some("synthetic-generation-2")
+Explicit application API intent: unavailable; final state validated: false (not ownership)
+
+EXPLAIN
+Event synthetic-historical-event-0
+Recorded name/resource: "C:\\synthetic\\observed\\recorded.tmp"
+Source operation: "write_requested"
+Actor: null PID 100 birth "134350000000000001"
+Application: Synthetic historical
+Source actor attribution: "High"
+Actor / recorded-name resolution / completion evidence: "High" / "High" / "High"
+Request result: true (NTSTATUS 0)
+Evidence: "Synthetic source request linked to the installer instance; no ownership claim"
+Name source: file_object_cache; name observation FILETIME: 134350000000000002; source event: synthetic-earlier-open
+Name scope: Recorded historical open name from the FileObject cache; not a verified current path or physical file identity. It does not establish an explicit application call or final state ownership.
+Native request result: Some(true); NTSTATUS: Some(0); actor fields: PID Some(100) birth Some(134350000000000001); identity confidence High
+Issuing TID (source field, not a thread birth): None; event/open generation: Some("synthetic-generation-0")
+Explicit application API intent: unavailable; final state validated: false (not ownership)
+  "event:synthetic-historical-event-0" -> "resource:C:\\synthetic\\observed\\recorded.tmp" ["High"]: "Recorded historical open name from the FileObject cache; not a verified current path or physical file identity. It does not establish an explicit application call or final state ownership."
+  "process:100:134350000000000001" -> "event:synthetic-historical-event-0" ["High"]: "Synthetic source request linked to the installer instance; no ownership claim"
+  "session:synthetic-historical" -> "process:100:134350000000000001" ["Certain"]: "Synthetic owned installer identity"
+Limitation: Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.

@@ -350,31 +350,7 @@ pub fn device_map() -> Vec<(String, String)> {
     result
 }
 
-pub fn normalize_path(path: &str, devices: &[(String, String)]) -> String {
-    let mut path = path
-        .trim_start_matches("\\\\?\\")
-        .trim_start_matches("\\??\\")
-        .to_string();
-    for (device, drive) in devices {
-        if path
-            .to_ascii_lowercase()
-            .starts_with(&format!("{}\\", device.to_ascii_lowercase()))
-        {
-            path = format!("{drive}{}", &path[device.len()..]);
-            break;
-        }
-    }
-    path.replace('/', "\\").to_lowercase()
-}
-
-pub fn in_scope(path: &str, roots: &[String]) -> bool {
-    roots.iter().any(|root| {
-        path == root
-            || path
-                .strip_prefix(root)
-                .is_some_and(|tail| tail.starts_with('\\'))
-    })
-}
+pub use crate::path::{in_scope, normalize_path};
 
 #[repr(C)]
 struct TracePropertiesBuffer {

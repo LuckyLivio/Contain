@@ -156,9 +156,15 @@ class EntryTests(unittest.TestCase):
                                   poll=lambda: None if interrupt else 0)
         meter = SimpleNamespace(values=dict(parent_cpu_seconds=1.25), errors={"sample_limited"}, close=mock.Mock(),
                                 sample=mock.Mock(side_effect=KeyboardInterrupt) if interrupt else mock.Mock())
+        # Model only the Windows entry boundary; subprocesses and measurements
+        # remain mocked. Do not alter global os.name (Path uses the host OS).
+        admin = mock.Mock(return_value=1)
+        windows_api = SimpleNamespace(windll=SimpleNamespace(shell32=SimpleNamespace(IsUserAnAdmin=admin)))
         with mock.patch("sys.argv", ["entry", "--plan", "unused", "--plan-sha256", "unused"]), \
                 mock.patch.object(ENTRY, "verified_plan", return_value=(plan, inputs, [])), \
-                mock.patch.object(ENTRY.ctypes.windll.shell32, "IsUserAnAdmin", return_value=1), \
+                mock.patch.object(ENTRY, "os", SimpleNamespace(name="nt", environ=os.environ)), \
+                mock.patch.object(ENTRY, "ctypes", windows_api), \
+                mock.patch.object(ENTRY.subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200, create=True), \
                 mock.patch.object(ENTRY.tempfile, "gettempdir", return_value=str(root)), \
                 mock.patch.object(ENTRY, "module", return_value=SimpleNamespace(ProcessMetrics=lambda pid: meter)), \
                 mock.patch.object(ENTRY.subprocess, "Popen", return_value=process), \
@@ -172,6 +178,7 @@ class EntryTests(unittest.TestCase):
             else:
                 self.assertEqual(ENTRY.main(), 1)
                 self.assertEqual(command.call_count, 1, "analysis must not start after export failure")
+        admin.assert_called_once_with()
         meter.close.assert_called_once()
         return ENTRY.read(next(output.glob("admin-*/attempt.json")))
 

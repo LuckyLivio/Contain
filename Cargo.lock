@@ -251,6 +251,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "contain-offline"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tracing",
+ "uuid",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "contain-test-installer"
 version = "0.3.1"
 dependencies = [

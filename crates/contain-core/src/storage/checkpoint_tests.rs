@@ -96,6 +96,10 @@ fn assert_unfinished(db: &Storage, rows: usize, state: &str) -> Capture {
 }
 
 #[test]
+#[cfg_attr(
+    not(windows),
+    ignore = "requires Windows GetDiskFreeSpaceExW disk-reserve experiment"
+)]
 fn e0_and_e1_keep_live_commits_and_restore_before_full_finalization() {
     for variant in ["E0", "E1"] {
         let file = OwnedDatabase::new();
@@ -175,6 +179,10 @@ fn e0_and_e1_keep_live_commits_and_restore_before_full_finalization() {
 }
 
 #[test]
+#[cfg_attr(
+    not(windows),
+    ignore = "requires Windows GetDiskFreeSpaceExW disk-reserve experiment"
+)]
 fn pinned_reader_exposes_partial_passive_checkpoint_without_fabricating_lost_rows() {
     let file = OwnedDatabase::new();
     let mut db = Storage::open(file.path()).unwrap();
@@ -219,6 +227,10 @@ fn pinned_reader_exposes_partial_passive_checkpoint_without_fabricating_lost_row
 }
 
 #[test]
+#[cfg_attr(
+    not(windows),
+    ignore = "requires Windows GetDiskFreeSpaceExW disk-reserve experiment"
+)]
 fn sampled_wal_threshold_keeps_crossing_commit_and_stops_future_raw_writes() {
     let file = OwnedDatabase::new();
     let mut db = Storage::open(file.path()).unwrap();
@@ -269,6 +281,10 @@ fn sampled_wal_threshold_keeps_crossing_commit_and_stops_future_raw_writes() {
 }
 
 #[test]
+#[cfg_attr(
+    not(windows),
+    ignore = "requires Windows GetDiskFreeSpaceExW disk-reserve experiment"
+)]
 fn deferred_checkpoint_abrupt_exit_child() {
     let Some(path) = std::env::var_os("CONTAIN_CHECKPOINT_CRASH_PATH") else {
         return;
@@ -313,6 +329,10 @@ fn deferred_checkpoint_abrupt_exit_child() {
 }
 
 #[test]
+#[cfg_attr(
+    not(windows),
+    ignore = "requires Windows GetDiskFreeSpaceExW disk-reserve experiment"
+)]
 fn deferred_commits_survive_abrupt_exit_at_each_completion_boundary() {
     for (phase, rows, state) in [
         ("before_tail_flush", 256, "capturing"),

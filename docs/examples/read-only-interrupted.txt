@@ -1,0 +1,133 @@
+SYNTHETIC — production storage and text-rendering functions; not the Windows CLI or ETW.
+
+INSPECT
+Synthetic interrupted
+Session: synthetic-interrupted
+Installer: C:\synthetic\setup.exe
+Started: 2026-10-01T00:00:00Z | Recorded end: unavailable | Installer exit: unavailable
+Recording: finalizing | Quality: Incomplete
+Unfinished recording: evidence is provisional; final attribution is unavailable.
+Watched directories: C:\synthetic\observed
+HKCU registry scope: not selected / not recorded
+Sources: ETW process=active | file=active | registry=not_requested
+Processes: 1 recorded; 1 Certain/High links with birth identity; 0 other/unresolved
+  PID 100 birth=134350000000000001 [Certain] C:\synthetic\setup.exe
+Recorded timeline: 3 observations (includes state/lifecycle); unavailable (unfinished) normalized operations
+File/registry source observations: 0 known actors | 3 unknown actors | 3 unresolved names/resources
+Recorded state differences: 0 files (0 Unknown), 0 registry values (0 Unknown), 0 inventory entries
+Loss: ETW events=unavailable | ETW buffers=unavailable | application records=unavailable | decode errors=unavailable
+Coverage gaps: snapshot=unavailable | notification=unavailable | drain timed out=unavailable
+Raw journal: 3 persisted | 0 write failures | 0 quota refusals
+Limitation: Unfinished capture; committed raw evidence remains readable. No final attribution.
+Limitation: SYNTHETIC model fixture; provider labels are inputs, no Windows capture was executed.
+Limitation: Synthetic interrupted capture: final provider counters unavailable
+State differences are not ownership. A recorded name may be historical; source confidence does not prove an explicit application API call or a current path.
+Next (reuse the same --db): inspect synthetic-interrupted --verbose; diff synthetic-interrupted; history synthetic-interrupted --limit 20 --offset 0; explain <event-id>.
+
+DETAIL
+Synthetic interrupted
+Session: synthetic-interrupted
+Installer: C:\synthetic\setup.exe
+Started: 2026-10-01T00:00:00Z | Recorded end: unavailable | Installer exit: unavailable
+Recording: finalizing | Quality: Incomplete
+Unfinished recording: evidence is provisional; final attribution is unavailable.
+Watched directories: C:\synthetic\observed
+HKCU registry scope: not selected / not recorded
+Sources: ETW process=active | file=active | registry=not_requested
+Processes: 1 recorded; 1 Certain/High links with birth identity; 0 other/unresolved
+  PID 100 birth=134350000000000001 [Certain] C:\synthetic\setup.exe
+Recorded timeline: 3 observations (includes state/lifecycle); unavailable (unfinished) normalized operations
+File/registry source observations: 0 known actors | 3 unknown actors | 3 unresolved names/resources
+Recorded state differences: 0 files (0 Unknown), 0 registry values (0 Unknown), 0 inventory entries
+Loss: ETW events=unavailable | ETW buffers=unavailable | application records=unavailable | decode errors=unavailable
+Coverage gaps: snapshot=unavailable | notification=unavailable | drain timed out=unavailable
+Raw journal: 3 persisted | 0 write failures | 0 quota refusals
+Limitation: Unfinished capture; committed raw evidence remains readable. No final attribution.
+Limitation: SYNTHETIC model fixture; provider labels are inputs, no Windows capture was executed.
+Limitation: Synthetic interrupted capture: final provider counters unavailable
+State differences are not ownership. A recorded name may be historical; source confidence does not prove an explicit application API call or a current path.
+Next (reuse the same --db): inspect synthetic-interrupted --verbose; diff synthetic-interrupted; history synthetic-interrupted --limit 20 --offset 0; explain <event-id>.
+
+Installer: C:\synthetic\setup.exe
+Exit code: None
+PROCESSES
+  PID 100 birth=Some(134350000000000001) parent=None [Certain] C:\synthetic\setup.exe
+    Synthetic owned installer identity
+
+STATE DIFFERENCES WITH ATTRIBUTION EVIDENCE
+
+STATE DIFFERENCES WITH UNKNOWN ATTRIBUTION
+State differences are not ownership. Unattributed changes are not assumed to belong to Synthetic interrupted.
+
+SOURCE EVENTS
+  Event synthetic-interrupted-event-0: write_requested recorded name/resource: C:\synthetic\observed\recorded.tmp
+    Source actor: None PID Some(100)
+    [actor attribution Unknown] Unfinished session: raw evidence only; no final attribution
+    Source: EtwFile; state validated: false
+    Name source: supplied_FileName; name observation FILETIME: 134350000000000011; source event: synthetic-interrupted-event-0
+Name scope: Provider supplied this event's recorded name; this is not a handle query of the current path or physical file identity, an explicit application call, or final state ownership.
+Native request result: None; NTSTATUS: Some(0); actor fields: PID Some(100) birth Some(134350000000000001); identity confidence Unknown
+Issuing TID (source field, not a thread birth): None; event/open generation: Some("synthetic-generation-0")
+Explicit application API intent: unavailable; final state validated: false (not ownership)
+  Event synthetic-interrupted-event-1: write_requested recorded name/resource: C:\synthetic\observed\recorded.tmp
+    Source actor: None PID Some(100)
+    [actor attribution Unknown] Unfinished session: raw evidence only; no final attribution
+    Source: EtwFile; state validated: false
+    Name source: supplied_FileName; name observation FILETIME: 134350000000000012; source event: synthetic-interrupted-event-1
+Name scope: Provider supplied this event's recorded name; this is not a handle query of the current path or physical file identity, an explicit application call, or final state ownership.
+Native request result: None; NTSTATUS: Some(0); actor fields: PID Some(100) birth Some(134350000000000001); identity confidence Unknown
+Issuing TID (source field, not a thread birth): None; event/open generation: Some("synthetic-generation-1")
+Explicit application API intent: unavailable; final state validated: false (not ownership)
+  Event synthetic-interrupted-event-2: write_requested recorded name/resource: C:\synthetic\observed\recorded.tmp
+    Source actor: None PID Some(100)
+    [actor attribution Unknown] Unfinished session: raw evidence only; no final attribution
+    Source: EtwFile; state validated: false
+    Name source: supplied_FileName; name observation FILETIME: 134350000000000013; source event: synthetic-interrupted-event-2
+Name scope: Provider supplied this event's recorded name; this is not a handle query of the current path or physical file identity, an explicit application call, or final state ownership.
+Native request result: None; NTSTATUS: Some(0); actor fields: PID Some(100) birth Some(134350000000000001); identity confidence Unknown
+Issuing TID (source field, not a thread birth): None; event/open generation: Some("synthetic-generation-2")
+Explicit application API intent: unavailable; final state validated: false (not ownership)
+
+Warnings
+  Unfinished capture; committed raw evidence remains readable. No final attribution.
+  SYNTHETIC model fixture; provider labels are inputs, no Windows capture was executed.
+  Synthetic interrupted capture: final provider counters unavailable
+
+HISTORY
+Source confidence describes actor attribution, recorded-name resolution and request result separately. It does not establish an explicit application API call, current path, final state ownership or permission to delete.
+2026-10-01T00:00:01Z | event=synthetic-interrupted-event-0 | write_requested      EtwFile PID=Some(100) [Unknown] C:\synthetic\observed\recorded.tmp
+  Name source: supplied_FileName; name observation FILETIME: 134350000000000011; source event: synthetic-interrupted-event-0
+Name scope: Provider supplied this event's recorded name; this is not a handle query of the current path or physical file identity, an explicit application call, or final state ownership.
+Native request result: None; NTSTATUS: Some(0); actor fields: PID Some(100) birth Some(134350000000000001); identity confidence Unknown
+Issuing TID (source field, not a thread birth): None; event/open generation: Some("synthetic-generation-0")
+Explicit application API intent: unavailable; final state validated: false (not ownership)
+2026-10-01T00:00:01Z | event=synthetic-interrupted-event-1 | write_requested      EtwFile PID=Some(100) [Unknown] C:\synthetic\observed\recorded.tmp
+  Name source: supplied_FileName; name observation FILETIME: 134350000000000012; source event: synthetic-interrupted-event-1
+Name scope: Provider supplied this event's recorded name; this is not a handle query of the current path or physical file identity, an explicit application call, or final state ownership.
+Native request result: None; NTSTATUS: Some(0); actor fields: PID Some(100) birth Some(134350000000000001); identity confidence Unknown
+Issuing TID (source field, not a thread birth): None; event/open generation: Some("synthetic-generation-1")
+Explicit application API intent: unavailable; final state validated: false (not ownership)
+2026-10-01T00:00:01Z | event=synthetic-interrupted-event-2 | write_requested      EtwFile PID=Some(100) [Unknown] C:\synthetic\observed\recorded.tmp
+  Name source: supplied_FileName; name observation FILETIME: 134350000000000013; source event: synthetic-interrupted-event-2
+Name scope: Provider supplied this event's recorded name; this is not a handle query of the current path or physical file identity, an explicit application call, or final state ownership.
+Native request result: None; NTSTATUS: Some(0); actor fields: PID Some(100) birth Some(134350000000000001); identity confidence Unknown
+Issuing TID (source field, not a thread birth): None; event/open generation: Some("synthetic-generation-2")
+Explicit application API intent: unavailable; final state validated: false (not ownership)
+
+EXPLAIN
+Event synthetic-interrupted-event-0
+Recorded name/resource: "C:\\synthetic\\observed\\recorded.tmp"
+Source operation: "write_requested"
+Actor: null PID 100 birth "134350000000000001"
+Application: Synthetic interrupted
+Source actor attribution: "Unknown"
+Actor / recorded-name resolution / completion evidence: "Unknown" / "Unknown" / "Unknown"
+Request result: null (NTSTATUS 0)
+Evidence: "Unfinished session: raw evidence only; no final attribution"
+Name source: supplied_FileName; name observation FILETIME: 134350000000000011; source event: synthetic-interrupted-event-0
+Name scope: Provider supplied this event's recorded name; this is not a handle query of the current path or physical file identity, an explicit application call, or final state ownership.
+Native request result: None; NTSTATUS: Some(0); actor fields: PID Some(100) birth Some(134350000000000001); identity confidence Unknown
+Issuing TID (source field, not a thread birth): None; event/open generation: Some("synthetic-generation-0")
+Explicit application API intent: unavailable; final state validated: false (not ownership)
+Limitation: operation completion was not observed.
+Limitation: Unfinished capture; committed raw evidence remains readable. No final attribution.

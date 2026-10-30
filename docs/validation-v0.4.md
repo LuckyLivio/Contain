@@ -1,6 +1,14 @@
 # v0.4 development validation
 
-## Current result: real identity observation audited; acceptance still incomplete (2026-10-25)
+## Read-only workflow continuation (2026-10-30)
+
+The independent `fix/read-only-workflow` branch continues from `600151d`, retaining
+the name/actor evidence repairs and version 0.3.1. See the [read-only workflow
+handoff](read-only-workflow.md) for production-path synthetic examples, current
+checks and offline storage measurements. Linux checks do not replace the Windows
+or formal ETW results below; the 32-run acceptance remains unexecuted.
+
+## Previous real identity observation: acceptance still incomplete (2026-10-25)
 
 The frozen development candidate is **956febcfe34ffeb40a2a2245e22b1c8e4ad596dd**,
 version **0.3.1**. It has now completed the owner's single administrator identity

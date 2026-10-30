@@ -336,10 +336,9 @@ impl Storage {
                 .context("diagnostic parent required")?
                 .canonicalize()?
                 .join(filename);
-            let diagnostic =
-                crate::windows::native::normalize_path(&diagnostic.to_string_lossy(), &[]);
+            let diagnostic = crate::path::normalize_path(&diagnostic.to_string_lossy(), &[]);
             let database = std::fs::canonicalize(database)?;
-            let database = crate::windows::native::normalize_path(&database.to_string_lossy(), &[]);
+            let database = crate::path::normalize_path(&database.to_string_lossy(), &[]);
             anyhow::ensure!(
                 !["", "-wal", "-shm"]
                     .iter()
@@ -352,13 +351,13 @@ impl Storage {
     pub fn validate_capture_location(&self, roots: &[String]) -> Result<()> {
         if let Some(path) = self.connection.path().filter(|p| *p != ":memory:") {
             let path = std::fs::canonicalize(path)?;
-            let path = crate::windows::native::normalize_path(&path.to_string_lossy(), &[]);
+            let path = crate::path::normalize_path(&path.to_string_lossy(), &[]);
             let roots: Vec<_> = roots
                 .iter()
-                .map(|p| crate::windows::native::normalize_path(p, &[]))
+                .map(|p| crate::path::normalize_path(p, &[]))
                 .collect();
             anyhow::ensure!(
-                !crate::windows::native::in_scope(&path, &roots),
+                !crate::path::in_scope(&path, &roots),
                 "Capture database, WAL and SHM must be outside watched roots; choose --db outside that scope"
             );
         }
@@ -456,10 +455,7 @@ impl Storage {
         )?;
         let rows = q
             .query_map(
-                params![
-                    session,
-                    crate::windows::native::normalize_path(resource, &[])
-                ],
+                params![session, crate::path::normalize_path(resource, &[])],
                 |r| r.get::<_, String>(0),
             )?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -795,7 +791,7 @@ pub(super) fn save_documents(tx: &Connection, c: &Capture) -> Result<()> {
             c.id,
             e.timestamp_ticks,
             e.sequence,
-            crate::windows::native::normalize_path(&e.resource, &[]),
+            crate::path::normalize_path(&e.resource, &[]),
             serde_json::to_string(e)?
         ])?;
     }

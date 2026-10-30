@@ -3,16 +3,24 @@ use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::fs;
 use std::path::Path;
+#[path = "storage/checkpoint.rs"]
 pub(crate) mod checkpoint;
 #[cfg(test)]
+#[path = "storage/checkpoint_tests.rs"]
 mod checkpoint_tests;
+#[path = "storage/evidence.rs"]
 mod evidence;
+#[path = "storage/migration.rs"]
 mod migration;
 #[cfg(test)]
+#[path = "storage/perf.rs"]
 mod perf;
+#[path = "storage/reliability.rs"]
 mod reliability;
 #[cfg(test)]
+#[path = "storage/state_validation_tests.rs"]
 mod state_validation_tests;
+#[path = "storage/stream.rs"]
 pub mod stream;
 
 pub struct Storage {

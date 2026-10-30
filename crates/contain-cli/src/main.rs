@@ -7,7 +7,7 @@ use contain_core::{
     storage::Storage,
 };
 use std::{env, path::PathBuf};
-mod render;
+pub mod render;
 
 #[derive(Parser)]
 #[command(

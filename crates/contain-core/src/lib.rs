@@ -9,6 +9,7 @@ pub mod inventory;
 pub mod lifetime;
 pub mod model;
 pub mod monitor;
+pub(crate) mod path;
 pub mod process;
 pub mod registry;
 pub mod reliability;

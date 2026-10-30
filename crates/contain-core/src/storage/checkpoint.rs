@@ -201,6 +201,24 @@ pub(crate) fn sample(db: &Storage, stats: &mut StreamStats) -> Result<()> {
         .parent()
         .context("database has no parent")?
         .to_path_buf();
+    let free = available_disk_bytes(&directory)?;
+    stats.disk_reserve_bytes = Some(DISK_RESERVE);
+    stats.disk_free_min_bytes = Some(stats.disk_free_min_bytes.unwrap_or(free).min(free));
+    anyhow::ensure!(
+        !stats.wal_budget_exceeded,
+        "sampled WAL stop threshold reached: {size} >= {budget} bytes; further raw writes stopped"
+    );
+    anyhow::ensure!(
+        free > DISK_RESERVE,
+        "available disk space {free} <= reserve {DISK_RESERVE}; further raw writes stopped"
+    );
+    Ok(())
+}
+
+// Keep the capture platform's quota-aware query unchanged. The offline harness
+// rejects opt-in checkpoint experiments rather than fabricating disk capacity.
+#[cfg(windows)]
+fn available_disk_bytes(directory: &std::path::Path) -> Result<u64> {
     use std::os::windows::ffi::OsStrExt;
     let wide: Vec<u16> = directory.as_os_str().encode_wide().chain(Some(0)).collect();
     let mut free = 0;
@@ -215,22 +233,28 @@ pub(crate) fn sample(db: &Storage, stats: &mut StreamStats) -> Result<()> {
     if ok == 0 {
         return Err(std::io::Error::last_os_error().into());
     }
-    stats.disk_reserve_bytes = Some(DISK_RESERVE);
-    stats.disk_free_min_bytes = Some(stats.disk_free_min_bytes.unwrap_or(free).min(free));
-    anyhow::ensure!(
-        !stats.wal_budget_exceeded,
-        "sampled WAL stop threshold reached: {size} >= {budget} bytes; further raw writes stopped"
-    );
-    anyhow::ensure!(
-        free > DISK_RESERVE,
-        "available disk space {free} <= reserve {DISK_RESERVE}; further raw writes stopped"
-    );
-    Ok(())
+    Ok(free)
+}
+
+#[cfg(not(windows))]
+fn available_disk_bytes(_directory: &std::path::Path) -> Result<u64> {
+    anyhow::bail!("checkpoint disk-reserve experiments require Windows GetDiskFreeSpaceExW")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(windows))]
+    #[test]
+    fn unavailable_disk_reserve_query_is_an_error_not_a_capacity_measurement() {
+        assert!(
+            available_disk_bytes(std::path::Path::new("."))
+                .unwrap_err()
+                .to_string()
+                .contains("require Windows GetDiskFreeSpaceExW")
+        );
+    }
+
     #[test]
     fn explicit_policy_and_positive_budget_required() {
         assert!(Policy::parse(None, None).unwrap().variant.is_none());
