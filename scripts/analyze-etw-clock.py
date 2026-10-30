@@ -5,6 +5,7 @@ fixed public projection may be uploaded; the diagnostic directory stays private.
 """
 import argparse
 from collections import Counter
+from contextlib import closing
 import copy
 import hashlib
 import importlib.util
@@ -12,6 +13,7 @@ import json
 from pathlib import Path, PureWindowsPath
 import re
 import sqlite3
+import time
 
 
 REPO = Path(__file__).resolve().parent.parent
@@ -279,7 +281,11 @@ def public_summary(result):
     relations = {row['event_id']: row for row in result.get('relations', [])}
     links = {row['event_id']: row for row in obj(obj(result.get('clock')).get('raw_companion')).get('event_links', [])}
     published = []
-    for event in result.get('events', []):
+    event_view = result.get('events', result.get('partial_final_view_events', []))
+    view_scope = ('unavailable' if 'events' not in result and 'partial_final_view_events' not in result else
+                  'final_view_only_no_raw_verification' if 'events' not in result else
+                  'raw_facts_with_rejected_join' if result.get('join_issues') else 'raw_facts_with_same_id_final_actor')
+    for event in event_view:
         if not supported(event) or resource(event.get('resource')) is None:
             continue
         raw = obj(event.get('raw')); clock = obj(raw.get('clock')); name = obj(raw.get('file_name'))
@@ -295,6 +301,8 @@ def public_summary(result):
         if descriptor.get('thread_id') not in tids:
             public_descriptor['thread_id'] = None
         row = relations.get(event.get('id'), {})
+        comparison_status = ('not_run' if not row else 'evaluated' if
+                             any(item.get('qpc_relation') != 'unavailable' for item in row.get('comparisons', [])) else 'clock_unavailable')
         comparisons = []
         for comparison in row.get('comparisons', []):
             # Include all truth comparisons for every published supported event,
@@ -305,7 +313,7 @@ def public_summary(result):
             comparisons.append(copied)
         source = obj(event.get('evidence')).get('source')
         path_source = name.get('path_source')
-        published.append(dict(event_id=safe_id(event.get('id')), event_type=event['event_type'], operation=event['operation'],
+        published.append(dict(event_id=safe_id(event.get('id')), event_type=event['event_type'], operation=event['operation'], view_scope=view_scope,
             source=source if source in {'EtwFile', 'EtwRegistry'} else None,
             resource=resource(event.get('resource')), actor=dict(pid=safe_actor[0], creation_time=str(safe_actor[1])) if safe_actor else None,
             actor_known_but_not_fixture=who is not None and safe_actor is None,
@@ -317,19 +325,22 @@ def public_summary(result):
             event_key=clock.get('event_key') if isinstance(clock.get('event_key'), str) and re.fullmatch(r'[0-9a-f]{16}', clock['event_key']) else None,
             delivered_header_filetime=str(unsigned(clock.get('header_timestamp'))) if unsigned(clock.get('header_timestamp')) is not None else None,
             event_filetime=str(unsigned(event.get('timestamp_ticks'))) if unsigned(event.get('timestamp_ticks')) is not None else None,
-            original_qpc=links.get(event.get('id'), {}).get('original_qpc'),
+            original_qpc=str(unsigned(links.get(event.get('id'), {}).get('original_qpc'))) if unsigned(links.get(event.get('id'), {}).get('original_qpc')) is not None else None,
             name=dict(path_source=path_source if path_source in {'supplied_FileName', 'supplied_FilePath', 'file_object_cache', 'file_key_cache'} else None,
                       observed_ticks=str(unsigned(name.get('observed_ticks'))) if unsigned(name.get('observed_ticks')) is not None else None,
                       source_event_id=safe_id(name.get('source_event_id')),
                       current_path_verified=name.get('current_path_verified') if type(name.get('current_path_verified')) is bool else None),
-            candidate_truth_rows=row.get('candidate_truth_rows', []), exact_qpc_truth_rows=row.get('exact_qpc_truth_rows', []),
-            unique_qpc_candidate=row.get('unique_qpc_candidate', False), comparisons=comparisons))
+            candidate_truth_rows=row.get('candidate_truth_rows') if row else None,
+            exact_qpc_truth_rows=row.get('exact_qpc_truth_rows') if comparison_status == 'evaluated' else None,
+            unique_qpc_candidate=row.get('unique_qpc_candidate') if comparison_status == 'evaluated' else None,
+            comparison_status=comparison_status, comparisons=comparisons if row else None))
     legacy = obj(result.get('legacy_score'))
     score_keys = ('schema_version', 'expected', 'observed', 'correctly_attributed', 'unknown', 'incorrect_attribution',
                   'positive_raw_predictions', 'false_positive_target_events', 'supporting_duplicate_raw_events', 'excluded_control_positive_events',
                   'precision', 'dropped', 'etw_events_lost', 'etw_buffers_lost')
     score = numeric_fields(legacy, score_keys)
-    score['unexpected_positive_events'] = [safe_id(key) for key in legacy.get('unexpected_positive_events', [])]
+    score['unexpected_positive_events'] = ([safe_id(key) for key in legacy['unexpected_positive_events']]
+                                          if isinstance(legacy.get('unexpected_positive_events'), list) else None)
     group_keys = ('expected', 'observed', 'unobserved', 'unsupported_out_of_scope', 'correctly_attributed', 'incorrectly_attributed',
                   'observed_but_unresolved', 'correctly_not_assigned_to_target_app', 'observation_rate', 'correct_attribution_rate')
     score['groups'] = {key: numeric_fields(obj(legacy.get('groups')).get(key), group_keys)
@@ -362,18 +373,58 @@ def public_summary(result):
         actual = row.get('actual')
         safe_checks[key] = dict(actual=actual if type(actual) in (int, bool) or actual in (None, 'finished', 'active') else None,
                                 satisfied=row.get('satisfied') is True)
-    safe_reasons = list(result.get('missing_evidence', [])) + list(result.get('join_issues', []))
+    safe_reasons = list(result.get('missing_evidence', [])) + list(result.get('join_issues', [])) + list(result.get('partial_observation_issues', []))
     clock_reasons = diagnostic.get('source_reasons', []) + companion.get('reasons', [])
     provenance_reason = obj(diagnostic.get('clock_provenance')).get('reason')
     if provenance_reason is not None:
         clock_reasons.append(provenance_reason)
     safe_reasons.extend(reason if isinstance(reason, str) and reason in CLOCK_REASON_CODES else 'private_clock_detail_retained' for reason in clock_reasons)
-    return dict(schema_version=1, protocol=PROTOCOL, source_sha=result.get('source_sha'), phase='diagnostic', acceptance_pass=None,
+    manifest = obj(result.get('observed_raw_manifest'))
+    manifest_stats = ('received', 'stored', 'accepted', 'queued', 'queue_dropped', 'quota_dropped', 'not_persisted', 'missing_event_key',
+                      'invalid_timestamp', 'capacity_dropped', 'writer_closed_dropped', 'filtered_nonprimary', 'readiness_probe_records',
+                      'duplicate_event_keys', 'disk_byte_capacity', 'byte_capacity', 'bytes')
+    snapshot = obj(result.get('snapshot'))
+    public_snapshot = {}
+    for phase in ('source_pre_open', 'source_before', 'source_after', 'source_after_close'):
+        if phase in snapshot:
+            public_snapshot[phase] = {kind: dict(exists=obj(obj(snapshot[phase]).get(kind)).get('exists') is True,
+                bytes=unsigned(obj(obj(snapshot[phase]).get(kind)).get('bytes')),
+                sha256=safe_hash(obj(obj(snapshot[phase]).get(kind)).get('sha256'))) for kind in ('database', 'wal')}
+    for field in ('source_db_wal_unchanged', 'empty_wal_initialized_by_read_open'):
+        if field in snapshot:
+            public_snapshot[field] = snapshot[field] if type(snapshot[field]) is bool else None
+    for field in ('snapshot_sha256', 'raw_export_sha256'):
+        if field in snapshot:
+            public_snapshot[field] = safe_hash(snapshot[field])
+    partial_clock_rows = []
+    if result.get('existing_clock_report_input_hashes_verified') is True:
+        for row in obj(result.get('private_existing_clock_report')).get('truth_rows', []):
+            partial_clock_rows.append(dict(row=unsigned(row.get('row')),
+                status=row.get('status') if row.get('status') in {'unique_interval_candidate', 'ambiguous_interval_candidates',
+                    'no_in_interval_source', 'unavailable', 'invalid', 'unsupported', 'interval_candidates'} else None,
+                reason=row.get('reason') if row.get('reason') in CLOCK_REASON_CODES else None,
+                event_ids=[safe_id(event_id) for event_id in row.get('event_ids', [])],
+                **{key: str(unsigned(row.get(key))) if unsigned(row.get(key)) is not None else None
+                   for key in ('start_qpc', 'end_qpc', 'qpc_frequency')}))
+    return dict(schema_version=1, protocol=PROTOCOL, source_sha=result.get('source_sha'),
+        phase=result.get('phase') if result.get('phase') in {'diagnostic', 'verification'} else None,
+        planned_attempts=result.get('planned_attempts') if type(result.get('planned_attempts')) is int else None,
+        attempt_index=result.get('attempt_index') if type(result.get('attempt_index')) is int else None, acceptance_pass=None,
+        raw_join_status=result.get('raw_join_status', 'unavailable'),
+        events_view_scope=view_scope, clock_observation_scope=result.get('clock_observation_scope'),
+        existing_clock_report_input_hashes_verified=result.get('existing_clock_report_input_hashes_verified') is True,
+        existing_final_view_clock_rows=partial_clock_rows,
         diagnostic_evidence_complete=result.get('diagnostic_evidence_complete', result.get('clock_evidence_complete', False)),
         legacy_score=score, legacy_score_recomputed_equal=result.get('legacy_score_recomputed_equal') is True,
+        legacy_score_recomputation_status=result.get('legacy_score_recomputation_status', 'not_run'),
         identity=result.get('public_identity', {}), input_sha256=result.get('input_sha256', {}), missing_evidence=sorted(set(safe_reasons)),
-        events=published, independent_truth=public_truth, supported_events_private=len(result.get('relations', [])),
-        supported_events_public=len(published), integrity=safe_checks,
+        events=published, independent_truth=public_truth,
+        supported_events_private=len(result['relations']) if 'relations' in result else None,
+        supported_events_public=len(published) if 'events' in result or 'partial_final_view_events' in result else None,
+        integrity=safe_checks, snapshot=public_snapshot,
+        raw_manifest_observation=dict(scope='manifest_fields_only_not_event_links', present=bool(manifest),
+            header=header(manifest.get('header')), stats=numeric_fields(manifest.get('stats'), manifest_stats),
+            writer=numeric_fields(manifest.get('writer'), ('finished', 'drained', 'timed_out', 'cancel_requested', 'records', 'bytes', 'partial_record_bytes'))),
         clock=dict(original_qpc_links=companion.get('linked_events'), primary_events_without_link=companion.get('primary_events_without_link'),
                    source_events_without_qpc=diagnostic.get('source_events_without_raw_qpc'),
                    same_machine_boot_verified=diagnostic.get('same_machine_boot_provenance_verified') is True,
@@ -406,13 +457,133 @@ def sha(path):
     return digest.hexdigest()
 
 
+def database_files(database):
+    """Database/WAL bytes, not mutable shared-memory reader coordination."""
+    return {name: dict(exists=path.exists(), bytes=path.stat().st_size if path.exists() else None,
+                       sha256=sha(path) if path.exists() else None)
+            for name, path in (('database', database), ('wal', Path(str(database) + '-wal')))}
+
+
+def snapshot_export(database, exported, snapshot, destination, observation):
+    """Backup the committed SQLite read snapshot, then reuse the strict exporter.
+
+    The source is never immutable and its journal mode is never changed. SQLite
+    may initialize an empty WAL/SHM for read coordination; that observation is
+    kept separately from the DB/WAL hashes bracketing the pinned read snapshot.
+    """
+    require(not snapshot.exists() and not destination.exists(), 'snapshot_or_export_destination_exists')
+    require(database.is_file(), 'source_database_missing')
+    require(not any(Path(str(snapshot) + suffix).exists() for suffix in ('-wal', '-shm', '-journal')), 'snapshot_sidecar_destination_exists')
+    session = read(exported)['data']['id']
+    pre_open = database_files(database)
+    observation.update(source_pre_open=pre_open, source_db_wal_unchanged=False,
+                       source_open_mode='mode=ro', snapshot_method='SQLite_backup_of_pinned_read_transaction')
+    with closing(sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True, timeout=5)) as source:
+        source.execute('PRAGMA query_only=ON')
+        source.execute('BEGIN')
+        state = source.execute('SELECT state FROM capture_runs WHERE session_id=?', (session,)).fetchall()
+        require(state == [('finished',)], 'source_session_not_uniquely_finished')
+        before = database_files(database)
+        empty_wal_initialized = (not pre_open['wal']['exists'] and before['wal']['exists'] and before['wal']['bytes'] == 0)
+        require(pre_open['database'] == before['database'] and (pre_open['wal'] == before['wal'] or empty_wal_initialized), 'source_database_changed_before_snapshot')
+        observation.update(source_before=before, empty_wal_initialized_by_read_open=empty_wal_initialized)
+        # Reserve a new owned destination; never open an old database for writing.
+        with snapshot.open('xb'):
+            pass
+        deadline = time.monotonic() + 30
+
+        def progress(status, remaining, total):
+            require(time.monotonic() <= deadline, 'snapshot_backup_timeout')
+
+        with closing(sqlite3.connect(snapshot)) as target:
+            source.backup(target, pages=256, progress=progress, sleep=0.01)
+            # WAL mode is a database header property copied by backup. This only
+            # changes our new snapshot, so the unchanged immutable exporter can
+            # safely read it without ignoring the original source's live WAL.
+            require(target.execute('PRAGMA journal_mode=DELETE').fetchone() == ('delete',), 'snapshot_journal_finalize_failed')
+            require(target.execute('SELECT state FROM capture_runs WHERE session_id=?', (session,)).fetchall() == [('finished',)], 'snapshot_session_not_uniquely_finished')
+        after = database_files(database)
+        observation['source_after'] = after
+        require(before == after, 'source_database_changed_during_snapshot')
+        source.rollback()
+    closed = database_files(database)
+    observation['source_after_close'] = closed
+    require(before == closed, 'source_database_changed_after_snapshot')
+    observation.update(source_db_wal_unchanged=True, snapshot_sha256=sha(snapshot))
+    EXPORT.export_raw(snapshot, exported, destination)
+    observation['raw_export_sha256'] = sha(destination)
+    return observation
+
+
+def retain_partial(result, paths, sid):
+    """Preserve independent observations before a later raw-export failure.
+
+    This does not make a final event a raw record. The separately labelled
+    existing clock report is bound to its capture/truth/manifest and script.
+    """
+    loaded = {}
+    for name in ('capture', 'truth', 'legacy_score', 'raw_clock', 'clock_report'):
+        path = paths[name]
+        if not path.is_file():
+            continue
+        try:
+            loaded[name] = read(path)
+        except (OSError, ValueError, TypeError) as error:
+            result['private_errors'].append(dict(stage=name, type=type(error).__name__, detail=str(error)))
+            if name != 'clock_report':
+                result['missing_evidence'].append(name + '_unreadable')
+    capture = obj(loaded.get('capture'))
+    capture = obj(capture.get('data', capture))
+    truth = loaded.get('truth')
+    legacy = loaded.get('legacy_score')
+    if isinstance(truth, list):
+        result['truth'] = truth
+    if isinstance(legacy, dict):
+        result['legacy_score'] = legacy
+    result.update(raw_join_status='unavailable', existing_clock_report_input_hashes_verified=False,
+                  clock_observation_scope='capture_metadata_only_no_event_link_audit', private_sid=sid)
+    if capture:
+        result.update(watch_roots=capture.get('watch_roots', []), registry_key=capture.get('registry_key'),
+                      partial_final_view_events=capture.get('events', []), integrity=integrity(capture),
+                      clock=dict(trace_metadata=obj(capture.get('backend')).get('clock', {})))
+    if capture and isinstance(truth, list) and truth and isinstance(legacy, dict):
+        try:
+            recomputed = SCORE.score(capture, truth, sid)
+            result.update(legacy_score_recomputed=recomputed, legacy_score_recomputed_equal=legacy == recomputed,
+                          legacy_score_recomputation_status='equal' if legacy == recomputed else 'mismatch')
+        except (KeyError, TypeError, ValueError) as error:
+            result['private_errors'].append(dict(stage='legacy_score', type=type(error).__name__, detail=str(error)))
+            result['legacy_score_recomputation_status'] = 'unavailable'
+    if isinstance(loaded.get('raw_clock'), dict):
+        result['observed_raw_manifest'] = loaded['raw_clock']
+        result['raw_manifest_observation_scope'] = 'manifest_fields_observed_without_event_link_audit'
+    report = loaded.get('clock_report')
+    if isinstance(report, dict):
+        expected = dict(capture=result['input_sha256'].get('capture'), truth=[result['input_sha256'].get('truth')],
+                        raw_clock=result['input_sha256'].get('raw_clock'))
+        recorded = obj(report.get('input_sha256'))
+        script_hash = hashlib.sha256(Path(CLOCK.__file__).read_bytes().replace(b'\r\n', b'\n')).hexdigest()
+        bound = (all(value is not None and value != [None] for value in expected.values())
+                 and all(recorded.get(key) == value for key, value in expected.items())
+                 and report.get('protocol_revision') == CLOCK.PROTOCOL_REVISION
+                 and report.get('script_lf_sha256') == script_hash)
+        result['existing_clock_report_input_hashes_verified'] = bound
+        result['private_existing_clock_report'] = report
+        if bound:
+            result.update(clock=report, clock_observation_scope='existing_final_view_only')
+        else:
+            result['partial_observation_issues'] = ['existing_clock_report_input_binding_mismatch']
+
+
 def identities(attempt, identity, directory):
     reasons = []
     revision = attempt.get('source_sha')
     if not isinstance(revision, str) or not re.fullmatch(r'[0-9a-f]{40}', revision):
         reasons.append('source_revision_missing')
         revision = None
-    if attempt.get('phase') != 'diagnostic' or attempt.get('planned_attempts') != 1:
+    phase, planned, index = attempt.get('phase'), attempt.get('planned_attempts'), attempt.get('attempt_index', 1)
+    if (type(planned) is not int or type(index) is not int or
+            not (phase == 'diagnostic' and planned == 1 and index == 1 or phase == 'verification' and planned == 2 and index in (1, 2))):
         reasons.append('fixed_diagnostic_plan_missing')
     if (attempt.get('source_after_sha') != revision or attempt.get('source_unchanged') is not True
             or attempt.get('source_clean_before') is not True or attempt.get('source_clean_after') is not True
@@ -487,24 +658,30 @@ def main():
     private_output = directory / 'clock-analysis.json'
     require(not private_output.exists(), 'analysis_already_exists_preserve_original_attempt')
     result = dict(schema_version=1, protocol=PROTOCOL, acceptance_pass=None, clock_evidence_complete=False,
-                  diagnostic_evidence_complete=False, missing_evidence=[], input_sha256={}, private_errors=[])
+                  diagnostic_evidence_complete=False, raw_join_status='unavailable', missing_evidence=[], input_sha256={}, private_errors=[])
     stage = 'input_manifest_unavailable'
     try:
         paths = {name: directory / filename for name, filename in dict(attempt='attempt.json', identity='capture/run-identity.json',
-            capture='capture/capture.json', truth='capture/ground-truth.json', legacy_score='capture/reliability.json', raw_clock='raw-clock.json').items()}
+            capture='capture/capture.json', truth='capture/ground-truth.json', legacy_score='capture/reliability.json', raw_clock='raw-clock.json',
+            clock_report='capture/clock-diagnostic.json').items()}
         for key, path in paths.items():
             if path.is_file():
                 result['input_sha256'][key] = sha(path)
-            else:
+            elif key != 'clock_report':
                 result['missing_evidence'].append(key + '_file_missing')
-        attempt = read(paths['attempt']); identity = read(paths['identity'])
+        attempt = read(paths['attempt']) if paths['attempt'].is_file() else {}
+        retain_partial(result, paths, attempt.get('sid', ''))
+        identity = read(paths['identity'])
         revision, identity_reasons, public_identity = identities(attempt, identity, directory)
-        result.update(source_sha=revision, public_identity=public_identity)
+        result.update(source_sha=revision, public_identity=public_identity, phase=attempt.get('phase'),
+                      planned_attempts=attempt.get('planned_attempts'), attempt_index=attempt.get('attempt_index', 1))
         result['missing_evidence'].extend(identity_reasons)
         private_capture = directory / 'capture/private-raw.json'
         stage = 'raw_export_failed'
-        EXPORT.export_raw(Path(identity['database']), paths['capture'], private_capture)
+        result['snapshot'] = {}
+        snapshot_export(Path(identity['database']), paths['capture'], directory / 'capture/private-snapshot.db', private_capture, result['snapshot'])
         result['input_sha256']['private_raw_export'] = sha(private_capture)
+        result['input_sha256']['database_snapshot'] = result['snapshot']['snapshot_sha256']
         stage = 'capture_or_truth_unavailable'
         capture = read(private_capture)['data']
         truth, legacy_score = read(paths['truth']), read(paths['legacy_score'])
@@ -512,6 +689,9 @@ def main():
         stage = 'clock_analysis_failed'
         analysis = analyze(capture, truth, legacy_score, raw_bytes, paths['raw_clock'], attempt.get('sid', ''))
         result.update(analysis)
+        result['raw_join_status'] = 'verified_same_event_id' if not analysis['join_issues'] else 'rejected'
+        result['clock_observation_scope'] = 'raw_and_final_same_id' if not analysis['join_issues'] else 'raw_view_join_rejected'
+        result['legacy_score_recomputation_status'] = 'equal' if analysis['legacy_score_recomputed_equal'] else 'mismatch'
         if raw_bytes is not None:
             sidecar = json.loads(raw_bytes.decode('utf-8-sig'))
             if sidecar.get('schema_version') == 2:
@@ -528,7 +708,12 @@ def main():
             'Small-diagnostic raw export limit exceeded; no partial chain claimed': 'raw_export_budget_exceeded',
             'Database changed during read-only export': 'database_changed_during_export',
         }
-        result['missing_evidence'].append(export_errors.get(str(error), stage) if stage == 'raw_export_failed' else stage)
+        snapshot_codes = {'snapshot_or_export_destination_exists', 'source_database_missing', 'snapshot_sidecar_destination_exists',
+                          'source_session_not_uniquely_finished', 'source_database_changed_before_snapshot', 'snapshot_backup_timeout',
+                          'snapshot_journal_finalize_failed', 'snapshot_session_not_uniquely_finished', 'source_database_changed_during_snapshot',
+                          'source_database_changed_after_snapshot'}
+        reason = str(error) if str(error) in snapshot_codes else export_errors.get(str(error), stage) if stage == 'raw_export_failed' else stage
+        result['missing_evidence'].append(reason)
         result['private_errors'].append(dict(type=type(error).__name__, detail=str(error)))
     with private_output.open('x', encoding='utf-8') as output:
         json.dump(result, output, indent=2, allow_nan=False); output.write('\n')

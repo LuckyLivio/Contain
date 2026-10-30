@@ -67,12 +67,16 @@ jobs:
             }
           }
           Write-Host 'CLI JSON schema: 33 passed, 0 failed, 0 skipped'
-      # One predeclared diagnostic capture. Restore the two verification attempts
-      # only after reviewing this attempt's original clocks and any minimal fix.
-      - name: ETW clock evidence diagnostic (one attempt)
+      # The one diagnostic is preserved in run 41045468693. These two fixed
+      # attempts verify its WAL-aware evidence-export repair; never retry to green.
+      - name: ETW clock evidence verification 1 of 2
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         shell: pwsh
-        run: ./scripts/ci-etw-clock.ps1 -OutputDirectory ([IO.Path]::GetFullPath('target/etw-clock-diagnostic')) -PublicOutputDirectory ([IO.Path]::GetFullPath('target/etw-clock-public'))
+        run: ./scripts/ci-etw-clock.ps1 -Phase verification -AttemptIndex 1 -OutputDirectory ([IO.Path]::GetFullPath('target/etw-clock-verification-1')) -PublicOutputDirectory ([IO.Path]::GetFullPath('target/etw-clock-public-1'))
+      - name: ETW clock evidence verification 2 of 2
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: pwsh
+        run: ./scripts/ci-etw-clock.ps1 -Phase verification -AttemptIndex 2 -OutputDirectory ([IO.Path]::GetFullPath('target/etw-clock-verification-2')) -PublicOutputDirectory ([IO.Path]::GetFullPath('target/etw-clock-public-2'))
       - name: Snapshot fallback integration
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         shell: pwsh
@@ -94,7 +98,9 @@ jobs:
         if: always()
         with:
           name: etw-clock-evidence
-          path: target/etw-clock-public
+          path: |
+            target/etw-clock-public-1
+            target/etw-clock-public-2
           if-no-files-found: error
       - name: Publish reviewed quality summary
         if: always()

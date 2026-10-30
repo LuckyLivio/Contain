@@ -98,3 +98,55 @@ comparison defect; **B** native event timing differs from the independent call
 interval's semantics; **C** actual actor/resource/operation attribution defect;
 **D** insufficient evidence. The exact source SHA and each observed result are
 recorded by the CI artifact, including failures and unresolved items.
+
+## First diagnostic and the bounded export repair
+
+The single diagnostic ran at `cbc7a02b281e36e8d1a39394ab68c171abc981d7` in
+[CI 41045468693](https://github.com/LuckyLivio/Contain/actions/runs/41045468693).
+The quality and CLI checks passed: nextest 286 passed/0 failed/7 skipped; 21 Python
+scripts ran 285 tests with no failures/skips; the explicit spool and fuzz seed
+regressions each passed one test. Workspace coverage was 13032/17567 lines and
+1045/1387 functions; original-package coverage was 9459/13112 lines and 755/1016
+functions. Both unchanged floors passed. Dependencies, 66 synthetic CLI commands,
+33 schema checks and snapshot fallback also passed. Doctests ran zero tests.
+
+The diagnostic itself failed. The capture, truth, original score and companion
+manifest existed and were hashed; source/script/binary identity checks succeeded.
+However, the reused `export_raw` helper rejects any database sidecar. The standard
+demo had retained SQLite WAL/SHM files, so the new entrypoint stopped with
+`database_sidecars_present` before joining raw/final records or retaining the
+already generated clock report. Its empty score/clock fields mean **not analyzed**,
+not zero observations. This was an evidence-export integration error, not proof
+of a timestamp-conversion, provider-timing or attribution defect. The time
+question remains D; file existence and hashes do not establish valid QPC data.
+
+The repair stays in the new analyzer: use the same SQLite read-only `backup()`
+approach already used by the view checker, creating a new private snapshot that
+includes committed WAL data. Then apply the existing strict raw export to that
+closed snapshot. Never delete source sidecars or use immutable mode on the live
+WAL source. Verify source DB/WAL byte stability and retain snapshot/export hashes.
+Unfinished/wrong sessions, existing destinations, changing inputs or backup failure
+remain rejected. The product storage and frozen scorer are unchanged.
+SQLite may initialize an empty WAL/SHM when opening a WAL-mode database for
+reading. The analyzer records that transition explicitly; an existing nonempty
+WAL and the database must remain byte-identical throughout the pinned read and
+after closing it. Only the newly owned snapshot changes journal mode.
+
+Before this repair, the new WAL regression failed with
+`database_sidecars_present`, and the partial-report regression failed because
+the final-view scope was absent. Both original local failures are retained under
+`target/quality/etw-clock-*-regression-before.log`. Regressions cover a committed
+row present only in WAL, a residual WAL without a writer, a WAL-mode database
+without sidecars, unfinished/wrong sessions, changing input and existing output.
+
+Independently readable original scores, truth and clock reports are now retained
+before raw export. An existing clock report must match the original input hashes
+and is explicitly a final-view observation; it cannot substitute for the missing
+same-event raw/final comparison. Failures keep the complete-evidence flag false.
+
+The next CI schedules exactly two independent verification steps, with new
+`target/etw-clock-verification-1` and `-2` private directories and separate public
+summaries. Their manifest phase/index identifies the fixed pair. They verify
+this definite export-chain repair and clock acquisition; they do not presume
+that the historical time failure has been repaired. Both results are retained,
+including failed original scores. No additional diagnostic or retry loop is added.

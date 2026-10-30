@@ -1,11 +1,15 @@
 param(
     [Parameter(Mandatory)][string]$OutputDirectory,
-    [Parameter(Mandatory)][string]$PublicOutputDirectory
+    [Parameter(Mandatory)][string]$PublicOutputDirectory,
+    [ValidateSet('diagnostic', 'verification')][string]$Phase = 'diagnostic',
+    [ValidateRange(1, 2)][int]$AttemptIndex = 1
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $PSNativeCommandUseErrorActionPreference = $false
 if (-not $IsWindows) { throw 'The fixed ETW clock diagnostic requires native Windows.' }
+if ($Phase -eq 'diagnostic' -and $AttemptIndex -ne 1) { throw 'The diagnostic phase permits only its single planned attempt.' }
+$plannedAttempts = if ($Phase -eq 'diagnostic') { 1 } else { 2 }
 
 function Get-NewClockDestination([string]$Value) {
     try {
@@ -58,7 +62,7 @@ $previousRawClock = $env:CONTAIN_ETW_RAW_CLOCK_PATH
 $demoExit = 1
 $analysisExit = $null
 $attempt = [ordered]@{
-    schema_version=1; phase='diagnostic'; planned_attempts=1
+    schema_version=1; phase=$Phase; planned_attempts=$plannedAttempts; attempt_index=$AttemptIndex
     source_sha=$null; source_after_sha=$null
     source_status_before=@(); source_status_after=@()
     source_clean_before=$false; source_clean_after=$false; source_unchanged=$false
@@ -87,7 +91,7 @@ try {
         $env:CONTAIN_FIXTURE_CLOCK = '1'
         $env:CONTAIN_ETW_RAW_CLOCK_PATH = $rawClock
         $attempt.demo_started = $true
-        Write-Host 'Starting the single planned ETW clock diagnostic.'
+        Write-Host "Starting planned ETW clock $Phase attempt $AttemptIndex of $plannedAttempts."
         # Keep the original score and full failure output private. The existing
         # demo remains fail-closed; its failure is rethrown after offline analysis.
         & "$PSScriptRoot/demo.ps1" -RequireEtw -KeepArtifacts -OutputDirectory $captureDirectory *> (Join-Path $privateRoot 'demo.log')
