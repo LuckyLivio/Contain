@@ -18,7 +18,9 @@ METRICS = ("lines", "functions", "regions", "instantiations", "branches")
 AFFECTED = {
     "crates/contain-cli/src/main.rs": {"run_cli", "envelope"},
     "crates/contain-core/src/capture.rs": {"install", "install_observed", "install_controlled", "install_inner"},
-    "crates/contain-core/src/install_status.rs": {"new", "publish", "fail", "backend", "finished", "providers_ready"},
+    "crates/contain-core/src/install_status.rs": {"new", "publish", "begin_step", "processed", "fail", "backend", "finished", "providers_ready"},
+    "crates/contain-cli/src/status_output.rs": {"push", "new", "publish", "drop"},
+    "crates/contain-core/src/filesystem.rs": {"baseline_snapshot_progress", "observed_snapshot_progress", "snapshot_inner_progress"},
     "crates/contain-core/src/windows/etw.rs": {"provider_status"},
     "vendor/ferrisetw/src/trace/startup_ownership.rs": {"new", "transfer", "drop"},
     "crates/contain-cli/src/render.rs": {"write_str", "source_scope_text", "summary_counts", "summary_to", "inspect_to", "diff_to", "history_to", "explain_to"},

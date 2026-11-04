@@ -213,7 +213,7 @@ internal sealed class LayoutVerification(Options options, bool viewerChecksPasse
         var preview = install.Controls.Find("CaptureConfigurationPreview", true).Single();
         Require(preview.Text.Contains(watch, StringComparison.Ordinal) && preview.Text.Contains(destination, StringComparison.Ordinal)
             && preview.Text.Contains(@"Software\Contain\LayoutSynthetic", StringComparison.Ordinal), "pre-start preview displays exact observation, registry and database choices");
-        foreach (var name in new[] { "InstallerPath", "RecordName", "WatchRoot", "DatabaseSavePath", "InstallerArguments", "RegistryKey", "SettleMilliseconds", "MaxDrainMilliseconds", "SnapshotOnly", "AdvancedToggle", "ChooseInstaller", "ChooseWatchRoot", "ChooseSaveDatabase", "CheckEnvironment", "StartRecording", "ViewRecordedSession" })
+        foreach (var name in new[] { "InstallerPath", "RecordName", "WatchRoot", "DatabaseSavePath", "InstallerArguments", "RegistryKey", "SettleMilliseconds", "MaxDrainMilliseconds", "SnapshotOnly", "AdvancedToggle", "ChooseInstaller", "ChooseWatchRoot", "ChooseSaveDatabase", "CheckEnvironment", "StartRecording", "ViewRecordedSession", "TaskDetails", "CopyTaskSummary", "InstallStatus" })
         {
             var control = install.Controls.Find(name, true).Single();
             await Reach(control);

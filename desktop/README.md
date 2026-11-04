@@ -7,8 +7,8 @@ Graphical recording is a separate [implementation and validation milestone](../d
 
 ## Current download
 
-Use the [phase-one Beta release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.1).
-Its [fixes, validation scope and known issues](../docs/stage-one-beta.md) distinguish
+Use the [Beta 2 release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.2).
+Its [fixes, validation scope and known issues](../docs/progress-beta2.md) distinguish
 native Windows results, simulated layout stress and user-reported trials.
 The entries below retain historical evidence rather than additional current downloads.
 
@@ -124,6 +124,29 @@ with a visible explanation that the task continues; leave it open until the
 backend finishes. Abnormal desktop/core termination is not a successful capture;
 reopen the bound database to inspect retained unfinished evidence. Contain does
 not automatically elevate or stop somebody else's trace session.
+
+### Task progress and failure details
+
+The recording window shows the actual backend step, task/stage/step durations,
+available completed-work counts and age of the last measured work. Finalization
+distinguishes file enumeration/read/hash, source stop and queue drain, raw replay,
+operation normalization, evidence association, final inventory, SQLite save and
+exact-session readback. The snapshot entry count includes completed skipped or
+unreadable attempts; source-record counts do not assert persistence or attribution.
+There is no percentage or remaining-time estimate when the total is unknown.
+
+The local display timer continues elapsed/age estimates and labels them as local;
+it never changes a backend work timestamp or count. Receipt of another message is
+separate from actual work. Silence alone is not a hang diagnosis, and a single
+large file read may have no intermediate count. Missing measurements remain
+unavailable. A running installer may need input; Contain cannot determine whether
+its window is actually waiting for the user.
+
+**查看任务详情** opens scrollable, selectable original errors, source availability,
+exact session/database and collector information. **复制任务摘要** copies a concise
+local diagnostic snapshot. Neither action uploads anything. Review local paths
+before sharing. Saved evidence, source stop and installer exit remain separate
+from a confirmed complete session and from installation success.
 
 ## Build and verification
 

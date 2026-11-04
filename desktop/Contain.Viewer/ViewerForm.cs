@@ -210,6 +210,31 @@ public sealed class ViewerForm : Form
         _detailHost.Controls.Add(_rawDetails, 0, 1);
         ShowEventDetails(false);
         eventLayout.Controls.Add(_detailHost, 0, 5);
+        // Fixed logical minima do not account for wrapped native grid headers or
+        // preferred-height action rows at a real monitor DPI. Reserve enough of
+        // the 45% grid row for a complete header and readable data row; let the
+        // existing tab viewport scroll the resulting content extent.
+        var sizingEvents = false;
+        eventLayout.Layout += (_, _) =>
+        {
+            if (sizingEvents) return;
+            sizingEvents = true;
+            try
+            {
+                var heights = eventLayout.GetRowHeights();
+                if (heights.Length != 6) return;
+                var automaticRows = heights[0] + heights[1] + heights[3] + heights[4];
+                var gridRow = _events.ColumnHeadersHeight + Math.Max(_events.Font.Height * 2,
+                    _events.RowTemplate.Height + _events.DefaultCellStyle.Padding.Vertical) + _events.Margin.Vertical;
+                var explanation = _eventDetails.Font.Height * 3 + _detailHost.Margin.Vertical;
+                var remaining = (int)Math.Ceiling(Math.Max(gridRow / 0.45, explanation / 0.55)) + 8;
+                var required = automaticRows + remaining + eventLayout.Padding.Vertical;
+                if (eventLayout.MinimumSize.Height < required)
+                    eventLayout.MinimumSize = new Size(eventLayout.MinimumSize.Width, required);
+            }
+            finally { sizingEvents = false; }
+        };
+        _events.ColumnHeadersHeightChanged += (_, _) => eventLayout.PerformLayout();
         AddScrollableContent(eventsTab, eventLayout);
         _tabs.TabPages.Add(eventsTab);
         _status.AutoEllipsis = true;

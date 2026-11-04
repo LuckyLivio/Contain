@@ -3,6 +3,8 @@
     <!-- Cargo is the canonical product version for both desktop assemblies. -->
     <ContainVersion>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../Cargo.toml')), '(?s)\[workspace\.package\]\s*version\s*=\s*&quot;([^&quot;]+)&quot;').Groups[1].Value)</ContainVersion>
     <Version>$(ContainVersion)</Version>
+    <!-- Keep local and CI portable packages on the beta.1 validated runtime patch. -->
+    <RuntimeFrameworkVersion>8.0.33</RuntimeFrameworkVersion>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
   </PropertyGroup>
   <Target Name="ValidateContainVersion" BeforeTargets="PrepareForBuild">

@@ -14,6 +14,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (InstallProgressChecks.TryRunSyntheticChild(args) is { } syntheticExit) return syntheticExit;
         // This executable is only a negative version fixture when the real bridge
         // probes --version; it never supplies successful query data.
         if (args.SequenceEqual(new[] { "--version" })) { Console.WriteLine("contain 99.0.0"); return 0; }
@@ -23,23 +24,27 @@ internal static class Program
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+        if (args.Length == 2 && args[0] == "--progress-checks-only")
+            return InstallProgressChecks.RunStandalone(Path.GetFullPath(args[1]));
         var options = Options.Parse(args);
         var runner = new Runner(options);
+        var progressAccepted = false;
         using var form = new ViewerForm(runner.Client, runner.Dialogs);
         form.Shown += async (_, _) =>
         {
             try
             {
                 await runner.RunAsync(form);
-                runner.LayoutAccepted = await new LayoutVerification(options, runner.Success).RunAsync();
+                progressAccepted = await InstallProgressChecks.RunAsync(options.Output, options.Source, form, options.Package, options.PrivateOutput);
+                runner.LayoutAccepted = await new LayoutVerification(options, runner.Success && progressAccepted).RunAsync();
                 if (options.InstallFixture is not null)
-                    runner.InstallAccepted = await new InstallVerification(options, runner.Success && runner.LayoutAccepted).RunAsync();
+                    runner.InstallAccepted = await new InstallVerification(options, runner.Success && runner.LayoutAccepted && progressAccepted).RunAsync();
             }
             catch (Exception error) { runner.RecordUnhandled(error); }
             finally { runner.Finish(); form.Close(); }
         };
         Application.Run(form);
-        return runner.Success && runner.LayoutAccepted && runner.InstallAccepted ? 0 : 1;
+        return runner.Success && progressAccepted && runner.LayoutAccepted && runner.InstallAccepted ? 0 : 1;
     }
 }
 

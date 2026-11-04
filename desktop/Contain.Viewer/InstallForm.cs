@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
@@ -21,6 +22,18 @@ public sealed class InstallForm : Form
     private readonly Button check = Action("CheckEnvironment", "检查环境");
     private readonly Button start = Action("StartRecording", "开始记录");
     private readonly Button view = Action("ViewRecordedSession", "查看本次记录");
+    private readonly Button details = Action("TaskDetails", "查看任务详情");
+    private readonly Button copySummary = Action("CopyTaskSummary", "复制任务摘要");
+    private readonly System.Windows.Forms.Timer displayTimer = new() { Interval = 500 };
+    private readonly Stopwatch taskClock = new();
+    private readonly InstallProgressClock progressClock = new();
+    private readonly object progressGate = new();
+    private (InstallStatus Status, long ReceivedAt)? pendingProgress;
+    private bool dispatchScheduled;
+    private int generation;
+    private long lastStatusReceivedAt;
+    private string? localFailure;
+    private bool closeRefused;
     private readonly TextBox status = new() { Name = "InstallStatus", Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BackColor = Color.White };
     private readonly TextBox scopePreview = new() { Name = "CaptureConfigurationPreview", Multiline = true, ReadOnly = true, WordWrap = false, ScrollBars = ScrollBars.Both, Dock = DockStyle.Fill, BackColor = SystemColors.Control, BorderStyle = BorderStyle.FixedSingle, MinimumSize = new Size(0, 100) };
     private readonly Panel configuration = new() { Dock = DockStyle.Fill, AutoScroll = true };
@@ -57,11 +70,25 @@ public sealed class InstallForm : Form
         start.Click += (_, _) => { if (!IsActive && !checking && !consumed) PendingOperation = StartAsync(); };
         check.Click += (_, _) => { if (!IsActive && !checking && !consumed) PendingOperation = CheckAsync(); };
         view.Click += (_, _) => { if (!IsActive && LastStatus is not null) PendingOperation = OpenAsync(); };
+        details.Click += (_, _) => ShowTaskDetails();
+        copySummary.Click += (_, _) =>
+        {
+            try { Clipboard.SetText(TaskSummaryText); }
+            catch (System.Runtime.InteropServices.ExternalException) { status.AppendText("\r\n剪贴板暂不可用，可在任务详情中选择并复制文字。"); }
+        };
+        displayTimer.Tick += (_, _) =>
+        {
+            if (!IsActive || IsDisposed || Disposing) return;
+            if (LastStatus is not null) RenderStatus(LastStatus);
+            else status.Text = $"准备中 · 任务已运行 {Duration((ulong)taskClock.ElapsedMilliseconds)}（本地计时）\r\n尚未收到可确认会话的后端状态；没有实际进展测量。\r\n请等待后端确认，不会仅因没有消息判断卡死。";
+        };
         FormClosing += (_, args) =>
         {
             if (!IsActive && !checking) return;
             args.Cancel = true;
-            status.AppendText("\r\n窗口保持打开：任务仍在运行。没有可靠的协作停止接口，不会强制终止安装器。请等待任务退出。\r\n");
+            closeRefused = true;
+            if (LastStatus is not null) RenderStatus(LastStatus);
+            else status.Text = "窗口保持打开：任务仍在运行。请等待任务退出；不会强制终止安装器。";
         };
         Load += (_, _) =>
         {
@@ -128,7 +155,7 @@ public sealed class InstallForm : Form
         advancedToggle.CheckedChanged += (_, _) => advanced.Visible = advancedToggle.Checked;
         root.Controls.Add(scopePreview, 0, 2);
         var actions = new FlowLayoutPanel { Name = "InstallActions", Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Margin = Padding.Empty };
-        actions.Controls.Add(check); actions.Controls.Add(start); actions.Controls.Add(view);
+        actions.Controls.Add(check); actions.Controls.Add(start); actions.Controls.Add(view); actions.Controls.Add(details); actions.Controls.Add(copySummary);
         root.Controls.Add(actions, 0, 3);
         root.Controls.Add(status, 0, 4);
     }
@@ -155,11 +182,13 @@ public sealed class InstallForm : Form
     private async Task CheckAsync()
     {
         checking = true; UpdateEnabled();
+        var checkGeneration = ++generation;
         try
         {
             var request = Request();
             status.Text = "正在检查环境。此检查会主动探测 ETW，但不会启动安装器，也不保证随后采集成功。";
             var report = await client.CheckEnvironmentAsync(request.Database);
+            if (IsDisposed || Disposing || checkGeneration != generation) return;
             var elevated = report.GetProperty("elevated").GetBoolean();
             var text = new StringBuilder("环境预检结束（仅报告当前可用能力；不是本次实际启用来源，也不是启动保证）\r\n");
             text.AppendLine("当前管理员令牌：" + (elevated ? "是" : "否"));
@@ -173,36 +202,81 @@ public sealed class InstallForm : Form
             if (report.TryGetProperty("warnings", out var warnings)) foreach (var warning in warnings.EnumerateArray()) text.AppendLine("• " + warning.GetString());
             status.Text = text.ToString();
         }
-        catch (Exception error) { status.Text = "环境检查未完成：" + error.Message + "\r\n安装器未启动。"; }
-        finally { checking = false; UpdateEnabled(); }
+        catch (Exception error) { if (!IsDisposed && !Disposing) status.Text = "环境检查未完成：" + error.Message + "\r\n安装器未启动。"; }
+        finally { checking = false; if (!IsDisposed && !Disposing) UpdateEnabled(); }
     }
 
     private async Task StartAsync()
     {
         IsActive = true; UpdateEnabled();
+        var taskGeneration = ++generation;
+        localFailure = null; closeRefused = false;
         try
         {
             var request = Request();
             consumed = true;
+            taskClock.Restart(); displayTimer.Start();
             status.Text = "准备中。等待后端确认会话与被管理进程；本窗口将保留至采集进程退出。";
-            Result = await client.RunAsync(request, progress => { LastStatus = progress; RenderStatus(progress); });
+            Result = await client.RunAsync(request, progress => QueueStatus(progress, taskGeneration));
+            if (IsDisposed || Disposing || taskGeneration != generation) return;
+            displayTimer.Stop(); taskClock.Stop();
             var result = Result;
             if (result.LastStatus is not null) { LastStatus = result.LastStatus; RenderStatus(result.LastStatus, result.Succeeded); }
-            else status.Text = "失败 / 未完成\r\n尚未收到可确认会话的结构化结果；安装器启动与数据保存均未确认。\r\n";
-            if (!result.Succeeded) status.AppendText("\r\n失败或未完成：" + (result.ProtocolError ?? result.LastStatus?.Error ?? "采集进程返回失败，未收到完整成功结果。") + $"\r\n最后确认阶段：{result.LastConfirmedStage ?? result.LastStatus?.Stage ?? "尚未收到状态"}；采集进程 PID：{result.CollectorPid?.ToString() ?? "未确认"}；退出码：{result.CollectorExitCode}。\r\n既有数据库与已经保存的证据未删除，可查看本次记录。\r\n高级错误诊断{(result.DiagnosticsTruncated ? "（长度超限，保留前段）" : "")}：\r\n" + result.Diagnostics);
-            else status.AppendText("\r\n采集进程已退出，记录保存已确认。安装器退出结果和覆盖质量请分别查看。\r\n");
+            else status.Text = "失败 / 未完成\r\n尚未收到可确认会话的结构化结果；安装器启动与数据保存均未确认。";
+            if (!result.Succeeded)
+            {
+                localFailure = result.ProtocolError ?? result.LastStatus?.Error ?? "采集进程返回失败，未收到完整成功结果。";
+                if (LastStatus is not null) RenderStatus(LastStatus, false);
+                else status.AppendText("\r\n失败原因：" + Brief(localFailure));
+                status.AppendText("\r\n已保存的证据保留；错误详情和任务摘要可通过上方按钮查看、复制。");
+            }
             if (result.ProtocolError is not null || LastStatus is { InstallerStarted: true, InstallerExited: false })
-                status.AppendText("\r\n安装器退出结果未确认，安装器可能仍在运行。请自行确认其状态；本程序没有强制终止它。\r\n");
+                status.AppendText("\r\n安装器退出结果未确认，可能仍在运行。请自行确认其状态。");
             // Exact backend-issued ID is queried even for an unfinished saved journal.
             if (LastStatus is not null && File.Exists(request.Database))
             {
-                try { await openSession(request.Database, LastStatus.SessionId); Hide(); }
-                catch (Exception error) { status.AppendText("\r\n自动打开本次会话未完成：" + error.Message + "。可用原有打开数据库功能检查已保存记录。"); }
+                try { await openSession(request.Database, LastStatus.SessionId); if (!IsDisposed && !Disposing) Hide(); }
+                catch (Exception error) { if (!IsDisposed && !Disposing) status.AppendText("\r\n自动打开本次会话未完成：" + Brief(error.Message) + "。可重新打开数据库查看。"); }
             }
-            RecordingEnded?.Invoke(result);
+            if (!IsDisposed && !Disposing) RecordingEnded?.Invoke(result);
         }
-        catch (Exception error) { status.AppendText("\r\n启动或记录失败：" + error.Message + "\r\n不会将失败当作完成，也不会删除已有记录。"); }
-        finally { IsActive = false; UpdateEnabled(); }
+        catch (Exception error)
+        {
+            localFailure = error.Message;
+            if (!IsDisposed && !Disposing) status.AppendText("\r\n启动或记录失败：" + Brief(error.Message) + "\r\n已有记录保留，可查看任务详情。");
+        }
+        finally
+        {
+            IsActive = false;
+            ++generation;
+            lock (progressGate) { pendingProgress = null; dispatchScheduled = false; }
+            taskClock.Stop();
+            if (!IsDisposed && !Disposing) { displayTimer.Stop(); UpdateEnabled(); }
+        }
+    }
+
+    private void QueueStatus(InstallStatus value, int taskGeneration)
+    {
+        lock (progressGate)
+        {
+            if (IsDisposed || Disposing || taskGeneration != generation) return;
+            pendingProgress = (value, Stopwatch.GetTimestamp());
+            if (dispatchScheduled) return;
+            dispatchScheduled = true;
+        }
+        try
+        {
+            BeginInvoke((Action)(() =>
+            {
+                (InstallStatus Status, long ReceivedAt)? latest;
+                lock (progressGate) { latest = pendingProgress; pendingProgress = null; dispatchScheduled = false; }
+                if (IsDisposed || Disposing || taskGeneration != generation || latest is null) return;
+                LastStatus = latest.Value.Status;
+                lastStatusReceivedAt = latest.Value.ReceivedAt;
+                RenderStatus(LastStatus);
+            }));
+        }
+        catch (InvalidOperationException) { lock (progressGate) { pendingProgress = null; dispatchScheduled = false; } }
     }
 
     private async Task OpenAsync()
@@ -214,15 +288,90 @@ public sealed class InstallForm : Form
 
     private void RenderStatus(InstallStatus value, bool? completed = null)
     {
-        status.Text = FormatStatus(value, completed);
+        var receivedAgo = lastStatusReceivedAt == 0 ? (ulong?)null : (ulong)Stopwatch.GetElapsedTime(lastStatusReceivedAt).TotalMilliseconds;
+        var advance = IsActive && completed is null ? receivedAgo ?? 0 : 0;
+        var display = progressClock.Observe(value, advance, (ulong)taskClock.ElapsedMilliseconds, IsActive && completed is null && value.Stage is not ("finished" or "failed"));
+        status.Text = FormatStatus(value, completed, advance, receivedAgo, display);
+        if (localFailure is not null && value.Error != localFailure) status.AppendText("\r\n失败原因：" + Brief(localFailure));
+        if (closeRefused && IsActive) status.AppendText("\r\n窗口保持打开：任务仍在运行，请等待任务退出。");
+        details.Enabled = copySummary.Enabled = true;
     }
 
-    internal static string FormatStatus(InstallStatus value, bool? completed = null)
+    internal static string FormatStatus(InstallStatus value, bool? completed = null, ulong localAdvanceMilliseconds = 0, ulong? receivedAgoMilliseconds = null, InstallDisplayTimes? display = null)
     {
         var phase = completed == false ? "失败 / 未完成" : value.Stage switch { "preparing" => "准备中", "capturing" => "记录中", "finalizing" => "整理中", "finished" => completed == true ? "已结束" : "最终结果已保存，等待采集进程退出", "failed" => "失败 / 未完成", _ => "未确认" };
         var exit = !value.InstallerStarted ? "尚未确认启动" : !value.InstallerExited ? "已启动，尚未确认退出" : value.InstallerExitCode is null ? "已退出，未提供退出码" : value.InstallerExitCode == 0 ? "退出码 0（安装是否达到预期仍需核对）" : $"退出码 {value.InstallerExitCode}（非零；具体原因由安装器决定）";
         var quality = value.QualityLevel switch { "Degraded" => "Degraded · 覆盖受限", "Complete" => "Complete（仍限于配置范围与来源）", null => "整理完成后确认", _ => value.QualityLevel };
-        return $"{phase}\r\n安装器结果：{exit}\r\n记录：{(completed == true ? "已完成" : "尚未确认完整结束")}；数据保存：{(value.DataSaved ? completed == true ? "已保存记录" : "已保存证据（可能仍不完整）" : "尚未确认")}\r\n本次变化：{(completed == true ? "请在本次记录的“状态变化”和“事件与依据”中查看。" : "采集或整理尚未完整确认，已有证据仍可查看。")}\r\n覆盖限制：{quality}；仅观察所选范围，不证明完整软件足迹或最终文件归属。\r\n{(string.IsNullOrWhiteSpace(value.Error) ? "" : "失败原因：" + value.Error + "\r\n")}\r\n高级诊断\r\n后端阶段：{value.Stage}\r\n会话：{value.SessionId}\r\n数据库：{value.Database}\r\n执行进程关联：{(value.InstallerStarted ? $"PID {value.InstallerPid}，创建时间 {value.InstallerCreationTime ?? "不可用（身份关联受限）"}" : "尚未确认启动")}（进程关联不等于最终文件归属）\r\n采集来源已停止：{value.CaptureFinished}；采集进程退出：{(completed is null ? "尚未确认" : "已退出")}\r\n数据已保存：{value.DataSaved}（保存过证据不代表安装成功或完整结束）\r\n请求模式：{(value.EtwRequested ? "ETW（启动时要求来源可用）" : "用户明确选择的快照模式")}\r\n本次 ETW 实际来源：进程 {value.EtwProcess ?? "尚未确认"} / 文件 {value.EtwFile ?? "尚未确认"} / 注册表 {value.EtwRegistry ?? "尚未确认"}\r\n{string.Join("\r\n", value.QualityReasons)}";
+        var activeClock = completed is null && value.Stage is not ("finished" or "failed");
+        var advance = activeClock ? localAdvanceMilliseconds : 0;
+        var elapsed = (display?.Task ?? (value.ElapsedMilliseconds is { } taskMs ? SaturatingAdd(taskMs, advance) : (ulong?)null)) is { } taskDuration ? Duration(taskDuration) : "不可用";
+        var stageElapsed = (display?.Stage ?? (value.StageElapsedMilliseconds is { } stageMs ? SaturatingAdd(stageMs, advance) : (ulong?)null)) is { } stageDuration ? Duration(stageDuration) : "不可用";
+        var stepElapsed = (display?.Step ?? (value.StepElapsedMilliseconds is { } stepMs ? SaturatingAdd(stepMs, advance) : (ulong?)null)) is { } stepDuration ? Duration(stepDuration) : "不可用";
+        var count = value.ProcessedCount is { } countValue ? $"{countValue:N0} {Unit(value.ProcessedUnit)}" : "不可用";
+        var progressAge = value.ElapsedMilliseconds is { } measured && value.LastProgressElapsedMilliseconds is { } last
+            ? Duration(display?.ProgressAge ?? SaturatingAdd(measured - last, advance)) + "前" : "不可用";
+        var interaction = value.InstallerExited || value.InstallerInteraction == "not_needed" ? "无需继续操作安装器；请等待整理和保存。"
+            : value.InstallerInteraction == "may_need_input" ? "安装器仍在运行，可能需要您在安装器窗口继续操作；无法判断它是否正在等待输入。"
+            : value.InstallerInteraction == "not_started" ? "安装器尚未启动，请等待准备完成。" : "安装器交互状态不可用，请核对安装器窗口。";
+        return $"{phase} · {StepLabel(value.Step)}\r\n任务耗时：{elapsed}；阶段耗时：{stageElapsed}；步骤耗时：{stepElapsed}；已处理：{count}\r\n最近实际进展：{progressAge}；最近状态接收：{(receivedAgoMilliseconds is { } receipt ? Duration(receipt) + "前" : "不可用")}\r\n{(activeClock ? "计时由本地续计；状态消息和界面刷新不等于实际工作进展，无消息不自动判定卡死。\r\n" : "")}下一步：{interaction}\r\n安装器结果：{exit}\r\n记录：{(completed == true ? "已完成" : "尚未确认完整结束")}；数据保存：{(value.DataSaved ? completed == true ? "已保存记录" : "已保存证据（可能仍不完整）" : "尚未确认")}\r\n采集来源：{(value.CaptureFinished ? "已停止" : "尚未确认停止")}；覆盖限制：{quality}\r\n{(string.IsNullOrWhiteSpace(value.Error) ? "" : "失败原因：" + Brief(value.Error) + "\r\n")}详情中可查看准确会话、来源、错误原文；High 不代表最终归属或安全删除许可。";
+    }
+
+    internal static string StepLabel(string? step) => step switch
+    {
+        "preparing" or "database_open" => "打开记录数据库", "baseline_inventory" => "读取初始配置清单",
+        "provider_start" => "启动采集来源", "baseline_files" => "枚举并读取初始文件状态",
+        "installer_running" => "运行安装器并记录来源", "descendant_drain" => "等待后代进程与活动安静",
+        "final_files" => "枚举、读取并哈希最终文件状态", "final_registry" => "读取最终注册表状态",
+        "source_stop" => "停止本次来源并排空队列", "evidence_replay" => "读回原始证据日志",
+        "evidence_association" => "关联事件与状态证据", "evidence_normalization" => "规范化来源操作", "checkpoint_finalize" => "提交并关闭原始证据检查点", "final_inventory" => "读取最终配置清单",
+        "sqlite_save" => "保存最终会话到 SQLite", "result_readback" => "按准确会话 ID 读回结果",
+        "completed" => "最终结果已读回", null => "实际步骤不可用", _ => "后端步骤：" + Brief(step)
+    };
+    private static string Unit(string? unit) => unit switch { "entries" => "项（已完成的枚举/读取项，含跳过项）", "raw_events" => "条原始事件", "resources" => "项资源", "source_records" => "条已接收来源记录（不代表已保存或已归因）", null => "单位不可用", _ => unit };
+    private static ulong SaturatingAdd(ulong value, ulong other) => ulong.MaxValue - value < other ? ulong.MaxValue : value + other;
+    internal static string Duration(ulong milliseconds) => milliseconds < 1000 ? $"{milliseconds} 毫秒" : $"{milliseconds / 1000 / 3600:D2}:{milliseconds / 1000 / 60 % 60:D2}:{milliseconds / 1000 % 60:D2}";
+    private static string Brief(string text) { var line = text.Replace('\r', ' ').Replace('\n', ' '); return line.Length <= 240 ? line : line[..240] + "…（原文见详情）"; }
+
+    internal string TaskSummaryText => new StringBuilder()
+        .AppendLine(Contain.Viewer.ProductVersion.Display).AppendLine(LastStatus is { } state ? FormatStatus(state, Result?.Succeeded) : status.Text)
+        .AppendLine($"会话 ID：{LastStatus?.SessionId ?? "未确认"}")
+        .AppendLine($"数据库：{LastStatus?.Database ?? database.Text}")
+        .AppendLine($"最后确认阶段：{Result?.LastConfirmedStage ?? LastStatus?.Stage ?? "未取得结构化状态"}")
+        .AppendLine($"实际步骤：{LastStatus?.Step ?? "不可用"}")
+        .AppendLine($"采集进程 PID：{Result?.CollectorPid?.ToString() ?? "未确认"}；退出码：{Result?.CollectorExitCode.ToString() ?? "尚未确认"}")
+        .AppendLine($"失败摘要：{Brief(localFailure ?? LastStatus?.Error ?? "未报告")}")
+        .AppendLine("摘要仅复制到本机剪贴板，请审阅路径后再分享。 ").ToString();
+
+    internal string TaskDetailsText => new StringBuilder(TaskSummaryText)
+        .AppendLine().AppendLine("高级诊断（保留在本机）")
+        .AppendLine($"安装器 PID / 创建时间：{LastStatus?.InstallerPid?.ToString() ?? "未确认"} / {LastStatus?.InstallerCreationTime ?? "不可用"}")
+        .AppendLine($"ETW 实际来源：进程 {LastStatus?.EtwProcess ?? "未确认"} / 文件 {LastStatus?.EtwFile ?? "未确认"} / 注册表 {LastStatus?.EtwRegistry ?? "未确认"}")
+        .AppendLine($"后端原始阶段 / 步骤：{LastStatus?.Stage ?? "未确认"} / {LastStatus?.Step ?? "不可用"}")
+        .AppendLine($"结构化状态错误：{Result?.ProtocolError ?? "未报告"}")
+        .AppendLine($"错误原文：{localFailure ?? LastStatus?.Error ?? "未报告"}")
+        .AppendLine(string.Join("\r\n", LastStatus?.QualityReasons ?? []))
+        .AppendLine($"采集进程诊断{(Result?.DiagnosticsTruncated == true ? "（长度超限，仅保留前段）" : "")}：")
+        .AppendLine(Result?.Diagnostics ?? "未提供").ToString();
+
+    private void ShowTaskDetails()
+    {
+        var window = new Form { Name = "InstallTaskDetails", Text = "Contain · 本次任务详情", Font = Font,
+            AutoScaleDimensions = new SizeF(96F, 96F), AutoScaleMode = AutoScaleMode.Dpi,
+            ClientSize = new Size(760, 520), MinimumSize = new Size(420, 280), StartPosition = FormStartPosition.CenterParent };
+        window.Controls.Add(new TextBox { Name = "InstallTaskDiagnostics", Text = TaskDetailsText, Multiline = true,
+            ReadOnly = true, WordWrap = false, ScrollBars = ScrollBars.Both, Dock = DockStyle.Fill, BackColor = Color.White });
+        window.Show(this);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            ++generation;
+            lock (progressGate) { pendingProgress = null; dispatchScheduled = false; }
+            displayTimer.Stop(); displayTimer.Dispose();
+        }
+        base.Dispose(disposing);
     }
 
     private void UpdateEnabled()
@@ -231,6 +380,7 @@ public sealed class InstallForm : Form
         start.Enabled = !IsActive && !checking && !consumed;
         check.Enabled = !IsActive && !checking && !consumed;
         view.Enabled = !IsActive && !checking && LastStatus is not null && File.Exists(LastStatus.Database);
+        details.Enabled = copySummary.Enabled = consumed || LastStatus is not null || localFailure is not null;
     }
 
     private static TextBox Input(string name) => new() { Name = name, Dock = DockStyle.Fill };

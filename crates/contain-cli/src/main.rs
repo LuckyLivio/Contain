@@ -9,6 +9,7 @@ use contain_core::{
 };
 use std::{env, path::PathBuf};
 pub mod render;
+mod status_output;
 
 #[derive(Parser)]
 #[command(
@@ -198,18 +199,10 @@ fn run_cli(cli: Cli) -> Result<()> {
         } => {
             let db = std::path::absolute(&db).context("resolving capture database path")?;
             let mut status = InstallStatus::new(db.to_string_lossy().into_owned(), !no_etw);
+            let output = status_json.then(status_output::StatusOutput::new);
             let mut emit = |status: &InstallStatus| {
-                if status_json {
-                    // Broken observation pipes must not interrupt collection or orphan
-                    // a managed installer. The desktop treats missing EOF/results as failure.
-                    use std::io::Write;
-                    let mut output = std::io::stdout().lock();
-                    if let Ok(row) = serde_json::to_string(&serde_json::json!({
-                        "schema_version": 3, "kind": "install_status", "data": status
-                    })) {
-                        let _ = writeln!(output, "{row}");
-                        let _ = output.flush();
-                    }
+                if let Some(output) = &output {
+                    output.publish(status);
                 }
             };
             status.publish(&mut emit);

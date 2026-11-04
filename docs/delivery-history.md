@@ -1,6 +1,6 @@
 # Delivery history
 
-The current download entry is the phase-one Beta in the [README](../README.md).
+The current download entry is Beta 2 in the [README](../README.md).
 This index preserves earlier bounded deliveries and their failures; it does not
 turn historical packages into current Beta recommendations.
 
@@ -9,7 +9,8 @@ turn historical packages into current Beta recommendations.
 | Bounded read-only CLI candidate | Closed | [Delivery](read-only-workflow.md), source `2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15` |
 | Desktop record viewer MVP | Closed | [Historical desktop evidence](examples/windows-desktop-viewer-41122708670.json), source `4b4d38764ed417e6754b5db798488227ec147e21` |
 | Graphical installation recording MVP | Closed | [Delivery and all retained failures](graphical-install-record.md), source `15f214442d69baa0ebd91f5ad12edc5661281779` |
-| Phase-one Beta delivery | Current Beta | [Current work and evidence provenance](stage-one-beta.md) |
+| Phase-one Beta delivery | Closed | [Historical work and evidence provenance](stage-one-beta.md) |
+| Task progress and failure feedback, Beta 2 | Current Beta | [Changes, verified artifact and limitations](progress-beta2.md) |
 
 [Architecture](architecture.md), [JSON contract](json-contract.md),
 [measured performance limits](performance.md) and [formal unexecuted stabilization

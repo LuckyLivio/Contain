@@ -1,7 +1,8 @@
 param(
     [ValidateSet('Setup', 'Check', 'Coverage', 'CoverageOriginal', 'Dependencies', 'Companion', 'Bench', 'Fuzz')]
     [string]$Mode = 'Check',
-    [ValidateRange(1, 3600)][int]$FuzzSeconds = 30
+    [ValidateRange(1, 3600)][int]$FuzzSeconds = 30,
+    [ValidateNotNullOrEmpty()][string]$OutputDirectory = 'target/quality'
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -13,11 +14,18 @@ $env:PATH = $cargoDirectory + [IO.Path]::PathSeparator + $env:PATH
 Push-Location (Join-Path $PSScriptRoot '..')
 try {
     if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) { throw 'Rust is missing. Inspect the existing installation before installing rustup.' }
-    New-Item -ItemType Directory -Force target/quality | Out-Null
+    $qualityDirectory = [IO.Path]::GetFullPath($OutputDirectory)
+    $cargoTargetDirectory = [IO.Path]::GetFullPath($(if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { 'target' }))
+    $junitPath = if ($PSBoundParameters.ContainsKey('OutputDirectory')) {
+        Join-Path $cargoTargetDirectory 'nextest/ci/junit.xml'
+    } else {
+        Join-Path (Get-Location) 'target/nextest/ci/junit.xml'
+    }
+    New-Item -ItemType Directory -Force $qualityDirectory | Out-Null
     # Preserve previous attempts, including failures, before refreshing convenient paths.
-    $archive = Join-Path 'target/quality/runs' ((Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N'))
+    $archive = Join-Path (Join-Path $qualityDirectory 'runs') ((Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force $archive | Out-Null
-    $manifestPath = 'target/quality/gates.json'
+    $manifestPath = Join-Path $qualityDirectory 'gates.json'
     $manifest = if (Test-Path $manifestPath) {
         Get-Content -Raw $manifestPath | ConvertFrom-Json -AsHashtable
     } else { @{ schema_version=1; gates=@(); invocations=@(); tools=@{} } }
@@ -49,12 +57,12 @@ try {
             }
             $gate.exit_code = $LASTEXITCODE
         } finally {
-            if ($Label -eq 'nextest' -and (Test-Path target/nextest/ci/junit.xml)) {
-                Copy-Item target/nextest/ci/junit.xml (Join-Path $archive 'junit.xml')
+            if ($Label -eq 'nextest' -and (Test-Path -LiteralPath $junitPath)) {
+                Copy-Item -LiteralPath $junitPath -Destination (Join-Path $archive 'junit.xml')
             }
             $manifest.gates = @($manifest.gates) + @($gate)
             Save-Manifest
-            if (Test-Path $log) { Copy-Item $log "target/quality/$Label.log" -Force }
+            if (Test-Path $log) { Copy-Item -LiteralPath $log -Destination (Join-Path $qualityDirectory "$Label.log") -Force }
         }
         if ($gate.exit_code -ne 0) { throw "$Label failed (exit $($gate.exit_code)). See $log" }
     }
@@ -85,12 +93,22 @@ try {
     }
     switch ($Mode) {
         'Check' {
-            if (Test-Path target/nextest/ci/junit.xml) {
-                Move-Item target/nextest/ci/junit.xml (Join-Path $archive 'previous-junit.xml')
+            $nextestArguments = @('nextest', 'run', '--workspace', '--all-features', '--locked', '--profile', 'ci', '--retries', '0')
+            if ($PSBoundParameters.ContainsKey('OutputDirectory')) {
+                # nextest's store.dir is independent of Cargo's target directory.
+                # A lower-priority tool config redirects only its output store;
+                # the repository's profiles and assertions remain authoritative.
+                $nextestConfiguration = Join-Path $archive 'nextest-output.toml'
+                $storePath = (Join-Path $cargoTargetDirectory 'nextest').Replace('\', '/') | ConvertTo-Json -Compress
+                @('[store]', "dir = $storePath") | Set-Content -LiteralPath $nextestConfiguration -Encoding utf8
+                $nextestArguments += @('--tool-config-file', "contain-output:$nextestConfiguration")
+            }
+            if (Test-Path -LiteralPath $junitPath) {
+                Move-Item -LiteralPath $junitPath -Destination (Join-Path $archive 'previous-junit.xml')
             }
             Invoke-Gate fmt cargo @('fmt', '--all', '--', '--check')
             Invoke-Gate clippy cargo @('clippy', '--workspace', '--all-targets', '--all-features', '--locked', '--', '-D', 'warnings')
-            Invoke-Gate nextest cargo @('nextest', 'run', '--workspace', '--all-features', '--locked', '--profile', 'ci', '--retries', '0')
+            Invoke-Gate nextest cargo $nextestArguments
             Invoke-Gate doctests cargo @('test', '--workspace', '--all-features', '--locked', '--doc')
             Invoke-Gate fuzz-fmt cargo @('fmt', '--manifest-path', 'fuzz/Cargo.toml', '--all', '--', '--check')
             Invoke-Gate fuzz-clippy cargo @('clippy', '--manifest-path', 'fuzz/Cargo.toml', '--all-targets', '--locked', '--', '-D', 'warnings')
@@ -110,20 +128,24 @@ try {
             if ($Mode -eq 'CoverageOriginal') {
                 # An independent original-package report prevents duplicate #[path]
                 # imports from masking the old denominator. No production source is excluded.
-                $env:CARGO_LLVM_COV_TARGET_DIR = Join-Path (Get-Location) 'target/coverage-original-build'
+                $env:CARGO_LLVM_COV_TARGET_DIR = if ($PSBoundParameters.ContainsKey('OutputDirectory')) {
+                    Join-Path $qualityDirectory 'coverage-original-build'
+                } else {
+                    Join-Path (Get-Location) 'target/coverage-original-build'
+                }
             }
             foreach ($artifact in @("$prefix.json", $lcov, "$prefix-html")) {
-                $artifactPath = Join-Path 'target/quality' $artifact
+                $artifactPath = Join-Path $qualityDirectory $artifact
                 if (Test-Path -LiteralPath $artifactPath) {
                     $resolvedArtifact = (Resolve-Path -LiteralPath $artifactPath).Path
-                    $resolvedQuality = (Resolve-Path -LiteralPath target/quality).Path
-                    if (-not $resolvedArtifact.StartsWith($resolvedQuality + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Artifact archive path escaped target/quality' }
+                    $resolvedQuality = (Resolve-Path -LiteralPath $qualityDirectory).Path
+                    if (-not $resolvedArtifact.StartsWith($resolvedQuality.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Artifact archive path escaped quality output directory' }
                     Move-Item -LiteralPath $resolvedArtifact -Destination $archive
                 }
             }
-            Invoke-Gate $prefix cargo (@('llvm-cov') + $scope + @('--all-features', '--locked', '--json', '--output-path', "target/quality/$prefix.json"))
-            Invoke-Gate "$prefix-html" cargo (@('llvm-cov', 'report') + $scope + @('--html', '--output-dir', "target/quality/$prefix-html"))
-            Invoke-Gate "$prefix-lcov" cargo (@('llvm-cov', 'report') + $scope + @('--lcov', '--output-path', "target/quality/$lcov"))
+            Invoke-Gate $prefix cargo (@('llvm-cov') + $scope + @('--all-features', '--locked', '--json', '--output-path', (Join-Path $qualityDirectory "$prefix.json")))
+            Invoke-Gate "$prefix-html" cargo (@('llvm-cov', 'report') + $scope + @('--html', '--output-dir', (Join-Path $qualityDirectory "$prefix-html")))
+            Invoke-Gate "$prefix-lcov" cargo (@('llvm-cov', 'report') + $scope + @('--lcov', '--output-path', (Join-Path $qualityDirectory $lcov)))
             Invoke-Gate "$prefix-floor" cargo (@('llvm-cov', 'report') + $scope + @('--summary-only', '--fail-under-lines', '66.5', '--fail-under-functions', '70'))
         }
         'Dependencies' {
@@ -140,8 +162,9 @@ try {
             Invoke-Gate companion-spool cargo @('test', '-p', 'contain-core', '--locked', 'windows::clock::companion::spool::tests::paced_historical_callback_volume_fits_disk_quota_and_drains_every_record', '--', '--ignored', '--exact', '--nocapture')
         }
         'Bench' {
-            if (Test-Path target/quality/event-pipeline.json) { Move-Item -LiteralPath target/quality/event-pipeline.json -Destination $archive }
-            Invoke-Gate bench cargo @('bench', '-p', 'contain-core', '--bench', 'event_pipeline', '--locked', '--', '--events', '20000', '--samples', '7')
+            $benchmarkPath = Join-Path $qualityDirectory 'event-pipeline.json'
+            if (Test-Path -LiteralPath $benchmarkPath) { Move-Item -LiteralPath $benchmarkPath -Destination $archive }
+            Invoke-Gate bench cargo @('bench', '-p', 'contain-core', '--bench', 'event_pipeline', '--locked', '--', '--events', '20000', '--samples', '7', '--output', $benchmarkPath)
         }
         'Fuzz' {
             $fuzzToolchain = if ($env:CONTAIN_FUZZ_TOOLCHAIN) { $env:CONTAIN_FUZZ_TOOLCHAIN } else { 'nightly' }
@@ -160,7 +183,19 @@ try {
             Invoke-Gate fuzz-lock python @('scripts/check-fuzz-lock.py')
             $fuzzLockHash = (Get-FileHash -LiteralPath fuzz/Cargo.lock).Hash
             foreach ($target in @('event_json', 'lifetime_sequences', 'completion_correlation')) {
-                Invoke-Gate "fuzz-$target" cargo @("+$fuzzToolchain", 'fuzz', 'run', $target, '--', "-max_total_time=$FuzzSeconds", '-max_len=4096', '-timeout=10', '-rss_limit_mb=2048')
+                $fuzzArguments = @("+$fuzzToolchain", 'fuzz', 'run', $target)
+                $fuzzerOptions = @("-max_total_time=$FuzzSeconds", '-max_len=4096', '-timeout=10', '-rss_limit_mb=2048')
+                if ($PSBoundParameters.ContainsKey('OutputDirectory')) {
+                    # libFuzzer writes new corpus entries only to its first corpus
+                    # directory; the existing reviewed seeds are additional inputs.
+                    $corpus = Join-Path $archive "fuzz-corpus/$target"
+                    $artifacts = Join-Path $archive "fuzz-artifacts/$target"
+                    New-Item -ItemType Directory -Force $corpus, $artifacts | Out-Null
+                    $seeds = [IO.Path]::GetFullPath("fuzz/corpus/$target")
+                    $fuzzArguments += @('--target-dir', (Join-Path $qualityDirectory 'fuzz-build'), $corpus, $seeds)
+                    $fuzzerOptions += ('-artifact_prefix=' + $artifacts + [IO.Path]::DirectorySeparatorChar)
+                }
+                Invoke-Gate "fuzz-$target" cargo ($fuzzArguments + @('--') + $fuzzerOptions)
                 if ((Get-FileHash -LiteralPath fuzz/Cargo.lock).Hash -ne $fuzzLockHash) { throw 'Fuzzing changed its lockfile; results are not reproducible' }
             }
         }
