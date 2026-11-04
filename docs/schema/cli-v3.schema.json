@@ -1713,6 +1713,50 @@
               "$ref": "#/$defs/quality"
             }
           ]
+        },
+        "step": {
+          "type": "string",
+          "description": "Actual backend operation; unknown additive steps remain displayable."
+        },
+        "elapsed_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Monotonic task duration at emission; independent of evidence clocks."
+        },
+        "step_elapsed_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "processed_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Completed work units in this step; null when not measured."
+        },
+        "processed_unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_progress_elapsed_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Task elapsed time at last confirmed actual progress; not a heartbeat."
+        },
+        "installer_interaction": {
+          "type": "string",
+          "description": "not_started, may_need_input or not_needed; cannot detect installer dialog input."
+        },
+        "stage_elapsed_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Monotonic time in the current preparing/capturing/finalizing stage."
         }
       }
     }

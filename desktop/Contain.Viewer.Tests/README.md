@@ -1,5 +1,26 @@
 # Native desktop verification
 
+The ordinary harness also runs eight deterministic native progress checks before
+layout verification or the optional live install plan. They use the production
+`InstallClient` and `InstallForm` with a clearly marked synthetic child mode in
+the test executable: repeated/slow finalizing, coalesced and stale messages,
+wrong session/database, concurrent stdout/stderr larger than a pipe buffer,
+structured failure, missing terminal results, nonzero collector exit, missing
+measurements, duplicate clicks, conservative close, details/clipboard and disposed
+callbacks. Synthetic child output is never reported as installer or ETW evidence.
+The child-mode environment flag exists only in this test assembly; the package
+does not include it. `progress-summary.json` records the predeclared checks and
+actual DPI, source and package identities. Full failure logs use private output.
+
+For the bounded progress-only plan (no ETW/provider probe or installer launch):
+
+```powershell
+./target/viewer-tests/Contain.Viewer.Tests.exe --progress-checks-only target/beta2/progress-checks
+```
+
+That standalone mode reports `working-tree` and no package manifest identity;
+release acceptance uses the full frozen-package harness and its exact source SHA.
+
 This is a Windows integration executable, not a mock frontend. It references the
 production viewer, verifies its assembly is byte-identical to the frozen package,
 uses the packaged `contain.exe`, and launches the packaged desktop executable.

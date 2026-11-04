@@ -405,5 +405,34 @@ class ViewerPackageTests(unittest.TestCase):
         names=set(VIEWER.re.findall(r'"([a-z_0-9]+)"',section))
         self.assertEqual(names,VIEWER.LAYOUT_REQUIRED_CHECKS)
 
+    def test_progress_evidence_requires_complete_plan_and_exact_package(self):
+        build = self.prepare()
+        expected = {entry['path']: entry['sha256'] for entry in build['files']}
+        manifest = VIEWER.sha(self.package/'BUILD.json')
+        progress = dict(schema_version=1, protocol_revision=VIEWER.PROGRESS_VERIFICATION,
+            source_sha=self.source, native_windows=True, synthetic=True, real_etw_executed=False,
+            completed=True, accepted=True, package_manifest_sha256=manifest,
+            viewer_assembly_sha256=expected['Contain.Viewer.dll'], contain_sha256=expected['contain.exe'],
+            planned_checks=sorted(VIEWER.PROGRESS_REQUIRED_CHECKS),
+            checks=[dict(name=name,status='passed') for name in sorted(VIEWER.PROGRESS_REQUIRED_CHECKS)],
+            passed=len(VIEWER.PROGRESS_REQUIRED_CHECKS), failed=0, skipped=0, not_run=0)
+        self.assertTrue(VIEWER.progress_verification_matches(progress, build, manifest))
+        for field, wrong in (('source_sha','f'*40), ('viewer_assembly_sha256','f'*64),
+                             ('contain_sha256','f'*64), ('package_manifest_sha256','f'*64),
+                             ('real_etw_executed',True), ('accepted',False)):
+            changed = copy.deepcopy(progress); changed[field] = wrong
+            self.assertFalse(VIEWER.progress_verification_matches(changed, build, manifest), field)
+        changed = copy.deepcopy(progress); changed['checks'][0]['status'] = 'not_run'
+        self.assertFalse(VIEWER.progress_verification_matches(changed, build, manifest))
+        changed = copy.deepcopy(progress); changed['checks'].append(changed['checks'][0])
+        self.assertFalse(VIEWER.progress_verification_matches(changed, build, manifest))
+        changed = copy.deepcopy(progress); changed['planned_checks'].pop()
+        self.assertFalse(VIEWER.progress_verification_matches(changed, build, manifest))
+
+    def test_progress_required_plan_matches_actual_harness(self):
+        source=(Path(__file__).parent.parent/'desktop/Contain.Viewer.Tests/InstallProgressChecks.cs').read_text(encoding='utf-8')
+        section=source.split('Plan =',1)[1].split('];',1)[0]
+        self.assertEqual(set(VIEWER.re.findall(r'"([a-z_]+)"',section)),VIEWER.PROGRESS_REQUIRED_CHECKS)
+
 
 if __name__=='__main__': unittest.main()

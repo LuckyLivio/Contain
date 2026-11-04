@@ -59,7 +59,7 @@ fn install_controlled(
     let result = (|| {
         let policy = crate::storage::checkpoint::Policy::from_env()?;
         crate::storage::checkpoint::scoped(db, policy, |db| {
-            install_inner(
+            let capture = install_inner(
                 options,
                 db,
                 policy,
@@ -67,7 +67,9 @@ fn install_controlled(
                 require_etw,
                 isolate_output,
                 notify,
-            )
+            )?;
+            status.begin_step("checkpoint_finalize", notify);
+            Ok(capture)
         })
     })();
     let result = result.and_then(|capture: Capture| {
@@ -142,6 +144,7 @@ fn install_inner(
         db.validate_diagnostic_location(std::path::Path::new(&path))?;
     }
     let mut warnings = Vec::new();
+    status.begin_step("baseline_inventory", notify);
     let before_inventory = inventory::snapshot();
     let before_registry = options
         .registry_key
@@ -188,6 +191,7 @@ fn install_inner(
     };
     let mut journal = RawBuffer::with_policy(db, &initial, options.evidence_quota_bytes, policy)?;
     status.data_saved = true;
+    status.begin_step("provider_start", notify);
     let mut source = EtwSource::start(&watch_roots, nt_root.clone(), options.etw);
     status.backend(source.provider_status());
     status.publish(notify);
@@ -211,7 +215,11 @@ fn install_inner(
         crate::ingest::record_while(&mut source, db, journal, |live| {
             // Baseline reads now occur inside the active trace, before launch.
             // The dedicated receiver remains active during both snapshots.
-            let before_files = filesystem::baseline_snapshot(&roots)?;
+            status.begin_step("baseline_files", notify);
+            let before_files = filesystem::baseline_snapshot_progress(&roots, &mut |count| {
+                status.processed(count, "entries", notify);
+            })?;
+            status.publish(notify);
             let installer_clock = Instant::now();
             let started_at = native::timestamp(native::now_ticks());
             let mut command = Command::new(&installer);
@@ -244,10 +252,20 @@ fn install_inner(
             status.installer_started = true;
             status.installer_pid = Some(root_pid);
             status.installer_creation_time = (root_birth != 0).then(|| root_birth.to_string());
-            status.publish(notify);
+            status.begin_step("installer_running", notify);
+            let capture_received_start = live.received();
+            let mut progress_at = Instant::now();
             let mut process_observer = ProcessObserver::new(identity, &id);
             let mut poll_at = Instant::now();
             let exit_code = loop {
+                if Instant::now() >= progress_at {
+                    status.processed(
+                        live.received().saturating_sub(capture_received_start),
+                        "source_records",
+                        notify,
+                    );
+                    progress_at = Instant::now() + Duration::from_millis(250);
+                }
                 if !lifecycle_receiver && Instant::now() >= poll_at {
                     measured!("capture_process_poll", process_observer.poll());
                     poll_at = Instant::now() + Duration::from_millis(30);
@@ -262,13 +280,28 @@ fn install_inner(
                 installer_clock.elapsed().as_millis() as u64,
             );
             let exited_at = native::now_ticks();
+            status.processed(
+                live.received().saturating_sub(capture_received_start),
+                "source_records",
+                notify,
+            );
             status.installer_exited = true;
             status.installer_exit_code = exit_code;
             status.publish(notify);
+            status.begin_step("descendant_drain", notify);
+            let drain_received_start = live.received();
             live.reset_activity();
             let drain_start = Instant::now();
             let mut drain_timed_out = false;
             loop {
+                if Instant::now() >= progress_at {
+                    status.processed(
+                        live.received().saturating_sub(drain_received_start),
+                        "source_records",
+                        notify,
+                    );
+                    progress_at = Instant::now() + Duration::from_millis(250);
+                }
                 if !lifecycle_receiver && Instant::now() >= poll_at {
                     measured!("capture_process_poll", process_observer.poll());
                     poll_at = Instant::now() + Duration::from_millis(30);
@@ -295,21 +328,33 @@ fn install_inner(
                 }
                 thread::sleep(Duration::from_millis(1));
             }
+            status.processed(
+                live.received().saturating_sub(drain_received_start),
+                "source_records",
+                notify,
+            );
+            status.publish(notify);
             phases.insert(
                 "descendant_quiet_drain".into(),
                 drain_start.elapsed().as_millis() as u64,
             );
             let after_clock = Instant::now();
-            let observed = filesystem::observed_snapshot(&roots)?;
+            status.begin_step("final_files", notify);
+            let observed = filesystem::observed_snapshot_progress(&roots, &mut |count| {
+                status.processed(count, "entries", notify);
+            })?;
+            status.publish(notify);
             phases.insert(
                 "after_file_snapshot_hash".into(),
                 after_clock.elapsed().as_millis() as u64,
             );
+            status.begin_step("final_registry", notify);
             let after_registry = options
                 .registry_key
                 .as_deref()
                 .map(registry::observed_snapshot)
                 .transpose()?;
+            status.begin_step("source_stop", notify);
             Ok((
                 before_files,
                 observed,
@@ -326,7 +371,7 @@ fn install_inner(
     status.stage = "finalizing".into();
     status.capture_finished = true;
     status.backend(&backend);
-    status.publish(notify);
+    status.begin_step("evidence_replay", notify);
     let (
         before_files,
         observed,
@@ -403,6 +448,7 @@ fn install_inner(
         cache.seed(p.clone());
     }
     let mut cursor = (0, 0);
+    let mut replayed = 0u64;
     loop {
         let page = db.raw_page(&id, cursor)?;
         if page.is_empty() {
@@ -411,9 +457,12 @@ fn install_inner(
         for e in &page {
             measured!("lifetime_ingest", cache.ingest(e));
         }
+        replayed = replayed.saturating_add(page.len() as u64);
+        status.processed(replayed, "raw_events", notify);
         let last = page.last().unwrap();
         cursor = (last.timestamp_ticks, last.sequence);
     }
+    status.publish(notify);
     let lifecycle_complete = backend.etw_process == "active"
         && backend.etw_events_lost == Some(0)
         && backend.etw_buffers_lost == Some(0)
@@ -435,6 +484,8 @@ fn install_inner(
             .collect();
     }
     let source_intact = backend.source_intact();
+    status.begin_step("evidence_normalization", notify);
+    let mut normalized_count = 0u64;
     let mut raw_stats = CaptureStats::default();
     let mut cursor = (0, 0);
     loop {
@@ -444,6 +495,7 @@ fn install_inner(
                 if page.is_empty() {
                     return Ok(true);
                 }
+                normalized_count = normalized_count.saturating_add(page.len() as u64);
                 let last = page.last().unwrap();
                 cursor = (last.timestamp_ticks, last.sequence);
                 let mut retained = Vec::with_capacity(page.len());
@@ -525,15 +577,19 @@ fn install_inner(
             }
             Ok(false)
         })?;
+        status.processed(normalized_count, "raw_events", notify);
         if done {
             break;
         }
     }
+    status.publish(notify);
     phases.insert(
         "lifetime_attribution_and_paged_persistence".into(),
         association_clock.elapsed().as_millis() as u64,
     );
     drop(cache);
+    status.begin_step("evidence_association", notify);
+    let mut resources_processed = 0u64;
     let correlation_clock = Instant::now();
     let state_association_timer = profile::timer("post_state_association");
     let operations = crate::correlation::correlate(&mut [], &before_files, &after_files);
@@ -565,6 +621,8 @@ fn install_inner(
     // per-resource bound instead of accumulating a full-session event vector.
     db.evidence_group(&id, |db| {
         for file in &mut files {
+            status.processed(resources_processed, "resources", notify);
+            resources_processed += 1;
             match db.resource_events(&id, &file.path)? {
                 Some(mut events) => {
                     let proof =
@@ -588,6 +646,8 @@ fn install_inner(
             }
         }
         for change in &mut registry {
+            status.processed(resources_processed, "resources", notify);
+            resources_processed += 1;
             let proof = Some(registry::change_observation(change, registry_observations));
             if let Some(root) = &nt_root {
                 match db.resource_events(&id, &format!("{root}\\{}", change.name))? {
@@ -625,6 +685,8 @@ fn install_inner(
         }
         Ok(())
     })?;
+    status.processed(resources_processed, "resources", notify);
+    status.publish(notify);
     warnings.push("File observations use bounded temporary read leases where available; they describe observed hashes and identities, not complete mutation coverage or ownership. Final file and registry state attribution remains Unknown where mutation coverage or read/clock proof is incomplete; verified source actors remain separate.".into());
     phases.insert(
         "correlation_attribution".into(),
@@ -632,6 +694,7 @@ fn install_inner(
     );
     drop(state_association_timer);
     let inventory_clock = Instant::now();
+    status.begin_step("final_inventory", notify);
     let after_inventory = inventory::snapshot();
     let inventory = inventory::diff(&before_inventory, &after_inventory, &processes, &id);
     phases.insert(
@@ -714,12 +777,14 @@ fn install_inner(
             }
         }
     }
+    status.begin_step("sqlite_save", notify);
     measured!("post_summary_write", db.save(&capture))?;
     measured!(
         "post_final_downgrade_full_commit",
         db.mark_finished(&capture)
     )?;
     // Summary returns no full raw-event vector. Full/paged history remains in Storage.
+    status.begin_step("result_readback", notify);
     capture = measured!("post_summary_read", db.load_summary_by_id(&capture.id))?;
     profile::add("post_wall", association_clock.elapsed().as_nanos() as u64);
     profile::finish()?;

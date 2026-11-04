@@ -96,17 +96,20 @@ public sealed class InstallClient(string executablePath)
             if (!process.Start()) throw new InvalidOperationException("无法启动采集进程；安装器未由桌面启动。");
             var collectorPid = process.Id;
             var stderr = InstallDiagnosticOutput.ReadAsync(process.StandardError.BaseStream, 1024 * 1024);
-            var stdout = ReadStatusOutputAsync(process.StandardOutput, line =>
+            // Parse and drain independently of the WinForms synchronization context.
+            // The form owns one coalescing dispatch slot, not one UI post per row.
+            var stdout = Task.Run(() => ReadStatusOutputAsync(process.StandardOutput, line =>
             {
                 if (protocolError is not null) return;
                 try
                 {
-                    var current = sequence.Accept(line);
+                    if (!sequence.TryAccept(line, out var accepted)) return;
+                    var current = accepted!;
                     if (current.Stage != "failed") lastConfirmedStage = current.Stage;
                     progress(current);
                 }
                 catch (Exception error) { protocolError = error.Message; }
-            });
+            }));
             // Never kill this process tree: it owns the real installer. Drain output even
             // after a protocol error, and keep the window open until the collector exits.
             await process.WaitForExitAsync();

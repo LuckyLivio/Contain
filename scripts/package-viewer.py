@@ -23,6 +23,13 @@ PROTOCOL = "contain-desktop-package-1"
 VERIFICATION = "contain-desktop-verification-1"
 INSTALL_VERIFICATION = "contain-desktop-install-verification-1"
 LAYOUT_VERIFICATION = "contain-desktop-layout-verification-1"
+PROGRESS_VERIFICATION = "contain-desktop-progress-verification-1"
+PROGRESS_REQUIRED_CHECKS = frozenset({
+    "additive_measurements_and_missing_values", "repeated_finalizing_and_stale_identity",
+    "slow_finalizing_real_pipes_ui_timer_and_close_guard", "structured_failure_details_and_clipboard",
+    "missing_terminal_result", "nonzero_collector_exit", "absent_progress_measurement",
+    "disposed_form_callback_guard",
+})
 LAYOUT_REQUIRED_CHECKS = frozenset({
     "native_default_layout_resize_maximize", "simulated_150_percent_layout",
     "simulated_200_percent_layout", "unchanged_read_only_fixture_after_layout",
@@ -422,6 +429,30 @@ def layout_verification_matches(value, build, manifest_sha):
         and all(type(value.get(key)) is int and value[key] == 0 for key in ("failed", "skipped", "not_run")))
 
 
+def progress_verification_matches(value, build, manifest_sha):
+    """Synthetic process/WinForms checks are separate from real ETW evidence."""
+    if not isinstance(value, dict):
+        return False
+    checks, planned = value.get("checks", []), value.get("planned_checks", [])
+    if not isinstance(checks, list) or not isinstance(planned, list) or not all(isinstance(x, str) for x in planned):
+        return False
+    names = [x.get("name") for x in checks if isinstance(x, dict)]
+    expected = {entry["path"]: entry["sha256"] for entry in build["files"]}
+    return (
+        value.get("schema_version") == 1 and value.get("protocol_revision") == PROGRESS_VERIFICATION
+        and value.get("source_sha") == build["source_sha"] and value.get("native_windows") is True
+        and value.get("synthetic") is True and value.get("real_etw_executed") is False
+        and value.get("completed") is True and value.get("accepted") is True
+        and value.get("package_manifest_sha256") == manifest_sha
+        and value.get("viewer_assembly_sha256") == expected["Contain.Viewer.dll"]
+        and value.get("contain_sha256") == expected["contain.exe"]
+        and len(planned) == len(set(planned)) and set(planned) == PROGRESS_REQUIRED_CHECKS
+        and len(names) == len(set(names)) == len(checks) and set(names) == PROGRESS_REQUIRED_CHECKS
+        and all(check.get("status") == "passed" for check in checks)
+        and type(value.get("passed")) is int and value["passed"] == len(PROGRESS_REQUIRED_CHECKS)
+        and all(type(value.get(key)) is int and value[key] == 0 for key in ("failed", "skipped", "not_run")))
+
+
 def finalize(args):
     package = args.package.resolve()
     build = verify_package(package)
@@ -432,6 +463,8 @@ def finalize(args):
     installation = read(install_path) if install_path and install_path.is_file() else {}
     layout_path = getattr(args, "layout_verification", None)
     layout = read(layout_path) if layout_path and layout_path.is_file() else {}
+    progress_path = getattr(args, "progress_verification", None)
+    progress = read(progress_path) if progress_path and progress_path.is_file() else {}
     install_requested = build.get("controlled_fixture") is not None or install_path is not None
     checks = {
         "frozen_package_unchanged": True,
@@ -445,6 +478,8 @@ def finalize(args):
         checks["native_gui_install_etw_and_exact_result"] = install_verification_matches(installation, build, manifest_sha)
     if layout_path is not None:
         checks["native_layout_and_simulated_scale"] = layout_verification_matches(layout, build, manifest_sha)
+    if progress_path is not None:
+        checks["native_progress_and_failure_feedback"] = progress_verification_matches(progress, build, manifest_sha)
     passed = all(checks.values())
     milestone_checks = dict(automated_product_and_quality=passed,
                            native_picker_navigation_and_cancel=native_picker_verified(installation)) if install_requested else None
@@ -466,6 +501,8 @@ def finalize(args):
         native_install_verification=installation,
         install_verification_summary_sha256=sha(install_path) if install_path and install_path.is_file() else None,
         native_layout_verification=layout,
+        native_progress_verification=progress,
+        progress_verification_summary_sha256=sha(progress_path) if progress_path and progress_path.is_file() else None,
         layout_verification_summary_sha256=sha(layout_path) if layout_path and layout_path.is_file() else None,
         system_high_dpi_verified=False if layout_path is not None else None,
         scope=("One GUI-initiated controlled real-ETW fixture using the frozen desktop, CLI and runtime; no third-party installer or scale trial. Manual dialog navigation remains separately reported."
@@ -511,6 +548,8 @@ def main():
     finish.add_argument("--install-verification", type=Path)
     finish.add_argument("--layout-verification", type=Path,
         help="Require default native layout and explicitly simulated 150/200%% scale checks")
+    finish.add_argument("--progress-verification", type=Path,
+        help="Require native synthetic process/progress/failure checks; these do not establish real ETW")
     finish.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:

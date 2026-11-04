@@ -182,7 +182,21 @@ pub fn baseline_snapshot(roots: &[PathBuf]) -> Result<Snapshot> {
 /// not exclusion leases. Without complete mutation coverage, exclusive reads
 /// would interfere with the workload while providing no state attribution proof.
 pub fn observed_snapshot(roots: &[PathBuf]) -> Result<ObservedSnapshot> {
-    let mut observed = snapshot_inner(roots, ObservationMode::Shared)?;
+    observed_snapshot_progress(roots, &mut |_| {})
+}
+
+pub(crate) fn baseline_snapshot_progress(
+    roots: &[PathBuf],
+    progress: &mut dyn FnMut(u64),
+) -> Result<Snapshot> {
+    Ok(observed_snapshot_progress(roots, progress)?.snapshot)
+}
+
+pub(crate) fn observed_snapshot_progress(
+    roots: &[PathBuf],
+    progress: &mut dyn FnMut(u64),
+) -> Result<ObservedSnapshot> {
+    let mut observed = snapshot_inner_progress(roots, ObservationMode::Shared, progress)?;
     for read in observed.snapshot.observations.values_mut() {
         read.failure = Some("Shared read without writer/path exclusion; content and namespace stability are unproven. Exclusive read leases are disabled because mutation coverage is incomplete.".into());
     }
@@ -215,7 +229,16 @@ pub fn change_observation(
 }
 
 fn snapshot_inner(roots: &[PathBuf], _mode: ObservationMode) -> Result<ObservedSnapshot> {
+    snapshot_inner_progress(roots, _mode, &mut |_| {})
+}
+
+fn snapshot_inner_progress(
+    roots: &[PathBuf],
+    _mode: ObservationMode,
+    progress: &mut dyn FnMut(u64),
+) -> Result<ObservedSnapshot> {
     let mut snapshot = Snapshot::default();
+    let mut processed = 0;
     #[cfg(test)]
     let mut leases = ReadLeases::default();
     for root in roots {
@@ -233,7 +256,11 @@ fn snapshot_inner(roots: &[PathBuf], _mode: ObservationMode) -> Result<ObservedS
                 }
             })
         {
+            // The previous yielded entry has completed its enumeration/read/hash
+            // attempt. In particular, starting a slow hash is not completed work.
+            progress(processed);
             let entry = entry.with_context(|| format!("scanning {}", root.display()))?;
+            processed += 1;
             anyhow::ensure!(
                 snapshot.files.len() + snapshot.unreadable.len() + skipped.borrow().len() < 100_000,
                 "Snapshot entry quota (100000) exceeded; refusing a partial state diff"
@@ -326,6 +353,7 @@ fn snapshot_inner(roots: &[PathBuf], _mode: ObservationMode) -> Result<ObservedS
         }
         snapshot.unreadable.extend(skipped.into_inner());
     }
+    progress(processed);
     Ok(ObservedSnapshot {
         snapshot,
         #[cfg(test)]
@@ -438,6 +466,29 @@ pub fn diff(before: &Snapshot, after: &Snapshot, seen: &HashSet<PathBuf>) -> Vec
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn observed_progress_counts_completed_entries_and_preserves_hashes() {
+        let root = TestRoot::new();
+        std::fs::write(root.0.join("first"), "one").unwrap();
+        std::fs::write(root.0.join("second"), "two").unwrap();
+        let mut counts = Vec::new();
+        let observed = observed_snapshot_progress(std::slice::from_ref(&root.0), &mut |count| {
+            counts.push(count)
+        })
+        .unwrap();
+        assert_eq!(counts, [0, 1, 2, 3]);
+        let original = snapshot(std::slice::from_ref(&root.0)).unwrap();
+        assert_eq!(observed.snapshot.files, original.files);
+        assert_eq!(observed.snapshot.unreadable, original.unreadable);
+        let missing = root.0.join("missing");
+        let mut missing_counts = Vec::new();
+        assert!(
+            observed_snapshot_progress(&[missing], &mut |count| missing_counts.push(count))
+                .is_err()
+        );
+        assert_eq!(missing_counts, [0]);
+    }
 
     #[test]
     fn production_read_does_not_block_writes_or_renames_for_unknown_state() {

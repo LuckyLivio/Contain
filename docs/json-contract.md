@@ -146,7 +146,13 @@ not interrupt collection or terminate an installer.
 
 `data.session_id` is generated before opening storage and stays fixed throughout
 this attempt; `data.database` is its absolute database path. Sequence starts
-at 1 and increases by 1. Never choose a result by record name or latest row.
+at 1 and increases for every generated checkpoint. Beta.2's bounded transport
+can coalesce intermediate measurements, so delivered sequences may have gaps;
+they must remain strictly increasing. Initial, stage, installer-exit and terminal
+checkpoints are retained for this fixed production step plan. Never choose a
+result by record name or latest row. Consumers ignore already delivered/older
+rows and rows for another bound database/session; contradictory new rows fail
+the task protocol rather than replacing the task identity.
 
 - `preparing`: validation, baseline/provider setup; installer has not started.
 - `capturing`: installer was spawned. PID and exact decimal FILETIME birth are
@@ -168,6 +174,52 @@ and final continuity rather than deriving success from installer exit. A missing
 terminal row, malformed JSON, unknown stage or nonzero CLI exit cannot establish
 success. Check the bound database and session through the existing read-only
 viewer when the last valid status identifies saved or possibly unfinished data.
+
+### Beta.2 measured checkpoints
+
+The existing envelope, stages and evidence fields are unchanged. These additive
+fields describe the collector's own monotonic `Instant` durations, independently
+of evidence QPC/FILETIME clocks and attribution:
+
+- `step`: actual executing code-path checkpoint. Preparation includes
+  `database_open`, `baseline_inventory`, `provider_start`, `baseline_files`.
+  The running source phase includes `installer_running`, `descendant_drain`,
+  `final_files`, `final_registry`, `source_stop`. The last four occur after root
+  exit but before sources are confirmed stopped; `stage` is still `capturing`.
+  Finalizing includes `evidence_replay`, `evidence_normalization`,
+  `evidence_association`, `final_inventory`, `sqlite_save`, `result_readback`,
+  `checkpoint_finalize`. Only final successful scope return yields `completed`
+  and `stage:finished`. Failure retains the actual last step and measurements.
+- `elapsed_ms`, `stage_elapsed_ms`, `step_elapsed_ms`: elapsed task/stage/step
+  durations sampled when the backend emits a checkpoint. The stage clock resets
+  only when `stage` changes; step changes reset only the step clock. These are
+  durations, not evidence timestamps.
+- `processed_count`, `processed_unit`: nullable completed work for this step.
+  `entries` counts completed yielded enumeration/read/hash attempts (including
+  directories and unreadable attempts); `source_records` counts actual receiver
+  records since the running/drain step started, not persisted or attributed
+  events. `raw_events` counts replayed or normalized input records;
+  `resources` counts completed state association attempts, not final ownership.
+  Scanning includes ordinary shared file reads and BLAKE3 hashing; there is no
+  sub-file byte measurement. A single slow hash can therefore have no newer
+  count until it finishes. Unknown counts are null, and no total or ETA is inferred.
+- `last_progress_elapsed_ms`: nullable task elapsed instant of a real step
+  transition or increased completed-work count. Repeating an unchanged count,
+  publishing a timer refresh, and frontend clock refresh do not advance it.
+  The frontend can show its age while clearly distinguishing local elapsed time
+  from the last backend checkpoint. This is not a heartbeat or a hang detector.
+- `installer_interaction`: `not_started`, `may_need_input`, or `not_needed`.
+  An installer that has started and not exited may need user interaction; the
+  collector does not inspect its window or claim it is actually waiting for input.
+
+Measurement updates are throttled to at most four per second per executing
+counter loop, with explicit step/end checkpoints. The CLI writes on a separate
+worker with at most 64 queued snapshots and coalesces repeated measurements.
+No pipe write runs on the collector thread. At process exit delivery waits at
+most five seconds; an unresponsive observer may miss the terminal row and must
+report completion unconfirmed. Neither a stalled observer nor a broken pipe
+kills the installer or changes persisted evidence. A missing measurement remains
+unavailable when reading an older status stream.
 
 `--require-etw` is additive and conflicts with `--no-etw`. It refuses launch unless
 process and file ETW providers are active and, when a registry key was selected,

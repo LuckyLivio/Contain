@@ -125,6 +125,29 @@ backend finishes. Abnormal desktop/core termination is not a successful capture;
 reopen the bound database to inspect retained unfinished evidence. Contain does
 not automatically elevate or stop somebody else's trace session.
 
+### Task progress and failure details
+
+The recording window shows the actual backend step, task/stage/step durations,
+available completed-work counts and age of the last measured work. Finalization
+distinguishes file enumeration/read/hash, source stop and queue drain, raw replay,
+operation normalization, evidence association, final inventory, SQLite save and
+exact-session readback. The snapshot entry count includes completed skipped or
+unreadable attempts; source-record counts do not assert persistence or attribution.
+There is no percentage or remaining-time estimate when the total is unknown.
+
+The local display timer continues elapsed/age estimates and labels them as local;
+it never changes a backend work timestamp or count. Receipt of another message is
+separate from actual work. Silence alone is not a hang diagnosis, and a single
+large file read may have no intermediate count. Missing measurements remain
+unavailable. A running installer may need input; Contain cannot determine whether
+its window is actually waiting for the user.
+
+**查看任务详情** opens scrollable, selectable original errors, source availability,
+exact session/database and collector information. **复制任务摘要** copies a concise
+local diagnostic snapshot. Neither action uploads anything. Review local paths
+before sharing. Saved evidence, source stop and installer exit remain separate
+from a confirmed complete session and from installation success.
+
 ## Build and verification
 
 Development needs the existing Rust/MSVC toolchain and .NET 8 SDK. User packages

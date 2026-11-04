@@ -97,7 +97,7 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         Require(!first.InstallerStarted && !first.CaptureFinished && !first.DataSaved, "preparing is not success");
         Reject(() => stream.Accept(StatusDocument(db, Guid.NewGuid().ToString(), 2, "capturing", true)));
         Reject(() => stream.Accept(StatusDocument(db + ".other", id, 2, "capturing", true)));
-        Reject(() => stream.Accept(StatusDocument(db, id, 3, "capturing", true)));
+        Reject(() => stream.Accept(StatusDocument(db, id, 3, "finalizing", true, true, true)));
         var active = stream.Accept(StatusDocument(db, id, 2, "capturing", true));
         Require(active.InstallerStarted && !active.InstallerExited && !active.CaptureFinished, "capture and installer outcome are separate");
         var exited = stream.Accept(StatusDocument(db, id, 3, "capturing", true, true));
@@ -106,6 +106,8 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         Reject(() => stream.Accept(StatusDocument(db, id, 4, "preparing")));
         var finalizing = stream.Accept(Change(StatusDocument(db, id, 4, "finalizing", true, true, true), node => node["data"]!["data_saved"] = false));
         Require(finalizing.CaptureFinished && !finalizing.DataSaved, "source stop and derived evidence save are separate");
+        Require(stream.TryAccept(StatusDocument(db, id, 4, "finalizing", true, true, true), out _) == false,
+            "duplicate progress does not replace accepted state");
         Reject(() => stream.Accept(Change(StatusDocument(db, id, 5, "finished", true, true, true), node => node["data"]!["data_saved"] = false)));
         var finished = stream.Accept(StatusDocument(db, id, 5, "finished", true, true, true));
         Require(finished.CaptureFinished && finished.DataSaved && finished.QualityLevel == "Degraded", "finished independently confirms persistence and quality");
@@ -425,7 +427,7 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
             Require(failedForm.Result is { Succeeded: false } && failedForm.LastStatus is { Stage: "failed", InstallerStarted: false, DataSaved: true }, "OS-invalid EXE failure saves unfinished evidence without reporting success");
             Require(failedForm.Result is { CollectorPid: > 0, LastConfirmedStage: "preparing" },
                 "real child process failure retains the managed collector PID and last confirmed work phase");
-            var failureText = C<TextBox>(failedForm, "InstallStatus").Text;
+            var failureText = failedForm.TaskDetailsText;
             Require(failureText.Contains("最后确认阶段：preparing", StringComparison.Ordinal)
                 && failureText.Contains("采集进程 PID：" + failedForm.Result!.CollectorPid, StringComparison.Ordinal)
                 && failureText.Contains("失败", StringComparison.Ordinal),

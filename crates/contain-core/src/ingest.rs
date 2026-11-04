@@ -158,9 +158,14 @@ impl Queue {
 struct LiveState {
     cache: LifetimeCache,
     last_activity: Instant,
+    received: u64,
 }
 pub(crate) struct LiveCapture(Arc<Mutex<LiveState>>);
 impl LiveCapture {
+    /// Source receipt is measured separately from evidence persistence or actors.
+    pub(crate) fn received(&self) -> u64 {
+        self.0.lock().unwrap().received
+    }
     pub(crate) fn quiet_ms(&self) -> u64 {
         self.0.lock().unwrap().last_activity.elapsed().as_millis() as u64
     }
@@ -216,6 +221,7 @@ pub(crate) fn record_while<T>(
     let live = LiveCapture(Arc::new(Mutex::new(LiveState {
         cache: LifetimeCache::default(),
         last_activity: Instant::now(),
+        received: 0,
     })));
     let initial_accepted = journal.stats.accepted;
     thread::scope(|scope| {
@@ -271,6 +277,7 @@ pub(crate) fn record_while<T>(
                         {
                             let _timer = profile::timer("receiver_lifetime_update");
                             let mut live = receiver_live.lock().unwrap();
+                            live.received = live.received.saturating_add(page.len() as u64);
                             for event in &page {
                                 live.cache.ingest(event);
                                 if event.event_type == "file"

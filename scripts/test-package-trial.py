@@ -663,7 +663,7 @@ class TrialTests(unittest.TestCase):
             private_output=self.root / "report-private", public_output=self.root / "report-public", scenario="default")
         with mock.patch.object(TRIAL, "snapshot"), mock.patch.object(TRIAL.subprocess, "run", side_effect=command):
             self.assertEqual(TRIAL.report(args), 0)
-        report = (args.public_output / "cli-report.txt").read_text()
+        report = (args.public_output / "cli-report.txt").read_text(encoding="utf-8")
         self.assertNotIn("PRIVATE", report)
         self.assertIn("<fixture-root>", report)
         self.assertIn("explain " + event["id"], report)
@@ -687,7 +687,7 @@ class TrialTests(unittest.TestCase):
         self.assertTrue(failed["report_generated"]); self.assertEqual(len(failed["commands"]), 7)
         self.assertEqual(failed["event_id"], event["id"])
         self.assertEqual(failed["comparison"]["differences"][0]["path"], "/data/events/0/id")
-        self.assertIn("CONSISTENCY CHECK FAILED", (args.public_output / "cli-report.txt").read_text())
+        self.assertIn("CONSISTENCY CHECK FAILED", (args.public_output / "cli-report.txt").read_text(encoding="utf-8"))
         self.assertFalse(TRIAL.report_matches(failed, manifest, "default", args.public_output / "cli-report.txt"))
         collected = TRIAL.collect_report(self.package, "default", args.public_output)
         self.assertTrue((collected / "cli-report.txt").is_file())
@@ -707,7 +707,7 @@ class TrialTests(unittest.TestCase):
         conflict = TRIAL.read(args.public_output / "summary.json")
         self.assertEqual(conflict["commands_executed"], 7); self.assertTrue(conflict["report_generated"])
         self.assertFalse(conflict["checks"]["explain_event_equal"])
-        public = (args.public_output / "cli-report.txt").read_text()
+        public = (args.public_output / "cli-report.txt").read_text(encoding="utf-8")
         self.assertIn("NOT PUBLISHED", public); self.assertNotIn("PRIVATE", public)
         # No verified event does not skip independent inspect/diff or fabricate
         # event identity. Four dependent commands are explicitly not run.
