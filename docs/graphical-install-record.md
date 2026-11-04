@@ -124,3 +124,18 @@ of this task. The local original `work` branch is retained.
   duplicate/task-state behavior and the same-package GUI capture chain; earlier
   source/package evidence cannot validate replacement bytes. No scale,
   third-party installer or formal 32-attempt plan is added.
+
+- [CI 41801560771](https://github.com/LuckyLivio/Contain/actions/runs/41801560771),
+  source `65739c3fc99f5d5de610db3e553927a3ba3a5c5e`, passed Check/workspace
+  coverage/dependencies/companion but failed CoverageOriginal before packaging
+  or another native capture. The existing write-diagnostic test helper used
+  PID+QPC alone for temporary names; concurrent calls can share a QPC tick.
+  `failed_api_is_logged_with_error_and_independent_clock_brackets` hit Win32 183
+  AlreadyExists at its helper's create_dir, not its API-evidence assertions.
+  [Retained failure](examples/desktop-install-attempt-41801560771.json).
+  The correction changes only test naming: PID8+QPC16+checked atomic sequence8,
+  preserving the exact 32-hex name constraint. A deterministic 512-name concurrent
+  same-clock regression and overflow regression are added. No filesystem retry,
+  deletion, assertion reduction, floor change or application code change is used.
+  The failed quality gate and previously blocked same-package native plan must
+  run on the corrected source; no additional scale or third-party plan is added.

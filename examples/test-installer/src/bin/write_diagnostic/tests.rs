@@ -1,11 +1,62 @@
 use super::*;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+static CONTAINER_SEQUENCE: AtomicU32 = AtomicU32::new(0);
+
+fn container_name(pid: u32, ticks: u64, sequence: &AtomicU32) -> String {
+    let index = sequence
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+            value.checked_add(1)
+        })
+        .expect("test container sequence exhausted");
+    format!("{PREFIX}{pid:08x}{ticks:016x}{index:08x}")
+}
 
 fn marked_container() -> PathBuf {
-    let name = format!("{PREFIX}{:016x}{:016x}", std::process::id(), qpc().unwrap());
+    let name = container_name(std::process::id(), qpc().unwrap(), &CONTAINER_SEQUENCE);
     let path = std::env::temp_dir().join(name);
     fs::create_dir(&path).unwrap();
     fs::write(path.join(MARKER), MARKER_BYTES).unwrap();
     path
+}
+
+#[test]
+fn concurrent_container_names_are_unique_even_with_identical_clock_samples() {
+    let sequence = AtomicU32::new(0);
+    let names = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                scope.spawn(|| {
+                    (0..64)
+                        .map(|_| container_name(0x12345678, 0x0123456789abcdef, &sequence))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|worker| worker.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(names.len(), 512);
+    assert!(names.iter().all(|name| name_is_valid(name)));
+    assert!(
+        names
+            .iter()
+            .all(|name| { name.starts_with(&format!("{PREFIX}123456780123456789abcdef")) })
+    );
+    assert_eq!(
+        names.iter().collect::<std::collections::HashSet<_>>().len(),
+        512
+    );
+    assert_eq!(sequence.load(Ordering::Relaxed), 512);
+}
+
+#[test]
+fn exhausted_container_sequence_fails_without_wrapping() {
+    let sequence = AtomicU32::new(u32::MAX);
+    assert!(std::panic::catch_unwind(|| container_name(1, 1, &sequence)).is_err());
+    assert_eq!(sequence.load(Ordering::Relaxed), u32::MAX);
 }
 
 #[test]
