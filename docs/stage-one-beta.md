@@ -123,6 +123,12 @@ capture markers, snapshot fixtures require explicit opt-in, and historical scale
 workflows now require a separate manual dispatch. A normal main merge without
 capture markers runs ordinary quality/read-only checks, not those experiments.
 
+The diagnostic source's PR also exposed an existing CI cache collision: a
+restored synthetic fixture directory was correctly refused instead of overwritten.
+Non-Cargo test outputs now use a run-and-attempt-specific root; existing evidence
+and useful build caches remain intact. This infrastructure failure supplies no
+installer or ETW evidence.
+
 ## Release and repository closure
 
 After exact-source validation, a new immutable `v0.3.2-beta.1` tag and GitHub

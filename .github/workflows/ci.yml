@@ -35,13 +35,19 @@ jobs:
           SNAPSHOT_REQUESTED: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[snapshot-fixture]') }}
           DESKTOP_REQUESTED: ${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[desktop-viewer]') || (contains(github.event.head_commit.message, '[desktop-install]') || contains(github.event.head_commit.message, '[stage1-beta]'))) }}
         run: |
+          # Cargo's cache may restore historical non-Cargo output under target/.
+          # Keep every attempt's generated evidence outside it; never erase old runs.
+          $runDir = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP ('contain-ci-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT))).Replace('\','/')
+          New-Item -ItemType Directory -Path $runDir -ErrorAction Stop | Out-Null
+          $env:CONTAIN_RUN_DIR = $runDir
+          "CONTAIN_RUN_DIR=$runDir" >> $env:GITHUB_ENV
           $desktop = $env:DESKTOP_REQUESTED -eq 'true'
           $beta = $env:BETA_REQUESTED -eq 'true'
           "beta=$($beta.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           $version = (python -c "import pathlib,tomllib; print(tomllib.loads(pathlib.Path('Cargo.toml').read_text())['workspace']['package']['version'])").Trim()
           if ($LASTEXITCODE -ne 0 -or $version -notmatch '^\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?$') { throw 'Invalid canonical package version' }
           "CONTAIN_VERSION=$version" >> $env:GITHUB_ENV
-          "CONTAIN_PACKAGE=target/contain-$version-windows-x64.zip" >> $env:GITHUB_ENV
+          "CONTAIN_PACKAGE=$runDir/contain-$version-windows-x64.zip" >> $env:GITHUB_ENV
           $install = $env:INSTALL_REQUESTED -eq 'true'
           "install=$($install.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           if ($desktop -and $env:TRIAL_PAIR_REQUESTED -eq 'true') { throw 'Desktop viewing and native capture are separate plans' }
@@ -51,7 +57,7 @@ jobs:
           "snapshot=$($snapshot.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           "desktop=$($desktop.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           "capture=$($requested.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
-          New-Item -ItemType Directory -Path target/quality-public -Force | Out-Null
+          New-Item -ItemType Directory -Path "$runDir/quality-public" | Out-Null
           [ordered]@{
             schema_version=1; source_sha=$env:GITHUB_SHA; requested=($requested -or $install)
             configurations=$(if($install){@('gui-controlled-exe')}elseif($requested){@('default','dual-clock')}else{@()}); maximum_native_captures=$(if($install){1}elseif($requested){2}else{0}); retries=0
@@ -61,7 +67,7 @@ jobs:
             legacy_synthetic_cli=$(if($desktop){'not_run_active_doctor_excluded; native_desktop_harness_covers_read_only_views'}else{'planned'})
             snapshot_fallback=$(if($install){'explicit_snapshot_mode_offline_checks_only_no_live_fallback_substitution'}elseif($snapshot){'explicit_snapshot_fixture_requested'}else{'not_requested_not_validated'})
             status=$(if($install){'planned_after_quality_and_offline_desktop_regressions'}elseif($requested){'planned_after_quality_and_windows_report_preflights'}else{'not_requested_not_validated'})
-          } | ConvertTo-Json | Set-Content target/quality-public/capture-plan.json -Encoding utf8
+          } | ConvertTo-Json | Set-Content "$runDir/quality-public/capture-plan.json" -Encoding utf8
       - name: Restore fixed quality tool executables
         id: quality_tool_cache
         uses: actions/cache/restore@v4
@@ -125,11 +131,11 @@ jobs:
         if: ${{ !cancelled() && steps.trial_plan.outputs.desktop != 'true' && steps.build.outcome == 'success' }}
         shell: pwsh
         run: |
-          cargo run -p contain-offline --bin read-only-examples --locked -- target/read-only-windows
+          cargo run -p contain-offline --bin read-only-examples --locked -- "$env:CONTAIN_RUN_DIR/read-only-windows"
           if ($LASTEXITCODE -ne 0) { throw 'Synthetic fixture generation failed' }
-          python scripts/verify-read-only-cli.py --contain target/debug/contain.exe --fixtures target/read-only-windows --output target/quality/read-only-cli --public-output target/quality-public/read-only-cli
+          python scripts/verify-read-only-cli.py --contain target/debug/contain.exe --fixtures "$env:CONTAIN_RUN_DIR/read-only-windows" --output "$env:CONTAIN_RUN_DIR/read-only-cli" --public-output "$env:CONTAIN_RUN_DIR/quality-public/read-only-cli"
           if ($LASTEXITCODE -ne 0) { throw 'Synthetic read-only CLI integration failed' }
-          $documents = @(Get-ChildItem target/quality/read-only-cli/json -Filter '*.json')
+          $documents = @(Get-ChildItem "$env:CONTAIN_RUN_DIR/read-only-cli/json" -Filter '*.json')
           if ($documents.Count -ne 33) { throw 'Expected 33 actual CLI JSON documents' }
           foreach ($document in $documents) {
             if (-not (Get-Content -Raw $document.FullName | Test-Json -SchemaFile docs/schema/cli-v3.schema.json)) {
@@ -142,7 +148,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          python scripts/quality-summary.py --root . --quality target/quality --output target/quality-public/summary.json
+          python scripts/quality-summary.py --root . --quality target/quality --output "$env:CONTAIN_RUN_DIR/quality-public/summary.json"
           if ($LASTEXITCODE -ne 0) { throw 'Quality summary validation failed' }
       - name: Existing desktop SDK
         if: ${{ !cancelled() && steps.trial_plan.outputs.desktop == 'true' }}
@@ -154,20 +160,20 @@ jobs:
         if: ${{ !cancelled() && steps.trial_plan.outputs.desktop == 'true' && steps.quality_check.outcome == 'success' && steps.coverage.outcome == 'success' && steps.original_coverage.outcome == 'success' && steps.dependencies.outcome == 'success' && steps.companion.outcome == 'success' && steps.build.outcome == 'success' && steps.quality_summary.outcome == 'success' }}
         shell: pwsh
         run: |
-          dotnet publish desktop/Contain.Viewer/Contain.Viewer.csproj -c Release -r win-x64 --self-contained true -o target/viewer-publish
+          dotnet publish desktop/Contain.Viewer/Contain.Viewer.csproj -c Release -r win-x64 --self-contained true -o "$env:CONTAIN_RUN_DIR/viewer-publish"
           if ($LASTEXITCODE -ne 0) { throw 'Desktop publish failed' }
-          dotnet publish desktop/Contain.Viewer.Tests/Contain.Viewer.Tests.csproj -c Release -r win-x64 --self-contained true -o target/viewer-tests
+          dotnet publish desktop/Contain.Viewer.Tests/Contain.Viewer.Tests.csproj -c Release -r win-x64 --self-contained true -o "$env:CONTAIN_RUN_DIR/viewer-tests"
           if ($LASTEXITCODE -ne 0) { throw 'Desktop test harness publish failed' }
-          ./target/debug/viewer-fixtures.exe target/viewer-fixtures
+          ./target/debug/viewer-fixtures.exe "$env:CONTAIN_RUN_DIR/viewer-fixtures"
           if ($LASTEXITCODE -ne 0) { throw 'Synthetic desktop fixtures failed' }
-          python -c "import pathlib,shutil,sqlite3; p=pathlib.Path('target/viewer-fixtures'); shutil.copyfile(p/'empty.db',p/'future.db'); c=sqlite3.connect(p/'future.db'); c.execute('PRAGMA user_version=99'); c.close(); (p/'corrupt.db').write_bytes(b'SYNTHETIC corrupt database'); c=sqlite3.connect(p/'unrelated.db'); c.execute('CREATE TABLE unrelated(value TEXT)'); c.close()"
+          python -c "import pathlib,shutil,sqlite3,sys; p=pathlib.Path(sys.argv[1]); shutil.copyfile(p/'empty.db',p/'future.db'); c=sqlite3.connect(p/'future.db'); c.execute('PRAGMA user_version=99'); c.close(); (p/'corrupt.db').write_bytes(b'SYNTHETIC corrupt database'); c=sqlite3.connect(p/'unrelated.db'); c.execute('CREATE TABLE unrelated(value TEXT)'); c.close()" "$env:CONTAIN_RUN_DIR/viewer-fixtures"
           if ($LASTEXITCODE -ne 0) { throw 'Adverse database fixture setup failed' }
       - name: Freeze desktop package before native verification
         id: viewer_package
         if: ${{ !cancelled() && steps.viewer_build.outcome == 'success' }}
         shell: pwsh
         run: |
-          $packageArgs = @('scripts/package-viewer.py','prepare','--viewer','target/viewer-publish','--contain','target/debug/contain.exe','--fixtures','target/viewer-fixtures','--output','target/windows-viewer')
+          $packageArgs = @('scripts/package-viewer.py','prepare','--viewer',"$env:CONTAIN_RUN_DIR/viewer-publish",'--contain','target/debug/contain.exe','--fixtures',"$env:CONTAIN_RUN_DIR/viewer-fixtures",'--output',"$env:CONTAIN_RUN_DIR/windows-viewer")
           $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
           $vsRoot = & $vswhere -latest -products '*' -property installationPath
           if ($vsRoot) {
@@ -184,21 +190,21 @@ jobs:
         if: ${{ !cancelled() && steps.viewer_package.outcome == 'success' }}
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Path target/viewer-private -Force | Out-Null
+          New-Item -ItemType Directory -Path "$env:CONTAIN_RUN_DIR/viewer-private" | Out-Null
           # Only the controlled native harness and its children inherit this reviewed fixture temp.
-          $nativePackage = [IO.Path]::GetFullPath('target/windows-viewer')
+          $nativePackage = [IO.Path]::GetFullPath("$env:CONTAIN_RUN_DIR/windows-viewer")
           if ('${{ steps.trial_plan.outputs.install }}' -eq 'true') {
-            $nativePackage = Join-Path ('C:\Contain Desktop Package\' + $env:GITHUB_SHA.Substring(0,12)) '安装包 中文 & [x]'
+            $nativePackage = Join-Path ('C:\Contain Desktop Package\' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT + '\' + $env:GITHUB_SHA.Substring(0,12)) '安装包 中文 & [x]'
             New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($nativePackage)) -Force | Out-Null
-            Copy-Item -LiteralPath ([IO.Path]::GetFullPath('target/windows-viewer')) -Destination $nativePackage -Recurse
-            $fixtureTemp = 'C:\Contain Desktop Fixture Temp'
+            Copy-Item -LiteralPath ([IO.Path]::GetFullPath("$env:CONTAIN_RUN_DIR/windows-viewer")) -Destination $nativePackage -Recurse
+            $fixtureTemp = 'C:\Contain Desktop Fixture Temp\' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT
             New-Item -ItemType Directory -Path $fixtureTemp -Force | Out-Null
             $env:TEMP = $fixtureTemp
             $env:TMP = $fixtureTemp
           }
-          $testArgs = @('--package',$nativePackage,'--fixtures','target/viewer-fixtures','--output','target/viewer-public','--private-output','target/viewer-private','--source',$env:GITHUB_SHA)
+          $testArgs = @('--package',$nativePackage,'--fixtures',"$env:CONTAIN_RUN_DIR/viewer-fixtures",'--output',"$env:CONTAIN_RUN_DIR/viewer-public",'--private-output',"$env:CONTAIN_RUN_DIR/viewer-private",'--source',$env:GITHUB_SHA)
           if ('${{ steps.trial_plan.outputs.install }}' -eq 'true') { $testArgs += @('--install-fixture', (Join-Path $nativePackage 'contain-test-installer.exe')) }
-          ./target/viewer-tests/Contain.Viewer.Tests.exe @testArgs *> target/viewer-private/harness.log
+          & "$env:CONTAIN_RUN_DIR/viewer-tests/Contain.Viewer.Tests.exe" @testArgs *> "$env:CONTAIN_RUN_DIR/viewer-private/harness.log"
           $code = $LASTEXITCODE
           Write-Host "Native desktop verification exit code: $code"
           if ($code -ne 0) { exit $code }
@@ -207,9 +213,9 @@ jobs:
         if: ${{ !cancelled() && steps.viewer_package.outcome == 'success' }}
         shell: pwsh
         run: |
-          $finalArgs = @('scripts/package-viewer.py','finalize','--package','target/windows-viewer','--quality-summary','target/quality-public/summary.json','--verification','target/viewer-public/summary.json','--output',$env:CONTAIN_PACKAGE)
-          if ('${{ steps.trial_plan.outputs.install }}' -eq 'true') { $finalArgs += @('--install-verification','target/viewer-public/install-summary.json') }
-          $finalArgs += @('--layout-verification','target/viewer-public/layout-summary.json')
+          $finalArgs = @('scripts/package-viewer.py','finalize','--package',"$env:CONTAIN_RUN_DIR/windows-viewer",'--quality-summary',"$env:CONTAIN_RUN_DIR/quality-public/summary.json",'--verification',"$env:CONTAIN_RUN_DIR/viewer-public/summary.json",'--output',$env:CONTAIN_PACKAGE)
+          if ('${{ steps.trial_plan.outputs.install }}' -eq 'true') { $finalArgs += @('--install-verification',"$env:CONTAIN_RUN_DIR/viewer-public/install-summary.json") }
+          $finalArgs += @('--layout-verification',"$env:CONTAIN_RUN_DIR/viewer-public/layout-summary.json")
           python @finalArgs
           if ($LASTEXITCODE -ne 0) { throw 'Desktop milestone unverified; diagnostic package retains the actual failed or unexecuted checks' }
       - uses: actions/upload-artifact@v4
@@ -223,11 +229,11 @@ jobs:
         with:
           name: windows-viewer-evidence
           path: |
-            target/viewer-public/summary.json
-            target/viewer-public/install-summary.json
-            target/viewer-public/layout-summary.json
-            target/viewer-public/screenshots/*.png
-            target/viewer-public/reports/*.html
+            ${{ env.CONTAIN_RUN_DIR }}/viewer-public/summary.json
+            ${{ env.CONTAIN_RUN_DIR }}/viewer-public/install-summary.json
+            ${{ env.CONTAIN_RUN_DIR }}/viewer-public/layout-summary.json
+            ${{ env.CONTAIN_RUN_DIR }}/viewer-public/screenshots/*.png
+            ${{ env.CONTAIN_RUN_DIR }}/viewer-public/reports/*.html
           if-no-files-found: error
       # Only an explicitly planned push consumes the two native attempts. All
       # independent quality and Windows report preflights must pass first; documentation pushes cannot
@@ -237,7 +243,7 @@ jobs:
         if: ${{ !cancelled() && steps.trial_plan.outputs.capture == 'true' && steps.quality_check.outcome == 'success' && steps.coverage.outcome == 'success' && steps.original_coverage.outcome == 'success' && steps.dependencies.outcome == 'success' && steps.companion.outcome == 'success' && steps.build.outcome == 'success' && steps.synthetic_cli.outcome == 'success' && steps.quality_summary.outcome == 'success' }}
         shell: pwsh
         run: |
-          $packageArgs = @('scripts/package-trial.py','prepare','--contain','target/debug/contain.exe','--fixture','target/debug/contain-test-installer.exe','--profile','debug','--output','target/windows-trial')
+          $packageArgs = @('scripts/package-trial.py','prepare','--contain','target/debug/contain.exe','--fixture','target/debug/contain-test-installer.exe','--profile','debug','--output',"$env:CONTAIN_RUN_DIR/windows-trial")
           # Copy a required redistributable from the existing MSVC installation
           # only when PE import inspection asks for it; never assume user VS tools.
           $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
@@ -258,8 +264,8 @@ jobs:
         if: ${{ !cancelled() && steps.trial_package.outcome == 'success' }}
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Path target/trial-preflight-private -Force | Out-Null
-          python scripts/test-report-paths.py --summary target/quality-public/report-paths.json --private-log target/trial-preflight-private/filesystem-detail.log *> target/trial-preflight-private/filesystem.log
+          New-Item -ItemType Directory -Path "$env:CONTAIN_RUN_DIR/trial-preflight-private" | Out-Null
+          python scripts/test-report-paths.py --summary "$env:CONTAIN_RUN_DIR/quality-public/report-paths.json" --private-log "$env:CONTAIN_RUN_DIR/trial-preflight-private/filesystem-detail.log" *> "$env:CONTAIN_RUN_DIR/trial-preflight-private/filesystem.log"
           $code = $LASTEXITCODE
           Write-Host "Windows filesystem report preflight exit code: $code"
           if ($code -ne 0) { exit $code }
@@ -268,7 +274,7 @@ jobs:
         if: ${{ !cancelled() && steps.trial_package.outcome == 'success' && steps.report_paths.outcome == 'success' }}
         shell: pwsh
         run: |
-          python scripts/verify-trial-report.py --package target/windows-trial --generator target/debug/read-only-examples.exe --output target/trial-report-preflight --public-output target/quality-public/trial-report-preflight *> target/trial-preflight-private/integration.log
+          python scripts/verify-trial-report.py --package "$env:CONTAIN_RUN_DIR/windows-trial" --generator target/debug/read-only-examples.exe --output "$env:CONTAIN_RUN_DIR/trial-report-preflight" --public-output "$env:CONTAIN_RUN_DIR/quality-public/trial-report-preflight" *> "$env:CONTAIN_RUN_DIR/trial-preflight-private/integration.log"
           $code = $LASTEXITCODE
           Write-Host "Synthetic report integration preflight exit code: $code"
           if ($code -ne 0) { exit $code }
@@ -277,53 +283,53 @@ jobs:
         if: ${{ !cancelled() && steps.trial_package.outcome == 'success' && steps.report_paths.outcome == 'success' && steps.report_preflight.outcome == 'success' }}
         shell: pwsh
         run: |
-          ./scripts/ci-etw-clock.ps1 -Phase candidate -Configuration default -AttemptIndex 1 -TrialDirectory ([IO.Path]::GetFullPath('target/windows-trial')) -OutputDirectory ([IO.Path]::GetFullPath('target/trial-default')) -PublicOutputDirectory ([IO.Path]::GetFullPath('target/trial-public-default'))
+          ./scripts/ci-etw-clock.ps1 -Phase candidate -Configuration default -AttemptIndex 1 -TrialDirectory "$env:CONTAIN_RUN_DIR/windows-trial" -OutputDirectory "$env:CONTAIN_RUN_DIR/trial-default" -PublicOutputDirectory "$env:CONTAIN_RUN_DIR/trial-public-default"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Native trial 2 of 2 - dual clock evidence
         id: clock_trial
         if: ${{ !cancelled() && steps.trial_package.outcome == 'success' && steps.report_paths.outcome == 'success' && steps.report_preflight.outcome == 'success' }}
         shell: pwsh
         run: |
-          ./scripts/ci-etw-clock.ps1 -Phase candidate -Configuration dual-clock -AttemptIndex 2 -TrialDirectory ([IO.Path]::GetFullPath('target/windows-trial')) -OutputDirectory ([IO.Path]::GetFullPath('target/trial-dual-clock')) -PublicOutputDirectory ([IO.Path]::GetFullPath('target/trial-public-dual-clock'))
+          ./scripts/ci-etw-clock.ps1 -Phase candidate -Configuration dual-clock -AttemptIndex 2 -TrialDirectory "$env:CONTAIN_RUN_DIR/windows-trial" -OutputDirectory "$env:CONTAIN_RUN_DIR/trial-dual-clock" -PublicOutputDirectory "$env:CONTAIN_RUN_DIR/trial-public-dual-clock"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Finalize the tested package and its actual validation status
         if: ${{ !cancelled() && steps.trial_package.outcome == 'success' }}
         shell: pwsh
         run: |
           foreach($scenario in @('default','dual-clock')) {
-            $report = "target/trial-public-$scenario/report"
+            $report = "$env:CONTAIN_RUN_DIR/trial-public-$scenario/report"
             if (Test-Path -LiteralPath $report) {
-              python scripts/package-trial.py collect-report --package target/windows-trial --scenario $scenario --public-output $report
+              python scripts/package-trial.py collect-report --package "$env:CONTAIN_RUN_DIR/windows-trial" --scenario $scenario --public-output $report
               if ($LASTEXITCODE -ne 0) { Write-Host "Report collection failed for configuration $scenario; candidate finalization will preserve the failed gate." }
             }
           }
-          python scripts/package-trial.py finalize --package target/windows-trial --default-directory target/trial-default/capture --clock-directory target/trial-dual-clock/capture --clock-analysis target/trial-public-dual-clock/summary.json --quality-summary target/quality-public/summary.json --report-paths target/quality-public/report-paths.json --report-preflight target/quality-public/trial-report-preflight --output $env:CONTAIN_PACKAGE
+          python scripts/package-trial.py finalize --package "$env:CONTAIN_RUN_DIR/windows-trial" --default-directory "$env:CONTAIN_RUN_DIR/trial-default/capture" --clock-directory "$env:CONTAIN_RUN_DIR/trial-dual-clock/capture" --clock-analysis "$env:CONTAIN_RUN_DIR/trial-public-dual-clock/summary.json" --quality-summary "$env:CONTAIN_RUN_DIR/quality-public/summary.json" --report-paths "$env:CONTAIN_RUN_DIR/quality-public/report-paths.json" --report-preflight "$env:CONTAIN_RUN_DIR/quality-public/trial-report-preflight" --output $env:CONTAIN_PACKAGE
           if ($LASTEXITCODE -ne 0) { throw 'Trial candidate is unverified; retain the diagnostic package and actual failures' }
       - name: Snapshot fallback integration
         id: fallback
         if: ${{ !cancelled() && steps.trial_plan.outputs.snapshot == 'true' && steps.build.outcome == 'success' }}
         shell: pwsh
-        run: ./scripts/demo.ps1 -SnapshotOnly -OutputDirectory ./target/demo-fallback
+        run: ./scripts/demo.ps1 -SnapshotOnly -OutputDirectory "$env:CONTAIN_RUN_DIR/demo-fallback"
       - name: Publish fixture-only evidence after scoring
         if: ${{ !cancelled() && steps.fallback.outcome != 'skipped' }}
         shell: pwsh
         run: |
           foreach($label in @('demo-fallback')) {
-            python scripts/hotpath-artifact.py "./target/$label" "./target/ci-fixture-public/$label" D0
+            python scripts/hotpath-artifact.py "$env:CONTAIN_RUN_DIR/$label" "$env:CONTAIN_RUN_DIR/ci-fixture-public/$label" D0
             if($LASTEXITCODE -ne 0){throw 'Fixture evidence publication failed'}
           }
       - uses: actions/upload-artifact@v4
         if: ${{ always() && steps.fallback.outcome != 'skipped' }}
         with:
           name: fixture-evidence
-          path: target/ci-fixture-public
+          path: ${{ env.CONTAIN_RUN_DIR }}/ci-fixture-public
       - uses: actions/upload-artifact@v4
         if: ${{ always() && steps.trial_package.outcome == 'success' }}
         with:
           name: read-only-trial-evidence
           path: |
-            target/trial-public-default
-            target/trial-public-dual-clock
+            ${{ env.CONTAIN_RUN_DIR }}/trial-public-default
+            ${{ env.CONTAIN_RUN_DIR }}/trial-public-dual-clock
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: ${{ always() && steps.trial_package.outcome == 'success' }}
@@ -335,4 +341,4 @@ jobs:
         if: always()
         with:
           name: windows-read-only-quality
-          path: target/quality-public
+          path: ${{ env.CONTAIN_RUN_DIR }}/quality-public

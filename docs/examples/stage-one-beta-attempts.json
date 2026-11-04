@@ -52,6 +52,16 @@
       "last_observed_step": "Quality Check",
       "native_capture_executed": false,
       "reason": "Historical v04 push path trigger can activate on tag pushes (path filters ignored) and first main merge. Retain the matrix but require workflow_dispatch."
+    },
+    "cache_isolation_guard": {
+      "source_sha": "51bd40aee61dfa4aeeabe3d369e5582880884489",
+      "runs": [
+        41833229229,
+        41833235411
+      ],
+      "last_observed_step": "Quality Check",
+      "real_etw_executed": false,
+      "reason": "Apply the confirmed cached-output collision fix before consuming the one native capture."
     }
   },
   "windows_failures": [
@@ -215,5 +225,15 @@
     "product_fix_prepared": "Explicit 100% body row; separate ordinary scroll viewport with scaled MinimumSize-driven content extent; tab content registers actual minimum size. No Refresh or assertion relaxation. Native revalidation pending."
   },
   "user_feedback_boundary": "The Windows 11 / Parallels 7-Zip trial is screenshot-supported user feedback only; no database/report was supplied. Guest architecture and original DPI are unknown. Personal identifiers are omitted.",
-  "program_files": "Unresolved user-reported finalizing/Incomplete. Missing original database/error logs prevent a root-cause claim. No scale experiment was started."
+  "program_files": "Unresolved user-reported finalizing/Incomplete. Missing original database/error logs prevent a root-cause claim. No scale experiment was started.",
+  "additional_ci_failure": {
+    "run": 41830595881,
+    "url": "https://github.com/LuckyLivio/Contain/actions/runs/41830595881",
+    "source_sha": "da8f756d8453badea77a2495507e820e4676dc45",
+    "kind": "PR quality/cache isolation failure, not native product capture",
+    "failed_step": "Synthetic read-only CLI integration",
+    "cause": "Cargo cache restored target/read-only-windows from an earlier successful PR. Existing fixture generator refused replacement, as required. Later fixed output directories have the same collision risk.",
+    "real_etw_executed": false,
+    "fix_prepared": "Use a unique per-run-and-attempt output root for non-Cargo fixtures/reports/packages; keep existing quality-script archives and Cargo build caches."
+  }
 }

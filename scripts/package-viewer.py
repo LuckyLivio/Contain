@@ -257,7 +257,8 @@ def prepare(args):
         toolchain={p: subprocess.check_output([p, "--version"], text=True, encoding="utf-8").strip()
                    for p in ("dotnet", "rustc", "cargo")},
         build_commands=["cargo build --workspace --locked",
-            "dotnet publish desktop/Contain.Viewer/Contain.Viewer.csproj -c Release -r win-x64 --self-contained true -o target/viewer-publish"],
+            "dotnet publish desktop/Contain.Viewer/Contain.Viewer.csproj -c Release -r win-x64 --self-contained true -o <publish-directory>"],
+        build_command_scope="Reproducible configuration templates; <publish-directory> is the chosen output directory. CI uses a per-run temporary directory; machine-specific paths are not published.",
         included_frameworks=frameworks, runtime_licenses=runtime_licenses, pe_dependencies=imports, files=files,
         source_archive=dict(path="SOURCE.zip", source_sha=revision, sha256=sha(output / "SOURCE.zip"),
                             format="git archive zip; exact tracked HEAD snapshot; no repository history"),
