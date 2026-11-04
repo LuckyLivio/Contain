@@ -45,7 +45,7 @@ non-system runtime for the exact `contain.exe` sidecar.
    and state observations. Each page displays at most 50 events. Its text filter
    applies only to the current page. Select an event to read the core's explain
    result, copy its ID, or expand the original JSON.
-5. Choose **导出本地报告** and a new `.html` filename. The report contains the
+5. Choose **导出本页报告** and a new `.html` filename. The report contains the
    selected record's summary and state differences, the current unfiltered event
    page, and the selected event's explanation. It states that page scope and
    retains the CLI JSON. It is self-contained, has no scripts or network requests,

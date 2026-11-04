@@ -251,7 +251,7 @@ class ViewerPackageTests(unittest.TestCase):
         version=VIEWER.TRIAL.product_version()
         build=self.prepare()
         self.assertEqual(build['version'],version)
-        self.assertIn(version,(self.package/'TRY.md').read_text())
+        self.assertIn(version,(self.package/'TRY.md').read_text(encoding='utf-8'))
         build['version']='0.3.1'
         (self.package/'BUILD.json').write_text(json.dumps(build))
         with self.assertRaisesRegex(ValueError,'build_identity_invalid'): VIEWER.verify_package(self.package)
