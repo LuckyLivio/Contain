@@ -198,7 +198,7 @@ internal static class InstallProgressChecks
             Require(operation.IsCompletedSuccessfully, "disposed-form callbacks do not throw or kill child");
         }));
         var accepted = checks.Count == Plan.Length && checks.All(check => check.Status == "passed");
-        File.WriteAllText(Path.Combine(output, "progress-summary.json"), JsonSerializer.Serialize(new
+        var summaryJson = JsonSerializer.Serialize(new
         {
             schema_version = 1, protocol_revision = "contain-desktop-progress-verification-1", source_sha = source,
             native_windows = OperatingSystem.IsWindows(), synthetic = true, real_etw_executed = false,
@@ -209,7 +209,16 @@ internal static class InstallProgressChecks
             passed = checks.Count(check => check.Status == "passed"), failed = checks.Count(check => check.Status == "failed"),
             not_run = Plan.Length - checks.Count, skipped = 0, retries = 0, accepted,
             completed = checks.Count == Plan.Length
-        }, new JsonSerializerOptions { WriteIndented = true }));
+        }, new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower });
+        // Exercise the serialized handoff consumed by the strict package gate.
+        using (var handoff = JsonDocument.Parse(summaryJson))
+        {
+            var serializedChecks = handoff.RootElement.GetProperty("checks").EnumerateArray().ToArray();
+            if (!serializedChecks.Select(check => check.GetProperty("name").GetString()).SequenceEqual(Plan)
+                || serializedChecks.Any(check => check.GetProperty("status").GetString() is not ("passed" or "failed")))
+                throw new InvalidDataException("Progress verification JSON handoff shape is invalid.");
+        }
+        File.WriteAllText(Path.Combine(output, "progress-summary.json"), summaryJson);
         if (privateErrors.Length > 0) File.WriteAllText(Path.Combine(privateOutput ?? output, "progress-private-errors.log"), privateErrors.ToString());
         return accepted;
 
