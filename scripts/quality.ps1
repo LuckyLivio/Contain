@@ -16,7 +16,11 @@ try {
     if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) { throw 'Rust is missing. Inspect the existing installation before installing rustup.' }
     $qualityDirectory = [IO.Path]::GetFullPath($OutputDirectory)
     $cargoTargetDirectory = [IO.Path]::GetFullPath($(if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { 'target' }))
-    $junitPath = Join-Path $cargoTargetDirectory 'nextest/ci/junit.xml'
+    $junitPath = if ($PSBoundParameters.ContainsKey('OutputDirectory')) {
+        Join-Path $cargoTargetDirectory 'nextest/ci/junit.xml'
+    } else {
+        Join-Path (Get-Location) 'target/nextest/ci/junit.xml'
+    }
     New-Item -ItemType Directory -Force $qualityDirectory | Out-Null
     # Preserve previous attempts, including failures, before refreshing convenient paths.
     $archive = Join-Path (Join-Path $qualityDirectory 'runs') ((Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N'))
@@ -89,12 +93,22 @@ try {
     }
     switch ($Mode) {
         'Check' {
+            $nextestArguments = @('nextest', 'run', '--workspace', '--all-features', '--locked', '--profile', 'ci', '--retries', '0')
+            if ($PSBoundParameters.ContainsKey('OutputDirectory')) {
+                # nextest's store.dir is independent of Cargo's target directory.
+                # A lower-priority tool config redirects only its output store;
+                # the repository's profiles and assertions remain authoritative.
+                $nextestConfiguration = Join-Path $archive 'nextest-output.toml'
+                $storePath = (Join-Path $cargoTargetDirectory 'nextest').Replace('\', '/') | ConvertTo-Json -Compress
+                @('[store]', "dir = $storePath") | Set-Content -LiteralPath $nextestConfiguration -Encoding utf8
+                $nextestArguments += @('--tool-config-file', "contain-output:$nextestConfiguration")
+            }
             if (Test-Path -LiteralPath $junitPath) {
                 Move-Item -LiteralPath $junitPath -Destination (Join-Path $archive 'previous-junit.xml')
             }
             Invoke-Gate fmt cargo @('fmt', '--all', '--', '--check')
             Invoke-Gate clippy cargo @('clippy', '--workspace', '--all-targets', '--all-features', '--locked', '--', '-D', 'warnings')
-            Invoke-Gate nextest cargo @('nextest', 'run', '--workspace', '--all-features', '--locked', '--profile', 'ci', '--retries', '0')
+            Invoke-Gate nextest cargo $nextestArguments
             Invoke-Gate doctests cargo @('test', '--workspace', '--all-features', '--locked', '--doc')
             Invoke-Gate fuzz-fmt cargo @('fmt', '--manifest-path', 'fuzz/Cargo.toml', '--all', '--', '--check')
             Invoke-Gate fuzz-clippy cargo @('clippy', '--manifest-path', 'fuzz/Cargo.toml', '--all-targets', '--locked', '--', '-D', 'warnings')

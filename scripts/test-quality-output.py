@@ -20,7 +20,15 @@ function global:cargo {
     @{ arguments=$arguments; coverage_target=$env:CARGO_LLVM_COV_TARGET_DIR } |
         ConvertTo-Json -Compress | Add-Content -LiteralPath (Join-Path $env:TEST_REPO 'commands.jsonl')
     if ($arguments.Count -gt 1 -and $arguments[0] -eq 'nextest' -and $arguments[1] -eq 'run') {
-        $junit = Join-Path $env:CARGO_TARGET_DIR 'nextest/ci/junit.xml'
+        # Match real nextest: Cargo's target directory does not redirect its store.
+        $store = Join-Path $env:TEST_REPO 'target/nextest'
+        $configIndex = [Array]::IndexOf($arguments, '--tool-config-file')
+        if ($configIndex -ge 0) {
+            $config = $arguments[$configIndex + 1].Substring('contain-output:'.Length)
+            $setting = Get-Content -LiteralPath $config | Where-Object { $_ -match '^dir = ' }
+            $store = $setting.Substring('dir = '.Length) | ConvertFrom-Json
+        }
+        $junit = Join-Path $store 'ci/junit.xml'
         New-Item -ItemType Directory -Force ([IO.Path]::GetDirectoryName($junit)) | Out-Null
         '<testsuites><testsuite><testcase name="isolated"/></testsuite></testsuites>' |
             Set-Content -LiteralPath $junit
@@ -105,6 +113,15 @@ class QualityOutputTests(unittest.TestCase):
         self.assertEqual(len(floors), 2)
         self.assertTrue(all(args[args.index("--fail-under-lines") + 1] == "66.5" and
                             args[args.index("--fail-under-functions") + 1] == "70" for args in floors))
+
+    def test_default_check_retains_nextest_workspace_store(self):
+        self.run_mode("Check", custom=False)
+        manifest = json.loads((self.history / "gates.json").read_text(encoding="utf-8-sig"))
+        gate = next(gate for gate in manifest["gates"] if gate["label"] == "nextest")
+        archive = (self.history / gate["log"]).parent
+        self.assertEqual((archive / "previous-junit.xml").read_bytes(), b"preserve historical junit\n")
+        self.assertIn('name="isolated"', (archive / "junit.xml").read_text())
+        self.assertNotIn("--tool-config-file", gate["arguments"])
 
     def test_default_original_coverage_build_keeps_existing_location(self):
         self.run_mode("CoverageOriginal", custom=False)
