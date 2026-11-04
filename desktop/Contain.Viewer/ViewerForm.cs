@@ -189,7 +189,12 @@ public sealed class ViewerForm : Form
     {
         _newInstall.Click += (_, _) =>
         {
-            if (ActiveInstallForm is { IsDisposed: false }) { ActiveInstallForm.Show(this); ActiveInstallForm.Activate(); return; }
+            if (ActiveInstallForm is { IsDisposed: false })
+            {
+                if (!ActiveInstallForm.Visible) ActiveInstallForm.Show(this);
+                ActiveInstallForm.Activate();
+                return;
+            }
             ActiveInstallForm = new InstallForm(new InstallClient(_client.ExecutablePath), OpenCapturedSessionAsync, _installDialogs);
             ActiveInstallForm.RecordingEnded += result =>
             {

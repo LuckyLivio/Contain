@@ -103,3 +103,24 @@ of this task. The local original `work` branch is retained.
   dependents need native execution on the corrected frozen package. The failed
   [diagnostic package](https://github.com/LuckyLivio/Contain/actions/runs/41795659625/artifacts/13306645145)
   remains available and does not establish graphical acceptance.
+
+- [CI 41798143791](https://github.com/LuckyLivio/Contain/actions/runs/41798143791),
+  source `72e0226e20a3afcb0f92aad42954340682c4e724`, fixed construction and passed
+  all quality/viewer checks, synthetic failure preservation, and actual native
+  picker navigation/cancel. It executed **one** genuine GUI-started ETW capture:
+  session `3c6f1516-3177-4cdb-911b-d711e237b583`, 219 file/registry source events,
+  High file event `b5757ee6-044f-4870-aaf9-5f35b90a11d8` matched independent truth.
+  Installer exited 0; capture finished/saved with Degraded quality. Measured ETW
+  events/buffers lost, application drops, context losses, decode and snapshot/
+  notification gaps were zero; registry path gaps remain explicit. Automatic
+  exact-session opening, explain and actual HTML export passed. Five of six
+  product checks passed; the duplicate/task-state check failed with
+  InvalidOperationException: the existing visible task form was passed to Show
+  again. The product fix calls Show only for a hidden form, then Activate.
+  [Unmodified failed summary](examples/desktop-install-attempt-41798143791.json)
+  and [diagnostic ZIP](https://github.com/LuckyLivio/Contain/actions/runs/41798143791/artifacts/13307757308)
+  remain available. No result was discarded or promoted to accepted.
+  The changed final desktop assembly requires one bounded repeat of the affected
+  duplicate/task-state behavior and the same-package GUI capture chain; earlier
+  source/package evidence cannot validate replacement bytes. No scale,
+  third-party installer or formal 32-attempt plan is added.
