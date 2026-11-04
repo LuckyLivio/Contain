@@ -50,6 +50,24 @@ pub(crate) struct StatusOutput {
     done: mpsc::Receiver<()>,
 }
 
+fn write_status(
+    output: &mut impl Write,
+    mut row: InstallStatus,
+    wire_sequence: &mut u64,
+) -> std::io::Result<()> {
+    // Internal measurements may be coalesced. The public v3 stream retains its
+    // existing contiguous sequence contract, assigned only after dequeue.
+    *wire_sequence = wire_sequence
+        .checked_add(1)
+        .ok_or_else(|| std::io::Error::other("install status sequence exhausted"))?;
+    row.sequence = *wire_sequence;
+    let envelope =
+        serde_json::json!({ "schema_version": 3, "kind": "install_status", "data": row });
+    serde_json::to_writer(&mut *output, &envelope).map_err(std::io::Error::other)?;
+    output.write_all(b"\n")?;
+    output.flush()
+}
+
 impl StatusOutput {
     pub(crate) fn new() -> Self {
         let pending = Arc::new((Mutex::new(Pending::default()), Condvar::new()));
@@ -57,6 +75,7 @@ impl StatusOutput {
         let (finished, done) = mpsc::channel();
         std::thread::spawn(move || {
             let mut stdout = std::io::stdout().lock();
+            let mut wire_sequence = 0;
             loop {
                 let row = {
                     let (state, ready) = &*worker;
@@ -71,11 +90,7 @@ impl StatusOutput {
                     state.rows.pop_front().map(|(_, row)| row)
                 };
                 let Some(row) = row else { break };
-                let envelope = serde_json::json!({ "schema_version": 3, "kind": "install_status", "data": row });
-                if serde_json::to_writer(&mut stdout, &envelope).is_err()
-                    || stdout.write_all(b"\n").is_err()
-                    || stdout.flush().is_err()
-                {
+                if write_status(&mut stdout, row, &mut wire_sequence).is_err() {
                     break;
                 }
             }
@@ -146,6 +161,31 @@ mod tests {
         );
         assert!(rows.iter().any(|row| row.stage == "finalizing"));
         assert_eq!(rows.last().unwrap().stage, "finished");
+        assert!(rows.last().unwrap().sequence > rows.len() as u64);
+        let session = row.session_id.clone();
+        let mut encoded = Vec::new();
+        let mut wire_sequence = 0;
+        for (_, row) in pending.rows {
+            write_status(&mut encoded, row, &mut wire_sequence).unwrap();
+        }
+        let encoded = String::from_utf8(encoded).unwrap();
+        let delivered: Vec<serde_json::Value> = encoded
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        for (index, envelope) in delivered.iter().enumerate() {
+            assert_eq!(envelope["schema_version"], 3);
+            assert_eq!(envelope["kind"], "install_status");
+            assert_eq!(envelope["data"]["sequence"], index + 1);
+            assert_eq!(envelope["data"]["session_id"], session);
+        }
+        assert_eq!(delivered.first().unwrap()["data"]["stage"], "preparing");
+        assert!(
+            delivered
+                .iter()
+                .any(|row| row["data"]["stage"] == "finalizing")
+        );
+        assert_eq!(delivered.last().unwrap()["data"]["stage"], "finished");
     }
 
     #[test]

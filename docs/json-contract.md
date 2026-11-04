@@ -145,10 +145,11 @@ own windows. Diagnostics remain on stderr. A disconnected progress observer does
 not interrupt collection or terminate an installer.
 
 `data.session_id` is generated before opening storage and stays fixed throughout
-this attempt; `data.database` is its absolute database path. Sequence starts
-at 1 and increases for every generated checkpoint. Beta.2's bounded transport
-can coalesce intermediate measurements, so delivered sequences may have gaps;
-they must remain strictly increasing. Initial, stage, installer-exit and terminal
+this attempt; `data.database` is its absolute database path. Delivered sequence
+starts at 1 and increases by 1, preserving the existing v3 wire contract.
+Beta.2's bounded transport can coalesce intermediate internal measurements;
+sequence numbers are assigned after dequeue, so coalescing creates no wire gaps.
+Initial, stage, installer-exit and terminal
 checkpoints are retained for this fixed production step plan. Never choose a
 result by record name or latest row. Consumers ignore already delivered/older
 rows and rows for another bound database/session; contradictory new rows fail
