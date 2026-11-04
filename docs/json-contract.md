@@ -131,3 +131,49 @@ These views do not reinterpret confidence, unknown metrics, historical names,
 process identities or ownership. Clients still preserve exact time strings and
 integer values and distinguish unavailable/null from zero. The viewer does not
 start collection or active provider probes.
+
+## Desktop install progress (additive, v0.3.1)
+
+`install --status-json` writes one compact `install_status` v3 envelope per line
+on stdout (NDJSON), rather than the existing human summary. Without this option,
+existing install output and `--manifest` remain unchanged. `--status-json` and
+`--manifest` are mutually exclusive. Each row conforms to the additive
+`install_status` definition in the existing v3 schema. Installer console output
+is discarded in this observed mode so neither installer text nor a detached
+child retaining a pipe can masquerade as progress. GUI installers retain their
+own windows. Diagnostics remain on stderr. A disconnected progress observer does
+not interrupt collection or terminate an installer.
+
+`data.session_id` is generated before opening storage and stays fixed throughout
+this attempt; `data.database` is its absolute database path. Sequence starts
+at 1 and increases by 1. Never choose a result by record name or latest row.
+
+- `preparing`: validation, baseline/provider setup; installer has not started.
+- `capturing`: installer was spawned. PID and exact decimal FILETIME birth are
+  separate fields; a failed birth query stays null, never a guessed identity.
+  A later capturing row confirms root exit and its nullable exit code. Exit 0
+  does not mean recording has ended or evidence is saved completely.
+- `finalizing`: the producer stopped and raw workers joined. Association and
+  final persistence are still running. No completion percentage is promised.
+- `finished`: this session was committed and read back with persisted recording
+  state `finished`, and the checkpoint policy scope returned successfully.
+- `failed`: an operation failed. `error` describes the failure; prior commits
+  remain in storage. `data_saved` means this exact session was confirmed committed, including
+  an unfinished/provisional record, not that all data or attribution is complete.
+
+`installer_started`, `installer_exited`, `installer_exit_code`,
+`capture_finished` (source/raw collection ended), and `data_saved` are independent.
+`quality` and actual `etw_process`, `etw_file`, `etw_registry` labels expose scope
+and final continuity rather than deriving success from installer exit. A missing
+terminal row, malformed JSON, unknown stage or nonzero CLI exit cannot establish
+success. Check the bound database and session through the existing read-only
+viewer when the last valid status identifies saved or possibly unfinished data.
+
+`--require-etw` is additive and conflicts with `--no-etw`. It refuses launch unless
+process and file ETW providers are active and, when a registry key was selected,
+registry ETW is active. It does not elevate, modify permissions, or stop unrelated
+trace sessions. This startup check cannot guarantee later delivery or continuity;
+final quality and warnings still apply. Plain install retains its existing
+fallback policy. Desktop users explicitly choose snapshot mode (`--no-etw`) when
+needed; it observes selected existing directories through snapshots/notifications
+and process sampling, without claiming ETW source coverage.

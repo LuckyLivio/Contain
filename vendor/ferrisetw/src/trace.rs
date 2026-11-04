@@ -54,6 +54,9 @@ impl From<crate::native::EvntraceNativeError> for TraceError {
 
 type TraceResult<T> = Result<T, TraceError>;
 
+mod startup_ownership;
+use startup_ownership::StartupOwnership;
+
 /// Trace Properties struct
 ///
 /// These are some configuration settings that will be included in an [`EVENT_TRACE_PROPERTIES`](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/ns-evntrace-event_trace_properties)
@@ -522,7 +525,7 @@ impl<T: RealTimeTraceTrait + PrivateRealTimeTraceTrait> TraceBuilder<T> {
         };
 
         let flags = self.rt_callback_data.provider_flags::<T>();
-        let (full_properties, control_handle) = start_trace::<T>(
+        let (mut full_properties, control_handle) = start_trace::<T>(
             &trace_wide_name,
             wide_etl_dump_file
                 .as_ref()
@@ -530,6 +533,14 @@ impl<T: RealTimeTraceTrait + PrivateRealTimeTraceTrait> TraceBuilder<T> {
             &self.properties,
             flags,
         )?;
+
+        let startup = StartupOwnership::new(|| {
+            let _ = control_trace(
+                &mut full_properties,
+                control_handle,
+                Etw::EVENT_TRACE_CONTROL_STOP,
+            );
+        });
 
         // TODO: For kernel traces, implement enable_provider function for providers that require call to TraceSetInformation with extended PERFINFO_GROUPMASK
 
@@ -544,6 +555,8 @@ impl<T: RealTimeTraceTrait + PrivateRealTimeTraceTrait> TraceBuilder<T> {
             SubscriptionSource::RealTimeSession(trace_wide_name),
             &callback_data,
         )?;
+
+        startup.transfer();
 
         Ok((
             T::build(full_properties, control_handle, trace_handle, callback_data),

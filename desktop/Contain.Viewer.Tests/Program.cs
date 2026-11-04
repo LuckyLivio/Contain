@@ -23,24 +23,30 @@ internal static class Program
         using var form = new ViewerForm(runner.Client, runner.Dialogs);
         form.Shown += async (_, _) =>
         {
-            try { await runner.RunAsync(form); }
+            try
+            {
+                await runner.RunAsync(form);
+                if (options.InstallFixture is not null)
+                    runner.InstallAccepted = await new InstallVerification(options, runner.Success).RunAsync();
+            }
             catch (Exception error) { runner.RecordUnhandled(error); }
             finally { runner.Finish(); form.Close(); }
         };
         Application.Run(form);
-        return runner.Success ? 0 : 1;
+        return runner.Success && runner.InstallAccepted ? 0 : 1;
     }
 }
 
-internal sealed record Options(string Package, string Fixtures, string Output, string PrivateOutput, string Source)
+internal sealed record Options(string Package, string Fixtures, string Output, string PrivateOutput, string Source, string? InstallFixture)
 {
     public static Options Parse(string[] args)
     {
-        if (args.Length != 10) throw new ArgumentException("Expected --package --fixtures --output --private-output --source.");
+        if (args.Length is not (10 or 12)) throw new ArgumentException("Expected --package --fixtures --output --private-output --source, optionally --install-fixture.");
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         for (var index = 0; index < args.Length; index += 2) values.Add(args[index], args[index + 1]);
         return new(Path.GetFullPath(values["--package"]), Path.GetFullPath(values["--fixtures"]),
-            Path.GetFullPath(values["--output"]), Path.GetFullPath(values["--private-output"]), values["--source"]);
+            Path.GetFullPath(values["--output"]), Path.GetFullPath(values["--private-output"]), values["--source"],
+            values.TryGetValue("--install-fixture", out var fixture) ? Path.GetFullPath(fixture) : null);
     }
 }
 
@@ -107,6 +113,7 @@ internal sealed class Runner
     private readonly StringBuilder privateLog = new();
     public TestDialogs Dialogs { get; } = new();
     public CoreClient Client { get; }
+    public bool InstallAccepted { get; set; } = true;
     public bool Success => results.Count > 0 && results.All(result => result.Status == "passed");
 
     public Runner(Options options)

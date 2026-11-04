@@ -1,3 +1,4 @@
+use crate::install_status::{InstallStatus, providers_ready};
 use crate::lifetime::LifetimeCache;
 use crate::profile::{self, measured};
 use crate::storage::{Storage, stream::RawBuffer};
@@ -14,7 +15,6 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
-use uuid::Uuid;
 
 pub struct InstallOptions {
     pub name: Option<String>,
@@ -29,14 +29,80 @@ pub struct InstallOptions {
 }
 
 pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
-    let policy = crate::storage::checkpoint::Policy::from_env()?;
-    crate::storage::checkpoint::scoped(db, policy, |db| install_inner(options, db, policy))
+    let mut status = InstallStatus::new(String::new(), options.etw);
+    install_controlled(options, db, &mut status, false, false, &mut |_| {})
+}
+
+/// Desktop observation uses isolated installer output and an exact session ID.
+/// Notification is infallible: a disconnected observer must not abandon a running installer.
+pub fn install_observed(
+    options: InstallOptions,
+    db: &mut Storage,
+    status: &mut InstallStatus,
+    require_etw: bool,
+    notify: &mut dyn FnMut(&InstallStatus),
+) -> Result<Capture> {
+    install_controlled(options, db, status, require_etw, true, notify)
+}
+
+fn install_controlled(
+    options: InstallOptions,
+    db: &mut Storage,
+    status: &mut InstallStatus,
+    require_etw: bool,
+    isolate_output: bool,
+    notify: &mut dyn FnMut(&InstallStatus),
+) -> Result<Capture> {
+    if status.sequence == 0 {
+        status.publish(notify);
+    }
+    let result = (|| {
+        let policy = crate::storage::checkpoint::Policy::from_env()?;
+        crate::storage::checkpoint::scoped(db, policy, |db| {
+            install_inner(
+                options,
+                db,
+                policy,
+                status,
+                require_etw,
+                isolate_output,
+                notify,
+            )
+        })
+    })();
+    let result = result.and_then(|capture: Capture| {
+        anyhow::ensure!(
+            !isolate_output || capture.capture_state.as_deref() == Some("finished"),
+            "Capture did not reach persisted finished state; evidence remains available under session {}",
+            status.session_id
+        );
+        Ok(capture)
+    });
+    match &result {
+        Ok(capture) => status.finished(capture, notify),
+        Err(error) => {
+            // Query only this attempt. Never substitute an older same-name session.
+            status.data_saved = match db.load_summary(&status.session_id) {
+                Ok(saved) => {
+                    status.quality = Some(saved.quality);
+                    true
+                }
+                Err(_) => status.data_saved,
+            };
+            status.fail(format!("{error:#}"), notify);
+        }
+    }
+    result
 }
 
 fn install_inner(
     options: InstallOptions,
     db: &mut Storage,
     policy: crate::storage::checkpoint::Policy,
+    status: &mut InstallStatus,
+    require_etw: bool,
+    isolate_output: bool,
+    notify: &mut dyn FnMut(&InstallStatus),
 ) -> Result<Capture> {
     profile::start();
     let capture_clock = Instant::now();
@@ -49,7 +115,7 @@ fn install_inner(
     if !installer.is_file() {
         anyhow::bail!("installer is not a file: {}", installer.display());
     }
-    let id = Uuid::new_v4().to_string();
+    let id = status.session_id.clone();
     tracing::info!(session_id = %id, etw_requested = options.etw, "capture starting");
     let roots = if options.watch_roots.is_empty() {
         vec![
@@ -121,7 +187,15 @@ fn install_inner(
         ..Default::default()
     };
     let mut journal = RawBuffer::with_policy(db, &initial, options.evidence_quota_bytes, policy)?;
+    status.data_saved = true;
     let mut source = EtwSource::start(&watch_roots, nt_root.clone(), options.etw);
+    status.backend(source.provider_status());
+    status.publish(notify);
+    anyhow::ensure!(
+        !require_etw || providers_ready(source.provider_status(), options.registry_key.is_some()),
+        "Required ETW providers are unavailable; installer was not launched. Check existing trace permissions or explicitly select snapshot mode. {:?}",
+        source.provider_status().warnings
+    );
     source.ensure_raw_clock_ready()?;
     phases.insert(
         "provider_readiness".into(),
@@ -140,8 +214,16 @@ fn install_inner(
             let before_files = filesystem::baseline_snapshot(&roots)?;
             let installer_clock = Instant::now();
             let started_at = native::timestamp(native::now_ticks());
-            let mut child = Command::new(&installer)
-                .args(&options.args)
+            let mut command = Command::new(&installer);
+            command.args(&options.args);
+            if isolate_output {
+                // Installer text must never enter the progress protocol, and its
+                // descendants must not retain the desktop's protocol pipe handles.
+                command
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null());
+            }
+            let mut child = command
                 .spawn()
                 .with_context(|| format!("launching {}", installer.display()))?;
             let identity = native::identity_from_handle(child.as_handle(), child.id())
@@ -158,6 +240,11 @@ fn install_inner(
                 });
             let root_pid = identity.pid;
             let root_birth = identity.creation_time;
+            status.stage = "capturing".into();
+            status.installer_started = true;
+            status.installer_pid = Some(root_pid);
+            status.installer_creation_time = (root_birth != 0).then(|| root_birth.to_string());
+            status.publish(notify);
             let mut process_observer = ProcessObserver::new(identity, &id);
             let mut poll_at = Instant::now();
             let exit_code = loop {
@@ -175,6 +262,9 @@ fn install_inner(
                 installer_clock.elapsed().as_millis() as u64,
             );
             let exited_at = native::now_ticks();
+            status.installer_exited = true;
+            status.installer_exit_code = exit_code;
+            status.publish(notify);
             live.reset_activity();
             let drain_start = Instant::now();
             let mut drain_timed_out = false;
@@ -233,6 +323,10 @@ fn install_inner(
                 drain_timed_out,
             ))
         })?;
+    status.stage = "finalizing".into();
+    status.capture_finished = true;
+    status.backend(&backend);
+    status.publish(notify);
     let (
         before_files,
         observed,
@@ -671,6 +765,51 @@ fn add_stats(to: &mut CaptureStats, from: &CaptureStats) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_attempt_cannot_open_old_same_name_record_as_its_result() {
+        let directory =
+            std::env::temp_dir().join(format!("contain-status-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("records.db");
+        let mut db = Storage::open(&path).unwrap();
+        let old = Capture {
+            id: "old-same-name".into(),
+            name: "same name".into(),
+            schema_version: 3,
+            ..Default::default()
+        };
+        db.save(&old).unwrap();
+        let options = InstallOptions {
+            name: Some(old.name.clone()),
+            installer: directory.join("missing.exe"),
+            args: vec![],
+            watch_roots: vec![directory.clone()],
+            registry_key: None,
+            settle_ms: 1,
+            etw: false,
+            max_drain_ms: 1,
+            evidence_quota_bytes: 1024,
+        };
+        let mut status = InstallStatus::new(path.to_string_lossy().into_owned(), false);
+        let id = status.session_id.clone();
+        let mut rows = Vec::new();
+        let error = install_observed(options, &mut db, &mut status, false, &mut |row| {
+            rows.push(serde_json::to_value(row).unwrap())
+        })
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("installer not found"));
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["stage"], "preparing");
+        assert_eq!(rows[1]["stage"], "failed");
+        assert_eq!(rows[1]["session_id"], id);
+        assert!(!status.installer_started && !status.capture_finished && !status.data_saved);
+        assert!(db.load_summary(&id).is_err());
+        assert_eq!(db.load_summary(&old.id).unwrap().name, old.name);
+        drop(db);
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
 
     #[test]
     fn after_stop_snapshot_cannot_promote_an_earlier_attributed_mutation() {

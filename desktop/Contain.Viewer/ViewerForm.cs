@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace Contain.Viewer;
 
-/// <summary>A local, read-only presentation of the versioned CLI; no capture or database logic.</summary>
+/// <summary>Read-only record views with an explicit, isolated installation workflow.</summary>
 public sealed class ViewerForm : Form
 {
     private static readonly Color Ink = Color.FromArgb(28, 43, 60);
@@ -14,9 +14,12 @@ public sealed class ViewerForm : Form
     private readonly CoreClient _client;
     private readonly IViewerDialogs _dialogs;
     private readonly int _pageSize;
+    private readonly IInstallDialogs? _installDialogs;
+    private readonly Button _newInstall = Button("NewInstall", "新建安装记录", true);
     private readonly Button _open = Button("OpenDatabase", "打开记录数据库", true);
     private readonly Button _export = Button("ExportReport", "导出本地报告");
     private readonly Label _databaseLabel = Label("DatabasePath", "尚未打开数据库", Muted);
+    private readonly Label _captureSummary = Label("CaptureOutcome", "新建记录会显式启动安装器；打开已有数据库始终只读。", Muted);
     private readonly Label _status = Label("Status", "选择已有数据库开始查看。数据仅保留在本机，不启动采集。", Muted);
     private readonly Label _sessionTitle = Label("SessionTitle", "打开一份记录，了解它留下的证据", Ink);
     private readonly Label _summaryStatus = Label("SummaryStatus", "只读查看 · 不修改原数据库 · 不判断安全删除", Muted);
@@ -54,16 +57,18 @@ public sealed class ViewerForm : Form
 
     public bool IsBusy { get; private set; }
     public Task PendingOperation { get; private set; } = Task.CompletedTask;
+    public InstallForm? ActiveInstallForm { get; private set; }
 
-    public ViewerForm(CoreClient client, IViewerDialogs? dialogs = null, int pageSize = 50)
+    public ViewerForm(CoreClient client, IViewerDialogs? dialogs = null, int pageSize = 50, IInstallDialogs? installDialogs = null)
     {
         ArgumentNullException.ThrowIfNull(client);
         if (pageSize is < 1 or > 200) throw new ArgumentOutOfRangeException(nameof(pageSize));
         _client = client;
         _dialogs = dialogs ?? new ViewerDialogs();
         _pageSize = pageSize;
+        _installDialogs = installDialogs;
         Name = "ContainViewer";
-        Text = "Contain · 记录查看器";
+        Text = "Contain · 安装记录";
         AutoScaleMode = AutoScaleMode.Dpi;
         Font = new Font("Microsoft YaHei UI", 9.5F, FontStyle.Regular, GraphicsUnit.Point);
         ForeColor = Ink;
@@ -79,29 +84,33 @@ public sealed class ViewerForm : Form
 
     private void BuildLayout()
     {
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(22, 16, 22, 12), ColumnCount = 1, RowCount = 4 };
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(22, 16, 22, 12), ColumnCount = 1, RowCount = 5 };
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 68));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
         Controls.Add(root);
-        var header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1 };
+        var header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1 };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 172));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 188));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 166));
-        var brand = Label("Brand", "Contain  /  记录查看器", Ink);
+        var brand = Label("Brand", "Contain  /  安装记录", Ink);
         brand.Font = new Font(Font.FontFamily, 21F, FontStyle.Bold);
         header.Controls.Add(brand, 0, 0);
-        header.Controls.Add(_open, 1, 0);
-        header.Controls.Add(_export, 2, 0);
+        header.Controls.Add(_newInstall, 1, 0);
+        header.Controls.Add(_open, 2, 0);
+        header.Controls.Add(_export, 3, 0);
         root.Controls.Add(header, 0, 0);
         _databaseLabel.AutoEllipsis = true;
         _databaseLabel.Padding = new Padding(4, 0, 4, 8);
         root.Controls.Add(_databaseLabel, 0, 1);
+        root.Controls.Add(_captureSummary, 0, 2);
         var body = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 };
         body.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 360));
         body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        root.Controls.Add(body, 0, 2);
+        root.Controls.Add(body, 0, 3);
         var left = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(0, 0, 16, 0) };
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
         left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -173,11 +182,25 @@ public sealed class ViewerForm : Form
         _tabs.TabPages.Add(eventsTab);
         _status.AutoEllipsis = true;
         _status.Padding = new Padding(4, 6, 4, 0);
-        root.Controls.Add(_status, 0, 3);
+        root.Controls.Add(_status, 0, 4);
     }
 
     private void WireEvents()
     {
+        _newInstall.Click += (_, _) =>
+        {
+            if (ActiveInstallForm is { IsDisposed: false }) { ActiveInstallForm.Show(this); ActiveInstallForm.Activate(); return; }
+            ActiveInstallForm = new InstallForm(new InstallClient(_client.ExecutablePath), OpenCapturedSessionAsync, _installDialogs);
+            ActiveInstallForm.RecordingEnded += result =>
+            {
+                var state = result.LastStatus;
+                _captureSummary.Text = $"本次任务：{(result.Succeeded ? "记录已结束并保存" : "失败或未完成")} · 安装器退出 { (state?.InstallerExited == true ? state.InstallerExitCode?.ToString() ?? "未知" : "未确认") } · 覆盖 {state?.QualityLevel ?? "未确认"}。点击“本次任务状态”查看分别确认的结果。";
+                UpdateEnabled();
+            };
+            ActiveInstallForm.FormClosed += (_, _) => { ActiveInstallForm = null; UpdateEnabled(); };
+            ActiveInstallForm.Show(this);
+            UpdateEnabled();
+        };
         _open.Click += (_, _) =>
         {
             var path = _dialogs.ChooseDatabase(this);
@@ -236,6 +259,34 @@ public sealed class ViewerForm : Form
             });
         };
         FormClosed += (_, _) => { _operationCancellation?.Cancel(); _tips.Dispose(); };
+        FormClosing += (_, args) =>
+        {
+            if (ActiveInstallForm is not { IsActive: true } && ActiveInstallForm is not { IsChecking: true }) return;
+            args.Cancel = true;
+            ActiveInstallForm.Activate();
+            SetStatus("记录任务仍在运行，窗口保持打开。请等待采集进程退出；不会强制终止安装器。", true);
+        };
+    }
+
+    public async Task OpenCapturedSessionAsync(string database, string sessionId)
+    {
+        Exception? failure = null;
+        StartOperation(async token =>
+        {
+            try
+            {
+                await OpenDatabaseAsync(database, token);
+                var matches = _sessions.Rows.Cast<DataGridViewRow>().Where(row => row.Tag is JsonElement value && FieldText(value, "id") == sessionId).ToList();
+                if (matches.Count != 1) throw new InvalidDataException("数据库中未找到本次启动的准确会话；未选择其他记录替代。已保存的记录仍可从列表检查。");
+                await OpenRecordAsync((JsonElement)matches[0].Tag!, token);
+                _rendering = true;
+                try { matches[0].Selected = true; }
+                finally { _rendering = false; }
+            }
+            catch (Exception error) { failure = error; throw; }
+        });
+        await PendingOperation;
+        if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
     }
 
     private async Task OpenDatabaseAsync(string path, CancellationToken token)
@@ -444,6 +495,8 @@ public sealed class ViewerForm : Form
 
     private void UpdateEnabled()
     {
+        _newInstall.Enabled = !IsBusy;
+        _newInstall.Text = ActiveInstallForm is null ? "新建安装记录" : "本次任务状态";
         _sessions.Enabled = !IsBusy && _database is not null;
         _tabs.Enabled = !IsBusy;
         _export.Enabled = !IsBusy && _database is not null && _recordId is not null;

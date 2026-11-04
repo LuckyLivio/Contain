@@ -171,8 +171,10 @@ Errors/unwinds close and join workers, and never publish a completed capture.
 Thread-local profiles merge only after join using the same monotonic epoch.
 
 No Job Object assignment, automated classification, driver, automatic elevation
-or actual cleanup. The desktop viewer only queries existing records and exports
-local reports; it does not start capture.
+or actual cleanup. Existing desktop views query records read-only and export local reports.
+The explicit new-installation flow invokes the packaged CLI asynchronously with
+independent arguments and a versioned structured lifecycle stream; it never
+infers completion from human terminal text or the latest database row.
 `remove --dry-run` preserves the prior rules. See ADRs for [identity](adr/0002-process-identity.md),
 [file operations](adr/0003-file-operation-correlation.md),
 [registry](adr/0004-registry-path-resolution.md) and [jobs/drain](adr/0005-job-objects.md).

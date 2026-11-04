@@ -5,6 +5,7 @@ pub mod correlation;
 pub mod doctor;
 pub mod filesystem;
 pub mod ingest;
+pub mod install_status;
 pub mod inventory;
 pub mod lifetime;
 pub mod model;

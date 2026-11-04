@@ -10,10 +10,12 @@ Contain v0.3.1 observes Windows installation sessions, links real events to veri
 
 Contain records evidence and offers a cleanup **dry run**. It does not guarantee zero leftovers or isolate an installer.
 
-The [Windows desktop record viewer](desktop/README.md) opens an existing database,
-lists saved records, shows state changes and paged source events, explains a
-selected event and exports a local HTML report. It uses the packaged CLI and does
-not start recording or an installer. Ordinary viewing needs no development tools.
+The [Windows desktop](desktop/README.md) opens existing databases read-only and
+adds an explicit new-installation recording flow through the same Rust CLI.
+It shows state changes and paged source events, explains a selected event and
+exports a local HTML report. Ordinary use needs no development tools.
+The [graphical recording validation](docs/graphical-install-record.md) records
+the current implementation and its separate acceptance status.
 
 ## Current delivery status
 
@@ -34,7 +36,8 @@ These are separate bounded results, not release or general stability acceptance.
 Historical six clock questions remain D; formal provider/stabilization acceptance
 is still unmet. Formal 32-attempt acceptance, scale validation, third-party
 installers, final-state ownership and safe cleanup remain separate follow-up
-scopes. None is implied by the desktop viewer. Graphical recording is not started.
+scopes. None is implied by the desktop viewer. Graphical recording has its own
+[bounded acceptance record](docs/graphical-install-record.md).
 The [failed desktop attempts](docs/examples/windows-desktop-viewer-attempts.json)
 remain available alongside the successful result.
 
@@ -209,8 +212,8 @@ The [protocol](docs/v04-validation.md) retains the original scores separately.
 Its new gate remains blocked until original ETW QPC and provider timing rules are
 independently validated; fallback or a clock diagnostic cannot count as a pass.
 
-Graphical recording and real-installer trials are separate follow-up work. The
-current desktop scope ends at viewing existing records and exporting reports;
+Graphical recording is tracked in its [own bounded milestone](docs/graphical-install-record.md).
+Real-installer trials will be arranged separately after graphical acceptance;
 real cleanup remains unimplemented.
 
 ## License

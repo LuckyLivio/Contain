@@ -1,9 +1,9 @@
-# Contain desktop record viewer
+# Contain desktop records
 
-The Windows viewer opens existing Contain databases. It does not start an
-installer, collect events, run `doctor`, elevate, stay in the background, or
-perform cleanup. The existing bounded read-only core delivery milestone remains
-closed; desktop validation is a separate milestone.
+The Windows WinForms desktop opens existing Contain databases read-only and
+provides an explicit **新建安装记录** flow through the packaged Rust CLI.
+The bounded read-only core and desktop record viewer milestones remain closed.
+Graphical recording is a separate [implementation and validation milestone](../docs/graphical-install-record.md).
 
 ## Use the Windows package
 
@@ -64,8 +64,45 @@ differences are loaded per record, while controls render only one page. CLI
 responses above 64 MiB or queries exceeding the configured timeout are refused
 with an error; no truncated report is presented as complete.
 
-The ordinary `doctor` command actively probes ETW providers. The desktop never
-invokes it, and both the bridge and CLI reject it under the read-only contract.
+The ordinary `doctor` command actively probes ETW providers. The read-only
+`CoreClient` and CLI read-only mode reject it. The new-record page invokes it only
+when the user explicitly chooses **检查环境**, through a separate install client.
+It does not launch the installer, elevate or alter system security settings.
+A successful check does not guarantee later startup.
+
+## New installation record
+
+1. Choose **新建安装记录**, then select an existing native `.exe` installer.
+   Current acceptance uses the controlled `contain-test-installer.exe` fixture.
+   MSI, updater and service-agent installation coverage is not promised.
+2. Enter a record name, an **existing** observation directory and a database
+   path outside the observation scope. The application does not infer all software
+   destinations from the installer directory, scan all drives or create the
+   software destination to make validation pass. For the packaged fixture,
+   a developer/tester prepares a marked isolated fixture directory first.
+3. Open advanced settings only if needed. Arguments are one literal argument per
+   line, without shell quoting or expansion. Spaces, Chinese and special characters
+   remain part of their argument. The registry option is a selected HKCU key;
+   defaults preserve the existing backend limits.
+4. Click **检查环境**. ETW availability, current permissions, warnings and the
+   explicitly selected snapshot mode are reported separately. The default recording
+   path requires ETW readiness at actual launch. A user can select snapshot mode
+   knowing that its observations and attribution are limited.
+5. Click **开始记录** once. Configuration and checking never start the installer.
+   The interface remains responsive, accepts only one active task and reports
+   actual preparing/capturing/finalizing/finished/failed backend stages without
+   a fabricated percentage. Installer exit, capture completion, saved data and
+   coverage quality are separate facts.
+6. After finalization choose the exact returned session automatically in the existing
+   viewer. Select a source event to read explain, then export a local report.
+   Failed or interrupted saved sessions can also be inspected; no evidence is
+   deleted and the latest database row is never used to identify the task.
+
+There is no force-cancel button. Closing an active recording window is refused
+with a visible explanation that the task continues; leave it open until the
+backend finishes. Abnormal desktop/core termination is not a successful capture;
+reopen the bound database to inspect retained unfinished evidence. Contain does
+not automatically elevate or stop somebody else's trace session.
 
 ## Build and verification
 
@@ -83,8 +120,11 @@ the operating system's file-picker navigation or establish manual Windows 10/11
 compatibility. The packaged executable also has a separate native launch/close
 check; screenshots are not browser previews.
 
-The existing CI uses `[desktop-viewer]` to schedule this delivery. That plan
-executes no ETW capture or snapshot fixture. It explicitly skips the older CLI
+The existing CI uses `[desktop-viewer]` for viewing regressions and
+`[desktop-install]` for the bounded graphical recording plan. The viewing plan
+executes no ETW capture or snapshot fixture. The install plan declares one controlled
+GUI-started ETW capture after offline regressions; it does not invoke demo.ps1 to
+start the product or precapture a database. It explicitly skips the older CLI
 integration script because that script invokes active `doctor`; applicable views
 are exercised through the desktop's strict read-only path. Rust Check, Coverage,
 CoverageOriginal and Dependencies retain their existing assertions and floors.
@@ -182,5 +222,7 @@ No ETW capture, active `doctor`, old 66-command active-probe integration or snap
 fallback ran in this desktop plan. Clean Windows 10/11 manual testing and native
 file-picker navigation remain unexecuted. The unsigned ZIP has no installer;
 keep the complete extracted directory. The existing core-delivery milestone stays
-closed. Graphical recording, real-installer trials, formal 32-attempt acceptance,
-scale validation, ownership and cleanup remain separate, unstarted scopes.
+closed. This historical viewing result supplies no graphical recording evidence.
+The new [graphical recording milestone](../docs/graphical-install-record.md) is
+tracked separately. Real-installer trials, formal 32-attempt acceptance, scale
+validation, ownership and cleanup remain outside this round.

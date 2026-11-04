@@ -116,6 +116,11 @@ impl EtwReceiver {
 }
 
 impl EtwSource {
+    /// Startup provider labels; no STOP or mutable statistics query is performed.
+    pub(crate) fn provider_status(&self) -> &BackendReport {
+        &self.report
+    }
+
     pub fn ensure_raw_clock_ready(&self) -> anyhow::Result<()> {
         anyhow::ensure!(
             !super::clock::companion::configured()
@@ -437,8 +442,9 @@ impl EtwSource {
                 } else {
                     tracing::warn!(session = %name, error = ?error, "ETW unavailable; using snapshot fallback");
                 }
-                // ferrisetw can fail after StartTrace during provider enablement; clean only our UUID session.
-                let _ = native::control_trace(&name, EVENT_TRACE_CONTROL_STOP);
+                // The builder cleans up only its successfully started control
+                // handle. A startup error (including a name collision) never
+                // grants ownership of an existing session with this name.
                 source.report.etw_file = "unavailable".into();
                 source.report.etw_process = "unavailable".into();
                 source.report.etw_registry = "unavailable".into();

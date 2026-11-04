@@ -154,6 +154,25 @@
           "$ref": "#/$defs/list_details"
         }
       }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "kind",
+        "data"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 3
+        },
+        "kind": {
+          "const": "install_status"
+        },
+        "data": {
+          "$ref": "#/$defs/install_status"
+        }
+      }
     }
   ],
   "$defs": {
@@ -1581,6 +1600,119 @@
               "null"
             ]
           }
+        }
+      }
+    },
+    "install_status": {
+      "type": "object",
+      "required": [
+        "session_id",
+        "database",
+        "sequence",
+        "stage",
+        "installer_started",
+        "installer_exited",
+        "capture_finished",
+        "data_saved",
+        "etw_requested",
+        "installer_pid",
+        "installer_creation_time",
+        "installer_exit_code",
+        "etw_process",
+        "etw_file",
+        "etw_registry",
+        "error",
+        "quality"
+      ],
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "database": {
+          "type": "string"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "stage": {
+          "enum": [
+            "preparing",
+            "capturing",
+            "finalizing",
+            "finished",
+            "failed"
+          ]
+        },
+        "installer_started": {
+          "type": "boolean"
+        },
+        "installer_exited": {
+          "type": "boolean"
+        },
+        "capture_finished": {
+          "type": "boolean"
+        },
+        "data_saved": {
+          "type": "boolean"
+        },
+        "etw_requested": {
+          "type": "boolean"
+        },
+        "installer_pid": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "installer_creation_time": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]+$"
+        },
+        "installer_exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "etw_process": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "etw_file": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "etw_registry": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "quality": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/quality"
+            }
+          ]
         }
       }
     }

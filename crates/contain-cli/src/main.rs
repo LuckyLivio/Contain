@@ -1,9 +1,10 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use contain_core::{
-    capture::{InstallOptions, install},
+    capture::{InstallOptions, install, install_observed},
     cleanup::plan,
     doctor,
+    install_status::InstallStatus,
     storage::Storage,
 };
 use std::{env, path::PathBuf};
@@ -57,6 +58,18 @@ enum Commands {
             help = "Use directory notifications and snapshots without attempting ETW"
         )]
         no_etw: bool,
+        #[arg(
+            long,
+            conflicts_with = "no_etw",
+            help = "Refuse launch if selected ETW providers are unavailable"
+        )]
+        require_etw: bool,
+        #[arg(
+            long,
+            conflicts_with = "manifest",
+            help = "Emit only versioned install_status NDJSON on stdout; installer console output is discarded"
+        )]
+        status_json: bool,
         #[arg(long)]
         manifest: Option<PathBuf>,
         #[arg(last = true)]
@@ -178,15 +191,36 @@ fn run_cli(cli: Cli) -> Result<()> {
             max_drain_ms,
             evidence_quota_mib,
             no_etw,
+            require_etw,
+            status_json,
             manifest,
             args,
         } => {
-            println!(
-                "Contain\n────────────────────────────────\nCollecting baseline and watching installation..."
-            );
-            let mut storage = Storage::open(&db)?;
-            let capture = install(
-                InstallOptions {
+            let db = std::path::absolute(&db).context("resolving capture database path")?;
+            let mut status = InstallStatus::new(db.to_string_lossy().into_owned(), !no_etw);
+            let mut emit = |status: &InstallStatus| {
+                if status_json {
+                    // Broken observation pipes must not interrupt collection or orphan
+                    // a managed installer. The desktop treats missing EOF/results as failure.
+                    use std::io::Write;
+                    let mut output = std::io::stdout().lock();
+                    if let Ok(row) = serde_json::to_string(&serde_json::json!({
+                        "schema_version": 3, "kind": "install_status", "data": status
+                    })) {
+                        let _ = writeln!(output, "{row}");
+                        let _ = output.flush();
+                    }
+                }
+            };
+            status.publish(&mut emit);
+            if !status_json {
+                println!(
+                    "Contain\n────────────────────────────────\nCollecting baseline and watching installation..."
+                );
+            }
+            let result = (|| -> Result<(Storage, contain_core::model::Capture)> {
+                let mut storage = Storage::open(&db)?;
+                let options = InstallOptions {
                     name,
                     installer,
                     args,
@@ -198,9 +232,26 @@ fn run_cli(cli: Cli) -> Result<()> {
                     evidence_quota_bytes: evidence_quota_mib
                         .checked_mul(1024 * 1024)
                         .context("evidence quota overflow")?,
-                },
-                &mut storage,
-            )?;
+                };
+                let capture = if status_json || require_etw {
+                    install_observed(options, &mut storage, &mut status, require_etw, &mut emit)?
+                } else {
+                    install(options, &mut storage)?
+                };
+                Ok((storage, capture))
+            })();
+            let (storage, capture) = match result {
+                Ok(result) => result,
+                Err(error) => {
+                    if status.stage != "failed" {
+                        status.fail(format!("{error:#}"), &mut emit);
+                    }
+                    return Err(error);
+                }
+            };
+            if status_json {
+                return Ok(());
+            }
             if let Some(path) = manifest {
                 std::fs::write(&path, envelope("inspect", storage.load(&capture.id)?)?)
                     .with_context(|| format!("writing manifest {}", path.display()))?;
@@ -461,5 +512,76 @@ mod command_tests {
                 ..
             }
         ));
+    }
+    #[test]
+    fn structured_install_is_additive_and_preserves_literal_arguments() {
+        let input = [
+            "contain",
+            "--db",
+            "C:\\记录 & [x]\\本次.db",
+            "install",
+            "C:\\安装 器\\setup.exe",
+            "--name",
+            "same \"name\" & [x]",
+            "--watch",
+            "C:\\目标 目录",
+            "--status-json",
+            "--require-etw",
+            "--",
+            "two words",
+            "中文",
+            "a\"b",
+            "&|<>^%$()[];",
+            "",
+        ];
+        let cli = Cli::try_parse_from(input).unwrap();
+        assert_eq!(cli.db, Some(PathBuf::from(input[2])));
+        match cli.command {
+            Commands::Install {
+                installer,
+                name,
+                args,
+                status_json,
+                require_etw,
+                no_etw,
+                ..
+            } => {
+                assert_eq!(installer, PathBuf::from(input[4]));
+                assert_eq!(name.as_deref(), Some(input[6]));
+                assert_eq!(args, input[12..]);
+                assert!(status_json && require_etw && !no_etw);
+            }
+            _ => panic!("wrong command"),
+        }
+        let plain = Cli::try_parse_from(["contain", "install", "setup.exe"]).unwrap();
+        assert!(matches!(
+            plain.command,
+            Commands::Install {
+                status_json: false,
+                require_etw: false,
+                ..
+            }
+        ));
+        assert!(
+            Cli::try_parse_from([
+                "contain",
+                "install",
+                "setup.exe",
+                "--require-etw",
+                "--no-etw"
+            ])
+            .is_err()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "contain",
+                "install",
+                "setup.exe",
+                "--status-json",
+                "--manifest",
+                "out.json"
+            ])
+            .is_err()
+        );
     }
 }

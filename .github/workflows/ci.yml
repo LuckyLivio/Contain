@@ -24,21 +24,25 @@ jobs:
         shell: pwsh
         env:
           TRIAL_PAIR_REQUESTED: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[trial-pair]') }}
-          DESKTOP_REQUESTED: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[desktop-viewer]') }}
+          INSTALL_REQUESTED: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[desktop-install]') }}
+          DESKTOP_REQUESTED: ${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[desktop-viewer]') || contains(github.event.head_commit.message, '[desktop-install]')) }}
         run: |
           $desktop = $env:DESKTOP_REQUESTED -eq 'true'
+          $install = $env:INSTALL_REQUESTED -eq 'true'
+          "install=$($install.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           if ($desktop -and $env:TRIAL_PAIR_REQUESTED -eq 'true') { throw 'Desktop viewing and native capture are separate plans' }
           $requested = $env:TRIAL_PAIR_REQUESTED -eq 'true'
           "desktop=$($desktop.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           "capture=$($requested.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           New-Item -ItemType Directory -Path target/quality-public -Force | Out-Null
           [ordered]@{
-            schema_version=1; source_sha=$env:GITHUB_SHA; requested=$requested
-            configurations=$(if($desktop){@()}else{@('default','dual-clock')}); maximum_native_captures=$(if($desktop){0}else{2}); retries=0
-            desktop_viewer=$desktop
+            schema_version=1; source_sha=$env:GITHUB_SHA; requested=($requested -or $install)
+            configurations=$(if($install){@('gui-controlled-exe')}elseif($desktop){@()}else{@('default','dual-clock')}); maximum_native_captures=$(if($install){1}elseif($desktop){0}else{2}); retries=0
+            desktop_viewer=$desktop; desktop_install=$install
+            install_plan=$(if($install){@('offline_protocol_arguments_and_read_only_regressions','configure_without_launch','one_gui_started_controlled_fixture_real_etw','duplicate_start_and_conservative_close','exact_session_autoopen','source_event_explain_and_export','native_picker_navigation_and_cancel_if_available')}else{@()})
             legacy_synthetic_cli=$(if($desktop){'not_run_active_doctor_excluded; native_desktop_harness_covers_read_only_views'}else{'planned'})
-            snapshot_fallback=$(if($desktop){'not_run_desktop_existing_records_only'}else{'existing_plan'})
-            status=$(if($requested){'planned_after_quality_and_windows_report_preflights'}else{'not_requested_not_validated'})
+            snapshot_fallback=$(if($install){'explicit_snapshot_mode_offline_checks_only_no_live_fallback_substitution'}elseif($desktop){'not_run_desktop_existing_records_only'}else{'existing_plan'})
+            status=$(if($install){'planned_after_quality_and_offline_desktop_regressions'}elseif($requested){'planned_after_quality_and_windows_report_preflights'}else{'not_requested_not_validated'})
           } | ConvertTo-Json | Set-Content target/quality-public/capture-plan.json -Encoding utf8
       - name: Required quality tools
         shell: pwsh
@@ -136,6 +140,7 @@ jobs:
               Sort-Object FullName -Descending | Select-Object -First 1
             if ($crt) { $packageArgs += @('--runtime-directory', $crt.FullName) }
           }
+          if ('${{ steps.trial_plan.outputs.install }}' -eq 'true') { $packageArgs += @('--fixture','target/debug/contain-test-installer.exe') }
           python @packageArgs
           if ($LASTEXITCODE -ne 0) { throw 'Desktop package freeze failed' }
       - name: Actual Windows forms, packaged CLI and local report verification
@@ -144,7 +149,20 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path target/viewer-private -Force | Out-Null
-          ./target/viewer-tests/Contain.Viewer.Tests.exe --package target/windows-viewer --fixtures target/viewer-fixtures --output target/viewer-public --private-output target/viewer-private --source $env:GITHUB_SHA *> target/viewer-private/harness.log
+          # Only the controlled native harness and its children inherit this reviewed fixture temp.
+          $nativePackage = [IO.Path]::GetFullPath('target/windows-viewer')
+          if ('${{ steps.trial_plan.outputs.install }}' -eq 'true') {
+            $nativePackage = Join-Path ('C:\Contain Desktop Package\' + $env:GITHUB_SHA.Substring(0,12)) '安装包 中文 & [x]'
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($nativePackage)) -Force | Out-Null
+            Copy-Item -LiteralPath ([IO.Path]::GetFullPath('target/windows-viewer')) -Destination $nativePackage -Recurse
+            $fixtureTemp = 'C:\Contain Desktop Fixture Temp'
+            New-Item -ItemType Directory -Path $fixtureTemp -Force | Out-Null
+            $env:TEMP = $fixtureTemp
+            $env:TMP = $fixtureTemp
+          }
+          $testArgs = @('--package',$nativePackage,'--fixtures','target/viewer-fixtures','--output','target/viewer-public','--private-output','target/viewer-private','--source',$env:GITHUB_SHA)
+          if ('${{ steps.trial_plan.outputs.install }}' -eq 'true') { $testArgs += @('--install-fixture', (Join-Path $nativePackage 'contain-test-installer.exe')) }
+          ./target/viewer-tests/Contain.Viewer.Tests.exe @testArgs *> target/viewer-private/harness.log
           $code = $LASTEXITCODE
           Write-Host "Native desktop verification exit code: $code"
           if ($code -ne 0) { exit $code }
@@ -153,7 +171,9 @@ jobs:
         if: ${{ !cancelled() && steps.viewer_package.outcome == 'success' }}
         shell: pwsh
         run: |
-          python scripts/package-viewer.py finalize --package target/windows-viewer --quality-summary target/quality-public/summary.json --verification target/viewer-public/summary.json --output target/contain-0.3.1-windows-x64-viewer.zip
+          $finalArgs = @('scripts/package-viewer.py','finalize','--package','target/windows-viewer','--quality-summary','target/quality-public/summary.json','--verification','target/viewer-public/summary.json','--output','target/contain-0.3.1-windows-x64-viewer.zip')
+          if ('${{ steps.trial_plan.outputs.install }}' -eq 'true') { $finalArgs += @('--install-verification','target/viewer-public/install-summary.json') }
+          python @finalArgs
           if ($LASTEXITCODE -ne 0) { throw 'Desktop milestone unverified; diagnostic package retains the actual failed or unexecuted checks' }
       - uses: actions/upload-artifact@v4
         if: ${{ always() && steps.viewer_package.outcome == 'success' }}
@@ -167,6 +187,7 @@ jobs:
           name: windows-viewer-evidence
           path: |
             target/viewer-public/summary.json
+            target/viewer-public/install-summary.json
             target/viewer-public/screenshots/*.png
             target/viewer-public/reports/*.html
           if-no-files-found: error
