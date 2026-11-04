@@ -59,7 +59,9 @@ class QualityOutputTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="contain-quality-output-")
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        # Windows runner TEMP may use an 8.3 alias. PowerShell resolves its
+        # working directory to the long spelling; compare the actual directory.
+        self.root = Path(self.temporary.name).resolve()
         (self.root / "scripts").mkdir()
         shutil.copyfile(Path(__file__).with_name("quality.ps1"), self.root / "scripts/quality.ps1")
         (self.root / "driver.ps1").write_text(DRIVER, encoding="utf-8")
@@ -128,6 +130,32 @@ class QualityOutputTests(unittest.TestCase):
         original = [call for call in self.commands() if "contain-core" in call["arguments"]]
         self.assertTrue(all(Path(call["coverage_target"]) == self.root / "target/coverage-original-build" for call in original))
         self.assertTrue((self.history / "coverage-original.json").exists())
+
+    @unittest.skipUnless(os.name == "nt", "Windows 8.3 alias regression")
+    def test_original_coverage_destinations_survive_short_directory_alias(self):
+        import ctypes
+        buffer = ctypes.create_unicode_buffer(32768)
+        length = ctypes.windll.kernel32.GetShortPathNameW(str(self.root), buffer, len(buffer))
+        if not length or Path(buffer.value) == self.root:
+            self.skipTest("8.3 aliases unavailable on the temporary volume")
+        canonical = self.root
+        alias = Path(buffer.value)
+        self.assertEqual(alias.resolve(), canonical)
+        self.environment.update(TEST_REPO=str(alias), CARGO_TARGET_DIR=str(alias / "target/beta2/cargo"))
+        try:
+            # Invoke through the alias while keeping expected destinations bound
+            # to the canonical fixture, with the same strict equality checks.
+            self.root = alias
+            for custom in (True, False):
+                with self.subTest(custom=custom):
+                    previous = len(self.commands()) if (alias / "commands.jsonl").exists() else 0
+                    self.run_mode("CoverageOriginal", custom=custom)
+                    original = [call for call in self.commands()[previous:] if "contain-core" in call["arguments"]]
+                    expected = (self.output if custom else canonical / "target") / "coverage-original-build"
+                    self.assertTrue(original)
+                    self.assertTrue(all(Path(call["coverage_target"]) == expected for call in original))
+        finally:
+            self.root = canonical
 
     def test_benchmark_explicit_output_preserves_historical_sample(self):
         historical = self.history / "event-pipeline.json"
