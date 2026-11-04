@@ -1,6 +1,8 @@
 name: CI
 on:
   push:
+    branches:
+      - '**'
     # Beta tags refer to an already verified immutable package. Creating a tag
     # must not replay the source commit's opt-in GUI/ETW capture marker.
     tags-ignore:
