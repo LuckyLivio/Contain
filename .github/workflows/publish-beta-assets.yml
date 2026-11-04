@@ -20,8 +20,11 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
-      DOWNLOAD_DIR: ${{ runner.temp }}/contain-beta-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
+      - name: Set this attempt's download directory
+        shell: bash
+        run: |
+          printf 'DOWNLOAD_DIR=%s/contain-beta-%s-%s\n' "$RUNNER_TEMP" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false

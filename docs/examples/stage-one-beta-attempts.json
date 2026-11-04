@@ -253,6 +253,16 @@
     "release_id": 433954322,
     "tag": "v0.3.2-beta.1",
     "tag_source": "85c522839523d259c09c80a4ce4e8c78ea11472d",
-    "recovery": "Standard repository GITHUB_TOKEN uploads the same verified artifact through a manual workflow. No rebuild/recapture, credential replacement or asset clobbering."
+    "recovery": "Standard repository GITHUB_TOKEN uploads the same verified artifact through a manual workflow. No rebuild/recapture, credential replacement or asset clobbering.",
+    "workflow_validation_failure": {
+      "source_sha": "c0bd7fbab857141cae51cf93ccbfb7087feadb71",
+      "run": 41839907944,
+      "url": "https://github.com/LuckyLivio/Contain/actions/runs/41839907944",
+      "outcome": "workflow validation failure; no jobs or upload executed",
+      "cause": "runner context used in job-level environment rather than step scope",
+      "fix": "Initialize DOWNLOAD_DIR from standard RUNNER_TEMP/GITHUB_RUN_ID/GITHUB_RUN_ATTEMPT in a step and write GITHUB_ENV.",
+      "runtime_changed": false,
+      "tag_or_assets_changed": false
+    }
   }
 }
