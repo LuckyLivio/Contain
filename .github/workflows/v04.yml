@@ -1,9 +1,8 @@
 name: v0.4 paired ETW acceptance
 on:
+  # Historical scale acceptance requires an explicit separate task. Neither a
+  # Beta tag nor merging previously developed code opts into its 18 captures.
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/v04.yml'
 
 jobs:
   paired-etw:
