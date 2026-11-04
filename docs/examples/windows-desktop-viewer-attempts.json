@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "scope": "Desktop viewer validation attempts; synthetic production-store inputs, actual Windows CLI and controls; no ETW capture.",
+  "attempts": [
+    {
+      "source_sha": "538fb954fb94744bd4e24a32b1e0cead094f1ce7",
+      "ci_run": 41115571642,
+      "ci_url": "https://github.com/LuckyLivio/Contain/actions/runs/41115571642",
+      "conclusion": "failure",
+      "quality_gates": {
+        "recorded": 34,
+        "passed": 33,
+        "failed": 1,
+        "not_run": 15
+      },
+      "blocking_test": "test_native_required_plan_matches_actual_harness",
+      "failure": "Path.read_text() used the Windows default cp1252 to read UTF-8 C# source, raising UnicodeDecodeError. This did not execute native desktop validation.",
+      "native_desktop_checks_executed": 0,
+      "desktop_package_generated": false,
+      "report_generated": false,
+      "fix_commit": "68c2e27710f9459723dff1d924b40cd58dc1460b",
+      "fix": "Read UTF-8 test source explicitly; preserve the original assertion and reproduce its Windows-default-codepage failure."
+    },
+    {
+      "source_sha": "68c2e27710f9459723dff1d924b40cd58dc1460b",
+      "ci_run": 41119283849,
+      "ci_url": "https://github.com/LuckyLivio/Contain/actions/runs/41119283849",
+      "conclusion": "failure",
+      "quality_gates": {
+        "passed": 49,
+        "failed": 0,
+        "not_run": 0
+      },
+      "native": {
+        "passed": 18,
+        "failed": 2,
+        "skipped": 0,
+        "not_run": 2,
+        "assertions_passed": 188,
+        "assertions_failed": 2,
+        "accepted": false,
+        "report_generated": false
+      },
+      "failed_or_not_run": [
+        {
+          "name": "ui_page_then_select_and_explain_same_event",
+          "status": "failed",
+          "error_type": "TestFailureException",
+          "safe_reason": "next enabled on first page"
+        },
+        {
+          "name": "ui_filter_explicitly_applies_to_current_page",
+          "status": "not_run",
+          "error_type": "prerequisite_unavailable",
+          "safe_reason": null
+        },
+        {
+          "name": "ui_local_report_matches_current_record_page_and_event",
+          "status": "not_run",
+          "error_type": "prerequisite_unavailable",
+          "safe_reason": null
+        },
+        {
+          "name": "ui_unfinished_and_unavailable_metrics",
+          "status": "failed",
+          "error_type": "TestFailureException",
+          "safe_reason": "unfinished actual capture state indicated"
+        }
+      ],
+      "diagnostic_artifact": "https://github.com/LuckyLivio/Contain/actions/runs/41119283849/artifacts/13008653418",
+      "fix_commit": "4b4d38764ed417e6754b5db798488227ec147e21",
+      "fix": "Keep navigation assertions after the real pending UI operation finishes, and require the fixture actual finalizing state from the CLI. Add before/after UI timing observations; the earlier failure had no such measurement."
+    },
+    {
+      "source_sha": "4b4d38764ed417e6754b5db798488227ec147e21",
+      "ci_run": 41122708670,
+      "ci_url": "https://github.com/LuckyLivio/Contain/actions/runs/41122708670",
+      "conclusion": "success",
+      "quality_gates": {
+        "passed": 49,
+        "failed": 0,
+        "not_run": 0
+      },
+      "native": {
+        "passed": 22,
+        "failed": 0,
+        "skipped": 0,
+        "not_run": 0,
+        "assertions_passed": 230,
+        "assertions_failed": 0,
+        "accepted": true,
+        "report_generated": true
+      },
+      "ui_observations": [
+        {
+          "phase": "event_tab_selected",
+          "is_busy": true,
+          "next_enabled": false,
+          "pending_operation_completed": false
+        },
+        {
+          "phase": "event_tab_idle",
+          "is_busy": false,
+          "next_enabled": true,
+          "pending_operation_completed": true
+        }
+      ],
+      "package_artifact": "https://github.com/LuckyLivio/Contain/actions/runs/41122708670/artifacts/13010587633",
+      "interpretation": "This run measured the pending explain operation immediately after activating the event tab. Navigation passed after waiting for that operation. The earlier attempt had no such timing measurement and remains a failed attempt."
+    }
+  ]
+}

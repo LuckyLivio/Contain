@@ -1,0 +1,3040 @@
+{
+  "phase": "final",
+  "commit": "bc7776577691d85e1904edcab3800273abe55f76",
+  "expected_attempts": 10,
+  "profile": "release --locked",
+  "fixture_source_sha256": "BFF9F58BBD891FA5283E5A4AAD26740816E37128D980CC6FD891B1A733E3F13B",
+  "scorer_sha256": "AA20DC9B8103C6E79ED3D96B00F6B0219E76D9771F2749A58FFEE79A56689AB7",
+  "trials": [
+    {
+      "variant": "D3",
+      "harness_error": "false attribution detected",
+      "acceptance_pass": false,
+      "stats": {
+        "capture_elapsed_ms": 15849,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 42,
+        "events_received": 4918,
+        "events_retained": 219,
+        "high_confidence_events": 92,
+        "known_actor_events": 92,
+        "known_resource_events": 113,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 1,
+          "after_inventory": 957,
+          "before_snapshot_inventory": 4775,
+          "correlation_attribution": 0,
+          "descendant_quiet_drain": 5647,
+          "etw_stop_and_queue_drain": 2,
+          "final_persistence_commit": 1,
+          "installer_root": 3649,
+          "lifetime_attribution_and_paged_persistence": 777,
+          "provider_readiness": 23,
+          "raw_persistence_overlapping": 51
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 21,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": 0,
+        "etw_events_lost": 0,
+        "etw_file": "active",
+        "etw_process": "active",
+        "etw_registry": "active",
+        "events_received": 4918,
+        "file_event_id_filter": true,
+        "initial_identity_snapshot": {
+          "elapsed_ns": 15145400,
+          "enumerated": 144,
+          "failed": 4,
+          "finished_ticks": 134351687875543061,
+          "queried": 144,
+          "query_ns": 6147600,
+          "resolved": 140,
+          "skipped": 0,
+          "started_ticks": 134351687875391631
+        },
+        "pipeline": {
+          "arrival_peak_per_100ms": 2125,
+          "callback_records": 19434,
+          "context_evictions": 0,
+          "decode_attempted": 19434,
+          "decode_failed": 0,
+          "decode_succeeded": 19434,
+          "deliberately_filtered": 14516,
+          "dequeued": 4918,
+          "elapsed_ns": {
+            "callback": 70146900,
+            "context": 4868900,
+            "enqueue": 1436400,
+            "event_construction": 3708100,
+            "identity_query": 0,
+            "lock_wait": 1622700,
+            "path_normalization": 309100,
+            "property_decode": 32627100,
+            "queue_delay": 11866171900,
+            "schema_lookup": 6295600
+          },
+          "enqueue_disconnected": 0,
+          "enqueued": 4918,
+          "etw_allocated_buffers": 8,
+          "etw_buffer_size_kib": 64,
+          "etw_log_buffers_lost": null,
+          "etw_realtime_buffers_lost": 0,
+          "failed_without_output": 0,
+          "overflow_first_ns": [],
+          "overflow_last_ns": 0,
+          "persistence_failed": 0,
+          "persistence_succeeded": 4918,
+          "providers": {
+            "file": {
+              "callback_records": 10990,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 23188100,
+                "context": 0,
+                "enqueue": 33700,
+                "event_construction": 70500,
+                "identity_query": 0,
+                "lock_wait": 904600,
+                "path_normalization": 280300,
+                "property_decode": 12181300,
+                "queue_delay": 0,
+                "schema_lookup": 2753100
+              },
+              "enqueued": 128,
+              "filtered": 10862,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "process": {
+              "callback_records": 100,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 1940500,
+                "context": 0,
+                "enqueue": 32900,
+                "event_construction": 284500,
+                "identity_query": 0,
+                "lock_wait": 7600,
+                "path_normalization": 28800,
+                "property_decode": 320600,
+                "queue_delay": 0,
+                "schema_lookup": 1247400
+              },
+              "enqueued": 100,
+              "filtered": 0,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "registry": {
+              "callback_records": 8344,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 45018300,
+                "context": 4868900,
+                "enqueue": 1369800,
+                "event_construction": 3353100,
+                "identity_query": 0,
+                "lock_wait": 710500,
+                "path_normalization": 0,
+                "property_decode": 20125200,
+                "queue_delay": 0,
+                "schema_lookup": 2295100
+              },
+              "enqueued": 4690,
+              "filtered": 3654,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 5125
+            }
+          },
+          "queue_high_water": 398,
+          "queue_max_delay_ns": 19586500,
+          "queue_overflow": 0,
+          "queue_pending": 0,
+          "retention_dropped": 0,
+          "unsupported_records": 0
+        },
+        "registry_path_gaps": 5125,
+        "stream": {
+          "accepted": 4918,
+          "batches": 34,
+          "committed_bytes": 5287093,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 278122,
+          "persisted": 4918,
+          "persistence_ns": 51007600,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "sqlite_version": "3.50.2",
+          "wal_autocheckpoint_pages": 4096
+        },
+        "warnings": [
+          "Bounded initial process snapshot: 144 queried, 140 resolved, 4 failed, 0 skipped. Per-process query completion bounds validity; not an instantaneous or complete snapshot."
+        ]
+      },
+      "quality": {
+        "level": "Degraded",
+        "reasons": [
+          "Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.",
+          "5125 registry provider records lacked a verified absolute path."
+        ]
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 21,
+        "observed": 14,
+        "correctly_attributed": 12,
+        "unknown": 9,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 17,
+            "observed": 12,
+            "correctly_attributed": 12,
+            "unobserved": 5,
+            "unsupported_out_of_scope": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.7058823529411765,
+            "correct_attribution_rate": 0.7058823529411765
+          },
+          "noise_success": {
+            "expected": 3,
+            "observed": 2,
+            "observed_but_unresolved": 2,
+            "unobserved": 1,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.6666666666666666,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 1,
+            "unobserved": 1,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 17,
+        "false_positive_target_events": 5,
+        "unexpected_positive_events": [
+          "dca0278d-f9ba-4604-b5e9-2a8a1b7aebef",
+          "4aa6f0df-29b5-4b2d-b02f-c4505aaeacc1",
+          "05f1e0dc-b19f-4edd-89e0-d5f623d5638d",
+          "27e552a7-c851-44d5-a135-3d460bb724fb",
+          "c43e02df-9f20-44fd-b862-2fb2c641d0fb"
+        ],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 3,
+        "precision": 0.7058823529411765,
+        "dropped": 0,
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0,
+        "quality": "Degraded",
+        "definition": "Frozen exact syscall oracle; one raw event per row. Unobserved has null attribution. Final state cannot satisfy syscalls. Audit unmatched supported positive mutations in tested scope. No-positive precision is null. ADR 0006."
+      },
+      "categories": {
+        "target_file": {
+          "expected": 13,
+          "observed": 12,
+          "correctly_attributed": 12,
+          "unobserved": 1
+        },
+        "failed": {
+          "expected": 1,
+          "unobserved": 1
+        },
+        "target_registry": {
+          "expected": 4,
+          "unobserved": 4
+        },
+        "original_noise": {
+          "expected": 3,
+          "observed": 2,
+          "observed_but_unresolved": 2,
+          "unobserved": 1
+        }
+      },
+      "measurement": {
+        "elapsed_seconds": 16.1331128,
+        "sqlite_bytes": 15519744,
+        "measurement": "Contain process wall through DB close; excludes fixture build, oracle export and scoring."
+      },
+      "round": 1,
+      "registry_noise": false,
+      "harness_wall_seconds": 133.6792017
+    },
+    {
+      "variant": "D3",
+      "harness_error": "false attribution detected",
+      "acceptance_pass": false,
+      "stats": {
+        "capture_elapsed_ms": 11494,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 42,
+        "events_received": 3069,
+        "events_retained": 2262,
+        "high_confidence_events": 93,
+        "known_actor_events": 2101,
+        "known_resource_events": 2141,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 1,
+          "after_inventory": 934,
+          "before_snapshot_inventory": 1078,
+          "correlation_attribution": 0,
+          "descendant_quiet_drain": 5069,
+          "etw_stop_and_queue_drain": 2,
+          "final_persistence_commit": 2,
+          "installer_root": 3664,
+          "lifetime_attribution_and_paged_persistence": 698,
+          "provider_readiness": 23,
+          "raw_persistence_overlapping": 37
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 40,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": 0,
+        "etw_events_lost": 0,
+        "etw_file": "active",
+        "etw_process": "active",
+        "etw_registry": "active",
+        "events_received": 3069,
+        "file_event_id_filter": true,
+        "initial_identity_snapshot": {
+          "elapsed_ns": 21790900,
+          "enumerated": 147,
+          "failed": 4,
+          "finished_ticks": 134351688011738022,
+          "queried": 147,
+          "query_ns": 7101900,
+          "resolved": 143,
+          "skipped": 0,
+          "started_ticks": 134351688011520138
+        },
+        "pipeline": {
+          "arrival_peak_per_100ms": 2062,
+          "callback_records": 18867,
+          "context_evictions": 0,
+          "decode_attempted": 18867,
+          "decode_failed": 0,
+          "decode_succeeded": 18867,
+          "deliberately_filtered": 15798,
+          "dequeued": 3069,
+          "elapsed_ns": {
+            "callback": 71693000,
+            "context": 2162000,
+            "enqueue": 1447200,
+            "event_construction": 2641600,
+            "identity_query": 0,
+            "lock_wait": 1551100,
+            "path_normalization": 736000,
+            "property_decode": 35680400,
+            "queue_delay": 5630016600,
+            "schema_lookup": 8464700
+          },
+          "enqueue_disconnected": 0,
+          "enqueued": 3069,
+          "etw_allocated_buffers": 8,
+          "etw_buffer_size_kib": 64,
+          "etw_log_buffers_lost": null,
+          "etw_realtime_buffers_lost": 0,
+          "failed_without_output": 0,
+          "overflow_first_ns": [],
+          "overflow_last_ns": 0,
+          "persistence_failed": 0,
+          "persistence_succeeded": 3069,
+          "providers": {
+            "file": {
+              "callback_records": 14963,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 35789600,
+                "context": 0,
+                "enqueue": 51400,
+                "event_construction": 130200,
+                "identity_query": 0,
+                "lock_wait": 1200800,
+                "path_normalization": 701100,
+                "property_decode": 19157800,
+                "queue_delay": 0,
+                "schema_lookup": 4940400
+              },
+              "enqueued": 154,
+              "filtered": 14809,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "process": {
+              "callback_records": 133,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 2784900,
+                "context": 0,
+                "enqueue": 44000,
+                "event_construction": 375000,
+                "identity_query": 0,
+                "lock_wait": 11400,
+                "path_normalization": 34900,
+                "property_decode": 489700,
+                "queue_delay": 0,
+                "schema_lookup": 1811700
+              },
+              "enqueued": 133,
+              "filtered": 0,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "registry": {
+              "callback_records": 3771,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 33118500,
+                "context": 2162000,
+                "enqueue": 1351800,
+                "event_construction": 2136400,
+                "identity_query": 0,
+                "lock_wait": 338900,
+                "path_normalization": 0,
+                "property_decode": 16032900,
+                "queue_delay": 0,
+                "schema_lookup": 1712600
+              },
+              "enqueued": 2782,
+              "filtered": 989,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 861
+            }
+          },
+          "queue_high_water": 268,
+          "queue_max_delay_ns": 19019000,
+          "queue_overflow": 0,
+          "queue_pending": 0,
+          "retention_dropped": 0,
+          "unsupported_records": 0
+        },
+        "registry_path_gaps": 861,
+        "stream": {
+          "accepted": 3069,
+          "batches": 24,
+          "committed_bytes": 3492501,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 306036,
+          "persisted": 3069,
+          "persistence_ns": 37166400,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "sqlite_version": "3.50.2",
+          "wal_autocheckpoint_pages": 4096
+        },
+        "warnings": [
+          "Bounded initial process snapshot: 147 queried, 143 resolved, 4 failed, 0 skipped. Per-process query completion bounds validity; not an instantaneous or complete snapshot."
+        ]
+      },
+      "quality": {
+        "level": "Degraded",
+        "reasons": [
+          "Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.",
+          "861 registry provider records lacked a verified absolute path."
+        ]
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 2021,
+        "observed": 19,
+        "correctly_attributed": 12,
+        "unknown": 2009,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 17,
+            "observed": 12,
+            "correctly_attributed": 12,
+            "unobserved": 5,
+            "unsupported_out_of_scope": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.7058823529411765,
+            "correct_attribution_rate": 0.7058823529411765
+          },
+          "noise_success": {
+            "expected": 2003,
+            "unobserved": 1996,
+            "observed": 7,
+            "correctly_not_assigned_to_target_app": 5,
+            "observed_but_unresolved": 2,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observation_rate": 0.003494757863205192,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 1,
+            "unobserved": 1,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 17,
+        "false_positive_target_events": 5,
+        "unexpected_positive_events": [
+          "e23a7583-1c11-42b3-8a8c-c07d29cf7e8c",
+          "4c90c24c-1dd1-432c-8172-a5bb76cd1ce1",
+          "3846ba81-611a-49f8-8fb8-181ab258a4a1",
+          "0a726b22-1dd7-4307-a684-d1a0353a862b",
+          "c0809a29-13ff-4e16-9707-7c48ff0c133e"
+        ],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 3,
+        "precision": 0.7058823529411765,
+        "dropped": 0,
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0,
+        "quality": "Degraded",
+        "definition": "Frozen exact syscall oracle; one raw event per row. Unobserved has null attribution. Final state cannot satisfy syscalls. Audit unmatched supported positive mutations in tested scope. No-positive precision is null. ADR 0006."
+      },
+      "categories": {
+        "target_file": {
+          "expected": 13,
+          "observed": 12,
+          "correctly_attributed": 12,
+          "unobserved": 1
+        },
+        "failed": {
+          "expected": 1,
+          "unobserved": 1
+        },
+        "target_registry": {
+          "expected": 4,
+          "unobserved": 4
+        },
+        "noise_pre": {
+          "expected": 1000,
+          "unobserved": 998,
+          "observed": 2,
+          "correctly_not_assigned_to_target_app": 2
+        },
+        "noise_post": {
+          "expected": 1000,
+          "unobserved": 997,
+          "observed": 3,
+          "correctly_not_assigned_to_target_app": 3
+        },
+        "original_noise": {
+          "expected": 3,
+          "observed": 2,
+          "observed_but_unresolved": 2,
+          "unobserved": 1
+        }
+      },
+      "measurement": {
+        "elapsed_seconds": 12.0992834,
+        "sqlite_bytes": 17002496,
+        "measurement": "Contain process wall through DB close; excludes fixture build, oracle export and scoring."
+      },
+      "round": 1,
+      "registry_noise": true,
+      "harness_wall_seconds": 15.6009843
+    },
+    {
+      "variant": "D3",
+      "harness_error": "false attribution detected",
+      "acceptance_pass": false,
+      "stats": {
+        "capture_elapsed_ms": 11038,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 42,
+        "events_received": 620,
+        "events_retained": 220,
+        "high_confidence_events": 92,
+        "known_actor_events": 92,
+        "known_resource_events": 113,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 1,
+          "after_inventory": 937,
+          "before_snapshot_inventory": 1026,
+          "correlation_attribution": 0,
+          "descendant_quiet_drain": 5368,
+          "etw_stop_and_queue_drain": 3,
+          "final_persistence_commit": 2,
+          "installer_root": 3646,
+          "lifetime_attribution_and_paged_persistence": 20,
+          "provider_readiness": 23,
+          "raw_persistence_overlapping": 9
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 21,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": 0,
+        "etw_events_lost": 0,
+        "etw_file": "active",
+        "etw_process": "active",
+        "etw_registry": "active",
+        "events_received": 620,
+        "file_event_id_filter": true,
+        "initial_identity_snapshot": {
+          "elapsed_ns": 13448900,
+          "enumerated": 143,
+          "failed": 4,
+          "finished_ticks": 134351688168859673,
+          "queried": 143,
+          "query_ns": 5203800,
+          "resolved": 139,
+          "skipped": 0,
+          "started_ticks": 134351688168725198
+        },
+        "pipeline": {
+          "arrival_peak_per_100ms": 348,
+          "callback_records": 4615,
+          "context_evictions": 0,
+          "decode_attempted": 4615,
+          "decode_failed": 0,
+          "decode_succeeded": 4615,
+          "deliberately_filtered": 3995,
+          "dequeued": 620,
+          "elapsed_ns": {
+            "callback": 12957600,
+            "context": 613800,
+            "enqueue": 168200,
+            "event_construction": 587300,
+            "identity_query": 0,
+            "lock_wait": 364800,
+            "path_normalization": 267600,
+            "property_decode": 4636400,
+            "queue_delay": 804908100,
+            "schema_lookup": 3553000
+          },
+          "enqueue_disconnected": 0,
+          "enqueued": 620,
+          "etw_allocated_buffers": 8,
+          "etw_buffer_size_kib": 64,
+          "etw_log_buffers_lost": null,
+          "etw_realtime_buffers_lost": 0,
+          "failed_without_output": 0,
+          "overflow_first_ns": [],
+          "overflow_last_ns": 0,
+          "persistence_failed": 0,
+          "persistence_succeeded": 620,
+          "providers": {
+            "file": {
+              "callback_records": 3624,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 6642600,
+                "context": 0,
+                "enqueue": 38800,
+                "event_construction": 81200,
+                "identity_query": 0,
+                "lock_wait": 284300,
+                "path_normalization": 246400,
+                "property_decode": 2703200,
+                "queue_delay": 0,
+                "schema_lookup": 1492300
+              },
+              "enqueued": 128,
+              "filtered": 3496,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "process": {
+              "callback_records": 120,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 1740000,
+                "context": 0,
+                "enqueue": 36600,
+                "event_construction": 303100,
+                "identity_query": 0,
+                "lock_wait": 9600,
+                "path_normalization": 21200,
+                "property_decode": 351700,
+                "queue_delay": 0,
+                "schema_lookup": 1004900
+              },
+              "enqueued": 120,
+              "filtered": 0,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "registry": {
+              "callback_records": 871,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 4575000,
+                "context": 613800,
+                "enqueue": 92800,
+                "event_construction": 203000,
+                "identity_query": 0,
+                "lock_wait": 70900,
+                "path_normalization": 0,
+                "property_decode": 1581500,
+                "queue_delay": 0,
+                "schema_lookup": 1055800
+              },
+              "enqueued": 372,
+              "filtered": 499,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 445
+            }
+          },
+          "queue_high_water": 145,
+          "queue_max_delay_ns": 19133000,
+          "queue_overflow": 0,
+          "queue_pending": 0,
+          "retention_dropped": 0,
+          "unsupported_records": 0
+        },
+        "registry_path_gaps": 445,
+        "stream": {
+          "accepted": 620,
+          "batches": 16,
+          "committed_bytes": 613603,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 267236,
+          "persisted": 620,
+          "persistence_ns": 9485400,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "sqlite_version": "3.50.2",
+          "wal_autocheckpoint_pages": 4096
+        },
+        "warnings": [
+          "Bounded initial process snapshot: 143 queried, 139 resolved, 4 failed, 0 skipped. Per-process query completion bounds validity; not an instantaneous or complete snapshot."
+        ]
+      },
+      "quality": {
+        "level": "Degraded",
+        "reasons": [
+          "Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.",
+          "445 registry provider records lacked a verified absolute path."
+        ]
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 21,
+        "observed": 18,
+        "correctly_attributed": 16,
+        "unknown": 5,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 17,
+            "observed": 16,
+            "correctly_attributed": 16,
+            "unobserved": 1,
+            "unsupported_out_of_scope": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.9411764705882353,
+            "correct_attribution_rate": 0.9411764705882353
+          },
+          "noise_success": {
+            "expected": 3,
+            "observed": 2,
+            "observed_but_unresolved": 2,
+            "unobserved": 1,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.6666666666666666,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 1,
+            "unobserved": 1,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 17,
+        "false_positive_target_events": 1,
+        "unexpected_positive_events": [
+          "8e01ed59-7603-458b-96d4-aec3a800320e"
+        ],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 3,
+        "precision": 0.9411764705882353,
+        "dropped": 0,
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0,
+        "quality": "Degraded",
+        "definition": "Frozen exact syscall oracle; one raw event per row. Unobserved has null attribution. Final state cannot satisfy syscalls. Audit unmatched supported positive mutations in tested scope. No-positive precision is null. ADR 0006."
+      },
+      "categories": {
+        "target_file": {
+          "expected": 13,
+          "observed": 13,
+          "correctly_attributed": 13
+        },
+        "failed": {
+          "expected": 1,
+          "unobserved": 1
+        },
+        "target_registry": {
+          "expected": 4,
+          "observed": 3,
+          "correctly_attributed": 3,
+          "unobserved": 1
+        },
+        "original_noise": {
+          "expected": 3,
+          "observed": 2,
+          "observed_but_unresolved": 2,
+          "unobserved": 1
+        }
+      },
+      "measurement": {
+        "elapsed_seconds": 11.2309262,
+        "sqlite_bytes": 2056192,
+        "measurement": "Contain process wall through DB close; excludes fixture build, oracle export and scoring."
+      },
+      "round": 2,
+      "registry_noise": false,
+      "harness_wall_seconds": 11.7646185
+    },
+    {
+      "variant": "D3",
+      "harness_error": "false attribution detected",
+      "acceptance_pass": false,
+      "stats": {
+        "capture_elapsed_ms": 11671,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 42,
+        "events_received": 2839,
+        "events_retained": 2262,
+        "high_confidence_events": 92,
+        "known_actor_events": 2100,
+        "known_resource_events": 2140,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 1,
+          "after_inventory": 974,
+          "before_snapshot_inventory": 992,
+          "correlation_attribution": 0,
+          "descendant_quiet_drain": 5077,
+          "etw_stop_and_queue_drain": 3,
+          "final_persistence_commit": 2,
+          "installer_root": 3667,
+          "lifetime_attribution_and_paged_persistence": 917,
+          "provider_readiness": 23,
+          "raw_persistence_overlapping": 33
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 40,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": 0,
+        "etw_events_lost": 0,
+        "etw_file": "active",
+        "etw_process": "active",
+        "etw_registry": "active",
+        "events_received": 2839,
+        "file_event_id_filter": true,
+        "initial_identity_snapshot": {
+          "elapsed_ns": 16067200,
+          "enumerated": 147,
+          "failed": 4,
+          "finished_ticks": 134351688291430578,
+          "queried": 147,
+          "query_ns": 6914400,
+          "resolved": 143,
+          "skipped": 0,
+          "started_ticks": 134351688291269931
+        },
+        "pipeline": {
+          "arrival_peak_per_100ms": 1797,
+          "callback_records": 23586,
+          "context_evictions": 0,
+          "decode_attempted": 23586,
+          "decode_failed": 0,
+          "decode_succeeded": 23586,
+          "deliberately_filtered": 20747,
+          "dequeued": 2839,
+          "elapsed_ns": {
+            "callback": 57897300,
+            "context": 1916400,
+            "enqueue": 857200,
+            "event_construction": 2508700,
+            "identity_query": 0,
+            "lock_wait": 2072900,
+            "path_normalization": 433400,
+            "property_decode": 26095200,
+            "queue_delay": 5097142300,
+            "schema_lookup": 6736600
+          },
+          "enqueue_disconnected": 0,
+          "enqueued": 2839,
+          "etw_allocated_buffers": 8,
+          "etw_buffer_size_kib": 64,
+          "etw_log_buffers_lost": null,
+          "etw_realtime_buffers_lost": 0,
+          "failed_without_output": 0,
+          "overflow_first_ns": [],
+          "overflow_last_ns": 0,
+          "persistence_failed": 0,
+          "persistence_succeeded": 2839,
+          "providers": {
+            "file": {
+              "callback_records": 19977,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 27999800,
+                "context": 0,
+                "enqueue": 50600,
+                "event_construction": 152400,
+                "identity_query": 0,
+                "lock_wait": 1741600,
+                "path_normalization": 404100,
+                "property_decode": 12305100,
+                "queue_delay": 0,
+                "schema_lookup": 3937300
+              },
+              "enqueued": 153,
+              "filtered": 19824,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "process": {
+              "callback_records": 126,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 2102800,
+                "context": 0,
+                "enqueue": 44900,
+                "event_construction": 403700,
+                "identity_query": 0,
+                "lock_wait": 11200,
+                "path_normalization": 29300,
+                "property_decode": 427300,
+                "queue_delay": 0,
+                "schema_lookup": 1215200
+              },
+              "enqueued": 126,
+              "filtered": 0,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "registry": {
+              "callback_records": 3483,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 27794700,
+                "context": 1916400,
+                "enqueue": 761700,
+                "event_construction": 1952600,
+                "identity_query": 0,
+                "lock_wait": 320100,
+                "path_normalization": 0,
+                "property_decode": 13362800,
+                "queue_delay": 0,
+                "schema_lookup": 1584100
+              },
+              "enqueued": 2560,
+              "filtered": 923,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 727
+            }
+          },
+          "queue_high_water": 256,
+          "queue_max_delay_ns": 19239900,
+          "queue_overflow": 0,
+          "queue_pending": 0,
+          "retention_dropped": 0,
+          "unsupported_records": 0
+        },
+        "registry_path_gaps": 727,
+        "stream": {
+          "accepted": 2839,
+          "batches": 28,
+          "committed_bytes": 3243154,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 305981,
+          "persisted": 2839,
+          "persistence_ns": 33088900,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "sqlite_version": "3.50.2",
+          "wal_autocheckpoint_pages": 4096
+        },
+        "warnings": [
+          "Bounded initial process snapshot: 147 queried, 143 resolved, 4 failed, 0 skipped. Per-process query completion bounds validity; not an instantaneous or complete snapshot."
+        ]
+      },
+      "quality": {
+        "level": "Degraded",
+        "reasons": [
+          "Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.",
+          "727 registry provider records lacked a verified absolute path."
+        ]
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 2021,
+        "observed": 17,
+        "correctly_attributed": 12,
+        "unknown": 2009,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 17,
+            "observed": 12,
+            "correctly_attributed": 12,
+            "unobserved": 5,
+            "unsupported_out_of_scope": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.7058823529411765,
+            "correct_attribution_rate": 0.7058823529411765
+          },
+          "noise_success": {
+            "expected": 2003,
+            "unobserved": 1998,
+            "observed": 5,
+            "correctly_not_assigned_to_target_app": 3,
+            "observed_but_unresolved": 2,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observation_rate": 0.0024962556165751375,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 1,
+            "unobserved": 1,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 17,
+        "false_positive_target_events": 5,
+        "unexpected_positive_events": [
+          "f5a5ba88-f001-409e-a812-43416ac1db8f",
+          "947726b1-2438-4182-baf0-53b288ebc459",
+          "6f5eab1a-4d5d-49cc-a2ab-5267de958309",
+          "2ccf30b8-d026-429c-ae17-63f17b837c33",
+          "2c1e722c-590d-4f4b-bee4-d32e06a087ff"
+        ],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 3,
+        "precision": 0.7058823529411765,
+        "dropped": 0,
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0,
+        "quality": "Degraded",
+        "definition": "Frozen exact syscall oracle; one raw event per row. Unobserved has null attribution. Final state cannot satisfy syscalls. Audit unmatched supported positive mutations in tested scope. No-positive precision is null. ADR 0006."
+      },
+      "categories": {
+        "target_file": {
+          "expected": 13,
+          "observed": 12,
+          "correctly_attributed": 12,
+          "unobserved": 1
+        },
+        "failed": {
+          "expected": 1,
+          "unobserved": 1
+        },
+        "target_registry": {
+          "expected": 4,
+          "unobserved": 4
+        },
+        "noise_pre": {
+          "expected": 1000,
+          "unobserved": 999,
+          "observed": 1,
+          "correctly_not_assigned_to_target_app": 1
+        },
+        "noise_post": {
+          "expected": 1000,
+          "unobserved": 998,
+          "observed": 2,
+          "correctly_not_assigned_to_target_app": 2
+        },
+        "original_noise": {
+          "expected": 3,
+          "observed": 2,
+          "observed_but_unresolved": 2,
+          "unobserved": 1
+        }
+      },
+      "measurement": {
+        "elapsed_seconds": 12.6990792,
+        "sqlite_bytes": 16531456,
+        "measurement": "Contain process wall through DB close; excludes fixture build, oracle export and scoring."
+      },
+      "round": 2,
+      "registry_noise": true,
+      "harness_wall_seconds": 15.8477812
+    },
+    {
+      "variant": "D3",
+      "harness_error": "false attribution detected",
+      "acceptance_pass": false,
+      "stats": {
+        "capture_elapsed_ms": 10852,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 42,
+        "events_received": 698,
+        "events_retained": 221,
+        "high_confidence_events": 92,
+        "known_actor_events": 92,
+        "known_resource_events": 114,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 1,
+          "after_inventory": 924,
+          "before_snapshot_inventory": 966,
+          "correlation_attribution": 0,
+          "descendant_quiet_drain": 5245,
+          "etw_stop_and_queue_drain": 3,
+          "final_persistence_commit": 2,
+          "installer_root": 3649,
+          "lifetime_attribution_and_paged_persistence": 22,
+          "provider_readiness": 23,
+          "raw_persistence_overlapping": 12
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 22,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": 0,
+        "etw_events_lost": 0,
+        "etw_file": "active",
+        "etw_process": "active",
+        "etw_registry": "active",
+        "events_received": 698,
+        "file_event_id_filter": true,
+        "initial_identity_snapshot": {
+          "elapsed_ns": 18595200,
+          "enumerated": 142,
+          "failed": 4,
+          "finished_ticks": 134351688447310771,
+          "queried": 142,
+          "query_ns": 6222600,
+          "resolved": 138,
+          "skipped": 0,
+          "started_ticks": 134351688447124841
+        },
+        "pipeline": {
+          "arrival_peak_per_100ms": 335,
+          "callback_records": 5149,
+          "context_evictions": 0,
+          "decode_attempted": 5149,
+          "decode_failed": 0,
+          "decode_succeeded": 5149,
+          "deliberately_filtered": 4451,
+          "dequeued": 698,
+          "elapsed_ns": {
+            "callback": 16183400,
+            "context": 962200,
+            "enqueue": 204300,
+            "event_construction": 656300,
+            "identity_query": 0,
+            "lock_wait": 456900,
+            "path_normalization": 258600,
+            "property_decode": 5859100,
+            "queue_delay": 963721900,
+            "schema_lookup": 4404200
+          },
+          "enqueue_disconnected": 0,
+          "enqueued": 698,
+          "etw_allocated_buffers": 8,
+          "etw_buffer_size_kib": 64,
+          "etw_log_buffers_lost": null,
+          "etw_realtime_buffers_lost": 0,
+          "failed_without_output": 0,
+          "overflow_first_ns": [],
+          "overflow_last_ns": 0,
+          "persistence_failed": 0,
+          "persistence_succeeded": 698,
+          "providers": {
+            "file": {
+              "callback_records": 3661,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 7147000,
+                "context": 0,
+                "enqueue": 41400,
+                "event_construction": 91400,
+                "identity_query": 0,
+                "lock_wait": 323800,
+                "path_normalization": 233200,
+                "property_decode": 2715900,
+                "queue_delay": 0,
+                "schema_lookup": 1806800
+              },
+              "enqueued": 129,
+              "filtered": 3532,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "process": {
+              "callback_records": 97,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 2135800,
+                "context": 0,
+                "enqueue": 36000,
+                "event_construction": 276500,
+                "identity_query": 0,
+                "lock_wait": 19200,
+                "path_normalization": 25400,
+                "property_decode": 545600,
+                "queue_delay": 0,
+                "schema_lookup": 1226200
+              },
+              "enqueued": 97,
+              "filtered": 0,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "registry": {
+              "callback_records": 1391,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 6900600,
+                "context": 962200,
+                "enqueue": 126900,
+                "event_construction": 288400,
+                "identity_query": 0,
+                "lock_wait": 113900,
+                "path_normalization": 0,
+                "property_decode": 2597600,
+                "queue_delay": 0,
+                "schema_lookup": 1371200
+              },
+              "enqueued": 472,
+              "filtered": 919,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 573
+            }
+          },
+          "queue_high_water": 145,
+          "queue_max_delay_ns": 19010600,
+          "queue_overflow": 0,
+          "queue_pending": 0,
+          "retention_dropped": 0,
+          "unsupported_records": 0
+        },
+        "registry_path_gaps": 573,
+        "stream": {
+          "accepted": 698,
+          "batches": 17,
+          "committed_bytes": 705051,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 267247,
+          "persisted": 698,
+          "persistence_ns": 12650600,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "sqlite_version": "3.50.2",
+          "wal_autocheckpoint_pages": 4096
+        },
+        "warnings": [
+          "Bounded initial process snapshot: 142 queried, 138 resolved, 4 failed, 0 skipped. Per-process query completion bounds validity; not an instantaneous or complete snapshot."
+        ]
+      },
+      "quality": {
+        "level": "Degraded",
+        "reasons": [
+          "Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.",
+          "573 registry provider records lacked a verified absolute path."
+        ]
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 21,
+        "observed": 14,
+        "correctly_attributed": 12,
+        "unknown": 9,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 17,
+            "observed": 12,
+            "correctly_attributed": 12,
+            "unobserved": 5,
+            "unsupported_out_of_scope": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.7058823529411765,
+            "correct_attribution_rate": 0.7058823529411765
+          },
+          "noise_success": {
+            "expected": 3,
+            "observed": 2,
+            "observed_but_unresolved": 2,
+            "unobserved": 1,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.6666666666666666,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 1,
+            "unobserved": 1,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 17,
+        "false_positive_target_events": 5,
+        "unexpected_positive_events": [
+          "9d113101-eb1f-4900-ac09-14182e88c161",
+          "0189df91-5f8b-4ecf-a3e9-a657d656592c",
+          "0254bd87-7175-46cf-bf2a-0ee87d2ef73f",
+          "146c61b4-aade-46db-a3cc-da8a7341cad9",
+          "070de922-2976-451b-9517-f871d738f456"
+        ],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 3,
+        "precision": 0.7058823529411765,
+        "dropped": 0,
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0,
+        "quality": "Degraded",
+        "definition": "Frozen exact syscall oracle; one raw event per row. Unobserved has null attribution. Final state cannot satisfy syscalls. Audit unmatched supported positive mutations in tested scope. No-positive precision is null. ADR 0006."
+      },
+      "categories": {
+        "target_file": {
+          "expected": 13,
+          "observed": 12,
+          "correctly_attributed": 12,
+          "unobserved": 1
+        },
+        "failed": {
+          "expected": 1,
+          "unobserved": 1
+        },
+        "target_registry": {
+          "expected": 4,
+          "unobserved": 4
+        },
+        "original_noise": {
+          "expected": 3,
+          "observed": 2,
+          "observed_but_unresolved": 2,
+          "unobserved": 1
+        }
+      },
+      "measurement": {
+        "elapsed_seconds": 11.0288277,
+        "sqlite_bytes": 2252800,
+        "measurement": "Contain process wall through DB close; excludes fixture build, oracle export and scoring."
+      },
+      "round": 3,
+      "registry_noise": false,
+      "harness_wall_seconds": 11.553866
+    },
+    {
+      "variant": "D3",
+      "harness_error": "false attribution detected",
+      "acceptance_pass": false,
+      "stats": {
+        "capture_elapsed_ms": 12771,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 43,
+        "events_received": 8739,
+        "events_retained": 2261,
+        "high_confidence_events": 92,
+        "known_actor_events": 2100,
+        "known_resource_events": 2141,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 1,
+          "after_inventory": 963,
+          "before_snapshot_inventory": 931,
+          "correlation_attribution": 0,
+          "descendant_quiet_drain": 6012,
+          "etw_stop_and_queue_drain": 2,
+          "final_persistence_commit": 2,
+          "installer_root": 3684,
+          "lifetime_attribution_and_paged_persistence": 1138,
+          "provider_readiness": 23,
+          "raw_persistence_overlapping": 91
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 41,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": 0,
+        "etw_events_lost": 0,
+        "etw_file": "active",
+        "etw_process": "active",
+        "etw_registry": "active",
+        "events_received": 8739,
+        "file_event_id_filter": true,
+        "initial_identity_snapshot": {
+          "elapsed_ns": 14723600,
+          "enumerated": 145,
+          "failed": 4,
+          "finished_ticks": 134351688563418130,
+          "queried": 145,
+          "query_ns": 6244100,
+          "resolved": 141,
+          "skipped": 0,
+          "started_ticks": 134351688563270918
+        },
+        "pipeline": {
+          "arrival_peak_per_100ms": 3661,
+          "callback_records": 32806,
+          "context_evictions": 0,
+          "decode_attempted": 32806,
+          "decode_failed": 0,
+          "decode_succeeded": 32806,
+          "deliberately_filtered": 24067,
+          "dequeued": 8739,
+          "elapsed_ns": {
+            "callback": 101990300,
+            "context": 3826300,
+            "enqueue": 2616300,
+            "event_construction": 6797500,
+            "identity_query": 0,
+            "lock_wait": 2879200,
+            "path_normalization": 447700,
+            "property_decode": 43953900,
+            "queue_delay": 87361113300,
+            "schema_lookup": 8621700
+          },
+          "enqueue_disconnected": 0,
+          "enqueued": 8739,
+          "etw_allocated_buffers": 8,
+          "etw_buffer_size_kib": 64,
+          "etw_log_buffers_lost": null,
+          "etw_realtime_buffers_lost": 0,
+          "failed_without_output": 0,
+          "overflow_first_ns": [],
+          "overflow_last_ns": 0,
+          "persistence_failed": 0,
+          "persistence_succeeded": 8739,
+          "providers": {
+            "file": {
+              "callback_records": 23063,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 38254500,
+                "context": 0,
+                "enqueue": 49100,
+                "event_construction": 143200,
+                "identity_query": 0,
+                "lock_wait": 2001300,
+                "path_normalization": 419300,
+                "property_decode": 18604200,
+                "queue_delay": 0,
+                "schema_lookup": 4722100
+              },
+              "enqueued": 155,
+              "filtered": 22908,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "process": {
+              "callback_records": 104,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 2067900,
+                "context": 0,
+                "enqueue": 36700,
+                "event_construction": 355400,
+                "identity_query": 0,
+                "lock_wait": 8700,
+                "path_normalization": 28400,
+                "property_decode": 425100,
+                "queue_delay": 0,
+                "schema_lookup": 1261500
+              },
+              "enqueued": 104,
+              "filtered": 0,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "registry": {
+              "callback_records": 9639,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 61667900,
+                "context": 3826300,
+                "enqueue": 2530500,
+                "event_construction": 6298900,
+                "identity_query": 0,
+                "lock_wait": 869200,
+                "path_normalization": 0,
+                "property_decode": 24924600,
+                "queue_delay": 0,
+                "schema_lookup": 2638100
+              },
+              "enqueued": 8480,
+              "filtered": 1159,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 6557
+            }
+          },
+          "queue_high_water": 2323,
+          "queue_max_delay_ns": 24502300,
+          "queue_overflow": 0,
+          "queue_pending": 0,
+          "retention_dropped": 0,
+          "unsupported_records": 0
+        },
+        "registry_path_gaps": 6557,
+        "stream": {
+          "accepted": 8739,
+          "batches": 46,
+          "committed_bytes": 9528976,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 305963,
+          "persisted": 8739,
+          "persistence_ns": 91212100,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "sqlite_version": "3.50.2",
+          "wal_autocheckpoint_pages": 4096
+        },
+        "warnings": [
+          "Bounded initial process snapshot: 145 queried, 141 resolved, 4 failed, 0 skipped. Per-process query completion bounds validity; not an instantaneous or complete snapshot."
+        ]
+      },
+      "quality": {
+        "level": "Degraded",
+        "reasons": [
+          "Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.",
+          "6557 registry provider records lacked a verified absolute path."
+        ]
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 2021,
+        "observed": 14,
+        "correctly_attributed": 12,
+        "unknown": 2009,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 17,
+            "observed": 12,
+            "correctly_attributed": 12,
+            "unobserved": 5,
+            "unsupported_out_of_scope": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.7058823529411765,
+            "correct_attribution_rate": 0.7058823529411765
+          },
+          "noise_success": {
+            "expected": 2003,
+            "unobserved": 2001,
+            "observed": 2,
+            "observed_but_unresolved": 2,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.000998502246630055,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 1,
+            "unobserved": 1,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 17,
+        "false_positive_target_events": 5,
+        "unexpected_positive_events": [
+          "7a055f29-73bc-4a6d-9d85-2f0d19f9fa8e",
+          "d61cb90b-5d69-4cdc-a492-465ea22d3062",
+          "c80ad17f-9611-490d-adff-59ced2d1e053",
+          "6b583d4f-ebf8-4b9c-a7d7-49a5f277dbb7",
+          "6c7262b3-8258-432e-8be2-a5819d66158e"
+        ],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 3,
+        "precision": 0.7058823529411765,
+        "dropped": 0,
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0,
+        "quality": "Degraded",
+        "definition": "Frozen exact syscall oracle; one raw event per row. Unobserved has null attribution. Final state cannot satisfy syscalls. Audit unmatched supported positive mutations in tested scope. No-positive precision is null. ADR 0006."
+      },
+      "categories": {
+        "target_file": {
+          "expected": 13,
+          "observed": 12,
+          "correctly_attributed": 12,
+          "unobserved": 1
+        },
+        "failed": {
+          "expected": 1,
+          "unobserved": 1
+        },
+        "target_registry": {
+          "expected": 4,
+          "unobserved": 4
+        },
+        "noise_pre": {
+          "expected": 1000,
+          "unobserved": 1000
+        },
+        "noise_post": {
+          "expected": 1000,
+          "unobserved": 1000
+        },
+        "original_noise": {
+          "expected": 3,
+          "observed": 2,
+          "observed_but_unresolved": 2,
+          "unobserved": 1
+        }
+      },
+      "measurement": {
+        "elapsed_seconds": 13.2139038,
+        "sqlite_bytes": 27545600,
+        "measurement": "Contain process wall through DB close; excludes fixture build, oracle export and scoring."
+      },
+      "round": 3,
+      "registry_noise": true,
+      "harness_wall_seconds": 16.2532548
+    },
+    {
+      "variant": "D3",
+      "harness_error": "false attribution detected",
+      "acceptance_pass": false,
+      "stats": {
+        "capture_elapsed_ms": 9954,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 42,
+        "events_received": 576,
+        "events_retained": 220,
+        "high_confidence_events": 92,
+        "known_actor_events": 92,
+        "known_resource_events": 113,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 1,
+          "after_inventory": 939,
+          "before_snapshot_inventory": 944,
+          "correlation_attribution": 0,
+          "descendant_quiet_drain": 4361,
+          "etw_stop_and_queue_drain": 3,
+          "final_persistence_commit": 2,
+          "installer_root": 3647,
+          "lifetime_attribution_and_paged_persistence": 21,
+          "provider_readiness": 23,
+          "raw_persistence_overlapping": 9
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 21,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": 0,
+        "etw_events_lost": 0,
+        "etw_file": "active",
+        "etw_process": "active",
+        "etw_registry": "active",
+        "events_received": 576,
+        "file_event_id_filter": true,
+        "initial_identity_snapshot": {
+          "elapsed_ns": 13530600,
+          "enumerated": 141,
+          "failed": 4,
+          "finished_ticks": 134351688728099884,
+          "queried": 141,
+          "query_ns": 5182000,
+          "resolved": 137,
+          "skipped": 0,
+          "started_ticks": 134351688727964592
+        },
+        "pipeline": {
+          "arrival_peak_per_100ms": 193,
+          "callback_records": 4223,
+          "context_evictions": 0,
+          "decode_attempted": 4223,
+          "decode_failed": 0,
+          "decode_succeeded": 4223,
+          "deliberately_filtered": 3647,
+          "dequeued": 576,
+          "elapsed_ns": {
+            "callback": 13108100,
+            "context": 615300,
+            "enqueue": 173600,
+            "event_construction": 628200,
+            "identity_query": 0,
+            "lock_wait": 364000,
+            "path_normalization": 245900,
+            "property_decode": 4017300,
+            "queue_delay": 759721300,
+            "schema_lookup": 4410900
+          },
+          "enqueue_disconnected": 0,
+          "enqueued": 576,
+          "etw_allocated_buffers": 8,
+          "etw_buffer_size_kib": 64,
+          "etw_log_buffers_lost": null,
+          "etw_realtime_buffers_lost": 0,
+          "failed_without_output": 0,
+          "overflow_first_ns": [],
+          "overflow_last_ns": 0,
+          "persistence_failed": 0,
+          "persistence_succeeded": 576,
+          "providers": {
+            "file": {
+              "callback_records": 3300,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 6340900,
+                "context": 0,
+                "enqueue": 36900,
+                "event_construction": 80000,
+                "identity_query": 0,
+                "lock_wait": 286600,
+                "path_normalization": 227300,
+                "property_decode": 2266100,
+                "queue_delay": 0,
+                "schema_lookup": 1849200
+              },
+              "enqueued": 128,
+              "filtered": 3172,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "process": {
+              "callback_records": 82,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 1830200,
+                "context": 0,
+                "enqueue": 30200,
+                "event_construction": 230600,
+                "identity_query": 0,
+                "lock_wait": 7600,
+                "path_normalization": 18600,
+                "property_decode": 233700,
+                "queue_delay": 0,
+                "schema_lookup": 1300100
+              },
+              "enqueued": 82,
+              "filtered": 0,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "registry": {
+              "callback_records": 841,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 4937000,
+                "context": 615300,
+                "enqueue": 106500,
+                "event_construction": 317600,
+                "identity_query": 0,
+                "lock_wait": 69800,
+                "path_normalization": 0,
+                "property_decode": 1517500,
+                "queue_delay": 0,
+                "schema_lookup": 1261600
+              },
+              "enqueued": 366,
+              "filtered": 475,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 427
+            }
+          },
+          "queue_high_water": 145,
+          "queue_max_delay_ns": 19247100,
+          "queue_overflow": 0,
+          "queue_pending": 0,
+          "retention_dropped": 0,
+          "unsupported_records": 0
+        },
+        "registry_path_gaps": 427,
+        "stream": {
+          "accepted": 576,
+          "batches": 12,
+          "committed_bytes": 577266,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 267207,
+          "persisted": 576,
+          "persistence_ns": 9614000,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "sqlite_version": "3.50.2",
+          "wal_autocheckpoint_pages": 4096
+        },
+        "warnings": [
+          "Bounded initial process snapshot: 141 queried, 137 resolved, 4 failed, 0 skipped. Per-process query completion bounds validity; not an instantaneous or complete snapshot."
+        ]
+      },
+      "quality": {
+        "level": "Degraded",
+        "reasons": [
+          "Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.",
+          "427 registry provider records lacked a verified absolute path."
+        ]
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 21,
+        "observed": 14,
+        "correctly_attributed": 12,
+        "unknown": 9,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 17,
+            "observed": 12,
+            "correctly_attributed": 12,
+            "unobserved": 5,
+            "unsupported_out_of_scope": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.7058823529411765,
+            "correct_attribution_rate": 0.7058823529411765
+          },
+          "noise_success": {
+            "expected": 3,
+            "observed": 2,
+            "observed_but_unresolved": 2,
+            "unobserved": 1,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.6666666666666666,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 1,
+            "unobserved": 1,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 17,
+        "false_positive_target_events": 5,
+        "unexpected_positive_events": [
+          "a49c9fcd-8b18-4daa-87f5-1e9a5a3ecef5",
+          "cd2f6153-8650-4efc-a30e-d625ccd97755",
+          "2d29173e-6adf-4f0f-bab8-461c0bd0f39c",
+          "d52daf28-964b-4a36-8069-0f7a8474a5ce",
+          "642da6fc-2f50-450a-a12a-27eac041d759"
+        ],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 3,
+        "precision": 0.7058823529411765,
+        "dropped": 0,
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0,
+        "quality": "Degraded",
+        "definition": "Frozen exact syscall oracle; one raw event per row. Unobserved has null attribution. Final state cannot satisfy syscalls. Audit unmatched supported positive mutations in tested scope. No-positive precision is null. ADR 0006."
+      },
+      "categories": {
+        "target_file": {
+          "expected": 13,
+          "observed": 12,
+          "correctly_attributed": 12,
+          "unobserved": 1
+        },
+        "failed": {
+          "expected": 1,
+          "unobserved": 1
+        },
+        "target_registry": {
+          "expected": 4,
+          "unobserved": 4
+        },
+        "original_noise": {
+          "expected": 3,
+          "observed": 2,
+          "observed_but_unresolved": 2,
+          "unobserved": 1
+        }
+      },
+      "measurement": {
+        "elapsed_seconds": 10.177309,
+        "sqlite_bytes": 2007040,
+        "measurement": "Contain process wall through DB close; excludes fixture build, oracle export and scoring."
+      },
+      "round": 4,
+      "registry_noise": false,
+      "harness_wall_seconds": 10.7753259
+    },
+    {
+      "variant": "D3",
+      "harness_error": "false attribution detected",
+      "acceptance_pass": false,
+      "stats": {
+        "capture_elapsed_ms": 11800,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 42,
+        "events_received": 2752,
+        "events_retained": 2262,
+        "high_confidence_events": 92,
+        "known_actor_events": 2100,
+        "known_resource_events": 2140,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 1,
+          "after_inventory": 943,
+          "before_snapshot_inventory": 937,
+          "correlation_attribution": 0,
+          "descendant_quiet_drain": 5330,
+          "etw_stop_and_queue_drain": 3,
+          "final_persistence_commit": 2,
+          "installer_root": 3657,
+          "lifetime_attribution_and_paged_persistence": 891,
+          "provider_readiness": 23,
+          "raw_persistence_overlapping": 30
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 40,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": 0,
+        "etw_events_lost": 0,
+        "etw_file": "active",
+        "etw_process": "active",
+        "etw_registry": "active",
+        "events_received": 2752,
+        "file_event_id_filter": true,
+        "initial_identity_snapshot": {
+          "elapsed_ns": 13988900,
+          "enumerated": 145,
+          "failed": 4,
+          "finished_ticks": 134351688836810999,
+          "queried": 145,
+          "query_ns": 5446000,
+          "resolved": 141,
+          "skipped": 0,
+          "started_ticks": 134351688836671126
+        },
+        "pipeline": {
+          "arrival_peak_per_100ms": 2158,
+          "callback_records": 16453,
+          "context_evictions": 0,
+          "decode_attempted": 16453,
+          "decode_failed": 0,
+          "decode_succeeded": 16453,
+          "deliberately_filtered": 13701,
+          "dequeued": 2752,
+          "elapsed_ns": {
+            "callback": 60242300,
+            "context": 2214900,
+            "enqueue": 826800,
+            "event_construction": 2330200,
+            "identity_query": 0,
+            "lock_wait": 1406900,
+            "path_normalization": 423800,
+            "property_decode": 30758200,
+            "queue_delay": 4947751200,
+            "schema_lookup": 6285800
+          },
+          "enqueue_disconnected": 0,
+          "enqueued": 2752,
+          "etw_allocated_buffers": 8,
+          "etw_buffer_size_kib": 64,
+          "etw_log_buffers_lost": null,
+          "etw_realtime_buffers_lost": 0,
+          "failed_without_output": 0,
+          "overflow_first_ns": [],
+          "overflow_last_ns": 0,
+          "persistence_failed": 0,
+          "persistence_succeeded": 2752,
+          "providers": {
+            "file": {
+              "callback_records": 12362,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 27278800,
+                "context": 0,
+                "enqueue": 46200,
+                "event_construction": 118300,
+                "identity_query": 0,
+                "lock_wait": 1057600,
+                "path_normalization": 395100,
+                "property_decode": 14642200,
+                "queue_delay": 0,
+                "schema_lookup": 3213500
+              },
+              "enqueued": 153,
+              "filtered": 12209,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "process": {
+              "callback_records": 143,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 2406100,
+                "context": 0,
+                "enqueue": 45800,
+                "event_construction": 376400,
+                "identity_query": 0,
+                "lock_wait": 12800,
+                "path_normalization": 28700,
+                "property_decode": 565800,
+                "queue_delay": 0,
+                "schema_lookup": 1355600
+              },
+              "enqueued": 143,
+              "filtered": 0,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "registry": {
+              "callback_records": 3948,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 30557400,
+                "context": 2214900,
+                "enqueue": 734800,
+                "event_construction": 1835500,
+                "identity_query": 0,
+                "lock_wait": 336500,
+                "path_normalization": 0,
+                "property_decode": 15550200,
+                "queue_delay": 0,
+                "schema_lookup": 1716700
+              },
+              "enqueued": 2456,
+              "filtered": 1492,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 1416
+            }
+          },
+          "queue_high_water": 291,
+          "queue_max_delay_ns": 18929000,
+          "queue_overflow": 0,
+          "queue_pending": 0,
+          "retention_dropped": 0,
+          "unsupported_records": 0
+        },
+        "registry_path_gaps": 1416,
+        "stream": {
+          "accepted": 2752,
+          "batches": 25,
+          "committed_bytes": 3136354,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 305994,
+          "persisted": 2752,
+          "persistence_ns": 30896600,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "sqlite_version": "3.50.2",
+          "wal_autocheckpoint_pages": 4096
+        },
+        "warnings": [
+          "Bounded initial process snapshot: 145 queried, 141 resolved, 4 failed, 0 skipped. Per-process query completion bounds validity; not an instantaneous or complete snapshot."
+        ]
+      },
+      "quality": {
+        "level": "Degraded",
+        "reasons": [
+          "Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.",
+          "1416 registry provider records lacked a verified absolute path."
+        ]
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 2021,
+        "observed": 190,
+        "correctly_attributed": 16,
+        "unknown": 2005,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 17,
+            "observed": 16,
+            "correctly_attributed": 16,
+            "unobserved": 1,
+            "unsupported_out_of_scope": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.9411764705882353,
+            "correct_attribution_rate": 0.9411764705882353
+          },
+          "noise_success": {
+            "expected": 2003,
+            "observed": 174,
+            "correctly_not_assigned_to_target_app": 172,
+            "unobserved": 1829,
+            "observed_but_unresolved": 2,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observation_rate": 0.08686969545681478,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 1,
+            "unobserved": 1,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 17,
+        "false_positive_target_events": 1,
+        "unexpected_positive_events": [
+          "5ac077a6-45f7-47fa-a662-ded1566d9e0c"
+        ],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 3,
+        "precision": 0.9411764705882353,
+        "dropped": 0,
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0,
+        "quality": "Degraded",
+        "definition": "Frozen exact syscall oracle; one raw event per row. Unobserved has null attribution. Final state cannot satisfy syscalls. Audit unmatched supported positive mutations in tested scope. No-positive precision is null. ADR 0006."
+      },
+      "categories": {
+        "target_file": {
+          "expected": 13,
+          "observed": 12,
+          "correctly_attributed": 12,
+          "unobserved": 1
+        },
+        "failed": {
+          "expected": 1,
+          "unobserved": 1
+        },
+        "target_registry": {
+          "expected": 4,
+          "observed": 4,
+          "correctly_attributed": 4
+        },
+        "noise_pre": {
+          "expected": 1000,
+          "observed": 129,
+          "correctly_not_assigned_to_target_app": 129,
+          "unobserved": 871
+        },
+        "noise_post": {
+          "expected": 1000,
+          "observed": 43,
+          "correctly_not_assigned_to_target_app": 43,
+          "unobserved": 957
+        },
+        "original_noise": {
+          "expected": 3,
+          "observed": 2,
+          "observed_but_unresolved": 2,
+          "unobserved": 1
+        }
+      },
+      "measurement": {
+        "elapsed_seconds": 12.37479,
+        "sqlite_bytes": 16474112,
+        "measurement": "Contain process wall through DB close; excludes fixture build, oracle export and scoring."
+      },
+      "round": 4,
+      "registry_noise": true,
+      "harness_wall_seconds": 15.5938998
+    },
+    {
+      "variant": "D3",
+      "harness_error": "false attribution detected",
+      "acceptance_pass": false,
+      "stats": {
+        "capture_elapsed_ms": 13776,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 42,
+        "events_received": 16146,
+        "events_retained": 224,
+        "high_confidence_events": 92,
+        "known_actor_events": 92,
+        "known_resource_events": 114,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 1,
+          "after_inventory": 1115,
+          "before_snapshot_inventory": 994,
+          "correlation_attribution": 0,
+          "descendant_quiet_drain": 4360,
+          "etw_stop_and_queue_drain": 2,
+          "final_persistence_commit": 2,
+          "installer_root": 3661,
+          "lifetime_attribution_and_paged_persistence": 3601,
+          "provider_readiness": 23,
+          "raw_persistence_overlapping": 1731
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 22,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": 0,
+        "etw_events_lost": 0,
+        "etw_file": "active",
+        "etw_process": "active",
+        "etw_registry": "active",
+        "events_received": 16146,
+        "file_event_id_filter": true,
+        "initial_identity_snapshot": {
+          "elapsed_ns": 15916600,
+          "enumerated": 141,
+          "failed": 4,
+          "finished_ticks": 134351688995158474,
+          "queried": 141,
+          "query_ns": 3061900,
+          "resolved": 137,
+          "skipped": 0,
+          "started_ticks": 134351688994999327
+        },
+        "pipeline": {
+          "arrival_peak_per_100ms": 1423,
+          "callback_records": 134315,
+          "context_evictions": 0,
+          "decode_attempted": 134315,
+          "decode_failed": 0,
+          "decode_succeeded": 134315,
+          "deliberately_filtered": 118169,
+          "dequeued": 16146,
+          "elapsed_ns": {
+            "callback": 467546300,
+            "context": 66384300,
+            "enqueue": 7226100,
+            "event_construction": 16932600,
+            "identity_query": 0,
+            "lock_wait": 13004700,
+            "path_normalization": 13672400,
+            "property_decode": 210719200,
+            "queue_delay": 1612819794200,
+            "schema_lookup": 27044400
+          },
+          "enqueue_disconnected": 0,
+          "enqueued": 16146,
+          "etw_allocated_buffers": 8,
+          "etw_buffer_size_kib": 64,
+          "etw_log_buffers_lost": null,
+          "etw_realtime_buffers_lost": 0,
+          "failed_without_output": 0,
+          "overflow_first_ns": [],
+          "overflow_last_ns": 0,
+          "persistence_failed": 0,
+          "persistence_succeeded": 16146,
+          "providers": {
+            "file": {
+              "callback_records": 73933,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 142283000,
+                "context": 0,
+                "enqueue": 36900,
+                "event_construction": 93100,
+                "identity_query": 0,
+                "lock_wait": 7220500,
+                "path_normalization": 13590100,
+                "property_decode": 60802800,
+                "queue_delay": 0,
+                "schema_lookup": 14547800
+              },
+              "enqueued": 129,
+              "filtered": 73804,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "process": {
+              "callback_records": 500,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 5148500,
+                "context": 0,
+                "enqueue": 194600,
+                "event_construction": 1718600,
+                "identity_query": 0,
+                "lock_wait": 44100,
+                "path_normalization": 82300,
+                "property_decode": 1754900,
+                "queue_delay": 0,
+                "schema_lookup": 1392500
+              },
+              "enqueued": 500,
+              "filtered": 0,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "registry": {
+              "callback_records": 59882,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 320114800,
+                "context": 66384300,
+                "enqueue": 6994600,
+                "event_construction": 15120900,
+                "identity_query": 0,
+                "lock_wait": 5740100,
+                "path_normalization": 0,
+                "property_decode": 148161500,
+                "queue_delay": 0,
+                "schema_lookup": 11104100
+              },
+              "enqueued": 15517,
+              "filtered": 44365,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 28145
+            }
+          },
+          "queue_high_water": 1920,
+          "queue_max_delay_ns": 1429372400,
+          "queue_overflow": 0,
+          "queue_pending": 0,
+          "retention_dropped": 0,
+          "unsupported_records": 0
+        },
+        "registry_path_gaps": 28145,
+        "stream": {
+          "accepted": 16146,
+          "batches": 79,
+          "committed_bytes": 17274085,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 285371,
+          "persisted": 16146,
+          "persistence_ns": 1731302800,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "sqlite_version": "3.50.2",
+          "wal_autocheckpoint_pages": 4096
+        },
+        "warnings": [
+          "Bounded initial process snapshot: 141 queried, 137 resolved, 4 failed, 0 skipped. Per-process query completion bounds validity; not an instantaneous or complete snapshot."
+        ]
+      },
+      "quality": {
+        "level": "Degraded",
+        "reasons": [
+          "Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.",
+          "28145 registry provider records lacked a verified absolute path."
+        ]
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 21,
+        "observed": 14,
+        "correctly_attributed": 12,
+        "unknown": 9,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 17,
+            "observed": 12,
+            "correctly_attributed": 12,
+            "unobserved": 5,
+            "unsupported_out_of_scope": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.7058823529411765,
+            "correct_attribution_rate": 0.7058823529411765
+          },
+          "noise_success": {
+            "expected": 3,
+            "observed": 2,
+            "observed_but_unresolved": 2,
+            "unobserved": 1,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.6666666666666666,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 1,
+            "unobserved": 1,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 17,
+        "false_positive_target_events": 5,
+        "unexpected_positive_events": [
+          "544a474b-9077-4386-a576-84c11e5ad994",
+          "4fdec645-5c5b-4576-8b71-a46a44232c13",
+          "291f2a89-966d-4f93-a438-3e31fc481f2a",
+          "7395d85f-7f03-4f3f-ab9f-17bd6872b921",
+          "524e724b-4cfa-4d54-bcb3-9cff9f898f8d"
+        ],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 3,
+        "precision": 0.7058823529411765,
+        "dropped": 0,
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0,
+        "quality": "Degraded",
+        "definition": "Frozen exact syscall oracle; one raw event per row. Unobserved has null attribution. Final state cannot satisfy syscalls. Audit unmatched supported positive mutations in tested scope. No-positive precision is null. ADR 0006."
+      },
+      "categories": {
+        "target_file": {
+          "expected": 13,
+          "observed": 12,
+          "correctly_attributed": 12,
+          "unobserved": 1
+        },
+        "failed": {
+          "expected": 1,
+          "unobserved": 1
+        },
+        "target_registry": {
+          "expected": 4,
+          "unobserved": 4
+        },
+        "original_noise": {
+          "expected": 3,
+          "observed": 2,
+          "observed_but_unresolved": 2,
+          "unobserved": 1
+        }
+      },
+      "measurement": {
+        "elapsed_seconds": 21.1459757,
+        "sqlite_bytes": 50630656,
+        "measurement": "Contain process wall through DB close; excludes fixture build, oracle export and scoring."
+      },
+      "round": 5,
+      "registry_noise": false,
+      "harness_wall_seconds": 21.8167565
+    },
+    {
+      "variant": "D3",
+      "harness_error": "false attribution detected",
+      "acceptance_pass": false,
+      "stats": {
+        "capture_elapsed_ms": 16465,
+        "drain_timed_out": false,
+        "events_dropped": 0,
+        "events_normalized": 42,
+        "events_received": 11833,
+        "events_retained": 2261,
+        "high_confidence_events": 92,
+        "known_actor_events": 2100,
+        "known_resource_events": 2140,
+        "notification_gaps": 0,
+        "phase_ms": {
+          "after_file_snapshot_hash": 1,
+          "after_inventory": 999,
+          "before_snapshot_inventory": 1077,
+          "correlation_attribution": 0,
+          "descendant_quiet_drain": 4388,
+          "etw_stop_and_queue_drain": 1,
+          "final_persistence_commit": 2,
+          "installer_root": 3665,
+          "lifetime_attribution_and_paged_persistence": 6289,
+          "provider_readiness": 24,
+          "raw_persistence_overlapping": 629
+        },
+        "snapshot_gaps": 0,
+        "unknown_actor_events": 40,
+        "unknown_resource_events": 0
+      },
+      "backend": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_buffers_lost": 0,
+        "etw_events_lost": 0,
+        "etw_file": "active",
+        "etw_process": "active",
+        "etw_registry": "active",
+        "events_received": 11833,
+        "file_event_id_filter": true,
+        "initial_identity_snapshot": {
+          "elapsed_ns": 17754700,
+          "enumerated": 154,
+          "failed": 4,
+          "finished_ticks": 134351689218172632,
+          "queried": 154,
+          "query_ns": 5687000,
+          "resolved": 150,
+          "skipped": 0,
+          "started_ticks": 134351689217995114
+        },
+        "pipeline": {
+          "arrival_peak_per_100ms": 2243,
+          "callback_records": 97916,
+          "context_evictions": 0,
+          "decode_attempted": 97916,
+          "decode_failed": 0,
+          "decode_succeeded": 97916,
+          "deliberately_filtered": 86083,
+          "dequeued": 11833,
+          "elapsed_ns": {
+            "callback": 240124600,
+            "context": 19074400,
+            "enqueue": 3713000,
+            "event_construction": 8726200,
+            "identity_query": 0,
+            "lock_wait": 8693600,
+            "path_normalization": 6391900,
+            "property_decode": 105773900,
+            "queue_delay": 286504778000,
+            "schema_lookup": 18221300
+          },
+          "enqueue_disconnected": 0,
+          "enqueued": 11833,
+          "etw_allocated_buffers": 8,
+          "etw_buffer_size_kib": 64,
+          "etw_log_buffers_lost": null,
+          "etw_realtime_buffers_lost": 0,
+          "failed_without_output": 0,
+          "overflow_first_ns": [],
+          "overflow_last_ns": 0,
+          "persistence_failed": 0,
+          "persistence_succeeded": 11833,
+          "providers": {
+            "file": {
+              "callback_records": 71497,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 112643200,
+                "context": 0,
+                "enqueue": 54200,
+                "event_construction": 160700,
+                "identity_query": 0,
+                "lock_wait": 6363100,
+                "path_normalization": 6353700,
+                "property_decode": 50904000,
+                "queue_delay": 0,
+                "schema_lookup": 11250900
+              },
+              "enqueued": 153,
+              "filtered": 71344,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "process": {
+              "callback_records": 129,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 3018300,
+                "context": 0,
+                "enqueue": 55500,
+                "event_construction": 397100,
+                "identity_query": 0,
+                "lock_wait": 11400,
+                "path_normalization": 38200,
+                "property_decode": 504800,
+                "queue_delay": 0,
+                "schema_lookup": 1991000
+              },
+              "enqueued": 129,
+              "filtered": 0,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 0
+            },
+            "registry": {
+              "callback_records": 26290,
+              "context_evictions": 0,
+              "decode_failed": 0,
+              "disconnected": 0,
+              "elapsed_ns": {
+                "callback": 124463100,
+                "context": 19074400,
+                "enqueue": 3603300,
+                "event_construction": 8168400,
+                "identity_query": 0,
+                "lock_wait": 2319100,
+                "path_normalization": 0,
+                "property_decode": 54365100,
+                "queue_delay": 0,
+                "schema_lookup": 4979400
+              },
+              "enqueued": 11551,
+              "filtered": 14739,
+              "identity_queries": 0,
+              "overflow": 0,
+              "unresolved": 21075
+            }
+          },
+          "queue_high_water": 1140,
+          "queue_max_delay_ns": 406245000,
+          "queue_overflow": 0,
+          "queue_pending": 0,
+          "retention_dropped": 0,
+          "unsupported_records": 0
+        },
+        "registry_path_gaps": 21075,
+        "stream": {
+          "accepted": 11833,
+          "batches": 78,
+          "committed_bytes": 12863836,
+          "error": null,
+          "failed": 0,
+          "max_batch_bytes": 305443,
+          "persisted": 11833,
+          "persistence_ns": 629311600,
+          "quota_bytes": 268435456,
+          "quota_dropped": 0,
+          "sqlite_page_size_bytes": 4096,
+          "sqlite_synchronous": 1,
+          "sqlite_version": "3.50.2",
+          "wal_autocheckpoint_pages": 4096
+        },
+        "warnings": [
+          "Bounded initial process snapshot: 154 queried, 150 resolved, 4 failed, 0 skipped. Per-process query completion bounds validity; not an instantaneous or complete snapshot."
+        ]
+      },
+      "quality": {
+        "level": "Degraded",
+        "reasons": [
+          "Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.",
+          "21075 registry provider records lacked a verified absolute path."
+        ]
+      },
+      "score": {
+        "schema_version": 2,
+        "expected": 2021,
+        "observed": 16,
+        "correctly_attributed": 12,
+        "unknown": 2009,
+        "incorrect_attribution": 0,
+        "groups": {
+          "target_success": {
+            "expected": 17,
+            "observed": 12,
+            "correctly_attributed": 12,
+            "unobserved": 5,
+            "unsupported_out_of_scope": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.7058823529411765,
+            "correct_attribution_rate": 0.7058823529411765
+          },
+          "noise_success": {
+            "expected": 2003,
+            "unobserved": 1999,
+            "observed": 4,
+            "correctly_not_assigned_to_target_app": 2,
+            "observed_but_unresolved": 2,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observation_rate": 0.00199700449326011,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 1,
+            "unobserved": 1,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        },
+        "positive_raw_predictions": 17,
+        "false_positive_target_events": 5,
+        "unexpected_positive_events": [
+          "7dae58ce-6f69-4275-934c-fc30d40d548d",
+          "96b9c2d2-0fb6-49f6-894f-cece6ccdc34e",
+          "b9dc8482-2ee0-4168-83a4-35472ddedeb6",
+          "bf9d2f4a-28a5-45d3-b0cf-3d8b4c033d54",
+          "03cc4322-9212-439a-bc5d-428109275424"
+        ],
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 3,
+        "precision": 0.7058823529411765,
+        "dropped": 0,
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0,
+        "quality": "Degraded",
+        "definition": "Frozen exact syscall oracle; one raw event per row. Unobserved has null attribution. Final state cannot satisfy syscalls. Audit unmatched supported positive mutations in tested scope. No-positive precision is null. ADR 0006."
+      },
+      "categories": {
+        "target_file": {
+          "expected": 13,
+          "observed": 12,
+          "correctly_attributed": 12,
+          "unobserved": 1
+        },
+        "failed": {
+          "expected": 1,
+          "unobserved": 1
+        },
+        "target_registry": {
+          "expected": 4,
+          "unobserved": 4
+        },
+        "noise_pre": {
+          "expected": 1000,
+          "unobserved": 999,
+          "observed": 1,
+          "correctly_not_assigned_to_target_app": 1
+        },
+        "noise_post": {
+          "expected": 1000,
+          "unobserved": 999,
+          "observed": 1,
+          "correctly_not_assigned_to_target_app": 1
+        },
+        "original_noise": {
+          "expected": 3,
+          "observed": 2,
+          "observed_but_unresolved": 2,
+          "unobserved": 1
+        }
+      },
+      "measurement": {
+        "elapsed_seconds": 17.0738159,
+        "sqlite_bytes": 37199872,
+        "measurement": "Contain process wall through DB close; excludes fixture build, oracle export and scoring."
+      },
+      "round": 5,
+      "registry_noise": true,
+      "harness_wall_seconds": 20.3603279
+    }
+  ]
+}

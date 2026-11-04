@@ -4,9 +4,9 @@ use rusqlite::Connection;
 pub fn check_version(connection: &Connection) -> Result<u32> {
     let version =
         connection.pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))?;
-    if version > 3 {
+    if version > 4 {
         bail!(
-            "Database schema {version} is newer than this Contain build (3). Use a newer binary; database was not changed."
+            "Database schema {version} is newer than this Contain build (4). Use a newer binary; database was not changed."
         );
     }
     Ok(version)
@@ -14,16 +14,30 @@ pub fn check_version(connection: &Connection) -> Result<u32> {
 
 pub fn apply(connection: &mut Connection) -> Result<()> {
     let version = check_version(connection)?;
-    if version == 3 {
-        return Ok(());
+    if version == 4 {
+        return readback_indexes(connection);
     }
     let tx = connection.transaction()?;
     // v0.1 tables stay intact. New typed tables add process lifetimes, source events and evidence.
     if version < 2 {
         tx.execute_batch(include_str!("v2.sql"))?;
     }
-    tx.execute_batch(include_str!("v3.sql"))?;
-    tx.pragma_update(None, "user_version", 3)?;
+    if version < 3 {
+        tx.execute_batch(include_str!("v3.sql"))?;
+    }
+    tx.execute_batch(include_str!("v4.sql"))?;
+    readback_indexes(&tx)?;
+    tx.pragma_update(None, "user_version", 4)?;
     tx.commit()?;
+    Ok(())
+}
+
+// Additive read indexes preserve the schema-4 data contract and remain readable
+// by older binaries. Existing schema-4 databases receive the indexes on reopen.
+fn readback_indexes(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        "CREATE INDEX IF NOT EXISTS system_events_session_resource ON system_events(session_id,resource);
+         CREATE INDEX IF NOT EXISTS normalized_operations_session_id ON normalized_operations(session_id,id);",
+    )?;
     Ok(())
 }

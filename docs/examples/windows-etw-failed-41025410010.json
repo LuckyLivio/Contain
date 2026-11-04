@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "source_sha": "fa8ed67229c0ed55a9d60b8d865d0a86baf3fee9",
+  "branch": "fix/read-only-workflow",
+  "ci_run": "https://github.com/LuckyLivio/Contain/actions/runs/41025410010",
+  "ci_conclusion": "failure",
+  "scope": "Existing failed ETW fixture; original score plus fixture-scoped published projection, not complete raw capture.",
+  "original_score": {
+    "schema_version": 2,
+    "expected": 21,
+    "observed": 14,
+    "correctly_attributed": 12,
+    "unknown": 9,
+    "incorrect_attribution": 0,
+    "positive_raw_predictions": 17,
+    "false_positive_target_events": 5,
+    "precision": 0.7058823529411765,
+    "dropped": 0,
+    "etw_events_lost": 0,
+    "etw_buffers_lost": 0
+  },
+  "target_success": {
+    "expected": 17,
+    "observed": 12,
+    "correctly_attributed": 12,
+    "unobserved": 5
+  },
+  "unchanged_scorer_projection_replay_matches_original": true,
+  "unmatched_positive_offsets": [
+    {
+      "event_category": "registry:set_value",
+      "after_candidate_truth_end_microseconds": 8.5
+    },
+    {
+      "event_category": "registry:set_value",
+      "after_candidate_truth_end_microseconds": 9.0
+    },
+    {
+      "event_category": "registry:set_value",
+      "after_candidate_truth_end_microseconds": 9.9
+    },
+    {
+      "event_category": "registry:set_value",
+      "after_candidate_truth_end_microseconds": 10.3
+    },
+    {
+      "event_category": "file:write_requested",
+      "after_candidate_truth_end_microseconds": 232.1
+    }
+  ],
+  "raw_qpc_available": false,
+  "truth_clock_rows": 0,
+  "acceptance_pass": false,
+  "interpretation": "Each unmatched event has one truth candidate with matching actor instance, normalized resource and operation category. This does not establish that it is the same syscall or explicit application operation. All five remain failures under the unchanged exact-interval scorer. Missing original QPC/independent clock evidence prevents distinguishing clock conversion, oracle timing and additional/asynchronous native operations. No ownership conclusion or exception is inferred.",
+  "publication": "Only fixed aggregate counts, categories and relative offsets are retained; no event IDs, host paths, SID, raw logs or database data."
+}

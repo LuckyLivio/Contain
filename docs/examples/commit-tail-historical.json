@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "diagnostic_only": true,
+  "source_commit": "d60f6ae6dfec312935b71cdcd07c8a874b4a7d5d",
+  "source_workflow_run": 36589638546,
+  "variant": "D3",
+  "files": 10000,
+  "description": "Historical timing correlation only. All retained first-64 overflow timestamps lie in an estimated flush window in each run. This does not establish where the remaining losses occurred or isolate automatic checkpoint cost.",
+  "limits": [
+    "Only the first 64 overflow timestamps were recorded per run; no fraction of all losses occurring during commits is inferred.",
+    "Batch windows estimate start from end minus duration; the batch end is recorded just after timing completes. They are flush windows, not exact COMMIT spans.",
+    "Legacy profiles contain no queue_spans snapshots. Matching maximum COMMIT and no-drain durations are correlation, not checkpoint causality.",
+    "The existing three 10000-file acceptance gates all failed; this diagnostic does not change scores or promote D3."
+  ],
+  "runs": [
+    {
+      "run": "candidate-stress-10000-1",
+      "profile_path": "target/hotpath-final-36589638546/run-37167dd7d68e48dab1f1fb59882da579/candidate-stress-10000-1/profile.json",
+      "profile_sha256": "6c8ec1cef597b974ff9c58ca632b97daffe5a228eca906b451753126ad049362",
+      "result_path": "target/hotpath-final-36589638546/run-37167dd7d68e48dab1f1fb59882da579/candidate-stress-10000-1/result.json",
+      "result_sha256": "510ce179d0e8dbeba3048ff7729be3499d192d07d63993e16f63a2a3eeded183",
+      "overflow": {
+        "total": 106440,
+        "recorded_timestamps": 64,
+        "unrecorded_timestamps": 106376,
+        "first_recorded_ns": 1936557500,
+        "last_recorded_ns": 1937138400,
+        "last_overflow_ns": 6624246000
+      },
+      "legacy_batches": {
+        "window_kind": "estimated flush intervals: [batch_end - duration, batch_end)",
+        "retained_batches": 157,
+        "omitted_batches": 0,
+        "retained_interval_union_ns": 5610756500,
+        "retained_first_start_ns": 1151310900,
+        "retained_last_end_ns": 16966082600,
+        "recorded_overflows_in_flush_windows": 64,
+        "recorded_overflows_outside_flush_windows": 0,
+        "displayed_windows": [
+          {
+            "start_ns": 1693186100,
+            "end_ns": 3740320300,
+            "duration_ns": 2047134200,
+            "records": 256,
+            "payload_bytes": 238569,
+            "recorded_overflows": 64
+          }
+        ],
+        "undisplayed_windows": 156
+      },
+      "max_raw_commit_ns": 2199957200,
+      "max_between_drains_ns": 2201963300,
+      "queue_spans_available": false
+    },
+    {
+      "run": "candidate-stress-10000-2",
+      "profile_path": "target/hotpath-final-36589638546/run-37167dd7d68e48dab1f1fb59882da579/candidate-stress-10000-2/profile.json",
+      "profile_sha256": "47de907994f93ca0d5f94870a50a6c4b9f75badf30799bacab55757a9c44c704",
+      "result_path": "target/hotpath-final-36589638546/run-37167dd7d68e48dab1f1fb59882da579/candidate-stress-10000-2/result.json",
+      "result_sha256": "2866f46ca489224093a27d3aa851f0a442b81b2d8cd71d693cc43eac348a9539",
+      "overflow": {
+        "total": 103174,
+        "recorded_timestamps": 64,
+        "unrecorded_timestamps": 103110,
+        "first_recorded_ns": 2258346800,
+        "last_recorded_ns": 2258838300,
+        "last_overflow_ns": 7924758900
+      },
+      "legacy_batches": {
+        "window_kind": "estimated flush intervals: [batch_end - duration, batch_end)",
+        "retained_batches": 182,
+        "omitted_batches": 0,
+        "retained_interval_union_ns": 6225605400,
+        "retained_first_start_ns": 1144111700,
+        "retained_last_end_ns": 17258280600,
+        "recorded_overflows_in_flush_windows": 64,
+        "recorded_overflows_outside_flush_windows": 0,
+        "displayed_windows": [
+          {
+            "start_ns": 2191646400,
+            "end_ns": 4316918500,
+            "duration_ns": 2125272100,
+            "records": 256,
+            "payload_bytes": 238518,
+            "recorded_overflows": 64
+          }
+        ],
+        "undisplayed_windows": 181
+      },
+      "max_raw_commit_ns": 2124537400,
+      "max_between_drains_ns": 2126225800,
+      "queue_spans_available": false
+    },
+    {
+      "run": "candidate-stress-10000-3",
+      "profile_path": "target/hotpath-final-36589638546/run-37167dd7d68e48dab1f1fb59882da579/candidate-stress-10000-3/profile.json",
+      "profile_sha256": "53cea0c5b0ae8518db1823c014fec1ff4b183edf6e59f77b8b7807c31bfa11b6",
+      "result_path": "target/hotpath-final-36589638546/run-37167dd7d68e48dab1f1fb59882da579/candidate-stress-10000-3/result.json",
+      "result_sha256": "9aa83ae15264c4cee280fa9e197970d256578ac5b395ddb27b7fc947d6d56ab0",
+      "overflow": {
+        "total": 103311,
+        "recorded_timestamps": 64,
+        "unrecorded_timestamps": 103247,
+        "first_recorded_ns": 2126605900,
+        "last_recorded_ns": 2127250600,
+        "last_overflow_ns": 7926593100
+      },
+      "legacy_batches": {
+        "window_kind": "estimated flush intervals: [batch_end - duration, batch_end)",
+        "retained_batches": 187,
+        "omitted_batches": 0,
+        "retained_interval_union_ns": 5927332900,
+        "retained_first_start_ns": 1162451900,
+        "retained_last_end_ns": 16915385400,
+        "recorded_overflows_in_flush_windows": 64,
+        "recorded_overflows_outside_flush_windows": 0,
+        "displayed_windows": [
+          {
+            "start_ns": 2047923300,
+            "end_ns": 4111550900,
+            "duration_ns": 2063627600,
+            "records": 256,
+            "payload_bytes": 238604,
+            "recorded_overflows": 64
+          }
+        ],
+        "undisplayed_windows": 186
+      },
+      "max_raw_commit_ns": 2062369000,
+      "max_between_drains_ns": 2065450400,
+      "queue_spans_available": false
+    }
+  ]
+}

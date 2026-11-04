@@ -1,18 +1,94 @@
 use crate::model::{Capture, Confidence, FileChange, ProcessRecord, RegistryChange};
 use anyhow::{Context, Result};
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use std::fs;
 use std::path::Path;
+#[path = "storage/checkpoint.rs"]
+pub(crate) mod checkpoint;
+#[cfg(test)]
+#[path = "storage/checkpoint_tests.rs"]
+mod checkpoint_tests;
+#[path = "storage/evidence.rs"]
 mod evidence;
+#[path = "storage/migration.rs"]
 mod migration;
+#[cfg(test)]
+#[path = "storage/perf.rs"]
+mod perf;
+#[cfg(test)]
+#[path = "storage/read_only_tests.rs"]
+mod read_only_tests;
+#[path = "storage/reliability.rs"]
 mod reliability;
+#[cfg(test)]
+#[path = "storage/state_validation_tests.rs"]
+mod state_validation_tests;
+#[path = "storage/stream.rs"]
 pub mod stream;
 
 pub struct Storage {
     connection: Connection,
 }
 
+/// List metadata without reading source-event history or state-change details.
+#[derive(Debug, serde::Serialize)]
+pub struct SessionListEntry {
+    pub id: String,
+    pub name: String,
+    pub started_at: String,
+    pub finished_at: String,
+    pub capture_state: Option<String>,
+}
+
 impl Storage {
+    /// Open a user-selected database without creating it or migrating its schema.
+    /// Older supported schemas use the existing migration on an in-memory backup;
+    /// the original connection is always opened with SQLite's read-only flag.
+    pub fn open_read_only(path: &Path) -> Result<Self> {
+        anyhow::ensure!(
+            path.is_file(),
+            "Database does not exist or is not a file: {}",
+            path.display()
+        );
+        let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .with_context(|| format!("opening read-only database {}", path.display()))?;
+        connection.busy_timeout(std::time::Duration::from_millis(250))?;
+        let version = migration::check_version(&connection)?;
+        let tables: u32 = connection.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('applications','installation_sessions','processes','system_events','file_changes','registry_changes')",
+            [], |row| row.get(0),
+        )?;
+        anyhow::ensure!(
+            tables == 6,
+            "Not a supported Contain database: required record tables are missing; no database was created or changed"
+        );
+        // Validate the header columns even for an empty database, where a list
+        // query would otherwise hide a malformed schema until a later click.
+        connection.prepare("SELECT a.id,a.name,a.installer,s.application_id,s.started_at,s.finished_at,s.exit_code,s.watch_roots_json,s.registry_key,s.warnings_json FROM applications a JOIN installation_sessions s ON s.application_id=a.id LIMIT 0")?;
+        let storage = if version < 4 {
+            let mut copy = Connection::open_in_memory()?;
+            {
+                let backup = rusqlite::backup::Backup::new(&connection, &mut copy)?;
+                backup.run_to_completion(256, std::time::Duration::from_millis(10), None)?;
+            }
+            Self::from_connection(copy)?
+        } else {
+            // Do not run from_connection: even schema 4 may receive additive
+            // indexes there. This path performs no schema or journal mutation.
+            connection
+                .prepare("SELECT session_id,state,stats_json,error FROM capture_runs LIMIT 0")?;
+            connection.prepare(
+                "SELECT id,session_id,ticks,sequence,document FROM event_documents LIMIT 0",
+            )?;
+            Self { connection }
+        };
+        storage.connection.pragma_update(None, "query_only", true)?;
+        // Keep all statements of this CLI query on one SQLite read snapshot.
+        // Closing Storage releases it; no transaction can write in query_only.
+        storage.connection.execute_batch("BEGIN DEFERRED")?;
+        Ok(storage)
+    }
+
     pub fn open(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -41,10 +117,13 @@ impl Storage {
         tx.execute("INSERT INTO installation_sessions(id,application_id,started_at,finished_at,exit_code,watch_roots_json,registry_key,warnings_json) VALUES (?1,?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(id) DO UPDATE SET started_at=excluded.started_at,finished_at=excluded.finished_at,exit_code=excluded.exit_code,warnings_json=excluded.warnings_json",
             params![capture.id, capture.started_at, capture.finished_at, capture.exit_code,
                 serde_json::to_string(&capture.watch_roots)?, capture.registry_key, serde_json::to_string(&capture.warnings)?])?;
-        for process in &capture.processes {
-            tx.execute(
-                "INSERT OR IGNORE INTO processes VALUES (?1,?2,?3,?4,?5,?6,?7)",
-                params![
+        // Reuse each statement throughout this transaction. These compatibility
+        // state rows are still written atomically with their evidence documents.
+        {
+            let mut insert =
+                tx.prepare_cached("INSERT OR IGNORE INTO processes VALUES (?1,?2,?3,?4,?5,?6,?7)")?;
+            for process in &capture.processes {
+                insert.execute(params![
                     capture.id,
                     process.pid,
                     process.parent_pid,
@@ -52,43 +131,58 @@ impl Storage {
                     process.first_seen,
                     process.confidence.as_str(),
                     process.reason
-                ],
-            )?;
+                ])?;
+            }
         }
-        for file in &capture.files {
-            tx.execute("INSERT INTO system_events(session_id,event_type,resource,operation,observed_at,process_id,confidence,reason) VALUES (?1,'file',?2,?3,?4,NULL,?5,?6)",
-                params![capture.id, file.path, file.operation, capture.finished_at, file.confidence.as_str(), file.reason])?;
-            let id = tx.last_insert_rowid();
-            tx.execute(
-                "INSERT INTO file_changes VALUES (?1,?2,?3,?4,?5)",
-                params![
+        {
+            let mut event = tx.prepare_cached("INSERT INTO system_events(session_id,event_type,resource,operation,observed_at,process_id,confidence,reason) VALUES (?1,'file',?2,?3,?4,NULL,?5,?6)")?;
+            let mut detail =
+                tx.prepare_cached("INSERT INTO file_changes VALUES (?1,?2,?3,?4,?5)")?;
+            for file in &capture.files {
+                event.execute(params![
+                    capture.id,
+                    file.path,
+                    file.operation,
+                    capture.finished_at,
+                    file.confidence.as_str(),
+                    file.reason
+                ])?;
+                let id = tx.last_insert_rowid();
+                detail.execute(params![
                     id,
                     file.before_hash,
                     file.after_hash,
                     file.after_size,
                     file.notification_seen
-                ],
-            )?;
+                ])?;
+            }
         }
-        for change in &capture.registry {
-            tx.execute("INSERT INTO system_events(session_id,event_type,resource,operation,observed_at,process_id,confidence,reason) VALUES (?1,'registry',?2,?3,?4,NULL,?5,?6)",
-                params![capture.id, format!("{}\\{}", change.key, change.name), change.operation, capture.finished_at, change.confidence.as_str(), change.reason])?;
-            let id = tx.last_insert_rowid();
-            tx.execute(
-                "INSERT INTO registry_changes VALUES (?1,?2,?3,?4,?5)",
-                params![
+        {
+            let mut event = tx.prepare_cached("INSERT INTO system_events(session_id,event_type,resource,operation,observed_at,process_id,confidence,reason) VALUES (?1,'registry',?2,?3,?4,NULL,?5,?6)")?;
+            let mut detail =
+                tx.prepare_cached("INSERT INTO registry_changes VALUES (?1,?2,?3,?4,?5)")?;
+            for change in &capture.registry {
+                event.execute(params![
+                    capture.id,
+                    format!("{}\\{}", change.key, change.name),
+                    change.operation,
+                    capture.finished_at,
+                    change.confidence.as_str(),
+                    change.reason
+                ])?;
+                let id = tx.last_insert_rowid();
+                detail.execute(params![
                     id,
                     change.key,
                     change.name,
                     change.before_value,
                     change.after_value
-                ],
-            )?;
+                ])?;
+            }
         }
         evidence::save(&tx, capture)?;
         reliability::save(&tx, capture)?;
         stream::save_documents(&tx, capture)?;
-        stream::save_state_validation(&tx, capture)?;
         tx.commit()?;
         let mut stats = capture.stats.clone();
         stats.phase_ms.insert(
@@ -109,18 +203,66 @@ impl Storage {
             .map_err(Into::into)
     }
 
+    pub fn list_details(&self) -> Result<Vec<SessionListEntry>> {
+        let mut statement = self.connection.prepare("SELECT a.id,a.name,s.started_at,s.finished_at,r.state FROM applications a JOIN installation_sessions s ON s.application_id=a.id LEFT JOIN capture_runs r ON r.session_id=s.id ORDER BY s.started_at DESC,a.id")?;
+        statement
+            .query_map([], |row| {
+                Ok(SessionListEntry {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    started_at: row.get(2)?,
+                    finished_at: row.get(3)?,
+                    capture_state: row.get(4)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
+    }
+
+    /// Read-only viewers can page older records which predate event_documents.
+    /// Their existing production full-read mapping remains authoritative; only
+    /// the returned page is bounded. Modern records keep the indexed SQL path.
+    pub fn events_page_compatible(
+        &self,
+        session: &str,
+        offset: u64,
+        limit: u32,
+    ) -> Result<Vec<crate::model::SystemEvent>> {
+        anyhow::ensure!((1..=4096).contains(&limit), "page limit must be 1..4096");
+        let missing: bool = self.connection.query_row("SELECT EXISTS(SELECT 1 FROM observations o WHERE session_id=?1 AND NOT EXISTS(SELECT 1 FROM event_documents d WHERE d.id=o.id))", [session], |row| row.get(0))?;
+        if missing && self.stream_state(session)?.is_none() {
+            let capture = self.load_by_id(session)?;
+            let start = usize::try_from(offset).unwrap_or(usize::MAX);
+            Ok(capture
+                .events
+                .into_iter()
+                .skip(start)
+                .take(limit as usize)
+                .collect())
+        } else {
+            self.events_page(session, offset, limit)
+        }
+    }
+
     pub fn load(&self, identity: &str) -> Result<Capture> {
-        self.load_internal(identity, true)
+        self.load_internal(identity, true, true)
     }
     pub fn load_summary(&self, identity: &str) -> Result<Capture> {
-        self.load_internal(identity, false)
+        self.load_internal(identity, false, true)
     }
-    fn load_internal(&self, identity: &str, full: bool) -> Result<Capture> {
+    fn load_by_id(&self, id: &str) -> Result<Capture> {
+        self.load_internal(id, true, false)
+    }
+    pub(crate) fn load_summary_by_id(&self, id: &str) -> Result<Capture> {
+        self.load_internal(id, false, false)
+    }
+    fn load_internal(&self, identity: &str, full: bool, allow_name: bool) -> Result<Capture> {
         let header = self.connection.query_row(
             "SELECT a.id,a.name,a.installer,s.started_at,s.finished_at,s.exit_code,s.watch_roots_json,s.registry_key,s.warnings_json
              FROM applications a JOIN installation_sessions s ON s.application_id=a.id
-             WHERE a.id=?1 OR a.name=?1 COLLATE NOCASE ORDER BY s.started_at DESC LIMIT 1",
-            [identity], |row| Ok((row.get::<_, String>(0)?,row.get::<_, String>(1)?,row.get::<_, String>(2)?,row.get::<_, String>(3)?,row.get::<_, String>(4)?,row.get::<_, Option<i32>>(5)?,row.get::<_, String>(6)?,row.get::<_, Option<String>>(7)?,row.get::<_, String>(8)?))
+             WHERE a.id=?1 OR (?2 AND a.name=?1 COLLATE NOCASE)
+             ORDER BY CASE WHEN a.id=?1 THEN 0 ELSE 1 END,s.started_at DESC LIMIT 1",
+            params![identity, allow_name], |row| Ok((row.get::<_, String>(0)?,row.get::<_, String>(1)?,row.get::<_, String>(2)?,row.get::<_, String>(3)?,row.get::<_, String>(4)?,row.get::<_, Option<i32>>(5)?,row.get::<_, String>(6)?,row.get::<_, Option<String>>(7)?,row.get::<_, String>(8)?))
         ).optional()?.with_context(|| format!("app not found: {identity}"))?;
         let mut processes = Vec::new();
         let mut statement = self.connection.prepare("SELECT pid,parent_pid,image,first_seen,confidence,reason FROM processes WHERE session_id=?1 ORDER BY first_seen,pid")?;
@@ -193,14 +335,19 @@ impl Storage {
             .as_deref()
             .is_some_and(|s| s != "finished")
         {
-            let stats: String = self.connection.query_row(
-                "SELECT stats_json FROM capture_runs WHERE session_id=?1",
+            let (stats, error): (String, Option<String>) = self.connection.query_row(
+                "SELECT stats_json,error FROM capture_runs WHERE session_id=?1",
                 [&capture.id],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )?;
             capture.backend.stream = Some(serde_json::from_str(&stats)?);
+            if let Some(error) = error {
+                capture.quality.reasons.push(error.clone());
+                capture.backend.stream.as_mut().unwrap().error = Some(error);
+            }
             capture.quality.level = crate::model::QualityLevel::Incomplete;
             capture.stats.high_confidence_events = 0;
+            stream::suppress_unfinished_state_evidence(self, &mut capture)?;
             for file in &mut capture.files {
                 file.confidence = Confidence::Unknown;
             }
@@ -238,7 +385,7 @@ impl Storage {
                 |r| r.get(0),
             )
             .with_context(|| format!("event not found: {id}"))?;
-        self.load(&session)
+        self.load_by_id(&session)
     }
 }
 
@@ -283,7 +430,7 @@ mod tests {
                 .unwrap(),
             "High"
         );
-        assert_eq!(migration::check_version(&db.connection).unwrap(), 3);
+        assert_eq!(migration::check_version(&db.connection).unwrap(), 4);
         assert!(capture.warnings.iter().any(|w| w.contains("Legacy")));
     }
 
@@ -305,6 +452,125 @@ mod tests {
             0
         );
         assert!(Storage::from_connection(connection).is_err());
+    }
+
+    #[test]
+    fn state_insert_failure_rolls_back_and_cached_statements_recover_after_reopen() {
+        let path = std::env::temp_dir().join(format!(
+            "contain-state-transaction-{}.db",
+            uuid::Uuid::new_v4()
+        ));
+        let mut db = Storage::open(&path).unwrap();
+        db.save(&Capture {
+            id: "retained".into(),
+            name: "retained".into(),
+            schema_version: 3,
+            ..Default::default()
+        })
+        .unwrap();
+        let capture = Capture {
+            id: "state-transaction".into(),
+            name: "state-transaction".into(),
+            schema_version: 3,
+            processes: vec![
+                ProcessRecord {
+                    pid: 11,
+                    creation_time: Some(101),
+                    ..Default::default()
+                },
+                ProcessRecord {
+                    pid: 12,
+                    creation_time: Some(102),
+                    ..Default::default()
+                },
+            ],
+            files: vec![
+                FileChange {
+                    path: "synthetic-b".into(),
+                    after_hash: Some("hash-b".into()),
+                    after_size: Some(22),
+                    ..Default::default()
+                },
+                FileChange {
+                    path: "synthetic-a".into(),
+                    before_hash: Some("before-a".into()),
+                    after_hash: Some("hash-a".into()),
+                    after_size: Some(11),
+                    ..Default::default()
+                },
+            ],
+            registry: vec![
+                RegistryChange {
+                    key: "synthetic-key".into(),
+                    name: "accepted".into(),
+                    after_value: Some("value-a".into()),
+                    ..Default::default()
+                },
+                RegistryChange {
+                    key: "synthetic-key".into(),
+                    name: "reject".into(),
+                    before_value: Some("before-b".into()),
+                    after_value: Some("value-b".into()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        db.connection.execute_batch("CREATE TRIGGER reject_last_state BEFORE INSERT ON registry_changes WHEN NEW.value_name='reject' BEGIN SELECT RAISE(ABORT,'injected final state failure'); END;").unwrap();
+        let error = db.save(&capture).unwrap_err();
+        assert!(error.to_string().contains("injected final state failure"));
+        assert_eq!(db.list().unwrap().len(), 1);
+        assert!(db.load(&capture.id).is_err());
+        // The error happens after both files and one registry row. No partially
+        // saved state or detached detail row may survive the transaction rollback.
+        for table in [
+            "processes",
+            "system_events",
+            "file_changes",
+            "registry_changes",
+        ] {
+            let rows: u64 = db
+                .connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(rows, 0, "rollback left rows in {table}");
+        }
+        db.connection
+            .execute_batch("DROP TRIGGER reject_last_state")
+            .unwrap();
+        db.save(&capture).unwrap();
+        drop(db);
+        let reopened = Storage::open(&path).unwrap();
+        let restored = reopened.load_summary(&capture.id).unwrap();
+        assert_eq!(reopened.list().unwrap().len(), 2);
+        assert_eq!(restored.processes.len(), 2);
+        assert_eq!(restored.files.len(), 2);
+        assert_eq!(restored.registry.len(), 2);
+        let mut files = capture.files;
+        files.sort_by(|a, b| a.path.cmp(&b.path));
+        assert_eq!(
+            serde_json::to_value(&restored.files).unwrap(),
+            serde_json::to_value(&files).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(&restored.registry).unwrap(),
+            serde_json::to_value(&capture.registry).unwrap()
+        );
+        assert!(
+            reopened
+                .connection
+                .query_row("PRAGMA foreign_key_check", [], |_| Ok(()))
+                .optional()
+                .unwrap()
+                .is_none()
+        );
+        drop(reopened);
+        for suffix in ["", "-wal", "-shm"] {
+            let owned = std::path::PathBuf::from(format!("{}{suffix}", path.display()));
+            if owned.exists() {
+                std::fs::remove_file(owned).unwrap();
+            }
+        }
     }
 
     #[test]
@@ -383,7 +649,7 @@ mod tests {
             .unwrap();
         let db = Storage::from_connection(connection).unwrap();
         let c = db.load("old").unwrap();
-        assert_eq!(migration::check_version(&db.connection).unwrap(), 3);
+        assert_eq!(migration::check_version(&db.connection).unwrap(), 4);
         assert_eq!(c.events[0].id, "old-event");
         assert_eq!(c.events[0].timestamp_ticks, 123);
         assert!(c.quality.reasons.iter().any(|r| r.contains("Legacy")));

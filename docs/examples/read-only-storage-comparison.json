@@ -1,0 +1,1050 @@
+{
+  "format_version": 1,
+  "synthetic_only": true,
+  "baseline_source_revision": "8f3ab7c7818e3607279cc276290c72c85027034a",
+  "candidate_source_revision": "0b97805ccac20f0524a0471f39f9a5fb9dfc9a12",
+  "binary_sha256": {
+    "baseline": "0c103ce6edfd96f9de0900ef51973797a24ae7f770c854e2d6851735b95bdaeb",
+    "candidate": "4f592f6703db3c85f2421669e7dc6993d5756719087b96899d5cdb3487a5de55"
+  },
+  "toolchain": {
+    "rustc": "1.99.1 (58cf8f9c3 2026-10-13)",
+    "cargo": "1.99.1 (5f94df478 2026-08-27)",
+    "target": "x86_64-unknown-linux-gnu",
+    "build": "release",
+    "sqlite": "3.50.2"
+  },
+  "cargo_lock_sha256": "bb5ffe9bd269e153bd25d85fff134e108c0101812defc0bacaab7f49867edb5b",
+  "workload": {
+    "seed": "4850181447480856113",
+    "events_per_paired_sample": 10000,
+    "file_states_per_paired_sample": 10000,
+    "registry_states_per_paired_sample": 10000,
+    "fixed_process_instances": 4,
+    "normalized_operations_per_paired_sample": 10000,
+    "paired_samples_per_arm": 7,
+    "order": "odd baseline/candidate; even candidate/baseline"
+  },
+  "measurement_scope": "Offline production Storage APIs on one Linux cloud machine. No ETW, TDH, installer or live capture. Timed save uses unchanged WAL/transaction policy. Query timings exclude verification and fixture generation. Runner elapsed additionally includes verification, open/close and JSON reporting; not application capture time.",
+  "resource_metrics": {
+    "cpu_ns": null,
+    "peak_rss_bytes": null,
+    "read_bytes": null,
+    "write_bytes": null
+  },
+  "size_scope": "File metadata after save, close and reopen; not continuously sampled peaks. Missing sidecar is null. No DB or event documents are published.",
+  "verification": "Each sample checks exact full input and summary projection excluding only measured final_persistence_commit, all paged events, three selected event/operation/graph explanations, list and reopened views. All paired samples also agree in input hash, semantic hash, record/edge counts and DB/WAL/SHM sizes.",
+  "diagnostic_samples": [
+    {
+      "arm": "baseline",
+      "records": 5000,
+      "source_revision": "8f3ab7c7818e3607279cc276290c72c85027034a",
+      "input_sha256": "36ce4e8fc0384d5075c29caa407c0ad42f90638ab4819652b4f02abaf359d5f9",
+      "after_close": {
+        "db_bytes": 28536832,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 28536832,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 28536832,
+        "shm_bytes": 65536,
+        "wal_bytes": 28967752
+      },
+      "counts": {
+        "edges": 9289,
+        "events": 5000,
+        "explanations_checked": 3,
+        "files": 5000,
+        "operations": 5000,
+        "paged_events": 5000,
+        "processes": 4,
+        "registry_values": 5000
+      },
+      "final_files": {
+        "db_bytes": 28536832,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 1,
+      "semantic_sha256": "ec41424cdf99e28d885b4f4305ff81ac492cad3dcfcfb2cb16fd168719af5e73",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 122747493,
+        "full_ns": 61949624,
+        "reopened_full_ns": 69642323,
+        "save_ns": 349009032,
+        "summary_ns": 32757390,
+        "three_explanations_ns": 94996848
+      }
+    },
+    {
+      "arm": "baseline",
+      "records": 5000,
+      "source_revision": "8f3ab7c7818e3607279cc276290c72c85027034a",
+      "input_sha256": "36ce4e8fc0384d5075c29caa407c0ad42f90638ab4819652b4f02abaf359d5f9",
+      "after_close": {
+        "db_bytes": 28536832,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 28536832,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 28536832,
+        "shm_bytes": 65536,
+        "wal_bytes": 28967752
+      },
+      "counts": {
+        "edges": 9289,
+        "events": 5000,
+        "explanations_checked": 3,
+        "files": 5000,
+        "operations": 5000,
+        "paged_events": 5000,
+        "processes": 4,
+        "registry_values": 5000
+      },
+      "final_files": {
+        "db_bytes": 28536832,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 2,
+      "semantic_sha256": "ec41424cdf99e28d885b4f4305ff81ac492cad3dcfcfb2cb16fd168719af5e73",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 114245203,
+        "full_ns": 65111481,
+        "reopened_full_ns": 62475812,
+        "save_ns": 363588013,
+        "summary_ns": 27128471,
+        "three_explanations_ns": 91252847
+      }
+    },
+    {
+      "arm": "baseline",
+      "records": 5000,
+      "source_revision": "8f3ab7c7818e3607279cc276290c72c85027034a",
+      "input_sha256": "36ce4e8fc0384d5075c29caa407c0ad42f90638ab4819652b4f02abaf359d5f9",
+      "after_close": {
+        "db_bytes": 28536832,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 28536832,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 28536832,
+        "shm_bytes": 65536,
+        "wal_bytes": 28967752
+      },
+      "counts": {
+        "edges": 9289,
+        "events": 5000,
+        "explanations_checked": 3,
+        "files": 5000,
+        "operations": 5000,
+        "paged_events": 5000,
+        "processes": 4,
+        "registry_values": 5000
+      },
+      "final_files": {
+        "db_bytes": 28536832,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 3,
+      "semantic_sha256": "ec41424cdf99e28d885b4f4305ff81ac492cad3dcfcfb2cb16fd168719af5e73",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 116339008,
+        "full_ns": 64013367,
+        "reopened_full_ns": 65260480,
+        "save_ns": 332024599,
+        "summary_ns": 29712324,
+        "three_explanations_ns": 97036271
+      }
+    },
+    {
+      "arm": "baseline",
+      "records": 10000,
+      "source_revision": "8f3ab7c7818e3607279cc276290c72c85027034a",
+      "input_sha256": "cf31d6a1ce658aceb10c60108296aa2cadf399a59d2a4744941b04d04c19b527",
+      "after_close": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 56926208,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 56926208,
+        "shm_bytes": 131072,
+        "wal_bytes": 57523472
+      },
+      "counts": {
+        "edges": 18575,
+        "events": 10000,
+        "explanations_checked": 3,
+        "files": 10000,
+        "operations": 10000,
+        "paged_events": 10000,
+        "processes": 4,
+        "registry_values": 10000
+      },
+      "final_files": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 1,
+      "semantic_sha256": "fad0248b0c45110051c65c39ed510b824848a5876c164924eafa3d99b899ad59",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 398184772,
+        "full_ns": 125219365,
+        "reopened_full_ns": 125882866,
+        "save_ns": 797371225,
+        "summary_ns": 83527360,
+        "three_explanations_ns": 184484683
+      }
+    },
+    {
+      "arm": "baseline",
+      "records": 10000,
+      "source_revision": "8f3ab7c7818e3607279cc276290c72c85027034a",
+      "input_sha256": "cf31d6a1ce658aceb10c60108296aa2cadf399a59d2a4744941b04d04c19b527",
+      "after_close": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 56926208,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 56926208,
+        "shm_bytes": 131072,
+        "wal_bytes": 57523472
+      },
+      "counts": {
+        "edges": 18575,
+        "events": 10000,
+        "explanations_checked": 3,
+        "files": 10000,
+        "operations": 10000,
+        "paged_events": 10000,
+        "processes": 4,
+        "registry_values": 10000
+      },
+      "final_files": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 2,
+      "semantic_sha256": "fad0248b0c45110051c65c39ed510b824848a5876c164924eafa3d99b899ad59",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 384998918,
+        "full_ns": 125509909,
+        "reopened_full_ns": 122233983,
+        "save_ns": 544825501,
+        "summary_ns": 55190329,
+        "three_explanations_ns": 183310210
+      }
+    },
+    {
+      "arm": "baseline",
+      "records": 10000,
+      "source_revision": "8f3ab7c7818e3607279cc276290c72c85027034a",
+      "input_sha256": "cf31d6a1ce658aceb10c60108296aa2cadf399a59d2a4744941b04d04c19b527",
+      "after_close": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 56926208,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 56926208,
+        "shm_bytes": 131072,
+        "wal_bytes": 57523472
+      },
+      "counts": {
+        "edges": 18575,
+        "events": 10000,
+        "explanations_checked": 3,
+        "files": 10000,
+        "operations": 10000,
+        "paged_events": 10000,
+        "processes": 4,
+        "registry_values": 10000
+      },
+      "final_files": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 3,
+      "semantic_sha256": "fad0248b0c45110051c65c39ed510b824848a5876c164924eafa3d99b899ad59",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 390664231,
+        "full_ns": 127197545,
+        "reopened_full_ns": 131671812,
+        "save_ns": 547435262,
+        "summary_ns": 58688149,
+        "three_explanations_ns": 183747507
+      }
+    }
+  ],
+  "paired_samples": [
+    {
+      "pair": 1,
+      "arm": "baseline",
+      "process_exit_code": 0,
+      "runner_elapsed_s": 3.745052643000008,
+      "source_revision": "8f3ab7c7818e3607279cc276290c72c85027034a",
+      "binary_sha256": "0c103ce6edfd96f9de0900ef51973797a24ae7f770c854e2d6851735b95bdaeb",
+      "input_sha256": "cf31d6a1ce658aceb10c60108296aa2cadf399a59d2a4744941b04d04c19b527",
+      "after_close": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 56926208,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 56926208,
+        "shm_bytes": 131072,
+        "wal_bytes": 57523472
+      },
+      "counts": {
+        "edges": 18575,
+        "events": 10000,
+        "explanations_checked": 3,
+        "files": 10000,
+        "operations": 10000,
+        "paged_events": 10000,
+        "processes": 4,
+        "registry_values": 10000
+      },
+      "final_files": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 1,
+      "semantic_sha256": "fad0248b0c45110051c65c39ed510b824848a5876c164924eafa3d99b899ad59",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 415135716,
+        "full_ns": 126963160,
+        "reopened_full_ns": 129606027,
+        "save_ns": 596354812,
+        "summary_ns": 62444832,
+        "three_explanations_ns": 192520706
+      }
+    },
+    {
+      "pair": 1,
+      "arm": "candidate",
+      "process_exit_code": 0,
+      "runner_elapsed_s": 3.516379089999873,
+      "source_revision": "0b97805ccac20f0524a0471f39f9a5fb9dfc9a12",
+      "binary_sha256": "4f592f6703db3c85f2421669e7dc6993d5756719087b96899d5cdb3487a5de55",
+      "input_sha256": "cf31d6a1ce658aceb10c60108296aa2cadf399a59d2a4744941b04d04c19b527",
+      "after_close": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 56926208,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 56926208,
+        "shm_bytes": 131072,
+        "wal_bytes": 57523472
+      },
+      "counts": {
+        "edges": 18575,
+        "events": 10000,
+        "explanations_checked": 3,
+        "files": 10000,
+        "operations": 10000,
+        "paged_events": 10000,
+        "processes": 4,
+        "registry_values": 10000
+      },
+      "final_files": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 1,
+      "semantic_sha256": "fad0248b0c45110051c65c39ed510b824848a5876c164924eafa3d99b899ad59",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 410785219,
+        "full_ns": 128331965,
+        "reopened_full_ns": 127203335,
+        "save_ns": 463169446,
+        "summary_ns": 60166047,
+        "three_explanations_ns": 187624800
+      }
+    },
+    {
+      "pair": 2,
+      "arm": "candidate",
+      "process_exit_code": 0,
+      "runner_elapsed_s": 3.535222024999939,
+      "source_revision": "0b97805ccac20f0524a0471f39f9a5fb9dfc9a12",
+      "binary_sha256": "4f592f6703db3c85f2421669e7dc6993d5756719087b96899d5cdb3487a5de55",
+      "input_sha256": "cf31d6a1ce658aceb10c60108296aa2cadf399a59d2a4744941b04d04c19b527",
+      "after_close": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 56926208,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 56926208,
+        "shm_bytes": 131072,
+        "wal_bytes": 57523472
+      },
+      "counts": {
+        "edges": 18575,
+        "events": 10000,
+        "explanations_checked": 3,
+        "files": 10000,
+        "operations": 10000,
+        "paged_events": 10000,
+        "processes": 4,
+        "registry_values": 10000
+      },
+      "final_files": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 1,
+      "semantic_sha256": "fad0248b0c45110051c65c39ed510b824848a5876c164924eafa3d99b899ad59",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 405798457,
+        "full_ns": 126113096,
+        "reopened_full_ns": 126553358,
+        "save_ns": 512488210,
+        "summary_ns": 58725725,
+        "three_explanations_ns": 189807435
+      }
+    },
+    {
+      "pair": 2,
+      "arm": "baseline",
+      "process_exit_code": 0,
+      "runner_elapsed_s": 3.5445277490000535,
+      "source_revision": "8f3ab7c7818e3607279cc276290c72c85027034a",
+      "binary_sha256": "0c103ce6edfd96f9de0900ef51973797a24ae7f770c854e2d6851735b95bdaeb",
+      "input_sha256": "cf31d6a1ce658aceb10c60108296aa2cadf399a59d2a4744941b04d04c19b527",
+      "after_close": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 56926208,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 56926208,
+        "shm_bytes": 131072,
+        "wal_bytes": 57523472
+      },
+      "counts": {
+        "edges": 18575,
+        "events": 10000,
+        "explanations_checked": 3,
+        "files": 10000,
+        "operations": 10000,
+        "paged_events": 10000,
+        "processes": 4,
+        "registry_values": 10000
+      },
+      "final_files": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 1,
+      "semantic_sha256": "fad0248b0c45110051c65c39ed510b824848a5876c164924eafa3d99b899ad59",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 408694442,
+        "full_ns": 132021765,
+        "reopened_full_ns": 126831930,
+        "save_ns": 552927784,
+        "summary_ns": 59026532,
+        "three_explanations_ns": 189262147
+      }
+    },
+    {
+      "pair": 3,
+      "arm": "baseline",
+      "process_exit_code": 0,
+      "runner_elapsed_s": 3.5092555749999974,
+      "source_revision": "8f3ab7c7818e3607279cc276290c72c85027034a",
+      "binary_sha256": "0c103ce6edfd96f9de0900ef51973797a24ae7f770c854e2d6851735b95bdaeb",
+      "input_sha256": "cf31d6a1ce658aceb10c60108296aa2cadf399a59d2a4744941b04d04c19b527",
+      "after_close": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 56926208,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 56926208,
+        "shm_bytes": 131072,
+        "wal_bytes": 57523472
+      },
+      "counts": {
+        "edges": 18575,
+        "events": 10000,
+        "explanations_checked": 3,
+        "files": 10000,
+        "operations": 10000,
+        "paged_events": 10000,
+        "processes": 4,
+        "registry_values": 10000
+      },
+      "final_files": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 1,
+      "semantic_sha256": "fad0248b0c45110051c65c39ed510b824848a5876c164924eafa3d99b899ad59",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 407034687,
+        "full_ns": 127823825,
+        "reopened_full_ns": 125816730,
+        "save_ns": 569061991,
+        "summary_ns": 57654471,
+        "three_explanations_ns": 186149932
+      }
+    },
+    {
+      "pair": 3,
+      "arm": "candidate",
+      "process_exit_code": 0,
+      "runner_elapsed_s": 3.42787774500016,
+      "source_revision": "0b97805ccac20f0524a0471f39f9a5fb9dfc9a12",
+      "binary_sha256": "4f592f6703db3c85f2421669e7dc6993d5756719087b96899d5cdb3487a5de55",
+      "input_sha256": "cf31d6a1ce658aceb10c60108296aa2cadf399a59d2a4744941b04d04c19b527",
+      "after_close": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 56926208,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 56926208,
+        "shm_bytes": 131072,
+        "wal_bytes": 57523472
+      },
+      "counts": {
+        "edges": 18575,
+        "events": 10000,
+        "explanations_checked": 3,
+        "files": 10000,
+        "operations": 10000,
+        "paged_events": 10000,
+        "processes": 4,
+        "registry_values": 10000
+      },
+      "final_files": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 1,
+      "semantic_sha256": "fad0248b0c45110051c65c39ed510b824848a5876c164924eafa3d99b899ad59",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 415057358,
+        "full_ns": 125048761,
+        "reopened_full_ns": 129093879,
+        "save_ns": 453916634,
+        "summary_ns": 58979734,
+        "three_explanations_ns": 185795875
+      }
+    },
+    {
+      "pair": 4,
+      "arm": "candidate",
+      "process_exit_code": 0,
+      "runner_elapsed_s": 3.4144161670001267,
+      "source_revision": "0b97805ccac20f0524a0471f39f9a5fb9dfc9a12",
+      "binary_sha256": "4f592f6703db3c85f2421669e7dc6993d5756719087b96899d5cdb3487a5de55",
+      "input_sha256": "cf31d6a1ce658aceb10c60108296aa2cadf399a59d2a4744941b04d04c19b527",
+      "after_close": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 56926208,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 56926208,
+        "shm_bytes": 131072,
+        "wal_bytes": 57523472
+      },
+      "counts": {
+        "edges": 18575,
+        "events": 10000,
+        "explanations_checked": 3,
+        "files": 10000,
+        "operations": 10000,
+        "paged_events": 10000,
+        "processes": 4,
+        "registry_values": 10000
+      },
+      "final_files": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 1,
+      "semantic_sha256": "fad0248b0c45110051c65c39ed510b824848a5876c164924eafa3d99b899ad59",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 411874738,
+        "full_ns": 140724328,
+        "reopened_full_ns": 126308492,
+        "save_ns": 468518581,
+        "summary_ns": 60401057,
+        "three_explanations_ns": 185171773
+      }
+    },
+    {
+      "pair": 4,
+      "arm": "baseline",
+      "process_exit_code": 0,
+      "runner_elapsed_s": 3.5477532779998455,
+      "source_revision": "8f3ab7c7818e3607279cc276290c72c85027034a",
+      "binary_sha256": "0c103ce6edfd96f9de0900ef51973797a24ae7f770c854e2d6851735b95bdaeb",
+      "input_sha256": "cf31d6a1ce658aceb10c60108296aa2cadf399a59d2a4744941b04d04c19b527",
+      "after_close": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 56926208,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 56926208,
+        "shm_bytes": 131072,
+        "wal_bytes": 57523472
+      },
+      "counts": {
+        "edges": 18575,
+        "events": 10000,
+        "explanations_checked": 3,
+        "files": 10000,
+        "operations": 10000,
+        "paged_events": 10000,
+        "processes": 4,
+        "registry_values": 10000
+      },
+      "final_files": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 1,
+      "semantic_sha256": "fad0248b0c45110051c65c39ed510b824848a5876c164924eafa3d99b899ad59",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 419705635,
+        "full_ns": 132433680,
+        "reopened_full_ns": 135878327,
+        "save_ns": 558109689,
+        "summary_ns": 61763464,
+        "three_explanations_ns": 191419345
+      }
+    },
+    {
+      "pair": 5,
+      "arm": "baseline",
+      "process_exit_code": 0,
+      "runner_elapsed_s": 3.5455074809999587,
+      "source_revision": "8f3ab7c7818e3607279cc276290c72c85027034a",
+      "binary_sha256": "0c103ce6edfd96f9de0900ef51973797a24ae7f770c854e2d6851735b95bdaeb",
+      "input_sha256": "cf31d6a1ce658aceb10c60108296aa2cadf399a59d2a4744941b04d04c19b527",
+      "after_close": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 56926208,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 56926208,
+        "shm_bytes": 131072,
+        "wal_bytes": 57523472
+      },
+      "counts": {
+        "edges": 18575,
+        "events": 10000,
+        "explanations_checked": 3,
+        "files": 10000,
+        "operations": 10000,
+        "paged_events": 10000,
+        "processes": 4,
+        "registry_values": 10000
+      },
+      "final_files": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 1,
+      "semantic_sha256": "fad0248b0c45110051c65c39ed510b824848a5876c164924eafa3d99b899ad59",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 409566748,
+        "full_ns": 128358472,
+        "reopened_full_ns": 135643117,
+        "save_ns": 564532020,
+        "summary_ns": 59647344,
+        "three_explanations_ns": 189102217
+      }
+    },
+    {
+      "pair": 5,
+      "arm": "candidate",
+      "process_exit_code": 0,
+      "runner_elapsed_s": 3.394901995999817,
+      "source_revision": "0b97805ccac20f0524a0471f39f9a5fb9dfc9a12",
+      "binary_sha256": "4f592f6703db3c85f2421669e7dc6993d5756719087b96899d5cdb3487a5de55",
+      "input_sha256": "cf31d6a1ce658aceb10c60108296aa2cadf399a59d2a4744941b04d04c19b527",
+      "after_close": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 56926208,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 56926208,
+        "shm_bytes": 131072,
+        "wal_bytes": 57523472
+      },
+      "counts": {
+        "edges": 18575,
+        "events": 10000,
+        "explanations_checked": 3,
+        "files": 10000,
+        "operations": 10000,
+        "paged_events": 10000,
+        "processes": 4,
+        "registry_values": 10000
+      },
+      "final_files": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 1,
+      "semantic_sha256": "fad0248b0c45110051c65c39ed510b824848a5876c164924eafa3d99b899ad59",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 399962898,
+        "full_ns": 124303032,
+        "reopened_full_ns": 138578766,
+        "save_ns": 439797249,
+        "summary_ns": 57881376,
+        "three_explanations_ns": 193473000
+      }
+    },
+    {
+      "pair": 6,
+      "arm": "candidate",
+      "process_exit_code": 0,
+      "runner_elapsed_s": 3.468172561000074,
+      "source_revision": "0b97805ccac20f0524a0471f39f9a5fb9dfc9a12",
+      "binary_sha256": "4f592f6703db3c85f2421669e7dc6993d5756719087b96899d5cdb3487a5de55",
+      "input_sha256": "cf31d6a1ce658aceb10c60108296aa2cadf399a59d2a4744941b04d04c19b527",
+      "after_close": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 56926208,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 56926208,
+        "shm_bytes": 131072,
+        "wal_bytes": 57523472
+      },
+      "counts": {
+        "edges": 18575,
+        "events": 10000,
+        "explanations_checked": 3,
+        "files": 10000,
+        "operations": 10000,
+        "paged_events": 10000,
+        "processes": 4,
+        "registry_values": 10000
+      },
+      "final_files": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 1,
+      "semantic_sha256": "fad0248b0c45110051c65c39ed510b824848a5876c164924eafa3d99b899ad59",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 401275965,
+        "full_ns": 123901218,
+        "reopened_full_ns": 152645910,
+        "save_ns": 458024444,
+        "summary_ns": 57009707,
+        "three_explanations_ns": 187978381
+      }
+    },
+    {
+      "pair": 6,
+      "arm": "baseline",
+      "process_exit_code": 0,
+      "runner_elapsed_s": 3.5278178569999454,
+      "source_revision": "8f3ab7c7818e3607279cc276290c72c85027034a",
+      "binary_sha256": "0c103ce6edfd96f9de0900ef51973797a24ae7f770c854e2d6851735b95bdaeb",
+      "input_sha256": "cf31d6a1ce658aceb10c60108296aa2cadf399a59d2a4744941b04d04c19b527",
+      "after_close": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 56926208,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 56926208,
+        "shm_bytes": 131072,
+        "wal_bytes": 57523472
+      },
+      "counts": {
+        "edges": 18575,
+        "events": 10000,
+        "explanations_checked": 3,
+        "files": 10000,
+        "operations": 10000,
+        "paged_events": 10000,
+        "processes": 4,
+        "registry_values": 10000
+      },
+      "final_files": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 1,
+      "semantic_sha256": "fad0248b0c45110051c65c39ed510b824848a5876c164924eafa3d99b899ad59",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 408984581,
+        "full_ns": 129288580,
+        "reopened_full_ns": 133361354,
+        "save_ns": 543874093,
+        "summary_ns": 60022266,
+        "three_explanations_ns": 189573931
+      }
+    },
+    {
+      "pair": 7,
+      "arm": "baseline",
+      "process_exit_code": 0,
+      "runner_elapsed_s": 3.556981283000141,
+      "source_revision": "8f3ab7c7818e3607279cc276290c72c85027034a",
+      "binary_sha256": "0c103ce6edfd96f9de0900ef51973797a24ae7f770c854e2d6851735b95bdaeb",
+      "input_sha256": "cf31d6a1ce658aceb10c60108296aa2cadf399a59d2a4744941b04d04c19b527",
+      "after_close": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 56926208,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 56926208,
+        "shm_bytes": 131072,
+        "wal_bytes": 57523472
+      },
+      "counts": {
+        "edges": 18575,
+        "events": 10000,
+        "explanations_checked": 3,
+        "files": 10000,
+        "operations": 10000,
+        "paged_events": 10000,
+        "processes": 4,
+        "registry_values": 10000
+      },
+      "final_files": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 1,
+      "semantic_sha256": "fad0248b0c45110051c65c39ed510b824848a5876c164924eafa3d99b899ad59",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 394530231,
+        "full_ns": 143894917,
+        "reopened_full_ns": 127058504,
+        "save_ns": 598132038,
+        "summary_ns": 59031168,
+        "three_explanations_ns": 183087417
+      }
+    },
+    {
+      "pair": 7,
+      "arm": "candidate",
+      "process_exit_code": 0,
+      "runner_elapsed_s": 3.393310124999971,
+      "source_revision": "0b97805ccac20f0524a0471f39f9a5fb9dfc9a12",
+      "binary_sha256": "4f592f6703db3c85f2421669e7dc6993d5756719087b96899d5cdb3487a5de55",
+      "input_sha256": "cf31d6a1ce658aceb10c60108296aa2cadf399a59d2a4744941b04d04c19b527",
+      "after_close": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "after_reopen": {
+        "db_bytes": 56926208,
+        "shm_bytes": 32768,
+        "wal_bytes": 0
+      },
+      "after_save": {
+        "db_bytes": 56926208,
+        "shm_bytes": 131072,
+        "wal_bytes": 57523472
+      },
+      "counts": {
+        "edges": 18575,
+        "events": 10000,
+        "explanations_checked": 3,
+        "files": 10000,
+        "operations": 10000,
+        "paged_events": 10000,
+        "processes": 4,
+        "registry_values": 10000
+      },
+      "final_files": {
+        "db_bytes": 56926208,
+        "shm_bytes": null,
+        "wal_bytes": null
+      },
+      "sample": 1,
+      "semantic_sha256": "fad0248b0c45110051c65c39ed510b824848a5876c164924eafa3d99b899ad59",
+      "status": "passed",
+      "timings": {
+        "all_pages_ns": 399110720,
+        "full_ns": 128474673,
+        "reopened_full_ns": 128698812,
+        "save_ns": 441059682,
+        "summary_ns": 56571457,
+        "three_explanations_ns": 193592226
+      }
+    }
+  ],
+  "paired_median_ns": {
+    "baseline": {
+      "all_pages_ns": 408984581,
+      "full_ns": 129288580,
+      "reopened_full_ns": 129606027,
+      "save_ns": 564532020,
+      "summary_ns": 59647344,
+      "three_explanations_ns": 189262147
+    },
+    "candidate": {
+      "all_pages_ns": 405798457,
+      "full_ns": 126113096,
+      "reopened_full_ns": 128698812,
+      "save_ns": 458024444,
+      "summary_ns": 58725725,
+      "three_explanations_ns": 187978381
+    }
+  },
+  "save_median_change_percent": -18.866525232705133,
+  "failed_samples": 0,
+  "failed_processes": 0,
+  "limitations": [
+    "Synthetic fixed input, seven sequential alternating pairs; cache and shared host variation remain.",
+    "No source-capture throughput or Windows acceptance claim.",
+    "No reliable CPU, memory or I/O resource counters measured.",
+    "The first slower 10000-record baseline diagnostic remains included; diagnostic samples are not pooled into paired medians."
+  ]
+}

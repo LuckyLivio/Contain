@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "protocol_revision": "contain-desktop-install-verification-1",
+  "source_sha": "72e0226e20a3afcb0f92aad42954340682c4e724",
+  "native_windows": true,
+  "gui_initiated": true,
+  "real_etw_executed": true,
+  "synthetic": false,
+  "controlled_fixture": true,
+  "maximum_native_captures": 1,
+  "retries": 0,
+  "planned_checks": [
+    "install_protocol_and_arguments",
+    "install_configuration_without_launch",
+    "gui_real_etw_start_and_duplicate_guard",
+    "gui_runtime_stages_and_close_guard",
+    "gui_exact_session_autoopen",
+    "gui_real_source_event_explain_and_export"
+  ],
+  "checks": [
+    {
+      "name": "install_protocol_and_arguments",
+      "status": "passed",
+      "error_type": null,
+      "safe_reason": null
+    },
+    {
+      "name": "install_configuration_without_launch",
+      "status": "passed",
+      "error_type": null,
+      "safe_reason": null
+    },
+    {
+      "name": "gui_real_etw_start_and_duplicate_guard",
+      "status": "failed",
+      "error_type": "InvalidOperationException",
+      "safe_reason": null
+    },
+    {
+      "name": "gui_runtime_stages_and_close_guard",
+      "status": "passed",
+      "error_type": null,
+      "safe_reason": null
+    },
+    {
+      "name": "gui_exact_session_autoopen",
+      "status": "passed",
+      "error_type": null,
+      "safe_reason": null
+    },
+    {
+      "name": "gui_real_source_event_explain_and_export",
+      "status": "passed",
+      "error_type": null,
+      "safe_reason": null
+    }
+  ],
+  "passed": 5,
+  "failed": 1,
+  "not_run": 0,
+  "skipped": 0,
+  "completed": true,
+  "accepted": false,
+  "automatic_checks_accepted": false,
+  "executed_interaction_failed": false,
+  "assertions_passed": 155,
+  "offline_viewer_checks_passed": true,
+  "package_manifest_sha256": "05aa29807cecb5be2a9ed69fb52e48f2cb53a4f0fe220b04498d509cc4b2e0d3",
+  "viewer_assembly_sha256": "0380bb862a1ec783d7626f2f89a572297e291de130dc3e518e31ee5e4306db7e",
+  "viewer_launcher_sha256": "89f89992a3f9cbbc948bd098c4fd3c3ad15160ec830e46d4767f741dd3c5d3cc",
+  "contain_sha256": "c61199de4402d9a7163187216259a1834f10df495b75239c7ec2ef3ea9a79931",
+  "fixture_sha256": "73e91c164066523aa095560da7c4ff198242a64a69ab6c392c57402b8e6daa36",
+  "session_id": "3c6f1516-3177-4cdb-911b-d711e237b583",
+  "event_id": "b5757ee6-044f-4870-aaf9-5f35b90a11d8",
+  "installer_started": true,
+  "installer_pid": 1884,
+  "installer_creation_time": "134382551133809665",
+  "installer_exit_code": 0,
+  "collection_finished": true,
+  "data_saved": true,
+  "capture_state": "finished",
+  "quality_level": "Degraded",
+  "quality_reasons": [
+    "Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.",
+    "361 registry provider records lacked a verified absolute path."
+  ],
+  "providers_active": true,
+  "real_source_event_count": 219,
+  "independent_truth_verified": true,
+  "capture_accounting": {
+    "etw_events_lost": 0,
+    "etw_buffers_lost": 0,
+    "dropped_events": 0,
+    "context_losses": 0,
+    "decode_errors": 0,
+    "events_received": 302,
+    "events_retained": 313,
+    "snapshot_gaps": 0,
+    "notification_gaps": 0,
+    "drain_timed_out": false
+  },
+  "observed_stages": [
+    "preparing",
+    "capturing",
+    "finalizing",
+    "finished"
+  ],
+  "real_event": {
+    "id": "b5757ee6-044f-4870-aaf9-5f35b90a11d8",
+    "operation": "write_requested",
+    "confidence": "High",
+    "source": "EtwFile",
+    "timestamp_ticks": "134382551134185308",
+    "pid": "3456",
+    "creation_time": "134382551134043076"
+  },
+  "report_generated": true,
+  "report_sha256": "628ffdc6c5e3fbb69849fc3a77b55b13bff0dfe8b6600195e4ddb6859a46d948",
+  "report_publication": "byte_identical_controlled_fixture_export",
+  "screenshots": [
+    {
+      "name": "install-new-record.png",
+      "sha256": "c68c2361c30cc8cfd0efb9268c4a25cd11bcf168fca60736b01a9bc139c97c01",
+      "width": 896,
+      "height": 788
+    },
+    {
+      "name": "install-recording.png",
+      "sha256": "d1ffbbaef1a42cbf3889a71a93487acc3c71700d19d47f4e714f56d3388f6f50",
+      "width": 896,
+      "height": 788
+    },
+    {
+      "name": "install-result.png",
+      "sha256": "8f3c3ef8a37c1779cce90016b6512a8e1419a2dec12b2a1628841bcdfa7d2fd2",
+      "width": 896,
+      "height": 788
+    },
+    {
+      "name": "install-autoopened-session.png",
+      "sha256": "61c21728aa2ed8436a4755afe37f55e866a5c16ce44d1a56002e0211a63c9401",
+      "width": 1044,
+      "height": 788
+    },
+    {
+      "name": "install-real-event-explain.png",
+      "sha256": "7f64166712843c52be22219a0f6884ebdcb5fd0ddf1407c34cfd2d6a91bbc1ba",
+      "width": 1044,
+      "height": 788
+    }
+  ],
+  "manual_checks": [
+    {
+      "name": "native_picker_navigation_and_cancel",
+      "status": "passed",
+      "error_type": null,
+      "safe_reason": null
+    }
+  ],
+  "offline_checks": [
+    {
+      "name": "synthetic_invalid_exe_preserves_saved_session_and_old_records",
+      "status": "passed",
+      "error_type": null,
+      "safe_reason": null
+    }
+  ],
+  "fault_injection": "Explicit synthetic read-only-database and invalid-EXE starts in selected snapshot mode; no successful installer process and no ETW acceptance credit.",
+  "screenshot_method": "Actual production WinForms controls rendered on Windows after product selection/start/status/result/explain actions. Controlled fixture; real ETW source records are not synthetic.",
+  "interaction_boundary": "Product controls/start logic executed. Native picker navigation and cancel separately reported; injected configuration is never counted as native picker navigation. No third-party installer, scale experiment or retry.",
+  "private_evidence_retained": true
+}

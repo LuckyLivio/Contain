@@ -1,0 +1,637 @@
+{
+  "schema_version": 1,
+  "source_sha": "0824a64fd297e7954eeef76ed9802dbbbb6bd73b",
+  "ci_run_id": 41031889635,
+  "ci_run_url": "https://github.com/LuckyLivio/Contain/actions/runs/41031889635",
+  "evidence_source": "Existing public fixture-scoped CI artifact, not a complete raw capture or private database",
+  "review_scope": "Only six original unmatched events; no follow-up capture and no historical clock reconstruction",
+  "frozen_scorer_sha256": "aa20dc9b8103c6e79ed3d96b00f6b0219e76d9771f2749a58ffee79a56689ab7",
+  "reproduce": "Download fixture-evidence from CI 41031889635; load each capture-fixture.json, ground-truth.json and score.json. Recompute scripts/score-fixture.py score() with the fixture registry SID; compare the original unexpected_positive_events, counts and groups before examining same actor/resource/operation candidates. Hashes below pin all three inputs per trial.",
+  "publication": "Fixture paths replaced with scoped placeholders; unrelated processes, host identifiers, image paths and raw object addresses omitted. Event IDs, fixture actors, integer ticks and same-event name references retained.",
+  "trials": [
+    {
+      "variant": "demo-etw",
+      "input_sha256": {
+        "capture-fixture.json": "ad1459ffa5e6a68ade4c3749a3e3e80d99518a99488f0109632a568605be81ae",
+        "ground-truth.json": "a6db6439810651fe70d2fe85fc30dcbdd1bbff92d0ab691bf28eee10875456b2",
+        "score.json": "f5c28a8d7c4c15cecaeb55d36a6d70f67f6f533e841b1a4ddc251abbf936d6e0"
+      },
+      "unchanged_frozen_scorer_replay_equal": true,
+      "original_score": {
+        "expected": 21,
+        "observed": 16,
+        "correctly_attributed": 14,
+        "unknown": 7,
+        "incorrect_attribution": 0,
+        "positive_raw_predictions": 17,
+        "false_positive_target_events": 3,
+        "dropped": 0,
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0
+      },
+      "target_success": {
+        "expected": 17,
+        "observed": 14,
+        "correctly_attributed": 14,
+        "unobserved": 3
+      },
+      "clock_availability": {
+        "delivered_timestamp_domain": "filetime_100ns",
+        "logger_clock_type": "qpc",
+        "client_context": 1,
+        "process_trace_mode": 268435712,
+        "trace_header_available": true,
+        "trace_header_perf_frequency": "10000000",
+        "recorded_qpc_frequency": "10000000",
+        "per_event_raw_qpc_available": false,
+        "companion_present": false,
+        "fixture_truth_clock_rows": 0,
+        "fixture_truth_total_rows": 21,
+        "calibration_points_present": 4,
+        "calibration_points_used_to_reconstruct_old_event_qpc": false
+      },
+      "capture_health": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0
+      },
+      "events": [
+        {
+          "event_id": "13560504-64c0-43e2-83e8-0b473e9efa80",
+          "sequence": 124,
+          "evidence_view": "production derived inspect event in published fixture projection",
+          "provider": {
+            "name": "Microsoft-Windows-Kernel-Registry",
+            "guid": "70eb4f03-c1de-4f73-a051-33d13d5413bd",
+            "evidence": "recorded registry_fields.provider; producer writes its configured provider GUID",
+            "original_event_header_guid_retained": false,
+            "event_id": 5,
+            "event_version": 0
+          },
+          "event_type": "registry",
+          "operation": "set_value",
+          "actor": {
+            "pid": 6396,
+            "creation_time": "134378265067079318",
+            "parent_pid": 1756,
+            "ancestor_pid": 1756,
+            "rule": "DescendantProcess",
+            "source": "EtwRegistry",
+            "confidence": "High",
+            "dimensions": {
+              "actor": "High",
+              "operation": "High",
+              "resource": "High"
+            },
+            "header_pid": 6396,
+            "issuing_thread_id": null,
+            "header_thread_id": null
+          },
+          "resource": "<fixture-registry>\\installed",
+          "resource_resolved": true,
+          "object_generation": null,
+          "name_evidence": {
+            "recorded_path_source": null,
+            "recorded_origin_event_id": null,
+            "raw_key_name": "",
+            "raw_base_name": "",
+            "raw_relative_name": "",
+            "value_name": "Installed",
+            "context_owner_available": true,
+            "current_path_verified": null,
+            "decoder_evidence": "Empty KeyName with an available object context is resolved through registry_context.get(pid, birth, object, event_time), then ValueName is appended; the origin event and generation were not retained in this projection."
+          },
+          "status": 0,
+          "success": true,
+          "state_validated": false,
+          "event_time": {
+            "timestamp_ticks": "134378265067173592",
+            "header_timestamp": "134378265067173592",
+            "timestamp_domain": "filetime_100ns",
+            "raw_qpc": null
+          },
+          "candidates_same_actor_resource_operation": 1,
+          "candidate": {
+            "truth_array_index": 12,
+            "role": "child",
+            "pid": 6396,
+            "creation_time": "134378265067079318",
+            "operation": "set_value",
+            "resource": "<fixture-registry>\\installed",
+            "success": true,
+            "error": null,
+            "start_ticks": "134378265067173042",
+            "end_ticks": "134378265067173583",
+            "clock": null,
+            "thread_id": null
+          },
+          "old_comparison": {
+            "lower_bound_satisfied": true,
+            "upper_bound_satisfied": false,
+            "after_start_100ns": 550,
+            "after_end_100ns": 9,
+            "failed_condition": "event.timestamp_ticks > candidate.end_ticks",
+            "threshold_extension_applied": false
+          },
+          "missing": [
+            "original event QPC",
+            "fixture QPC invocation boundaries",
+            "exact original event-to-companion identity",
+            "independent event header provider/TID fields",
+            "registry name origin event/generation",
+            "registry issuing thread"
+          ],
+          "judgment": "D: evidence insufficient to distinguish conversion/comparison error, native-operation timing semantics, or attribution error. Same actor/resource/category candidate is not proof of the same syscall or explicit application operation."
+        },
+        {
+          "event_id": "15ade15f-29a7-48ad-9739-c926eeb5133b",
+          "sequence": 125,
+          "evidence_view": "production derived inspect event in published fixture projection",
+          "provider": {
+            "name": "Microsoft-Windows-Kernel-Registry",
+            "guid": "70eb4f03-c1de-4f73-a051-33d13d5413bd",
+            "evidence": "recorded registry_fields.provider; producer writes its configured provider GUID",
+            "original_event_header_guid_retained": false,
+            "event_id": 5,
+            "event_version": 0
+          },
+          "event_type": "registry",
+          "operation": "set_value",
+          "actor": {
+            "pid": 6396,
+            "creation_time": "134378265067079318",
+            "parent_pid": 1756,
+            "ancestor_pid": 1756,
+            "rule": "DescendantProcess",
+            "source": "EtwRegistry",
+            "confidence": "High",
+            "dimensions": {
+              "actor": "High",
+              "operation": "High",
+              "resource": "High"
+            },
+            "header_pid": 6396,
+            "issuing_thread_id": null,
+            "header_thread_id": null
+          },
+          "resource": "<fixture-registry>\\childobserved",
+          "resource_resolved": true,
+          "object_generation": null,
+          "name_evidence": {
+            "recorded_path_source": null,
+            "recorded_origin_event_id": null,
+            "raw_key_name": "",
+            "raw_base_name": "",
+            "raw_relative_name": "",
+            "value_name": "ChildObserved",
+            "context_owner_available": true,
+            "current_path_verified": null,
+            "decoder_evidence": "Empty KeyName with an available object context is resolved through registry_context.get(pid, birth, object, event_time), then ValueName is appended; the origin event and generation were not retained in this projection."
+          },
+          "status": 0,
+          "success": true,
+          "state_validated": false,
+          "event_time": {
+            "timestamp_ticks": "134378265067221563",
+            "header_timestamp": "134378265067221563",
+            "timestamp_domain": "filetime_100ns",
+            "raw_qpc": null
+          },
+          "candidates_same_actor_resource_operation": 1,
+          "candidate": {
+            "truth_array_index": 13,
+            "role": "child",
+            "pid": 6396,
+            "creation_time": "134378265067079318",
+            "operation": "set_value",
+            "resource": "<fixture-registry>\\childobserved",
+            "success": true,
+            "error": null,
+            "start_ticks": "134378265067221031",
+            "end_ticks": "134378265067221552",
+            "clock": null,
+            "thread_id": null
+          },
+          "old_comparison": {
+            "lower_bound_satisfied": true,
+            "upper_bound_satisfied": false,
+            "after_start_100ns": 532,
+            "after_end_100ns": 11,
+            "failed_condition": "event.timestamp_ticks > candidate.end_ticks",
+            "threshold_extension_applied": false
+          },
+          "missing": [
+            "original event QPC",
+            "fixture QPC invocation boundaries",
+            "exact original event-to-companion identity",
+            "independent event header provider/TID fields",
+            "registry name origin event/generation",
+            "registry issuing thread"
+          ],
+          "judgment": "D: evidence insufficient to distinguish conversion/comparison error, native-operation timing semantics, or attribution error. Same actor/resource/category candidate is not proof of the same syscall or explicit application operation."
+        },
+        {
+          "event_id": "5e7abef8-7db3-4f1b-a224-4fc1d4c0885a",
+          "sequence": 153,
+          "evidence_view": "production derived inspect event in published fixture projection",
+          "provider": {
+            "name": "Microsoft-Windows-Kernel-Registry",
+            "guid": "70eb4f03-c1de-4f73-a051-33d13d5413bd",
+            "evidence": "recorded registry_fields.provider; producer writes its configured provider GUID",
+            "original_event_header_guid_retained": false,
+            "event_id": 5,
+            "event_version": 0
+          },
+          "event_type": "registry",
+          "operation": "set_value",
+          "actor": {
+            "pid": 7284,
+            "creation_time": "134378265067226912",
+            "parent_pid": 6396,
+            "ancestor_pid": 1756,
+            "rule": "DescendantProcess",
+            "source": "EtwRegistry",
+            "confidence": "High",
+            "dimensions": {
+              "actor": "High",
+              "operation": "High",
+              "resource": "High"
+            },
+            "header_pid": 7284,
+            "issuing_thread_id": null,
+            "header_thread_id": null
+          },
+          "resource": "<fixture-registry>\\grandchildobserved",
+          "resource_resolved": true,
+          "object_generation": null,
+          "name_evidence": {
+            "recorded_path_source": null,
+            "recorded_origin_event_id": null,
+            "raw_key_name": "",
+            "raw_base_name": "",
+            "raw_relative_name": "",
+            "value_name": "GrandchildObserved",
+            "context_owner_available": true,
+            "current_path_verified": null,
+            "decoder_evidence": "Empty KeyName with an available object context is resolved through registry_context.get(pid, birth, object, event_time), then ValueName is appended; the origin event and generation were not retained in this projection."
+          },
+          "status": 0,
+          "success": true,
+          "state_validated": false,
+          "event_time": {
+            "timestamp_ticks": "134378265067343319",
+            "header_timestamp": "134378265067343319",
+            "timestamp_domain": "filetime_100ns",
+            "raw_qpc": null
+          },
+          "candidates_same_actor_resource_operation": 1,
+          "candidate": {
+            "truth_array_index": 17,
+            "role": "grandchild",
+            "pid": 7284,
+            "creation_time": "134378265067226912",
+            "operation": "set_value",
+            "resource": "<fixture-registry>\\grandchildobserved",
+            "success": true,
+            "error": null,
+            "start_ticks": "134378265067342713",
+            "end_ticks": "134378265067343306",
+            "clock": null,
+            "thread_id": null
+          },
+          "old_comparison": {
+            "lower_bound_satisfied": true,
+            "upper_bound_satisfied": false,
+            "after_start_100ns": 606,
+            "after_end_100ns": 13,
+            "failed_condition": "event.timestamp_ticks > candidate.end_ticks",
+            "threshold_extension_applied": false
+          },
+          "missing": [
+            "original event QPC",
+            "fixture QPC invocation boundaries",
+            "exact original event-to-companion identity",
+            "independent event header provider/TID fields",
+            "registry name origin event/generation",
+            "registry issuing thread"
+          ],
+          "judgment": "D: evidence insufficient to distinguish conversion/comparison error, native-operation timing semantics, or attribution error. Same actor/resource/category candidate is not proof of the same syscall or explicit application operation."
+        }
+      ],
+      "acceptance_pass": false
+    },
+    {
+      "variant": "demo-etw-repeat",
+      "input_sha256": {
+        "capture-fixture.json": "e0b26659d99ad8f57826a8dd3f48aaada2ffb971be51a006d3830fb961ec918d",
+        "ground-truth.json": "b308aebd43ca51dfcb8f9779a9fe8a8d52061f212631cd6e03a1da3b5c8e2d6d",
+        "score.json": "da9cf0642e92d28c0d8739053f07cfc168c77312181d492c0f837c6ff31fa02a"
+      },
+      "unchanged_frozen_scorer_replay_equal": true,
+      "original_score": {
+        "expected": 21,
+        "observed": 16,
+        "correctly_attributed": 14,
+        "unknown": 7,
+        "incorrect_attribution": 0,
+        "positive_raw_predictions": 17,
+        "false_positive_target_events": 3,
+        "dropped": 0,
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0
+      },
+      "target_success": {
+        "expected": 17,
+        "observed": 14,
+        "correctly_attributed": 14,
+        "unobserved": 3
+      },
+      "clock_availability": {
+        "delivered_timestamp_domain": "filetime_100ns",
+        "logger_clock_type": "qpc",
+        "client_context": 1,
+        "process_trace_mode": 268435712,
+        "trace_header_available": true,
+        "trace_header_perf_frequency": "10000000",
+        "recorded_qpc_frequency": "10000000",
+        "per_event_raw_qpc_available": false,
+        "companion_present": false,
+        "fixture_truth_clock_rows": 0,
+        "fixture_truth_total_rows": 21,
+        "calibration_points_present": 4,
+        "calibration_points_used_to_reconstruct_old_event_qpc": false
+      },
+      "capture_health": {
+        "context_losses": 0,
+        "decode_errors": 0,
+        "dropped_events": 0,
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0
+      },
+      "events": [
+        {
+          "event_id": "058120c9-26f8-4776-b6d1-59d53e08c4d5",
+          "sequence": 127,
+          "evidence_view": "production derived inspect event in published fixture projection",
+          "provider": {
+            "name": "Microsoft-Windows-Kernel-Registry",
+            "guid": "70eb4f03-c1de-4f73-a051-33d13d5413bd",
+            "evidence": "recorded registry_fields.provider; producer writes its configured provider GUID",
+            "original_event_header_guid_retained": false,
+            "event_id": 5,
+            "event_version": 0
+          },
+          "event_type": "registry",
+          "operation": "set_value",
+          "actor": {
+            "pid": 3240,
+            "creation_time": "134378265259351494",
+            "parent_pid": 8540,
+            "ancestor_pid": 8540,
+            "rule": "DescendantProcess",
+            "source": "EtwRegistry",
+            "confidence": "High",
+            "dimensions": {
+              "actor": "High",
+              "operation": "High",
+              "resource": "High"
+            },
+            "header_pid": 3240,
+            "issuing_thread_id": null,
+            "header_thread_id": null
+          },
+          "resource": "<fixture-registry>\\installed",
+          "resource_resolved": true,
+          "object_generation": null,
+          "name_evidence": {
+            "recorded_path_source": null,
+            "recorded_origin_event_id": null,
+            "raw_key_name": "",
+            "raw_base_name": "",
+            "raw_relative_name": "",
+            "value_name": "Installed",
+            "context_owner_available": true,
+            "current_path_verified": null,
+            "decoder_evidence": "Empty KeyName with an available object context is resolved through registry_context.get(pid, birth, object, event_time), then ValueName is appended; the origin event and generation were not retained in this projection."
+          },
+          "status": 0,
+          "success": true,
+          "state_validated": false,
+          "event_time": {
+            "timestamp_ticks": "134378265259428206",
+            "header_timestamp": "134378265259428206",
+            "timestamp_domain": "filetime_100ns",
+            "raw_qpc": null
+          },
+          "candidates_same_actor_resource_operation": 1,
+          "candidate": {
+            "truth_array_index": 1,
+            "role": "child",
+            "pid": 3240,
+            "creation_time": "134378265259351494",
+            "operation": "set_value",
+            "resource": "<fixture-registry>\\installed",
+            "success": true,
+            "error": null,
+            "start_ticks": "134378265259427633",
+            "end_ticks": "134378265259428205",
+            "clock": null,
+            "thread_id": null
+          },
+          "old_comparison": {
+            "lower_bound_satisfied": true,
+            "upper_bound_satisfied": false,
+            "after_start_100ns": 573,
+            "after_end_100ns": 1,
+            "failed_condition": "event.timestamp_ticks > candidate.end_ticks",
+            "threshold_extension_applied": false
+          },
+          "missing": [
+            "original event QPC",
+            "fixture QPC invocation boundaries",
+            "exact original event-to-companion identity",
+            "independent event header provider/TID fields",
+            "registry name origin event/generation",
+            "registry issuing thread"
+          ],
+          "judgment": "D: evidence insufficient to distinguish conversion/comparison error, native-operation timing semantics, or attribution error. Same actor/resource/category candidate is not proof of the same syscall or explicit application operation."
+        },
+        {
+          "event_id": "99ab1979-d046-4ce0-ad0f-8e9d682ead16",
+          "sequence": 128,
+          "evidence_view": "production derived inspect event in published fixture projection",
+          "provider": {
+            "name": "Microsoft-Windows-Kernel-Registry",
+            "guid": "70eb4f03-c1de-4f73-a051-33d13d5413bd",
+            "evidence": "recorded registry_fields.provider; producer writes its configured provider GUID",
+            "original_event_header_guid_retained": false,
+            "event_id": 5,
+            "event_version": 0
+          },
+          "event_type": "registry",
+          "operation": "set_value",
+          "actor": {
+            "pid": 3240,
+            "creation_time": "134378265259351494",
+            "parent_pid": 8540,
+            "ancestor_pid": 8540,
+            "rule": "DescendantProcess",
+            "source": "EtwRegistry",
+            "confidence": "High",
+            "dimensions": {
+              "actor": "High",
+              "operation": "High",
+              "resource": "High"
+            },
+            "header_pid": 3240,
+            "issuing_thread_id": null,
+            "header_thread_id": null
+          },
+          "resource": "<fixture-registry>\\childobserved",
+          "resource_resolved": true,
+          "object_generation": null,
+          "name_evidence": {
+            "recorded_path_source": null,
+            "recorded_origin_event_id": null,
+            "raw_key_name": "",
+            "raw_base_name": "",
+            "raw_relative_name": "",
+            "value_name": "ChildObserved",
+            "context_owner_available": true,
+            "current_path_verified": null,
+            "decoder_evidence": "Empty KeyName with an available object context is resolved through registry_context.get(pid, birth, object, event_time), then ValueName is appended; the origin event and generation were not retained in this projection."
+          },
+          "status": 0,
+          "success": true,
+          "state_validated": false,
+          "event_time": {
+            "timestamp_ticks": "134378265259457006",
+            "header_timestamp": "134378265259457006",
+            "timestamp_domain": "filetime_100ns",
+            "raw_qpc": null
+          },
+          "candidates_same_actor_resource_operation": 1,
+          "candidate": {
+            "truth_array_index": 2,
+            "role": "child",
+            "pid": 3240,
+            "creation_time": "134378265259351494",
+            "operation": "set_value",
+            "resource": "<fixture-registry>\\childobserved",
+            "success": true,
+            "error": null,
+            "start_ticks": "134378265259456610",
+            "end_ticks": "134378265259456998",
+            "clock": null,
+            "thread_id": null
+          },
+          "old_comparison": {
+            "lower_bound_satisfied": true,
+            "upper_bound_satisfied": false,
+            "after_start_100ns": 396,
+            "after_end_100ns": 8,
+            "failed_condition": "event.timestamp_ticks > candidate.end_ticks",
+            "threshold_extension_applied": false
+          },
+          "missing": [
+            "original event QPC",
+            "fixture QPC invocation boundaries",
+            "exact original event-to-companion identity",
+            "independent event header provider/TID fields",
+            "registry name origin event/generation",
+            "registry issuing thread"
+          ],
+          "judgment": "D: evidence insufficient to distinguish conversion/comparison error, native-operation timing semantics, or attribution error. Same actor/resource/category candidate is not proof of the same syscall or explicit application operation."
+        },
+        {
+          "event_id": "68be7909-eb5e-4f9f-a693-10ed0061f68b",
+          "sequence": 233,
+          "evidence_view": "production derived inspect event in published fixture projection",
+          "provider": {
+            "name": "Microsoft-Windows-Kernel-File",
+            "guid": "edd08927-9cc4-4e65-b970-c2560fb5c289",
+            "evidence": "EtwFile dedicated provider callback in checked source; raw provider GUID was not retained",
+            "original_event_header_guid_retained": false,
+            "event_id": 16,
+            "event_version": null
+          },
+          "event_type": "file",
+          "operation": "write_requested",
+          "actor": {
+            "pid": 7540,
+            "creation_time": "134378265295759225",
+            "parent_pid": 8540,
+            "ancestor_pid": 8540,
+            "rule": "DescendantProcess",
+            "source": "EtwFile",
+            "confidence": "High",
+            "dimensions": {
+              "actor": "High",
+              "operation": "High",
+              "resource": "High"
+            },
+            "header_pid": 7540,
+            "issuing_thread_id": 8572,
+            "header_thread_id": null
+          },
+          "resource": "<fixture-files>\\detached.txt",
+          "resource_resolved": true,
+          "object_generation": "cb6f36a5-985e-4451-9c29-53eb56bd6bd5",
+          "name_evidence": {
+            "current_path_verified": false,
+            "observed_ticks": "134378265320824677",
+            "path_source": "file_object_cache",
+            "source_event_id": "e76b729d-054f-466f-8636-844e51c244e5",
+            "origin_event_in_projection": true,
+            "origin_operation": "create_new_file",
+            "origin_same_file_object": true,
+            "origin_same_object_generation": true,
+            "origin_resource": "<fixture-files>\\detached.txt"
+          },
+          "status": 0,
+          "success": true,
+          "state_validated": false,
+          "event_time": {
+            "timestamp_ticks": "134378265320824859",
+            "header_timestamp": "134378265320824859",
+            "timestamp_domain": "filetime_100ns",
+            "raw_qpc": null
+          },
+          "candidates_same_actor_resource_operation": 1,
+          "candidate": {
+            "truth_array_index": 11,
+            "role": "detached",
+            "pid": 7540,
+            "creation_time": "134378265295759225",
+            "operation": "write_requested",
+            "resource": "<fixture-files>\\detached.txt",
+            "success": true,
+            "error": null,
+            "start_ticks": "134378265320819878",
+            "end_ticks": "134378265320824857",
+            "clock": null,
+            "thread_id": null
+          },
+          "old_comparison": {
+            "lower_bound_satisfied": true,
+            "upper_bound_satisfied": false,
+            "after_start_100ns": 4981,
+            "after_end_100ns": 2,
+            "failed_condition": "event.timestamp_ticks > candidate.end_ticks",
+            "threshold_extension_applied": false
+          },
+          "missing": [
+            "original event QPC",
+            "fixture QPC invocation boundaries",
+            "exact original event-to-companion identity",
+            "independent event header provider/TID fields"
+          ],
+          "judgment": "D: evidence insufficient to distinguish conversion/comparison error, native-operation timing semantics, or attribution error. Same actor/resource/category candidate is not proof of the same syscall or explicit application operation."
+        }
+      ],
+      "acceptance_pass": false
+    }
+  ]
+}

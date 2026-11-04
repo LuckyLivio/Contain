@@ -70,7 +70,7 @@ pub fn load(db: &Connection, c: &mut Capture, full: bool) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn save_details(tx: &Transaction<'_>, c: &Capture) -> Result<()> {
+pub(super) fn save_details(tx: &Connection, c: &Capture) -> Result<()> {
     for e in &c.events {
         tx.prepare_cached("INSERT INTO observation_details VALUES (?1,?2,?3,?4)")?
             .execute(params![

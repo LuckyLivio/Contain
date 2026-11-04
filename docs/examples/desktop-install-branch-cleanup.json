@@ -1,0 +1,57 @@
+[
+  {
+    "branch": "fix/capture-hotpath-queries",
+    "sha": "abfd1900e68673a40d24be6bdbebe427f0936271",
+    "reachable_from": "feat/desktop-record-viewer and feat/desktop-install-record"
+  },
+  {
+    "branch": "fix/capture-ingest-regression",
+    "sha": "b602628b67842dc3d403b9610496b757c3c94ea2",
+    "reachable_from": "feat/desktop-record-viewer and feat/desktop-install-record"
+  },
+  {
+    "branch": "fix/etw-clock-evidence",
+    "sha": "7a51608facb7c151ea88c7c8b134211471fa160d",
+    "reachable_from": "feat/desktop-record-viewer and feat/desktop-install-record"
+  },
+  {
+    "branch": "fix/raw-clock-stabilization",
+    "sha": "600151d10d404f84eb9312784c280def1aeaf0ee",
+    "reachable_from": "feat/desktop-record-viewer and feat/desktop-install-record"
+  },
+  {
+    "branch": "fix/read-only-workflow",
+    "sha": "fa8ed67229c0ed55a9d60b8d865d0a86baf3fee9",
+    "reachable_from": "feat/desktop-record-viewer and feat/desktop-install-record"
+  },
+  {
+    "branch": "fix/trial-json-save",
+    "sha": "a8164bf6d68f62e5baba476c600511eabed1a196",
+    "reachable_from": "feat/desktop-record-viewer and feat/desktop-install-record"
+  },
+  {
+    "branch": "fix/windows-read-only-candidate",
+    "sha": "0df6612a885b03a00bbd92deddcafc5c8e3e42a4",
+    "reachable_from": "feat/desktop-record-viewer and feat/desktop-install-record"
+  },
+  {
+    "branch": "fix/windows-read-only-validation",
+    "sha": "0824a64fd297e7954eeef76ed9802dbbbb6bd73b",
+    "reachable_from": "feat/desktop-record-viewer and feat/desktop-install-record"
+  },
+  {
+    "branch": "fix/windows-trial-report",
+    "sha": "f0cf334fc048098050a370d0157e0d806a22e01f",
+    "reachable_from": "feat/desktop-record-viewer and feat/desktop-install-record"
+  },
+  {
+    "branch": "livio/capture-commit-tail",
+    "sha": "e91cc0bf257c2abea599fea5816fdbb5a2d821b6",
+    "reachable_from": "feat/desktop-record-viewer and feat/desktop-install-record"
+  },
+  {
+    "branch": "livio/deferred-checkpoint",
+    "sha": "a0fb81f5c76a57da15b69ad6d4172b280cfd6474",
+    "reachable_from": "feat/desktop-record-viewer and feat/desktop-install-record"
+  }
+]

@@ -1,0 +1,2574 @@
+{
+  "schema_version": 1,
+  "experiment": "original_final_etw_consumer_stall_audit",
+  "workflow_run_id": 39812655516,
+  "source_sha256": "1d3d7279ba5ab1954d5a02f5112d8815be420b17a028c59cfa8d79aa36bce9a3",
+  "source_bytes": 155117620,
+  "environment": {
+    "schema_version": 1,
+    "logical_processors": null,
+    "snapshot_only": false,
+    "baseline_variant": null,
+    "candidate_variant": null,
+    "executables": {
+      "baseline": {
+        "sha256": "183d4ae982fbb793e2c5c8b1c3d64918bfa5dba1587115c15d98081b7643bd9e"
+      },
+      "candidate": {
+        "sha256": "fb6645f083f46f4ad60af60c29f24318efa0614bce880b565f04c1a671ada296"
+      },
+      "fixture": {
+        "sha256": "5a5220965c48cbf07b76400cea8e4e04c34d61c093cf8fbf2687b8d7d7074b80"
+      }
+    },
+    "scorer_sha256": "aa20dc9b8103c6e79ed3d96b00f6b0219e76d9771f2749a58ffee79a56689ab7",
+    "script_sha256": "6db62ea42882899d152befdfa4c2b5d3c06490ac756d52819dcc840d2e6d978e"
+  },
+  "provenance": {
+    "baseline_commit": "7c5a5b2b534d235f4db6c472c2c34a60e8be66ee",
+    "candidate_commit": "880b4501897ed75225e65f66a26945e9bf1d2348",
+    "baseline_lock_sha256": "7C4F7EC780A80A7D93D6FA5661FEB855768E0BA44A19A1095993E229E7CFF8AE",
+    "candidate_lock_sha256": "7C4F7EC780A80A7D93D6FA5661FEB855768E0BA44A19A1095993E229E7CFF8AE",
+    "windows_build": null,
+    "logical_processors": null,
+    "elevated": true,
+    "rustc_version": "rustc 1.99.1 (58cf8f9c3 2026-10-13)"
+  },
+  "semantics": "Stage elapsed timings include scheduling and are not CPU timings. The public profile removed each queue span's stage label. Counter windows are therefore combined without labeling them commit, flush or poll. Union the monotonic overflow-count half-open intervals [before.overflow,after.overflow), not elapsed-time durations; nested windows count each observed overflow increment at most once. Zero-overflow fraction is null. All original attempts retained; no rescoring or new workload execution.",
+  "limits": "These counters establish synchronous main-thread stall exposure and overflow increments inside retained windows, not the unique OS/SQLite cause or the effects of a proposed architecture. The current final data do not justify carrying the older D3 near-100% commit share forward. Fixed-bounded decoupling must measure downstream backpressure and end-to-end completion without hiding loss.",
+  "attempts": [
+    {
+      "attempt": 1,
+      "mode": "baseline",
+      "files": 100,
+      "trial": 1,
+      "workers": 4,
+      "noise_files": 100,
+      "original_acceptance_pass": true,
+      "measurement_sha256": "5d83d1fad5ef5d6c05c84daa2a9e0d13fc346a048859921b8607becc2496cf27",
+      "queue_overflow": 0,
+      "etw_events_lost": 0,
+      "queue_high_water": 1791,
+      "queue_max_delay_ns": 60396700,
+      "stages": {
+        "raw_commit_including_autocheckpoint": {
+          "count": 18,
+          "total_ns": 17792600,
+          "max_ns": 1807100
+        },
+        "raw_batch_flush": {
+          "count": 18,
+          "total_ns": 31629900,
+          "max_ns": 3412200
+        },
+        "raw_insert": {
+          "count": 18,
+          "total_ns": 13035800,
+          "max_ns": 1677900
+        },
+        "raw_serialize": {
+          "count": 3157,
+          "total_ns": 8750600,
+          "max_ns": 88800
+        },
+        "capture_process_poll": {
+          "count": 55,
+          "total_ns": 327530600,
+          "max_ns": 58908200
+        },
+        "capture_lifetime_ingest": {
+          "count": 302,
+          "total_ns": 115100,
+          "max_ns": 36600
+        },
+        "lifetime_attach": {
+          "count": 1055,
+          "total_ns": 252700,
+          "max_ns": 20100
+        },
+        "capture_between_drains": {
+          "count": 1078,
+          "total_ns": 1975001700,
+          "max_ns": 60602800
+        }
+      },
+      "retained_counter_window_union": 0,
+      "retained_counter_window_fraction": null,
+      "merged_overflow_counter_intervals": [],
+      "retained_window_count": 36,
+      "omitted_queue_spans": 0,
+      "stage_labels_present": false
+    },
+    {
+      "attempt": 2,
+      "mode": "candidate",
+      "files": 100,
+      "trial": 1,
+      "workers": 4,
+      "noise_files": 100,
+      "original_acceptance_pass": true,
+      "measurement_sha256": "624d25ca4ba7a3df661f624a62ddd255660cb0bd6696a1482ee854d6058687f8",
+      "queue_overflow": 0,
+      "etw_events_lost": 0,
+      "queue_high_water": 873,
+      "queue_max_delay_ns": 54914700,
+      "stages": {
+        "raw_commit_including_autocheckpoint": {
+          "count": 16,
+          "total_ns": 16853100,
+          "max_ns": 2127800
+        },
+        "raw_batch_flush": {
+          "count": 16,
+          "total_ns": 33833600,
+          "max_ns": 4352200
+        },
+        "raw_insert": {
+          "count": 16,
+          "total_ns": 16091100,
+          "max_ns": 2051400
+        },
+        "raw_serialize": {
+          "count": 3164,
+          "total_ns": 9392600,
+          "max_ns": 119000
+        },
+        "capture_process_poll": {
+          "count": 101,
+          "total_ns": 548448200,
+          "max_ns": 53854700
+        },
+        "capture_lifetime_ingest": {
+          "count": 769,
+          "total_ns": 138900,
+          "max_ns": 64500
+        },
+        "lifetime_attach": {
+          "count": 1968,
+          "total_ns": 1221200,
+          "max_ns": 59200
+        },
+        "capture_between_drains": {
+          "count": 1992,
+          "total_ns": 3606353000,
+          "max_ns": 55505600
+        }
+      },
+      "retained_counter_window_union": 0,
+      "retained_counter_window_fraction": null,
+      "merged_overflow_counter_intervals": [],
+      "retained_window_count": 32,
+      "omitted_queue_spans": 0,
+      "stage_labels_present": false
+    },
+    {
+      "attempt": 3,
+      "mode": "candidate",
+      "files": 100,
+      "trial": 2,
+      "workers": 4,
+      "noise_files": 100,
+      "original_acceptance_pass": true,
+      "measurement_sha256": "dcc4caab249eef4c81832738854f8cd86a0e1de5052ba8ad956079160239298b",
+      "queue_overflow": 0,
+      "etw_events_lost": 0,
+      "queue_high_water": 1220,
+      "queue_max_delay_ns": 57812000,
+      "stages": {
+        "raw_commit_including_autocheckpoint": {
+          "count": 16,
+          "total_ns": 31553400,
+          "max_ns": 18111600
+        },
+        "raw_batch_flush": {
+          "count": 16,
+          "total_ns": 57674900,
+          "max_ns": 31436600
+        },
+        "raw_insert": {
+          "count": 16,
+          "total_ns": 24344600,
+          "max_ns": 12300200
+        },
+        "raw_serialize": {
+          "count": 3204,
+          "total_ns": 11608200,
+          "max_ns": 584000
+        },
+        "capture_process_poll": {
+          "count": 46,
+          "total_ns": 308169600,
+          "max_ns": 33673100
+        },
+        "capture_lifetime_ingest": {
+          "count": 1084,
+          "total_ns": 83900,
+          "max_ns": 6600
+        },
+        "lifetime_attach": {
+          "count": 886,
+          "total_ns": 673300,
+          "max_ns": 10600
+        },
+        "capture_between_drains": {
+          "count": 902,
+          "total_ns": 1720213300,
+          "max_ns": 60207600
+        }
+      },
+      "retained_counter_window_union": 0,
+      "retained_counter_window_fraction": null,
+      "merged_overflow_counter_intervals": [],
+      "retained_window_count": 32,
+      "omitted_queue_spans": 0,
+      "stage_labels_present": false
+    },
+    {
+      "attempt": 4,
+      "mode": "baseline",
+      "files": 100,
+      "trial": 2,
+      "workers": 4,
+      "noise_files": 100,
+      "original_acceptance_pass": true,
+      "measurement_sha256": "aad6eb29ebc4c8fc057085dbbf3bb408f9a619450c92be62a161abb8a16d648a",
+      "queue_overflow": 0,
+      "etw_events_lost": 0,
+      "queue_high_water": 1556,
+      "queue_max_delay_ns": 70239500,
+      "stages": {
+        "raw_commit_including_autocheckpoint": {
+          "count": 24,
+          "total_ns": 18232800,
+          "max_ns": 2508600
+        },
+        "raw_batch_flush": {
+          "count": 24,
+          "total_ns": 50815500,
+          "max_ns": 20369800
+        },
+        "raw_insert": {
+          "count": 24,
+          "total_ns": 31294200,
+          "max_ns": 17739200
+        },
+        "raw_serialize": {
+          "count": 3234,
+          "total_ns": 14972400,
+          "max_ns": 1286800
+        },
+        "capture_process_poll": {
+          "count": 62,
+          "total_ns": 549648500,
+          "max_ns": 45587300
+        },
+        "capture_lifetime_ingest": {
+          "count": 674,
+          "total_ns": 44100,
+          "max_ns": 5000
+        },
+        "lifetime_attach": {
+          "count": 1156,
+          "total_ns": 481700,
+          "max_ns": 112000
+        },
+        "capture_between_drains": {
+          "count": 1215,
+          "total_ns": 2447410500,
+          "max_ns": 73889500
+        }
+      },
+      "retained_counter_window_union": 0,
+      "retained_counter_window_fraction": null,
+      "merged_overflow_counter_intervals": [],
+      "retained_window_count": 48,
+      "omitted_queue_spans": 0,
+      "stage_labels_present": false
+    },
+    {
+      "attempt": 5,
+      "mode": "baseline",
+      "files": 100,
+      "trial": 3,
+      "workers": 4,
+      "noise_files": 100,
+      "original_acceptance_pass": true,
+      "measurement_sha256": "13998fe14432407a02e06f2e27b7362bec55f7dda87a54e6dd43fe04de76a49a",
+      "queue_overflow": 0,
+      "etw_events_lost": 0,
+      "queue_high_water": 1934,
+      "queue_max_delay_ns": 68935400,
+      "stages": {
+        "raw_commit_including_autocheckpoint": {
+          "count": 16,
+          "total_ns": 17889800,
+          "max_ns": 2137800
+        },
+        "raw_batch_flush": {
+          "count": 16,
+          "total_ns": 33139700,
+          "max_ns": 3658600
+        },
+        "raw_insert": {
+          "count": 16,
+          "total_ns": 14394300,
+          "max_ns": 1979300
+        },
+        "raw_serialize": {
+          "count": 3159,
+          "total_ns": 9641800,
+          "max_ns": 129600
+        },
+        "capture_process_poll": {
+          "count": 68,
+          "total_ns": 458991100,
+          "max_ns": 67627100
+        },
+        "capture_lifetime_ingest": {
+          "count": 285,
+          "total_ns": 58800,
+          "max_ns": 9400
+        },
+        "lifetime_attach": {
+          "count": 1307,
+          "total_ns": 301100,
+          "max_ns": 11700
+        },
+        "capture_between_drains": {
+          "count": 1329,
+          "total_ns": 2487878200,
+          "max_ns": 69334200
+        }
+      },
+      "retained_counter_window_union": 0,
+      "retained_counter_window_fraction": null,
+      "merged_overflow_counter_intervals": [],
+      "retained_window_count": 32,
+      "omitted_queue_spans": 0,
+      "stage_labels_present": false
+    },
+    {
+      "attempt": 6,
+      "mode": "candidate",
+      "files": 100,
+      "trial": 3,
+      "workers": 4,
+      "noise_files": 100,
+      "original_acceptance_pass": true,
+      "measurement_sha256": "4238c05834ddc226f79d0cc70775925843237c83189c583cbf740a6f6dc59072",
+      "queue_overflow": 0,
+      "etw_events_lost": 0,
+      "queue_high_water": 1564,
+      "queue_max_delay_ns": 89217400,
+      "stages": {
+        "raw_commit_including_autocheckpoint": {
+          "count": 25,
+          "total_ns": 33973000,
+          "max_ns": 15165400
+        },
+        "raw_batch_flush": {
+          "count": 25,
+          "total_ns": 73157400,
+          "max_ns": 36110800
+        },
+        "raw_insert": {
+          "count": 25,
+          "total_ns": 37443600,
+          "max_ns": 20592600
+        },
+        "raw_serialize": {
+          "count": 3300,
+          "total_ns": 13550000,
+          "max_ns": 652400
+        },
+        "capture_process_poll": {
+          "count": 60,
+          "total_ns": 782737200,
+          "max_ns": 53514300
+        },
+        "capture_lifetime_ingest": {
+          "count": 1094,
+          "total_ns": 92100,
+          "max_ns": 9800
+        },
+        "lifetime_attach": {
+          "count": 1134,
+          "total_ns": 1132200,
+          "max_ns": 13400
+        },
+        "capture_between_drains": {
+          "count": 1150,
+          "total_ns": 2588893400,
+          "max_ns": 89483400
+        }
+      },
+      "retained_counter_window_union": 0,
+      "retained_counter_window_fraction": null,
+      "merged_overflow_counter_intervals": [],
+      "retained_window_count": 50,
+      "omitted_queue_spans": 0,
+      "stage_labels_present": false
+    },
+    {
+      "attempt": 7,
+      "mode": "baseline",
+      "files": 1000,
+      "trial": 1,
+      "workers": 4,
+      "noise_files": 100,
+      "original_acceptance_pass": true,
+      "measurement_sha256": "9f0c11faad30f1a40fdca0134757d315456a7d31b231b4f2962b273eb995fc4a",
+      "queue_overflow": 0,
+      "etw_events_lost": 0,
+      "queue_high_water": 1672,
+      "queue_max_delay_ns": 127936300,
+      "stages": {
+        "raw_commit_including_autocheckpoint": {
+          "count": 74,
+          "total_ns": 139242400,
+          "max_ns": 40310500
+        },
+        "raw_batch_flush": {
+          "count": 74,
+          "total_ns": 235979800,
+          "max_ns": 41066400
+        },
+        "raw_insert": {
+          "count": 74,
+          "total_ns": 92605000,
+          "max_ns": 17212600
+        },
+        "raw_serialize": {
+          "count": 16230,
+          "total_ns": 57454700,
+          "max_ns": 6271400
+        },
+        "capture_process_poll": {
+          "count": 118,
+          "total_ns": 1383382100,
+          "max_ns": 113258600
+        },
+        "capture_lifetime_ingest": {
+          "count": 13755,
+          "total_ns": 832600,
+          "max_ns": 64100
+        },
+        "lifetime_attach": {
+          "count": 909,
+          "total_ns": 254300,
+          "max_ns": 4600
+        },
+        "capture_between_drains": {
+          "count": 2230,
+          "total_ns": 5048656800,
+          "max_ns": 128520100
+        }
+      },
+      "retained_counter_window_union": 0,
+      "retained_counter_window_fraction": null,
+      "merged_overflow_counter_intervals": [],
+      "retained_window_count": 148,
+      "omitted_queue_spans": 0,
+      "stage_labels_present": false
+    },
+    {
+      "attempt": 8,
+      "mode": "candidate",
+      "files": 1000,
+      "trial": 1,
+      "workers": 4,
+      "noise_files": 100,
+      "original_acceptance_pass": false,
+      "measurement_sha256": "6463c0223815321dfb9e30722127933d3fe3132a6d8854b6afa0b76786a0453e",
+      "queue_overflow": 221,
+      "etw_events_lost": 0,
+      "queue_high_water": 8192,
+      "queue_max_delay_ns": 531967800,
+      "stages": {
+        "raw_commit_including_autocheckpoint": {
+          "count": 68,
+          "total_ns": 127949000,
+          "max_ns": 42703400
+        },
+        "raw_batch_flush": {
+          "count": 68,
+          "total_ns": 224418200,
+          "max_ns": 44574900
+        },
+        "raw_insert": {
+          "count": 68,
+          "total_ns": 93648200,
+          "max_ns": 27616300
+        },
+        "raw_serialize": {
+          "count": 15990,
+          "total_ns": 51375600,
+          "max_ns": 1973500
+        },
+        "capture_process_poll": {
+          "count": 60,
+          "total_ns": 895056000,
+          "max_ns": 280541400
+        },
+        "capture_lifetime_ingest": {
+          "count": 1030,
+          "total_ns": 242900,
+          "max_ns": 89900
+        },
+        "lifetime_attach": {
+          "count": 1062,
+          "total_ns": 868000,
+          "max_ns": 19000
+        },
+        "capture_between_drains": {
+          "count": 1108,
+          "total_ns": 2807116700,
+          "max_ns": 316876500
+        }
+      },
+      "retained_counter_window_union": 197,
+      "retained_counter_window_fraction": 0.8914027149321267,
+      "merged_overflow_counter_intervals": [
+        [
+          0,
+          17
+        ],
+        [
+          21,
+          106
+        ],
+        [
+          111,
+          141
+        ],
+        [
+          145,
+          166
+        ],
+        [
+          172,
+          216
+        ]
+      ],
+      "retained_window_count": 136,
+      "omitted_queue_spans": 0,
+      "stage_labels_present": false
+    },
+    {
+      "attempt": 9,
+      "mode": "candidate",
+      "files": 1000,
+      "trial": 2,
+      "workers": 4,
+      "noise_files": 100,
+      "original_acceptance_pass": true,
+      "measurement_sha256": "f05fbe09fb2a0812ccc7ea32c9b5b18ae495fde9a7351f38fa4ed6765d687488",
+      "queue_overflow": 0,
+      "etw_events_lost": 0,
+      "queue_high_water": 6765,
+      "queue_max_delay_ns": 299722300,
+      "stages": {
+        "raw_commit_including_autocheckpoint": {
+          "count": 68,
+          "total_ns": 135670700,
+          "max_ns": 43233500
+        },
+        "raw_batch_flush": {
+          "count": 68,
+          "total_ns": 246796500,
+          "max_ns": 67583400
+        },
+        "raw_insert": {
+          "count": 68,
+          "total_ns": 107567400,
+          "max_ns": 45833000
+        },
+        "raw_serialize": {
+          "count": 16223,
+          "total_ns": 53598300,
+          "max_ns": 7330000
+        },
+        "capture_process_poll": {
+          "count": 78,
+          "total_ns": 795659900,
+          "max_ns": 132851800
+        },
+        "capture_lifetime_ingest": {
+          "count": 12725,
+          "total_ns": 727800,
+          "max_ns": 63900
+        },
+        "lifetime_attach": {
+          "count": 1341,
+          "total_ns": 872500,
+          "max_ns": 9400
+        },
+        "capture_between_drains": {
+          "count": 1465,
+          "total_ns": 3301499600,
+          "max_ns": 262608700
+        }
+      },
+      "retained_counter_window_union": 0,
+      "retained_counter_window_fraction": null,
+      "merged_overflow_counter_intervals": [],
+      "retained_window_count": 136,
+      "omitted_queue_spans": 0,
+      "stage_labels_present": false
+    },
+    {
+      "attempt": 10,
+      "mode": "baseline",
+      "files": 1000,
+      "trial": 2,
+      "workers": 4,
+      "noise_files": 100,
+      "original_acceptance_pass": true,
+      "measurement_sha256": "b6ba7663cf9727fb48383ce95c1dc14bb52f55e85a5fd29bafafa72735d996cc",
+      "queue_overflow": 0,
+      "etw_events_lost": 0,
+      "queue_high_water": 7195,
+      "queue_max_delay_ns": 327112900,
+      "stages": {
+        "raw_commit_including_autocheckpoint": {
+          "count": 67,
+          "total_ns": 112925000,
+          "max_ns": 43515300
+        },
+        "raw_batch_flush": {
+          "count": 67,
+          "total_ns": 214809400,
+          "max_ns": 44223600
+        },
+        "raw_insert": {
+          "count": 67,
+          "total_ns": 97521800,
+          "max_ns": 34696000
+        },
+        "raw_serialize": {
+          "count": 16203,
+          "total_ns": 59220500,
+          "max_ns": 2785200
+        },
+        "capture_process_poll": {
+          "count": 61,
+          "total_ns": 758934600,
+          "max_ns": 213186900
+        },
+        "capture_lifetime_ingest": {
+          "count": 12870,
+          "total_ns": 1048500,
+          "max_ns": 222000
+        },
+        "lifetime_attach": {
+          "count": 1052,
+          "total_ns": 239500,
+          "max_ns": 5000
+        },
+        "capture_between_drains": {
+          "count": 1122,
+          "total_ns": 2668427900,
+          "max_ns": 258477700
+        }
+      },
+      "retained_counter_window_union": 0,
+      "retained_counter_window_fraction": null,
+      "merged_overflow_counter_intervals": [],
+      "retained_window_count": 134,
+      "omitted_queue_spans": 0,
+      "stage_labels_present": false
+    },
+    {
+      "attempt": 11,
+      "mode": "baseline",
+      "files": 1000,
+      "trial": 3,
+      "workers": 4,
+      "noise_files": 100,
+      "original_acceptance_pass": false,
+      "measurement_sha256": "08ad828f0619085d6deaa3e21e2bdcca271e45e7b4ced2ad6fb6a786601fd996",
+      "queue_overflow": 805,
+      "etw_events_lost": 0,
+      "queue_high_water": 8192,
+      "queue_max_delay_ns": 424214700,
+      "stages": {
+        "raw_commit_including_autocheckpoint": {
+          "count": 64,
+          "total_ns": 160051300,
+          "max_ns": 43976700
+        },
+        "raw_batch_flush": {
+          "count": 64,
+          "total_ns": 265021800,
+          "max_ns": 44787000
+        },
+        "raw_insert": {
+          "count": 64,
+          "total_ns": 100073500,
+          "max_ns": 16391400
+        },
+        "raw_serialize": {
+          "count": 15430,
+          "total_ns": 55670000,
+          "max_ns": 837400
+        },
+        "capture_process_poll": {
+          "count": 55,
+          "total_ns": 741304900,
+          "max_ns": 145953500
+        },
+        "capture_lifetime_ingest": {
+          "count": 4700,
+          "total_ns": 675800,
+          "max_ns": 314600
+        },
+        "lifetime_attach": {
+          "count": 954,
+          "total_ns": 241000,
+          "max_ns": 7100
+        },
+        "capture_between_drains": {
+          "count": 988,
+          "total_ns": 2489000000,
+          "max_ns": 186233400
+        }
+      },
+      "retained_counter_window_union": 15,
+      "retained_counter_window_fraction": 0.018633540372670808,
+      "merged_overflow_counter_intervals": [
+        [
+          760,
+          775
+        ]
+      ],
+      "retained_window_count": 128,
+      "omitted_queue_spans": 0,
+      "stage_labels_present": false
+    },
+    {
+      "attempt": 12,
+      "mode": "candidate",
+      "files": 1000,
+      "trial": 3,
+      "workers": 4,
+      "noise_files": 100,
+      "original_acceptance_pass": false,
+      "measurement_sha256": "116244d6144c24f72a14b9420ca3ca6fcb700e2d36fefe350dba07b0b9e1c9fb",
+      "queue_overflow": 241,
+      "etw_events_lost": 0,
+      "queue_high_water": 8192,
+      "queue_max_delay_ns": 527881000,
+      "stages": {
+        "raw_commit_including_autocheckpoint": {
+          "count": 64,
+          "total_ns": 131067200,
+          "max_ns": 40617800
+        },
+        "raw_batch_flush": {
+          "count": 64,
+          "total_ns": 218509800,
+          "max_ns": 41313900
+        },
+        "raw_insert": {
+          "count": 64,
+          "total_ns": 78519300,
+          "max_ns": 19093600
+        },
+        "raw_serialize": {
+          "count": 15961,
+          "total_ns": 52194000,
+          "max_ns": 5015700
+        },
+        "capture_process_poll": {
+          "count": 51,
+          "total_ns": 723078800,
+          "max_ns": 206967700
+        },
+        "capture_lifetime_ingest": {
+          "count": 1264,
+          "total_ns": 183100,
+          "max_ns": 67600
+        },
+        "lifetime_attach": {
+          "count": 892,
+          "total_ns": 613300,
+          "max_ns": 11300
+        },
+        "capture_between_drains": {
+          "count": 914,
+          "total_ns": 2301558700,
+          "max_ns": 208743900
+        }
+      },
+      "retained_counter_window_union": 11,
+      "retained_counter_window_fraction": 0.04564315352697095,
+      "merged_overflow_counter_intervals": [
+        [
+          97,
+          103
+        ],
+        [
+          171,
+          176
+        ]
+      ],
+      "retained_window_count": 128,
+      "omitted_queue_spans": 0,
+      "stage_labels_present": false
+    },
+    {
+      "attempt": 13,
+      "mode": "baseline",
+      "files": 10000,
+      "trial": 1,
+      "workers": 4,
+      "noise_files": 100,
+      "original_acceptance_pass": false,
+      "measurement_sha256": "cca7d787656812e52345851c294b47121545aab987172810792bee6228c89eb9",
+      "queue_overflow": 38952,
+      "etw_events_lost": 0,
+      "queue_high_water": 8192,
+      "queue_max_delay_ns": 1434487400,
+      "stages": {
+        "raw_commit_including_autocheckpoint": {
+          "count": 432,
+          "total_ns": 1403880400,
+          "max_ns": 208752800
+        },
+        "raw_batch_flush": {
+          "count": 432,
+          "total_ns": 2310870000,
+          "max_ns": 210270000
+        },
+        "raw_insert": {
+          "count": 432,
+          "total_ns": 878179800,
+          "max_ns": 110554300
+        },
+        "raw_serialize": {
+          "count": 107889,
+          "total_ns": 507067300,
+          "max_ns": 17101100
+        },
+        "capture_process_poll": {
+          "count": 140,
+          "total_ns": 4703966100,
+          "max_ns": 426172500
+        },
+        "capture_lifetime_ingest": {
+          "count": 98181,
+          "total_ns": 6117100,
+          "max_ns": 465300
+        },
+        "lifetime_attach": {
+          "count": 1269,
+          "total_ns": 1172100,
+          "max_ns": 42200
+        },
+        "capture_between_drains": {
+          "count": 1941,
+          "total_ns": 10137783800,
+          "max_ns": 549457100
+        }
+      },
+      "retained_counter_window_union": 9565,
+      "retained_counter_window_fraction": 0.24555863627028138,
+      "merged_overflow_counter_intervals": [
+        [
+          182,
+          226
+        ],
+        [
+          1938,
+          1984
+        ],
+        [
+          2032,
+          2043
+        ],
+        [
+          5911,
+          5933
+        ],
+        [
+          7507,
+          7586
+        ],
+        [
+          7646,
+          7695
+        ],
+        [
+          7797,
+          7806
+        ],
+        [
+          7862,
+          7892
+        ],
+        [
+          8102,
+          8117
+        ],
+        [
+          8219,
+          8275
+        ],
+        [
+          8318,
+          8343
+        ],
+        [
+          9823,
+          9852
+        ],
+        [
+          9942,
+          9951
+        ],
+        [
+          10006,
+          10008
+        ],
+        [
+          10062,
+          10080
+        ],
+        [
+          11720,
+          11891
+        ],
+        [
+          11951,
+          11961
+        ],
+        [
+          12024,
+          12040
+        ],
+        [
+          12123,
+          12185
+        ],
+        [
+          12244,
+          18365
+        ],
+        [
+          19615,
+          19649
+        ],
+        [
+          19810,
+          19935
+        ],
+        [
+          22888,
+          23050
+        ],
+        [
+          23144,
+          23540
+        ],
+        [
+          28688,
+          28784
+        ],
+        [
+          34717,
+          36645
+        ]
+      ],
+      "retained_window_count": 864,
+      "omitted_queue_spans": 0,
+      "stage_labels_present": false
+    },
+    {
+      "attempt": 14,
+      "mode": "candidate",
+      "files": 10000,
+      "trial": 1,
+      "workers": 4,
+      "noise_files": 100,
+      "original_acceptance_pass": false,
+      "measurement_sha256": "453d05b87f726850bffccdb670d5b84974b8763b182108ac8fffc747bc5b70db",
+      "queue_overflow": 50859,
+      "etw_events_lost": 80896,
+      "queue_high_water": 8192,
+      "queue_max_delay_ns": 3426768700,
+      "stages": {
+        "raw_commit_including_autocheckpoint": {
+          "count": 298,
+          "total_ns": 1669639800,
+          "max_ns": 711199700
+        },
+        "raw_batch_flush": {
+          "count": 298,
+          "total_ns": 2514051800,
+          "max_ns": 712449400
+        },
+        "raw_insert": {
+          "count": 298,
+          "total_ns": 812493100,
+          "max_ns": 146902100
+        },
+        "raw_serialize": {
+          "count": 74787,
+          "total_ns": 294209900,
+          "max_ns": 8596500
+        },
+        "capture_process_poll": {
+          "count": 108,
+          "total_ns": 5731150100,
+          "max_ns": 774947000
+        },
+        "capture_lifetime_ingest": {
+          "count": 51407,
+          "total_ns": 2741400,
+          "max_ns": 220200
+        },
+        "lifetime_attach": {
+          "count": 1000,
+          "total_ns": 1061300,
+          "max_ns": 12200
+        },
+        "capture_between_drains": {
+          "count": 1652,
+          "total_ns": 10795442600,
+          "max_ns": 920611600
+        }
+      },
+      "retained_counter_window_union": 21224,
+      "retained_counter_window_fraction": 0.4173106038262648,
+      "merged_overflow_counter_intervals": [
+        [
+          1518,
+          1585
+        ],
+        [
+          3767,
+          4157
+        ],
+        [
+          8783,
+          8829
+        ],
+        [
+          11592,
+          11655
+        ],
+        [
+          11656,
+          16494
+        ],
+        [
+          20402,
+          20637
+        ],
+        [
+          20638,
+          21124
+        ],
+        [
+          21125,
+          21371
+        ],
+        [
+          21372,
+          21549
+        ],
+        [
+          22285,
+          22374
+        ],
+        [
+          22375,
+          22542
+        ],
+        [
+          22543,
+          22642
+        ],
+        [
+          24859,
+          25083
+        ],
+        [
+          25084,
+          25330
+        ],
+        [
+          25331,
+          28492
+        ],
+        [
+          28701,
+          28783
+        ],
+        [
+          28784,
+          28967
+        ],
+        [
+          28968,
+          29136
+        ],
+        [
+          29137,
+          29317
+        ],
+        [
+          32341,
+          32388
+        ],
+        [
+          32389,
+          32401
+        ],
+        [
+          32410,
+          32636
+        ],
+        [
+          32643,
+          32883
+        ],
+        [
+          32888,
+          33084
+        ],
+        [
+          33091,
+          33285
+        ],
+        [
+          33288,
+          33431
+        ],
+        [
+          35031,
+          35162
+        ],
+        [
+          35167,
+          35218
+        ],
+        [
+          35219,
+          35247
+        ],
+        [
+          36321,
+          36359
+        ],
+        [
+          36362,
+          41897
+        ],
+        [
+          44137,
+          44428
+        ],
+        [
+          44431,
+          44483
+        ],
+        [
+          44484,
+          44547
+        ],
+        [
+          44550,
+          44608
+        ],
+        [
+          44611,
+          44658
+        ],
+        [
+          44659,
+          44703
+        ],
+        [
+          44706,
+          44748
+        ],
+        [
+          44749,
+          44795
+        ],
+        [
+          45784,
+          46066
+        ],
+        [
+          47356,
+          47635
+        ],
+        [
+          47640,
+          47904
+        ],
+        [
+          47906,
+          48129
+        ],
+        [
+          48133,
+          48371
+        ],
+        [
+          48375,
+          48610
+        ],
+        [
+          48612,
+          48894
+        ],
+        [
+          48897,
+          49176
+        ],
+        [
+          49178,
+          49441
+        ],
+        [
+          49444,
+          49692
+        ]
+      ],
+      "retained_window_count": 596,
+      "omitted_queue_spans": 0,
+      "stage_labels_present": false
+    },
+    {
+      "attempt": 15,
+      "mode": "candidate",
+      "files": 10000,
+      "trial": 2,
+      "workers": 4,
+      "noise_files": 100,
+      "original_acceptance_pass": false,
+      "measurement_sha256": "98655f850adbd04c81fa771df19cb2af985308ed00cdb074adc520e13561335c",
+      "queue_overflow": 57963,
+      "etw_events_lost": 59591,
+      "queue_high_water": 8192,
+      "queue_max_delay_ns": 1580603200,
+      "stages": {
+        "raw_commit_including_autocheckpoint": {
+          "count": 294,
+          "total_ns": 1141763400,
+          "max_ns": 424492900
+        },
+        "raw_batch_flush": {
+          "count": 294,
+          "total_ns": 1741687700,
+          "max_ns": 425191900
+        },
+        "raw_insert": {
+          "count": 294,
+          "total_ns": 580820400,
+          "max_ns": 52502600
+        },
+        "raw_serialize": {
+          "count": 74201,
+          "total_ns": 281199200,
+          "max_ns": 3819700
+        },
+        "capture_process_poll": {
+          "count": 94,
+          "total_ns": 4436177100,
+          "max_ns": 437006000
+        },
+        "capture_lifetime_ingest": {
+          "count": 54112,
+          "total_ns": 3501000,
+          "max_ns": 378100
+        },
+        "lifetime_attach": {
+          "count": 1096,
+          "total_ns": 988000,
+          "max_ns": 29600
+        },
+        "capture_between_drains": {
+          "count": 1328,
+          "total_ns": 8191393500,
+          "max_ns": 509265900
+        }
+      },
+      "retained_counter_window_union": 28243,
+      "retained_counter_window_fraction": 0.4872591135724514,
+      "merged_overflow_counter_intervals": [
+        [
+          1106,
+          1133
+        ],
+        [
+          1151,
+          1169
+        ],
+        [
+          1196,
+          1224
+        ],
+        [
+          1246,
+          1282
+        ],
+        [
+          1309,
+          1344
+        ],
+        [
+          1391,
+          1584
+        ],
+        [
+          1626,
+          1755
+        ],
+        [
+          1799,
+          1965
+        ],
+        [
+          2010,
+          2166
+        ],
+        [
+          2208,
+          2361
+        ],
+        [
+          2411,
+          2495
+        ],
+        [
+          4364,
+          4469
+        ],
+        [
+          4500,
+          4550
+        ],
+        [
+          4576,
+          4602
+        ],
+        [
+          4628,
+          4660
+        ],
+        [
+          4682,
+          4731
+        ],
+        [
+          4760,
+          4788
+        ],
+        [
+          4820,
+          4845
+        ],
+        [
+          4870,
+          4886
+        ],
+        [
+          4933,
+          4953
+        ],
+        [
+          4979,
+          4993
+        ],
+        [
+          6705,
+          6737
+        ],
+        [
+          6782,
+          6969
+        ],
+        [
+          7006,
+          7079
+        ],
+        [
+          7107,
+          7143
+        ],
+        [
+          7170,
+          7210
+        ],
+        [
+          7237,
+          7270
+        ],
+        [
+          7298,
+          7329
+        ],
+        [
+          7361,
+          7384
+        ],
+        [
+          7415,
+          7437
+        ],
+        [
+          8439,
+          8468
+        ],
+        [
+          8515,
+          8750
+        ],
+        [
+          8791,
+          13622
+        ],
+        [
+          16541,
+          16563
+        ],
+        [
+          16698,
+          16728
+        ],
+        [
+          19591,
+          19778
+        ],
+        [
+          19814,
+          20028
+        ],
+        [
+          20061,
+          20112
+        ],
+        [
+          22175,
+          22212
+        ],
+        [
+          22234,
+          22236
+        ],
+        [
+          22261,
+          22272
+        ],
+        [
+          25278,
+          25291
+        ],
+        [
+          26880,
+          26885
+        ],
+        [
+          27979,
+          33669
+        ],
+        [
+          34790,
+          34856
+        ],
+        [
+          34884,
+          34895
+        ],
+        [
+          34922,
+          34925
+        ],
+        [
+          34949,
+          34960
+        ],
+        [
+          34987,
+          34991
+        ],
+        [
+          35019,
+          35026
+        ],
+        [
+          35051,
+          35053
+        ],
+        [
+          35119,
+          35120
+        ],
+        [
+          36050,
+          36066
+        ],
+        [
+          36099,
+          36152
+        ],
+        [
+          36187,
+          36195
+        ],
+        [
+          36226,
+          36227
+        ],
+        [
+          36258,
+          36273
+        ],
+        [
+          36299,
+          36324
+        ],
+        [
+          36356,
+          36382
+        ],
+        [
+          38000,
+          38031
+        ],
+        [
+          38061,
+          38063
+        ],
+        [
+          38083,
+          38085
+        ],
+        [
+          38115,
+          38123
+        ],
+        [
+          38201,
+          38230
+        ],
+        [
+          38256,
+          38261
+        ],
+        [
+          38285,
+          38290
+        ],
+        [
+          38317,
+          38347
+        ],
+        [
+          38371,
+          38374
+        ],
+        [
+          38401,
+          38423
+        ],
+        [
+          39624,
+          39648
+        ],
+        [
+          39680,
+          39690
+        ],
+        [
+          39820,
+          46163
+        ],
+        [
+          47032,
+          54957
+        ],
+        [
+          56053,
+          56137
+        ],
+        [
+          56169,
+          56190
+        ],
+        [
+          56222,
+          56263
+        ],
+        [
+          56311,
+          56320
+        ],
+        [
+          56350,
+          56364
+        ],
+        [
+          56425,
+          56432
+        ],
+        [
+          56458,
+          56464
+        ],
+        [
+          56492,
+          56509
+        ],
+        [
+          56539,
+          56576
+        ],
+        [
+          57732,
+          57748
+        ],
+        [
+          57777,
+          57800
+        ],
+        [
+          57819,
+          57844
+        ],
+        [
+          57877,
+          57908
+        ]
+      ],
+      "retained_window_count": 588,
+      "omitted_queue_spans": 0,
+      "stage_labels_present": false
+    },
+    {
+      "attempt": 16,
+      "mode": "baseline",
+      "files": 10000,
+      "trial": 2,
+      "workers": 4,
+      "noise_files": 100,
+      "original_acceptance_pass": false,
+      "measurement_sha256": "9c78bd96f43cf340bad3cd05f0199d0bed0c96bb417963c6c2d72e2538674dca",
+      "queue_overflow": 55199,
+      "etw_events_lost": 83875,
+      "queue_high_water": 8192,
+      "queue_max_delay_ns": 1442362600,
+      "stages": {
+        "raw_commit_including_autocheckpoint": {
+          "count": 284,
+          "total_ns": 1148197100,
+          "max_ns": 234591700
+        },
+        "raw_batch_flush": {
+          "count": 284,
+          "total_ns": 1681156900,
+          "max_ns": 235324800
+        },
+        "raw_insert": {
+          "count": 284,
+          "total_ns": 512630100,
+          "max_ns": 20777000
+        },
+        "raw_serialize": {
+          "count": 71427,
+          "total_ns": 298118500,
+          "max_ns": 8773400
+        },
+        "capture_process_poll": {
+          "count": 84,
+          "total_ns": 4108535500,
+          "max_ns": 252072600
+        },
+        "capture_lifetime_ingest": {
+          "count": 50734,
+          "total_ns": 3059200,
+          "max_ns": 402300
+        },
+        "lifetime_attach": {
+          "count": 912,
+          "total_ns": 358000,
+          "max_ns": 8100
+        },
+        "capture_between_drains": {
+          "count": 1133,
+          "total_ns": 7499929500,
+          "max_ns": 304439900
+        }
+      },
+      "retained_counter_window_union": 26973,
+      "retained_counter_window_fraction": 0.4886501567057374,
+      "merged_overflow_counter_intervals": [
+        [
+          0,
+          18
+        ],
+        [
+          33,
+          94
+        ],
+        [
+          108,
+          168
+        ],
+        [
+          182,
+          271
+        ],
+        [
+          287,
+          354
+        ],
+        [
+          1647,
+          1731
+        ],
+        [
+          1748,
+          1797
+        ],
+        [
+          1810,
+          1889
+        ],
+        [
+          1903,
+          1918
+        ],
+        [
+          1928,
+          1967
+        ],
+        [
+          1982,
+          2033
+        ],
+        [
+          2048,
+          2134
+        ],
+        [
+          2147,
+          8009
+        ],
+        [
+          9237,
+          9334
+        ],
+        [
+          9355,
+          9375
+        ],
+        [
+          9387,
+          9421
+        ],
+        [
+          9466,
+          9510
+        ],
+        [
+          9530,
+          9548
+        ],
+        [
+          9563,
+          9606
+        ],
+        [
+          9926,
+          9930
+        ],
+        [
+          9963,
+          9995
+        ],
+        [
+          11442,
+          11490
+        ],
+        [
+          11504,
+          11528
+        ],
+        [
+          11541,
+          11592
+        ],
+        [
+          11610,
+          11666
+        ],
+        [
+          17277,
+          17506
+        ],
+        [
+          19313,
+          19400
+        ],
+        [
+          19423,
+          19478
+        ],
+        [
+          19490,
+          19521
+        ],
+        [
+          19533,
+          19541
+        ],
+        [
+          19554,
+          19570
+        ],
+        [
+          19585,
+          23062
+        ],
+        [
+          24047,
+          24066
+        ],
+        [
+          24081,
+          24093
+        ],
+        [
+          24106,
+          24129
+        ],
+        [
+          24145,
+          24159
+        ],
+        [
+          24172,
+          24197
+        ],
+        [
+          24209,
+          24234
+        ],
+        [
+          25832,
+          25871
+        ],
+        [
+          25888,
+          25932
+        ],
+        [
+          25960,
+          25970
+        ],
+        [
+          25987,
+          26002
+        ],
+        [
+          26017,
+          26030
+        ],
+        [
+          26044,
+          26056
+        ],
+        [
+          26067,
+          26089
+        ],
+        [
+          26118,
+          26124
+        ],
+        [
+          26137,
+          26141
+        ],
+        [
+          26154,
+          26157
+        ],
+        [
+          26168,
+          26178
+        ],
+        [
+          26204,
+          26211
+        ],
+        [
+          27356,
+          27376
+        ],
+        [
+          27391,
+          27394
+        ],
+        [
+          27413,
+          27430
+        ],
+        [
+          30624,
+          30638
+        ],
+        [
+          30652,
+          30680
+        ],
+        [
+          31771,
+          31801
+        ],
+        [
+          31818,
+          36549
+        ],
+        [
+          36874,
+          39366
+        ],
+        [
+          40348,
+          40418
+        ],
+        [
+          40424,
+          40425
+        ],
+        [
+          40445,
+          40450
+        ],
+        [
+          41580,
+          41693
+        ],
+        [
+          44498,
+          50960
+        ],
+        [
+          52084,
+          52179
+        ],
+        [
+          52195,
+          52238
+        ],
+        [
+          52254,
+          52274
+        ],
+        [
+          52290,
+          52314
+        ],
+        [
+          52328,
+          52362
+        ],
+        [
+          52377,
+          52410
+        ],
+        [
+          52427,
+          52468
+        ],
+        [
+          52482,
+          52505
+        ],
+        [
+          52519,
+          52547
+        ],
+        [
+          52562,
+          52589
+        ],
+        [
+          52602,
+          52613
+        ],
+        [
+          52628,
+          52638
+        ],
+        [
+          52654,
+          52679
+        ],
+        [
+          52694,
+          52726
+        ],
+        [
+          53733,
+          53942
+        ],
+        [
+          53970,
+          54190
+        ],
+        [
+          54218,
+          54443
+        ],
+        [
+          54469,
+          54689
+        ],
+        [
+          54718,
+          54953
+        ],
+        [
+          54980,
+          55175
+        ]
+      ],
+      "retained_window_count": 568,
+      "omitted_queue_spans": 0,
+      "stage_labels_present": false
+    },
+    {
+      "attempt": 17,
+      "mode": "baseline",
+      "files": 10000,
+      "trial": 3,
+      "workers": 4,
+      "noise_files": 100,
+      "original_acceptance_pass": false,
+      "measurement_sha256": "0caf72abcdc2fcdf9c7b6e4f19b28da9a8d805475d85e23c7da2eee2b28fb412",
+      "queue_overflow": 52466,
+      "etw_events_lost": 0,
+      "queue_high_water": 8192,
+      "queue_max_delay_ns": 1254556300,
+      "stages": {
+        "raw_commit_including_autocheckpoint": {
+          "count": 370,
+          "total_ns": 1432166000,
+          "max_ns": 241561200
+        },
+        "raw_batch_flush": {
+          "count": 370,
+          "total_ns": 2122706000,
+          "max_ns": 242305800
+        },
+        "raw_insert": {
+          "count": 370,
+          "total_ns": 670471500,
+          "max_ns": 31706600
+        },
+        "raw_serialize": {
+          "count": 94261,
+          "total_ns": 335717900,
+          "max_ns": 3183100
+        },
+        "capture_process_poll": {
+          "count": 116,
+          "total_ns": 4518245700,
+          "max_ns": 654583400
+        },
+        "capture_lifetime_ingest": {
+          "count": 84000,
+          "total_ns": 4266500,
+          "max_ns": 132400
+        },
+        "lifetime_attach": {
+          "count": 1163,
+          "total_ns": 273700,
+          "max_ns": 4300
+        },
+        "capture_between_drains": {
+          "count": 1672,
+          "total_ns": 9086911600,
+          "max_ns": 656318100
+        }
+      },
+      "retained_counter_window_union": 22094,
+      "retained_counter_window_fraction": 0.42111081462280336,
+      "merged_overflow_counter_intervals": [
+        [
+          983,
+          1435
+        ],
+        [
+          1440,
+          1831
+        ],
+        [
+          1835,
+          1838
+        ],
+        [
+          4225,
+          4321
+        ],
+        [
+          4328,
+          4349
+        ],
+        [
+          4362,
+          7122
+        ],
+        [
+          8499,
+          8532
+        ],
+        [
+          8544,
+          8659
+        ],
+        [
+          8675,
+          8748
+        ],
+        [
+          8760,
+          8762
+        ],
+        [
+          8770,
+          8798
+        ],
+        [
+          8806,
+          8833
+        ],
+        [
+          9686,
+          9700
+        ],
+        [
+          9709,
+          9714
+        ],
+        [
+          9732,
+          9763
+        ],
+        [
+          9772,
+          12848
+        ],
+        [
+          13777,
+          13799
+        ],
+        [
+          13805,
+          13914
+        ],
+        [
+          13932,
+          14185
+        ],
+        [
+          14211,
+          14585
+        ],
+        [
+          14601,
+          14779
+        ],
+        [
+          14796,
+          14978
+        ],
+        [
+          14994,
+          15173
+        ],
+        [
+          15189,
+          15359
+        ],
+        [
+          16312,
+          18923
+        ],
+        [
+          19602,
+          19696
+        ],
+        [
+          19710,
+          19728
+        ],
+        [
+          19738,
+          19821
+        ],
+        [
+          22201,
+          22286
+        ],
+        [
+          24245,
+          24368
+        ],
+        [
+          24379,
+          24410
+        ],
+        [
+          24415,
+          24539
+        ],
+        [
+          24546,
+          24550
+        ],
+        [
+          24557,
+          24570
+        ],
+        [
+          27560,
+          27760
+        ],
+        [
+          27776,
+          28027
+        ],
+        [
+          28043,
+          28275
+        ],
+        [
+          28293,
+          28742
+        ],
+        [
+          28760,
+          29062
+        ],
+        [
+          29080,
+          29136
+        ],
+        [
+          29152,
+          29237
+        ],
+        [
+          29889,
+          29916
+        ],
+        [
+          29925,
+          29932
+        ],
+        [
+          29948,
+          34958
+        ],
+        [
+          36186,
+          36274
+        ],
+        [
+          36284,
+          36320
+        ],
+        [
+          36331,
+          36484
+        ],
+        [
+          36494,
+          36509
+        ],
+        [
+          36519,
+          36539
+        ],
+        [
+          36548,
+          36573
+        ],
+        [
+          36583,
+          36608
+        ],
+        [
+          36617,
+          36676
+        ],
+        [
+          36694,
+          36828
+        ],
+        [
+          36840,
+          36855
+        ],
+        [
+          36867,
+          36892
+        ],
+        [
+          36902,
+          36952
+        ],
+        [
+          38766,
+          38770
+        ],
+        [
+          40836,
+          40854
+        ],
+        [
+          40861,
+          40901
+        ],
+        [
+          42799,
+          42861
+        ],
+        [
+          42870,
+          42922
+        ],
+        [
+          46174,
+          46294
+        ],
+        [
+          47940,
+          48025
+        ],
+        [
+          48032,
+          50612
+        ],
+        [
+          51735,
+          51743
+        ],
+        [
+          51759,
+          51776
+        ],
+        [
+          51778,
+          51842
+        ]
+      ],
+      "retained_window_count": 740,
+      "omitted_queue_spans": 0,
+      "stage_labels_present": false
+    },
+    {
+      "attempt": 18,
+      "mode": "candidate",
+      "files": 10000,
+      "trial": 3,
+      "workers": 4,
+      "noise_files": 100,
+      "original_acceptance_pass": false,
+      "measurement_sha256": "ecfffc35efccd29528e72fb316b7eace9310301fd71a4a414eb2d7c40e021ed4",
+      "queue_overflow": 50060,
+      "etw_events_lost": 67259,
+      "queue_high_water": 8192,
+      "queue_max_delay_ns": 2703536900,
+      "stages": {
+        "raw_commit_including_autocheckpoint": {
+          "count": 307,
+          "total_ns": 999850800,
+          "max_ns": 155333500
+        },
+        "raw_batch_flush": {
+          "count": 307,
+          "total_ns": 1579196400,
+          "max_ns": 156094300
+        },
+        "raw_insert": {
+          "count": 307,
+          "total_ns": 558395400,
+          "max_ns": 21604500
+        },
+        "raw_serialize": {
+          "count": 77541,
+          "total_ns": 390474800,
+          "max_ns": 20677400
+        },
+        "capture_process_poll": {
+          "count": 90,
+          "total_ns": 4217644000,
+          "max_ns": 244719000
+        },
+        "capture_lifetime_ingest": {
+          "count": 50120,
+          "total_ns": 4086700,
+          "max_ns": 399000
+        },
+        "lifetime_attach": {
+          "count": 950,
+          "total_ns": 660600,
+          "max_ns": 8500
+        },
+        "capture_between_drains": {
+          "count": 1160,
+          "total_ns": 7642844900,
+          "max_ns": 282557900
+        }
+      },
+      "retained_counter_window_union": 14344,
+      "retained_counter_window_fraction": 0.2865361566120655,
+      "merged_overflow_counter_intervals": [
+        [
+          4541,
+          4565
+        ],
+        [
+          5696,
+          5752
+        ],
+        [
+          5849,
+          5863
+        ],
+        [
+          7266,
+          7270
+        ],
+        [
+          14271,
+          14318
+        ],
+        [
+          14372,
+          14391
+        ],
+        [
+          14441,
+          14462
+        ],
+        [
+          14528,
+          14539
+        ],
+        [
+          14614,
+          14619
+        ],
+        [
+          14667,
+          14703
+        ],
+        [
+          14758,
+          19958
+        ],
+        [
+          21075,
+          21078
+        ],
+        [
+          22304,
+          22321
+        ],
+        [
+          22401,
+          22414
+        ],
+        [
+          22516,
+          22639
+        ],
+        [
+          22729,
+          22830
+        ],
+        [
+          22925,
+          23004
+        ],
+        [
+          23098,
+          23202
+        ],
+        [
+          23292,
+          23373
+        ],
+        [
+          23478,
+          23573
+        ],
+        [
+          23677,
+          23857
+        ],
+        [
+          25683,
+          25903
+        ],
+        [
+          28567,
+          32684
+        ],
+        [
+          33329,
+          33344
+        ],
+        [
+          33388,
+          33391
+        ],
+        [
+          36395,
+          38024
+        ],
+        [
+          38438,
+          38828
+        ],
+        [
+          40089,
+          40327
+        ],
+        [
+          40416,
+          40484
+        ],
+        [
+          43208,
+          44609
+        ],
+        [
+          45455,
+          45485
+        ]
+      ],
+      "retained_window_count": 614,
+      "omitted_queue_spans": 0,
+      "stage_labels_present": false
+    }
+  ],
+  "public_redaction": {
+    "fields": [
+      "$.environment.logical_processors",
+      "$.provenance.windows_build",
+      "$.provenance.logical_processors"
+    ],
+    "meaning": "Withheld host metadata and historical branch labels are null, not zero. Original artifact digests refer to retained local pre-redaction evidence. Measured workload results and failed attempts are unchanged."
+  }
+}

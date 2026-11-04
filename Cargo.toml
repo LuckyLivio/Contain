@@ -1,9 +1,13 @@
 [workspace]
-members = ["crates/contain-core", "crates/contain-cli", "examples/test-installer"]
+members = ["crates/contain-core", "crates/contain-cli", "examples/test-installer", "tools/offline"]
 resolver = "2"
+exclude = ["vendor/ferrisetw"]
+
+[patch.crates-io]
+ferrisetw = { path = "vendor/ferrisetw" }
 
 [workspace.package]
-version = "0.3.1"
+version = "0.3.2-beta.1"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/LuckyLivio/Contain"
@@ -14,14 +18,15 @@ blake3 = "1"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 notify = "8"
-rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite = { version = "0.37", features = ["bundled", "backup"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 sysinfo = "0.37"
 uuid = { version = "1", features = ["v4"] }
 walkdir = "2"
 winreg = "0.55"
 ferrisetw = "1.2"
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_Diagnostics_Etw", "Win32_Storage_FileSystem", "Win32_Security", "Win32_Security_Authorization"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_Diagnostics_Etw", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Performance", "Win32_System_SystemInformation", "Win32_System_LibraryLoader", "Win32_System_IO", "Win32_Storage_FileSystem", "Win32_Security", "Win32_Security_Authorization"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }

@@ -1,0 +1,673 @@
+{
+  "schema_version": 1,
+  "milestone": "graphical_install_record_mvp_closed",
+  "version": "0.3.1",
+  "source_sha": "15f214442d69baa0ebd91f5ad12edc5661281779",
+  "branch": "feat/desktop-install-record",
+  "ci_run": 41805319059,
+  "ci_conclusion": "success",
+  "ci_url": "https://github.com/LuckyLivio/Contain/actions/runs/41805319059",
+  "download": "https://github.com/LuckyLivio/Contain/actions/runs/41805319059/artifacts/13311396065",
+  "evidence_artifact": "https://github.com/LuckyLivio/Contain/actions/runs/41805319059/artifacts/13310538263",
+  "quality_artifact": "https://github.com/LuckyLivio/Contain/actions/runs/41805319059/artifacts/13310628178",
+  "package": {
+    "zip_sha256": "11cda20dcea4e8d338da940fc645f8ff24328ecc62c83c871852262f3d6d596e",
+    "zip_bytes": 76491689,
+    "member_count": 477,
+    "contents_entries_verified": 476,
+    "frozen_files_verified": 474,
+    "source_files_verified": 342,
+    "build_manifest_sha256": "37ed6923190b8acc44f50de61f8264f0c7d8b162b181351fb570bd59cea80b67",
+    "source_archive_sha256": "d1054185d419dce86d723b2068f686f92e3b0e3902903dc77a9253667f8cba8b",
+    "validation": "bounded_graphical_install_verified",
+    "source_sha": "15f214442d69baa0ebd91f5ad12edc5661281779",
+    "included_frameworks": [
+      {
+        "name": "Microsoft.NETCore.App",
+        "version": "8.0.33"
+      },
+      {
+        "name": "Microsoft.WindowsDesktop.App",
+        "version": "8.0.33"
+      }
+    ],
+    "configuration": {
+      "viewer": "Release",
+      "core": "debug",
+      "target": "x86_64-pc-windows-msvc"
+    },
+    "core_sha256": "1527d190b3c51a0c47813c0e5d8f94a74ceaeccdf50e4f8f6cb33cd47b8196b1",
+    "viewer_assembly_sha256": "70b67e06e4a25a2210ab6753b30bc90b3dacc3f67077509eda601f59c2f35a7a",
+    "viewer_launcher_sha256": "1ff290c75bc7f421f31f77dc9483a5a5ee42f59a72a2478e02a58ff1afec03de",
+    "fixture_sha256": "95033b0d92dafc8d82c3d769918e23ee05201746f0334eb11d5a004ea6651af2",
+    "milestone_checks": {
+      "automated_product_and_quality": true,
+      "native_picker_navigation_and_cancel": true
+    }
+  },
+  "platform": {
+    "system": "Windows",
+    "release": "2025Server",
+    "version": "10.0.26100",
+    "architecture": "AMD64",
+    "runner_image": "win25-vs2026",
+    "runner_image_version": "20261030.294.1",
+    "ci_run_url": "https://github.com/LuckyLivio/Contain/actions/runs/41805319059"
+  },
+  "toolchain": {
+    "nextest": "cargo-nextest 0.9.149 (3fe4ef319 2026-10-20)",
+    "pwsh": "PowerShell 7.6.9",
+    "deny": "cargo-deny 0.20.2",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "llvm_cov": "cargo-llvm-cov 0.9.1",
+    "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+    "python": "Python 3.12.10",
+    "dotnet": "10.0.403"
+  },
+  "native_install": {
+    "schema_version": 1,
+    "protocol_revision": "contain-desktop-install-verification-1",
+    "source_sha": "15f214442d69baa0ebd91f5ad12edc5661281779",
+    "native_windows": true,
+    "gui_initiated": true,
+    "real_etw_executed": true,
+    "synthetic": false,
+    "controlled_fixture": true,
+    "maximum_native_captures": 1,
+    "retries": 0,
+    "planned_checks": [
+      "install_protocol_and_arguments",
+      "install_configuration_without_launch",
+      "gui_real_etw_start_and_duplicate_guard",
+      "gui_runtime_stages_and_close_guard",
+      "gui_exact_session_autoopen",
+      "gui_real_source_event_explain_and_export"
+    ],
+    "checks": [
+      {
+        "name": "install_protocol_and_arguments",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "install_configuration_without_launch",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "gui_real_etw_start_and_duplicate_guard",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "gui_runtime_stages_and_close_guard",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "gui_exact_session_autoopen",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "gui_real_source_event_explain_and_export",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      }
+    ],
+    "passed": 6,
+    "failed": 0,
+    "not_run": 0,
+    "skipped": 0,
+    "completed": true,
+    "accepted": true,
+    "automatic_checks_accepted": true,
+    "executed_interaction_failed": false,
+    "assertions_passed": 156,
+    "offline_viewer_checks_passed": true,
+    "package_manifest_sha256": "37ed6923190b8acc44f50de61f8264f0c7d8b162b181351fb570bd59cea80b67",
+    "viewer_assembly_sha256": "70b67e06e4a25a2210ab6753b30bc90b3dacc3f67077509eda601f59c2f35a7a",
+    "viewer_launcher_sha256": "1ff290c75bc7f421f31f77dc9483a5a5ee42f59a72a2478e02a58ff1afec03de",
+    "contain_sha256": "1527d190b3c51a0c47813c0e5d8f94a74ceaeccdf50e4f8f6cb33cd47b8196b1",
+    "fixture_sha256": "95033b0d92dafc8d82c3d769918e23ee05201746f0334eb11d5a004ea6651af2",
+    "session_id": "b3c37c62-b384-4c78-863b-77981d2b1050",
+    "event_id": "afee040b-5667-4580-8fa6-32c6f4458470",
+    "installer_started": true,
+    "installer_pid": 5516,
+    "installer_creation_time": "134382584023751165",
+    "installer_exit_code": 0,
+    "collection_finished": true,
+    "data_saved": true,
+    "capture_state": "finished",
+    "quality_level": "Degraded",
+    "quality_reasons": [
+      "Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.",
+      "591 registry provider records lacked a verified absolute path."
+    ],
+    "providers_active": true,
+    "real_source_event_count": 219,
+    "independent_truth_verified": true,
+    "capture_accounting": {
+      "etw_events_lost": 0,
+      "etw_buffers_lost": 0,
+      "dropped_events": 0,
+      "context_losses": 0,
+      "decode_errors": 0,
+      "events_received": 337,
+      "events_retained": 314,
+      "snapshot_gaps": 0,
+      "notification_gaps": 0,
+      "drain_timed_out": false
+    },
+    "observed_stages": [
+      "preparing",
+      "capturing",
+      "finalizing",
+      "finished"
+    ],
+    "real_event": {
+      "id": "afee040b-5667-4580-8fa6-32c6f4458470",
+      "operation": "write_requested",
+      "confidence": "High",
+      "source": "EtwFile",
+      "timestamp_ticks": "134382584024071100",
+      "pid": "8700",
+      "creation_time": "134382584023940759"
+    },
+    "report_generated": true,
+    "report_sha256": "c1fc99bc4982ebaf05f52569f9d1cc3706e002c6f3d2b5076b833dbc4807caf8",
+    "report_publication": "byte_identical_controlled_fixture_export",
+    "screenshots": [
+      {
+        "name": "install-new-record.png",
+        "sha256": "c61269aac4b3ad1f269ac1c4f8dfe2948a72beb63961a84325a81e8080f428ff",
+        "width": 896,
+        "height": 788
+      },
+      {
+        "name": "install-recording.png",
+        "sha256": "9331ffa1b4a01224f25f2150eea6aef201f645e49ecc0a9436674df57d14e0cb",
+        "width": 896,
+        "height": 788
+      },
+      {
+        "name": "install-result.png",
+        "sha256": "c85de15f6578a8f18e1a6faf4cd1d37290cbb8be442107d201910020f183f69a",
+        "width": 896,
+        "height": 788
+      },
+      {
+        "name": "install-autoopened-session.png",
+        "sha256": "8261c020bb4b54fed1de650c96fa72d55dea065c1e175a20ae993ea9460b1477",
+        "width": 1044,
+        "height": 788
+      },
+      {
+        "name": "install-real-event-explain.png",
+        "sha256": "7989901297fdb79e69aa6bbe487ff783728606e17e5d35f86008f90e6b29f669",
+        "width": 1044,
+        "height": 788
+      }
+    ],
+    "manual_checks": [
+      {
+        "name": "native_picker_navigation_and_cancel",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      }
+    ],
+    "offline_checks": [
+      {
+        "name": "synthetic_invalid_exe_preserves_saved_session_and_old_records",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      }
+    ],
+    "fault_injection": "Explicit synthetic read-only-database and invalid-EXE starts in selected snapshot mode; no successful installer process and no ETW acceptance credit.",
+    "screenshot_method": "Actual production WinForms controls rendered on Windows after product selection/start/status/result/explain actions. Controlled fixture; real ETW source records are not synthetic.",
+    "interaction_boundary": "Product controls/start logic executed. Native picker navigation and cancel separately reported; injected configuration is never counted as native picker navigation. No third-party installer, scale experiment or retry.",
+    "private_evidence_retained": true
+  },
+  "native_viewer": {
+    "passed": 22,
+    "failed": 0,
+    "not_run": 0,
+    "assertions_passed": 230,
+    "summary_sha256": "16af06640e60e45b50d9e2a2d235ce09008ab462b64bb2a487f0b470671029f5"
+  },
+  "quality": {
+    "gates_passed": 49,
+    "gates_failed": 0,
+    "invocations": [
+      {
+        "number": 1,
+        "mode": "Check",
+        "source_revision": "15f214442d69baa0ebd91f5ad12edc5661281779",
+        "completed": true,
+        "passed": true,
+        "tools": {
+          "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+          "deny": "cargo-deny 0.20.2",
+          "llvm_cov": "cargo-llvm-cov 0.9.1",
+          "python": "Python 3.12.10",
+          "pwsh": "PowerShell 7.6.9",
+          "nextest": "cargo-nextest 0.9.149 (3fe4ef319 2026-10-20)",
+          "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)"
+        }
+      },
+      {
+        "number": 2,
+        "mode": "Coverage",
+        "source_revision": "15f214442d69baa0ebd91f5ad12edc5661281779",
+        "completed": true,
+        "passed": true,
+        "tools": {
+          "nextest": "cargo-nextest 0.9.149 (3fe4ef319 2026-10-20)",
+          "pwsh": "PowerShell 7.6.9",
+          "deny": "cargo-deny 0.20.2",
+          "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+          "llvm_cov": "cargo-llvm-cov 0.9.1",
+          "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+          "python": "Python 3.12.10"
+        }
+      },
+      {
+        "number": 3,
+        "mode": "CoverageOriginal",
+        "source_revision": "15f214442d69baa0ebd91f5ad12edc5661281779",
+        "completed": true,
+        "passed": true,
+        "tools": {
+          "nextest": "cargo-nextest 0.9.149 (3fe4ef319 2026-10-20)",
+          "pwsh": "PowerShell 7.6.9",
+          "deny": "cargo-deny 0.20.2",
+          "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+          "llvm_cov": "cargo-llvm-cov 0.9.1",
+          "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+          "python": "Python 3.12.10"
+        }
+      },
+      {
+        "number": 4,
+        "mode": "Dependencies",
+        "source_revision": "15f214442d69baa0ebd91f5ad12edc5661281779",
+        "completed": true,
+        "passed": true,
+        "tools": {
+          "nextest": "cargo-nextest 0.9.149 (3fe4ef319 2026-10-20)",
+          "pwsh": "PowerShell 7.6.9",
+          "deny": "cargo-deny 0.20.2",
+          "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+          "llvm_cov": "cargo-llvm-cov 0.9.1",
+          "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+          "python": "Python 3.12.10"
+        }
+      },
+      {
+        "number": 5,
+        "mode": "Companion",
+        "source_revision": "15f214442d69baa0ebd91f5ad12edc5661281779",
+        "completed": true,
+        "passed": true,
+        "tools": {
+          "nextest": "cargo-nextest 0.9.149 (3fe4ef319 2026-10-20)",
+          "pwsh": "PowerShell 7.6.9",
+          "deny": "cargo-deny 0.20.2",
+          "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+          "llvm_cov": "cargo-llvm-cov 0.9.1",
+          "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+          "python": "Python 3.12.10"
+        }
+      }
+    ],
+    "nextest": {
+      "runner": "nextest",
+      "executed": 328,
+      "passed": 328,
+      "failed": 0,
+      "skipped": 7,
+      "leaky": 0
+    },
+    "python_suites": 23,
+    "python_passed": 360,
+    "native_directory": {
+      "schema_version": 1,
+      "scope": "synthetic_native_windows_directory_identity",
+      "native_windows": true,
+      "native": true,
+      "exporter": {
+        "protocol_revision": "contain-trial-report-3",
+        "sha256": "14d21ad8c922365976206f5879a1d1ef83a90f8babbac796f1acfeea22a76f43"
+      },
+      "test_script_sha256": "8adc208e6cf70ab8b3549d58c84fc83959626f4d9764b7d0ddd4bf5ca94e42c0",
+      "passed": true,
+      "tests_run": 7,
+      "passed_count": 7,
+      "failed_count": 0,
+      "skipped_count": 0,
+      "short_alias": {
+        "status": "covered",
+        "old_string_comparison_equal": false,
+        "native_samefile": true
+      },
+      "failures": [],
+      "skips": []
+    },
+    "workspace_coverage": [
+      {
+        "lines": {
+          "count": 19103,
+          "covered": 14467,
+          "percent": 75.73156048788148
+        },
+        "functions": {
+          "count": 1500,
+          "covered": 1154,
+          "percent": 76.93333333333334
+        },
+        "regions": {
+          "count": 31743,
+          "covered": 23271,
+          "percent": 73.31065116718646
+        },
+        "instantiations": {
+          "count": 2443,
+          "covered": 1290,
+          "percent": 52.80392959476055
+        },
+        "branches": {
+          "count": 0,
+          "covered": 0,
+          "percent": 0
+        }
+      }
+    ],
+    "original_package_coverage": [
+      {
+        "lines": {
+          "count": 13818,
+          "covered": 10079,
+          "percent": 72.94109133014908
+        },
+        "functions": {
+          "count": 1066,
+          "covered": 804,
+          "percent": 75.42213883677297
+        },
+        "regions": {
+          "count": 22411,
+          "covered": 15972,
+          "percent": 71.26857346838607
+        },
+        "instantiations": {
+          "count": 1974,
+          "covered": 913,
+          "percent": 46.25126646403242
+        },
+        "branches": {
+          "count": 0,
+          "covered": 0,
+          "percent": 0
+        }
+      }
+    ],
+    "coverage_floors": {
+      "lines_percent": 66.5,
+      "functions_percent": 70
+    },
+    "workspace_test_executions": {
+      "runner": "cargo-test",
+      "groups": [
+        {
+          "passed": 16,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "passed": 202,
+          "failed": 0,
+          "ignored": 4,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "passed": 87,
+          "failed": 0,
+          "ignored": 3,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "passed": 7,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "passed": 11,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        }
+      ]
+    },
+    "original_test_executions": {
+      "runner": "cargo-test",
+      "groups": [
+        {
+          "passed": 16,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "passed": 202,
+          "failed": 0,
+          "ignored": 4,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "passed": 7,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "passed": 11,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        }
+      ]
+    },
+    "companion": {
+      "runner": "cargo-test",
+      "groups": [
+        {
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 205
+        }
+      ]
+    },
+    "doctests": {
+      "runner": "cargo-test",
+      "groups": [
+        {
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        }
+      ]
+    },
+    "fuzz_seeds": {
+      "runner": "cargo-test",
+      "groups": [
+        {
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        }
+      ]
+    },
+    "summary_sha256": "6ae9ed45645f29f7a0891fd168c2515ac9b531b7f0839e20ced1d17dd05939c0",
+    "affected_function_assessment": {
+      "install_status": "Nonzero tested instantiations of new/publish/fail/backend/finished/providers_ready cover every reported code region; zero-count generic instantiations and shared offline aliases remain in the artifact.",
+      "install_controlled": "Native unit failure path exercises exact fresh session and preservation; primary observed wrapper 8/8 regions, primary controlled path 19/29. Successful live install/finalization paths are not instrumented by unit coverage.",
+      "install_inner": "Native missing-installer regression covers primary 12/550 regions. Happy-path capture work and provider_status remain unexecuted in LLVM unit coverage; the separate production GUI capture verifies their runtime path.",
+      "cli": "run_cli main unit instantiation 5/319 regions, with structured install and envelope regions largely uncovered in LLVM unit coverage. Actual structured output is checked by the native production bridge.",
+      "startup_ownership": "Shared production guard tested with owned failures, transfer, rejected acquisition and unwind; generic drop records retain 4/6 or 5/6 region counts and zero instantiations rather than inventing a merged percentage.",
+      "limits": "Coverage includes inline Rust tests and overlapping shared-module executions. LLVM branch denominator is zero; .NET coverage was not measured. No source exclusions, lowered floors or weakened assertions."
+    }
+  },
+  "screenshots": [
+    {
+      "path": "install-41805319059-new-record.png",
+      "name": "install-new-record.png",
+      "sha256": "c61269aac4b3ad1f269ac1c4f8dfe2948a72beb63961a84325a81e8080f428ff",
+      "width": 896,
+      "height": 788
+    },
+    {
+      "path": "install-41805319059-recording.png",
+      "name": "install-recording.png",
+      "sha256": "9331ffa1b4a01224f25f2150eea6aef201f645e49ecc0a9436674df57d14e0cb",
+      "width": 896,
+      "height": 788
+    },
+    {
+      "path": "install-41805319059-result.png",
+      "name": "install-result.png",
+      "sha256": "c85de15f6578a8f18e1a6faf4cd1d37290cbb8be442107d201910020f183f69a",
+      "width": 896,
+      "height": 788
+    },
+    {
+      "path": "install-41805319059-autoopened-session.png",
+      "name": "install-autoopened-session.png",
+      "sha256": "8261c020bb4b54fed1de650c96fa72d55dea065c1e175a20ae993ea9460b1477",
+      "width": 1044,
+      "height": 788
+    },
+    {
+      "path": "install-41805319059-real-event-explain.png",
+      "name": "install-real-event-explain.png",
+      "sha256": "7989901297fdb79e69aa6bbe487ff783728606e17e5d35f86008f90e6b29f669",
+      "width": 1044,
+      "height": 788
+    }
+  ],
+  "reviewed_report": {
+    "path": "install-41805319059-report.html",
+    "sha256": "c1fc99bc4982ebaf05f52569f9d1cc3706e002c6f3d2b5076b833dbc4807caf8",
+    "byte_identical_to_actual_export": true,
+    "session_id": "b3c37c62-b384-4c78-863b-77981d2b1050",
+    "event_id": "afee040b-5667-4580-8fa6-32c6f4458470",
+    "script_or_network_content": false
+  },
+  "retained_attempts": [
+    {
+      "run": 41795312477,
+      "status": "cancelled_before_tests_and_capture",
+      "source": "80342317422499da6d755f7e03f378adb22da44e"
+    },
+    {
+      "run": 41795659625,
+      "status": "failed_new_form_numeric_initialization_before_capture",
+      "summary": "desktop-install-attempt-41795659625.json"
+    },
+    {
+      "run": 41798143791,
+      "status": "failed_visible_task_Show_duplicate; real_ETW_evidence_retained",
+      "summary": "desktop-install-attempt-41798143791.json"
+    },
+    {
+      "run": 41801560771,
+      "status": "failed_parallel_test_directory_collision_before_native",
+      "summary": "desktop-install-attempt-41801560771.json"
+    }
+  ],
+  "not_run": [
+    "Manual clean Windows 10/11 operation",
+    "Live GUI nonadministrator trace-permission denial; unavailable-provider guard is tested separately",
+    "Native navigation of watch-folder and report-save dialogs (installer picker navigation/cancel did run)",
+    "Third-party installers, MSI, updater/service-agent installation trials",
+    "Formal 32-attempt acceptance and scale/performance trials",
+    "New fuzz campaign and .NET code-coverage measurement"
+  ],
+  "scope": "Two controlled GUI-started ETW captures across this round: one retained failed UI attempt and this accepted final frozen package. Synthetic failure tests are distinct; no demo.ps1 precapture or third-party installation.",
+  "prior_milestones": "Bounded read-only candidate and desktop record viewer remain closed separately",
+  "branch_cleanup": {
+    "removed_topic_refs": 11,
+    "retained_remote_heads": [
+      "main",
+      "feat/desktop-record-viewer",
+      "feat/desktop-install-record"
+    ],
+    "audit": "desktop-install-branch-cleanup.json"
+  }
+}

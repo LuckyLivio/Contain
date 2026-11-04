@@ -1,0 +1,413 @@
+{
+  "schema_version": 1,
+  "purpose": "Archive all seven unexpected positives from the two failed CI samples without rescoring.",
+  "acceptance": "Original strict failures remain failures. Matching identity, resource and operation does not prove exact syscall attribution.",
+  "rescored": false,
+  "intervals_adjusted": false,
+  "source_scope": "Published fixture-evidence artifacts only. Absolute resource paths, SIDs, unrelated candidate pairs and machine inventory are omitted.",
+  "timestamp_encoding": "All FILETIME timestamps and creation identities are exact decimal strings; deltas use integer 100 ns ticks.",
+  "ci_runs": [
+    {
+      "run_id": "39811449454",
+      "event": "push",
+      "head_sha": "07e2e86da54d6cdb5cbd638bf3b9c34a643a53ee",
+      "conclusion": "success",
+      "run_url": "https://github.com/LuckyLivio/Contain/actions/runs/39811449454",
+      "status": "completed"
+    },
+    {
+      "run_id": "39811456338",
+      "event": "pull_request",
+      "head_sha": "07e2e86da54d6cdb5cbd638bf3b9c34a643a53ee",
+      "conclusion": "failure",
+      "run_url": "https://github.com/LuckyLivio/Contain/actions/runs/39811456338",
+      "status": "completed"
+    },
+    {
+      "run_id": "39812014521",
+      "event": "push",
+      "head_sha": "880b4501897ed75225e65f66a26945e9bf1d2348",
+      "conclusion": "failure",
+      "run_url": "https://github.com/LuckyLivio/Contain/actions/runs/39812014521",
+      "status": "completed"
+    },
+    {
+      "run_id": "39812022615",
+      "event": "pull_request",
+      "head_sha": "880b4501897ed75225e65f66a26945e9bf1d2348",
+      "conclusion": "success",
+      "run_url": "https://github.com/LuckyLivio/Contain/actions/runs/39812022615",
+      "status": "completed"
+    }
+  ],
+  "diagnosis": {
+    "established": "All seven unexpected positives lie after the matching-identity oracle syscall end. Each has the same PID, process creation FILETIME, normalized resource and operation as a unique oracle row. No different actor or outside-scope path was found among these seven records.",
+    "clock_hypothesis_status": "unproven",
+    "clock_paths": "Locked ferrisetw 1.2.0 configures QPC (ClientContext=1) without PROCESS_TRACE_MODE_RAW_TIMESTAMP. ProcessTrace converts the event header timestamp to FILETIME. The fixture journals SystemTime::now() around syscalls.",
+    "unresolved": "Original artifacts retain no raw QPC/frequency/calibration to distinguish conversion uncertainty, UTC adjustment or provider emission timing. They do not support a retrospective timestamp correction.",
+    "next_evidence": "Controlled independent syscall QPC bounds, raw ETW QPC and trace-clock metadata, bracketed QPC/precise-FILETIME calibration, and provider emission-order validation.",
+    "sources": [
+      "https://learn.microsoft.com/en-us/windows/win32/api/evntrace/ns-evntrace-event_trace_logfilew",
+      "https://learn.microsoft.com/en-us/windows/win32/api/evntcons/ns-evntcons-event_header",
+      "https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps"
+    ]
+  },
+  "original_trials": [
+    {
+      "run_id": "39811456338",
+      "trial": "demo-etw",
+      "original_score": {
+        "expected": 21,
+        "observed": 19,
+        "correctly_attributed": 17,
+        "unknown": 4,
+        "incorrect_attribution": 0,
+        "positive_raw_predictions": 17,
+        "false_positive_target_events": 0,
+        "precision": 1.0,
+        "groups": {
+          "target_success": {
+            "expected": 17,
+            "observed": 17,
+            "correctly_attributed": 17,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 1.0,
+            "correct_attribution_rate": 1.0
+          },
+          "noise_success": {
+            "expected": 3,
+            "observed": 2,
+            "observed_but_unresolved": 2,
+            "unobserved": 1,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.6666666666666666,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 1,
+            "unobserved": 1,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        }
+      },
+      "input_sha256": {
+        "capture-fixture.json": "b26326f6467f4e3fcceef51991483adb09557428635a3813c82bda565e945698",
+        "ground-truth.json": "61fc0adaa5b786418174d22350bfb609c82347e5aeefa12c5f4178e1325d8043",
+        "score.json": "7e97bd839911e45ce50ebf0e7400c23eb50f375ed3491c6ea6993037a1a4a6e5"
+      }
+    },
+    {
+      "run_id": "39811456338",
+      "trial": "demo-etw-repeat",
+      "original_score": {
+        "expected": 21,
+        "observed": 17,
+        "correctly_attributed": 15,
+        "unknown": 6,
+        "incorrect_attribution": 0,
+        "positive_raw_predictions": 17,
+        "false_positive_target_events": 2,
+        "precision": 0.8823529411764706,
+        "groups": {
+          "target_success": {
+            "expected": 17,
+            "observed": 15,
+            "correctly_attributed": 15,
+            "unobserved": 2,
+            "unsupported_out_of_scope": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.8823529411764706,
+            "correct_attribution_rate": 0.8823529411764706
+          },
+          "noise_success": {
+            "expected": 3,
+            "observed": 2,
+            "observed_but_unresolved": 2,
+            "unobserved": 1,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.6666666666666666,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 1,
+            "unobserved": 1,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        }
+      },
+      "input_sha256": {
+        "capture-fixture.json": "f3b78369a5eb91dc32d42642dfa736a5c7d496b7452ce7f71c05827d2b5c226a",
+        "ground-truth.json": "98ca7c35d941098361b534f0c68d7019a527084de05315f70cbe3dbdf57833dd",
+        "score.json": "c5bcd1316890e2772e5cd3ce32d5c22a9f326c16761e6e8cec86aa2cd1e53592"
+      }
+    },
+    {
+      "run_id": "39812014521",
+      "trial": "demo-etw",
+      "original_score": {
+        "expected": 21,
+        "observed": 14,
+        "correctly_attributed": 12,
+        "unknown": 9,
+        "incorrect_attribution": 0,
+        "positive_raw_predictions": 17,
+        "false_positive_target_events": 5,
+        "precision": 0.7058823529411765,
+        "groups": {
+          "target_success": {
+            "expected": 17,
+            "observed": 12,
+            "correctly_attributed": 12,
+            "unobserved": 5,
+            "unsupported_out_of_scope": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.7058823529411765,
+            "correct_attribution_rate": 0.7058823529411765
+          },
+          "noise_success": {
+            "expected": 3,
+            "observed": 2,
+            "observed_but_unresolved": 2,
+            "unobserved": 1,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.6666666666666666,
+            "correct_attribution_rate": 0.0
+          },
+          "failed": {
+            "expected": 1,
+            "unobserved": 1,
+            "observed": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": 0.0,
+            "correct_attribution_rate": 0.0
+          },
+          "unsupported": {
+            "expected": 0,
+            "observed": 0,
+            "unobserved": 0,
+            "unsupported_out_of_scope": 0,
+            "correctly_attributed": 0,
+            "incorrectly_attributed": 0,
+            "observed_but_unresolved": 0,
+            "correctly_not_assigned_to_target_app": 0,
+            "observation_rate": null,
+            "correct_attribution_rate": null
+          }
+        }
+      },
+      "input_sha256": {
+        "capture-fixture.json": "23018b9c0d15212865e762f4e3465bf88bee3df66a411372cbcde2dab53ce257",
+        "ground-truth.json": "8d88de94254acf63344759a74873352ce73b5287b2cbfcbbfe2039449a7f79ba",
+        "score.json": "8bfb624993ed06de463730bf415a133130bb99bccc41d08e1b2dbfb32019622b"
+      }
+    }
+  ],
+  "unexpected_cases": [
+    {
+      "event_id": "ab12bd69-b723-45e0-a479-fb30c16b4b0a",
+      "role": "child",
+      "operation": "set_value",
+      "pid": 3576,
+      "process_creation_time": "134371591445320817",
+      "event_ticks": "134371591445816108",
+      "syscall_start_ticks": "134371591445815440",
+      "syscall_end_ticks": "134371591445816105",
+      "event_minus_start_100ns": 668,
+      "event_minus_end_100ns": 3,
+      "original_interval_contains_event": false,
+      "actor_identity_equal": true,
+      "operation_equal": true,
+      "confidence": "High",
+      "run_id": "39811456338",
+      "trial": "demo-etw-repeat",
+      "resource_leaf": "ChildObserved",
+      "resource_equal_after_normalization": true,
+      "original_classification": "unexpected_positive"
+    },
+    {
+      "event_id": "5aa98a65-6fdc-4136-a490-099750a79eb8",
+      "role": "grandchild",
+      "operation": "set_value",
+      "pid": 1920,
+      "process_creation_time": "134371591445823512",
+      "event_ticks": "134371591446394672",
+      "syscall_start_ticks": "134371591446393738",
+      "syscall_end_ticks": "134371591446394658",
+      "event_minus_start_100ns": 934,
+      "event_minus_end_100ns": 14,
+      "original_interval_contains_event": false,
+      "actor_identity_equal": true,
+      "operation_equal": true,
+      "confidence": "High",
+      "run_id": "39811456338",
+      "trial": "demo-etw-repeat",
+      "resource_leaf": "GrandchildObserved",
+      "resource_equal_after_normalization": true,
+      "original_classification": "unexpected_positive"
+    },
+    {
+      "event_id": "781737ad-e956-4419-abc9-64ba7e5c03eb",
+      "role": "parent",
+      "operation": "set_value",
+      "pid": 8352,
+      "process_creation_time": "134371593632752453",
+      "event_ticks": "134371593633011544",
+      "syscall_start_ticks": "134371593633011090",
+      "syscall_end_ticks": "134371593633011543",
+      "event_minus_start_100ns": 454,
+      "event_minus_end_100ns": 1,
+      "original_interval_contains_event": false,
+      "actor_identity_equal": true,
+      "operation_equal": true,
+      "confidence": "High",
+      "run_id": "39812014521",
+      "trial": "demo-etw",
+      "resource_leaf": "Installed",
+      "resource_equal_after_normalization": true,
+      "original_classification": "unexpected_positive"
+    },
+    {
+      "event_id": "84bcf620-ed5a-4c03-a0f5-9d1e03179dd0",
+      "role": "child",
+      "operation": "set_value",
+      "pid": 3552,
+      "process_creation_time": "134371593633019565",
+      "event_ticks": "134371593633086732",
+      "syscall_start_ticks": "134371593633086219",
+      "syscall_end_ticks": "134371593633086723",
+      "event_minus_start_100ns": 513,
+      "event_minus_end_100ns": 9,
+      "original_interval_contains_event": false,
+      "actor_identity_equal": true,
+      "operation_equal": true,
+      "confidence": "High",
+      "run_id": "39812014521",
+      "trial": "demo-etw",
+      "resource_leaf": "Installed",
+      "resource_equal_after_normalization": true,
+      "original_classification": "unexpected_positive"
+    },
+    {
+      "event_id": "85812867-6e1a-4998-bae4-c5fbe755b784",
+      "role": "child",
+      "operation": "set_value",
+      "pid": 3552,
+      "process_creation_time": "134371593633019565",
+      "event_ticks": "134371593633104435",
+      "syscall_start_ticks": "134371593633104037",
+      "syscall_end_ticks": "134371593633104430",
+      "event_minus_start_100ns": 398,
+      "event_minus_end_100ns": 5,
+      "original_interval_contains_event": false,
+      "actor_identity_equal": true,
+      "operation_equal": true,
+      "confidence": "High",
+      "run_id": "39812014521",
+      "trial": "demo-etw",
+      "resource_leaf": "ChildObserved",
+      "resource_equal_after_normalization": true,
+      "original_classification": "unexpected_positive"
+    },
+    {
+      "event_id": "8bb0b6b7-1209-4e51-b8b1-30619fc4d492",
+      "role": "grandchild",
+      "operation": "set_value",
+      "pid": 6160,
+      "process_creation_time": "134371593633109126",
+      "event_ticks": "134371593633194283",
+      "syscall_start_ticks": "134371593633193858",
+      "syscall_end_ticks": "134371593633194279",
+      "event_minus_start_100ns": 425,
+      "event_minus_end_100ns": 4,
+      "original_interval_contains_event": false,
+      "actor_identity_equal": true,
+      "operation_equal": true,
+      "confidence": "High",
+      "run_id": "39812014521",
+      "trial": "demo-etw",
+      "resource_leaf": "GrandchildObserved",
+      "resource_equal_after_normalization": true,
+      "original_classification": "unexpected_positive"
+    },
+    {
+      "event_id": "7d743107-597d-4ae9-9b24-2b0c55a65d3e",
+      "role": "detached",
+      "operation": "write_requested",
+      "pid": 7112,
+      "process_creation_time": "134371593669260883",
+      "event_ticks": "134371593694334800",
+      "syscall_start_ticks": "134371593694329531",
+      "syscall_end_ticks": "134371593694334007",
+      "event_minus_start_100ns": 5269,
+      "event_minus_end_100ns": 793,
+      "original_interval_contains_event": false,
+      "actor_identity_equal": true,
+      "operation_equal": true,
+      "confidence": "High",
+      "run_id": "39812014521",
+      "trial": "demo-etw",
+      "resource_leaf": "detached.txt",
+      "resource_equal_after_normalization": true,
+      "original_classification": "unexpected_positive"
+    }
+  ]
+}

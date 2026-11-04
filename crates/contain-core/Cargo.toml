@@ -13,6 +13,7 @@ notify.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 sysinfo.workspace = true
 uuid.workspace = true
 walkdir.workspace = true
@@ -20,3 +21,7 @@ winreg.workspace = true
 ferrisetw.workspace = true
 windows-sys.workspace = true
 tracing.workspace = true
+
+[[bench]]
+name = "event_pipeline"
+harness = false

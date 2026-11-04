@@ -1,0 +1,153 @@
+name: Upload verified Beta assets
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upload-verified-v0.3.2-beta.1
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    if: ${{ github.repository == 'LuckyLivio/Contain' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Set this attempt's download directory
+        shell: bash
+        run: |
+          printf 'DOWNLOAD_DIR=%s/contain-beta-%s-%s\n' "$RUNNER_TEMP" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Download the exact verified Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '13328075262'
+          run-id: '41834806392'
+          repository: LuckyLivio/Contain
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ env.DOWNLOAD_DIR }}
+      - name: Verify immutable evidence and upload three assets to the existing draft
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import importlib.util
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import zipfile
+
+          REPO = "LuckyLivio/Contain"
+          TAG = "v0.3.2-beta.1"
+          SOURCE = "85c522839523d259c09c80a4ce4e8c78ea11472d"
+          RUN = 41834806392
+          ARTIFACT = 13328075262
+          RELEASE = 433954322
+          ZIP_SHA = "4b5c533b3e45e65fcd579ca45475c92e6e027144d0c73ba3ee6a97bf8a46192f"
+          IDENTITY_SHA = "41a1e24b105b6723adfdd994883deff6c17e26a8414c8d5616e9cdb3e5d8a3d8"
+          SUMS_SHA = "57eee0bc7a5dd84bfbfb0d909daddbf2ba36d6d12d71c10036ac19670af107ee"
+
+          def require(condition, code):
+              if not condition:
+                  raise SystemExit(code)
+
+          def api(path):
+              return json.loads(subprocess.check_output(["gh", "api", "repos/" + REPO + "/" + path], text=True))
+
+          def digest(path):
+              with path.open("rb") as stream:
+                  return hashlib.file_digest(stream, "sha256").hexdigest()
+
+          def existing_draft():
+              release = api("releases/" + str(RELEASE))
+              require(release.get("id") == RELEASE and release.get("tag_name") == TAG
+                      and release.get("target_commitish") == SOURCE
+                      and release.get("draft") is True and release.get("prerelease") is True,
+                      "The exact draft Prerelease is required; published releases are refused.")
+              return release
+
+          tag = api("git/ref/tags/" + TAG)["object"]
+          for _ in range(8):
+              if tag.get("type") != "tag":
+                  break
+              tag = api("git/tags/" + tag["sha"])["object"]
+          require(tag.get("type") == "commit" and tag.get("sha") == SOURCE, "Immutable Beta tag differs.")
+          run = api("actions/runs/" + str(RUN))
+          require(run.get("id") == RUN and run.get("event") == "push" and run.get("head_sha") == SOURCE
+                  and run.get("status") == "completed" and run.get("conclusion") == "success"
+                  and run.get("run_attempt") == 1 and run.get("path") == ".github/workflows/ci.yml"
+                  and run.get("repository", {}).get("full_name") == REPO
+                  and run.get("head_repository", {}).get("full_name") == REPO, "Verified Windows CI identity differs.")
+          artifact = api("actions/artifacts/" + str(ARTIFACT))
+          require(artifact.get("id") == ARTIFACT and artifact.get("name") == "contain-windows-x64-viewer"
+                  and artifact.get("expired") is False and artifact.get("workflow_run", {}).get("id") == RUN,
+                  "Verified Windows artifact identity differs.")
+
+          download = Path(os.environ["DOWNLOAD_DIR"])
+          package = download / "contain-0.3.2-beta.1-windows-x64.zip"
+          delivery = Path("docs/delivery") / TAG
+          identity_path = delivery / "BUILD-IDENTITY.json"
+          sums_path = delivery / "SHA256SUMS.txt"
+          require(sorted(path.name for path in download.iterdir()) == [package.name]
+                  and package.is_file() and not package.is_symlink() and package.stat().st_size == 76802668
+                  and digest(package) == ZIP_SHA, "The unmodified Windows ZIP is required.")
+          require(digest(identity_path) == IDENTITY_SHA and digest(sums_path) == SUMS_SHA, "Reviewed delivery documents differ.")
+          require(sums_path.read_text(encoding="ascii") == ZIP_SHA + "  " + package.name + "\n"
+                  + IDENTITY_SHA + "  BUILD-IDENTITY.json\n", "Reviewed checksums differ.")
+          identity = json.loads(identity_path.read_text(encoding="utf-8"))
+          with zipfile.ZipFile(package) as archive:
+              require(archive.testzip() is None, "Verified ZIP cannot be read.")
+              build_bytes = archive.read("BUILD.json")
+              validation_bytes = archive.read("VALIDATION.json")
+              build, validation = json.loads(build_bytes), json.loads(validation_bytes)
+              require(hashlib.sha256(archive.read("SOURCE.zip")).hexdigest() == identity["source_archive"]["sha256"], "Source archive differs.")
+          manifest_sha = hashlib.sha256(build_bytes).hexdigest()
+          require(build.get("source_sha") == validation.get("source_sha") == identity.get("source_sha") == SOURCE
+                  and build.get("version") == identity.get("version") == "0.3.2-beta.1"
+                  and identity.get("release_tag") == TAG and identity["package"]["sha256"] == ZIP_SHA
+                  and manifest_sha == validation["build_manifest_sha256"] == identity["build_manifest_sha256"]
+                  and hashlib.sha256(validation_bytes).hexdigest() == identity["validation_manifest_sha256"], "Frozen source or manifest identity differs.")
+          require(build.get("viewer_configuration") == "Release" and build.get("self_contained") is True
+                  and build.get("target") == "win-x64" and build.get("viewer_framework") == "net8.0-windows"
+                  and build.get("core_profile") == "debug" and build.get("core_target") == "x86_64-pc-windows-msvc"
+                  and build.get("signed") is False and build["build_platform"]["ci_run_url"] == identity["ci_run_url"]
+                  == "https://github.com/" + REPO + "/actions/runs/" + str(RUN), "Verified build configuration differs.")
+          spec = importlib.util.spec_from_file_location("verified_beta_package", "scripts/package-viewer.py")
+          verifier = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(verifier)
+          expected_checks = {"frozen_package_unchanged", "quality_complete", "native_ui_cli_and_export",
+                             "native_gui_install_etw_and_exact_result", "native_layout_and_simulated_scale"}
+          require(set(validation.get("checks", {})) == expected_checks
+                  and all(value is True for value in validation["checks"].values())
+                  and validation.get("status") == "bounded_graphical_install_verified"
+                  and validation.get("graphical_install_verified") is True
+                  and validation.get("system_high_dpi_verified") is False
+                  and verifier.verification_matches(validation["native_verification"], build, manifest_sha)
+                  and verifier.layout_verification_matches(validation["native_layout_verification"], build, manifest_sha)
+                  and verifier.install_verification_matches(validation["native_install_verification"], build, manifest_sha)
+                  and verifier.native_picker_verified(validation["native_install_verification"]), "Actual native verification gates differ.")
+
+          # Recheck immediately before mutation. No create/edit, tag write, rebuild or capture occurs.
+          require(existing_draft().get("assets") == [], "Existing assets are preserved; upload will not replace them.")
+          subprocess.run(["gh", "release", "upload", TAG, str(package), str(identity_path), str(sums_path), "--repo", REPO], check=True)
+          uploaded = existing_draft()["assets"]
+          expected = {package.name: (package.stat().st_size, ZIP_SHA),
+                      identity_path.name: (identity_path.stat().st_size, IDENTITY_SHA),
+                      sums_path.name: (sums_path.stat().st_size, SUMS_SHA)}
+          require(len(uploaded) == 3 and {asset.get("name") for asset in uploaded} == set(expected), "Uploaded asset set differs.")
+          require(all((asset.get("size"), asset.get("digest")) == (expected[asset["name"]][0], "sha256:" + expected[asset["name"]][1])
+                      for asset in uploaded), "Uploaded asset size or digest differs.")
+          print("Uploaded exactly three verified assets. Release remains a draft Prerelease for separate review and publication.")
+          PY

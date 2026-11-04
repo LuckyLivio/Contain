@@ -1,5 +1,5 @@
 {
-  "os": "Microsoft Windows NT 10.0.26100.0",
+  "os": "Windows",
   "providers": [
     {
       "name": "Microsoft-Windows-Kernel-Registry",
@@ -1059,5 +1059,11 @@
       ]
     }
   ],
-  "note": "Read-only manifest metadata; actual filter efficacy is measured with filter-on/off captures. File Close only has FILEIO keyword, so clearing that keyword would discard required context."
+  "note": "Read-only manifest metadata; actual filter efficacy is measured with filter-on/off captures. File Close only has FILEIO keyword, so clearing that keyword would discard required context.",
+  "public_redaction": {
+    "fields": [
+      "$.os (exact host version)"
+    ],
+    "meaning": "Withheld host metadata and historical branch labels are null, not zero. Original artifact digests refer to retained local pre-redaction evidence. Measured workload results and failed attempts are unchanged."
+  }
 }

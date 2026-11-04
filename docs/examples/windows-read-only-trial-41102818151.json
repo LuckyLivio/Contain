@@ -1,0 +1,2294 @@
+{
+  "schema_version": 1,
+  "scope": "Reviewed aggregate of the bounded read-only delivery; not a new acceptance protocol.",
+  "version": "0.3.1",
+  "source_sha": "2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15",
+  "branch": "fix/trial-json-save",
+  "ci": {
+    "run": 41102818151,
+    "url": "https://github.com/LuckyLivio/Contain/actions/runs/41102818151",
+    "status": "completed",
+    "conclusion": "success",
+    "package_artifact": "https://github.com/LuckyLivio/Contain/actions/runs/41102818151/artifacts/13000967787",
+    "quality_artifact": "https://github.com/LuckyLivio/Contain/actions/runs/41102818151/artifacts/12999974284",
+    "evidence_artifact": "https://github.com/LuckyLivio/Contain/actions/runs/41102818151/artifacts/13000159163"
+  },
+  "candidate": {
+    "candidate_status": "bounded_read_only_trial_verified",
+    "candidate_verified": true,
+    "checks": {
+      "windows_report_paths": true,
+      "complete_synthetic_report_preflight": true,
+      "default_product": true,
+      "dual_clock_product": true,
+      "default_legacy_score_available": true,
+      "dual_clock_legacy_score_available": true,
+      "default_package_identity": true,
+      "dual_clock_package_identity": true,
+      "default_clocks_disabled": true,
+      "dual_clocks_enabled": true,
+      "dual_clock_diagnostic_executed": true,
+      "default_demo_bounded_pass": true,
+      "dual_clock_demo_bounded_pass": true,
+      "distinct_captures": true,
+      "clock_evidence_complete": true,
+      "quality_complete": true,
+      "default_actual_cli_report": true,
+      "dual-clock_actual_cli_report": true
+    },
+    "scope": "Two different configurations of one controlled real-ETW fixture using identical packaged binaries; not repeated stability, a third-party installer, scale, ownership or cleanup acceptance",
+    "formal": {
+      "status": "requirements_unmet",
+      "accepted": false
+    },
+    "historical_six_event_timing": "D_unresolved",
+    "loaded_image_attestation": false,
+    "build_manifest_sha256": "5cc1e687526184734e798e223bab9d3de3574b6a44bf1a5c5d75ff7f739430e7"
+  },
+  "milestone": "bounded_read_only_candidate_delivery_closed",
+  "native_plan": {
+    "planned": 2,
+    "executed": 2,
+    "default": 1,
+    "dual_clock": 1,
+    "retries": 0,
+    "same_frozen_package": true,
+    "post_capture_script_changes": false
+  },
+  "package": {
+    "filename": "contain-0.3.1-windows-x64.zip",
+    "sha256": "3ded107c82d83abaaf70b98db5cf4fdd584117353d794c1e1fc0ede118c9d3ed",
+    "bytes": 4750977,
+    "member_count": 27,
+    "contents_entries_verified": 26,
+    "all_packaged_source_matches_frozen_commit": true,
+    "149a5e3_redirect_exact": true,
+    "build": {
+      "schema_version": 1,
+      "protocol_revision": "contain-read-only-trial-1",
+      "version": "0.3.1",
+      "source_sha": "2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15",
+      "runtime_tree_sha256": "9e9508c65dfc964dc047c9a2cf3da8bf8c5a04e6fa1e468ef732f26d014e89e3",
+      "target": "x86_64-pc-windows-msvc",
+      "profile": "debug",
+      "build_command": [
+        "cargo",
+        "build",
+        "--workspace",
+        "--locked"
+      ],
+      "binaries": [
+        {
+          "name": "contain.exe",
+          "bytes": 12392960,
+          "sha256": "cb382fc8985e5d8d57dd1a73e2fd571f6d9def48bfcd7c936b2e1f2295027501"
+        },
+        {
+          "name": "contain-test-installer.exe",
+          "bytes": 2180608,
+          "sha256": "b1010272aaefce1861ec3a78e1922a8b299e48b3cd2b7c4edcae40dc1bba6968"
+        }
+      ],
+      "scripts": [
+        {
+          "bytes": 34127,
+          "sha256": "a6fedbe0422fc9487ab3345c60547b78840b9a17f62f34a6ec62280d546549fb",
+          "path": "scripts/demo.ps1"
+        },
+        {
+          "bytes": 1453,
+          "sha256": "34991eb6c5a40f5c2527209b4cf6e527e1fdae11746c845222b0ca6e070d729d",
+          "path": "scripts/demo-save-capture.ps1"
+        },
+        {
+          "bytes": 7413,
+          "sha256": "e5a6e3978ad5c43cb5af678679a9d5883df28fd223ddcaa12783ab6265ffd1c5",
+          "path": "scripts/demo-provenance.ps1"
+        },
+        {
+          "bytes": 6092,
+          "sha256": "0f43ece46068dfb60634236af61503c30878e55344e3b04354fe906a9d2bd243",
+          "path": "scripts/demo-checks.ps1"
+        },
+        {
+          "bytes": 4078,
+          "sha256": "22aa4ca03c8efb27f9b233e5dedbd21861d9d0313fe79ccecc9cce2795b05945",
+          "path": "scripts/demo-measure.py"
+        },
+        {
+          "bytes": 633,
+          "sha256": "853d6023ee27dcdba45383e65756e3fbcb0ab1669162ddc3c94adc235bff8d4e",
+          "path": "scripts/score-fixture.ps1"
+        },
+        {
+          "bytes": 7227,
+          "sha256": "aa20dc9b8103c6e79ed3d96b00f6b0219e76d9771f2749a58ffee79a56689ab7",
+          "path": "scripts/score-fixture.py"
+        },
+        {
+          "bytes": 6888,
+          "sha256": "7e916c10bcf2a55d2063a4bd44593a976d715833438327a7a274fe0796031f84",
+          "path": "scripts/v04-verify-views.py"
+        },
+        {
+          "bytes": 53276,
+          "sha256": "d1ff4bf0efc74ec5bceca62c6450792b7e2ee4dea97b9cc79a161a0f0b57abd9",
+          "path": "scripts/v04-clock-protocol.py"
+        },
+        {
+          "bytes": 34927,
+          "sha256": "f86a2c2d307c1bf84e05a6475a2b9f3a5df0baf9787ba7a8a562b20bbf599d3c",
+          "path": "scripts/v04-matrix.py"
+        },
+        {
+          "bytes": 3425,
+          "sha256": "a6afed0ccb931d77caf9ada3c831e109a5bcee537f3299cf5375d16b65e0b0b2",
+          "path": "scripts/v04-metrics.py"
+        }
+      ],
+      "resources": [
+        {
+          "bytes": 11358,
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "path": "LICENSE"
+        },
+        {
+          "bytes": 27756,
+          "sha256": "5074bce98e219962e99911798c6250a2b14164ef5084f35c0d318100f50cca2d",
+          "path": "docs/schema/cli-v3.schema.json"
+        },
+        {
+          "bytes": 11166,
+          "sha256": "f126efb54770b08e73d82e17902479e04f91b88e8c395db6ac4bd0ce35ce6114",
+          "path": "docs/examples/read-only-finished.txt"
+        },
+        {
+          "bytes": 11172,
+          "sha256": "dcb200fec9093d03458bfde0dd6671168b54b41330185ef437b1dbda995abc67",
+          "path": "docs/examples/read-only-historical.txt"
+        },
+        {
+          "bytes": 11026,
+          "sha256": "a8783d1d3b564bb3b678ea2fed65b949e700c8edd32ab74e51aae8034c10e7ae",
+          "path": "docs/examples/read-only-interrupted.txt"
+        },
+        {
+          "bytes": 2669,
+          "sha256": "717e71076e715490d5a9e536b3f619b09b429398b20254afda2a0d912ab856b8",
+          "path": "TRY.md"
+        }
+      ],
+      "runtime_files": [
+        {
+          "name": "vcruntime140.dll",
+          "bytes": 178616,
+          "sha256": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7"
+        }
+      ],
+      "pe_dependencies": {
+        "contain.exe": {
+          "machine": "AMD64",
+          "optional_header": "PE32+",
+          "imports": [
+            "advapi32.dll",
+            "api-ms-win-core-synch-l1-2-0.dll",
+            "api-ms-win-crt-heap-l1-1-0.dll",
+            "api-ms-win-crt-locale-l1-1-0.dll",
+            "api-ms-win-crt-math-l1-1-0.dll",
+            "api-ms-win-crt-runtime-l1-1-0.dll",
+            "api-ms-win-crt-stdio-l1-1-0.dll",
+            "api-ms-win-crt-string-l1-1-0.dll",
+            "api-ms-win-crt-time-l1-1-0.dll",
+            "api-ms-win-crt-utility-l1-1-0.dll",
+            "bcrypt.dll",
+            "bcryptprimitives.dll",
+            "kernel32.dll",
+            "ntdll.dll",
+            "ole32.dll",
+            "oleaut32.dll",
+            "pdh.dll",
+            "powrprof.dll",
+            "psapi.dll",
+            "shell32.dll",
+            "tdh.dll",
+            "vcruntime140.dll"
+          ],
+          "delay_imports": []
+        },
+        "contain-test-installer.exe": {
+          "machine": "AMD64",
+          "optional_header": "PE32+",
+          "imports": [
+            "advapi32.dll",
+            "api-ms-win-core-synch-l1-2-0.dll",
+            "api-ms-win-crt-heap-l1-1-0.dll",
+            "api-ms-win-crt-locale-l1-1-0.dll",
+            "api-ms-win-crt-math-l1-1-0.dll",
+            "api-ms-win-crt-runtime-l1-1-0.dll",
+            "api-ms-win-crt-stdio-l1-1-0.dll",
+            "api-ms-win-crt-string-l1-1-0.dll",
+            "kernel32.dll",
+            "ntdll.dll",
+            "vcruntime140.dll"
+          ],
+          "delay_imports": []
+        },
+        "vcruntime140.dll": {
+          "machine": "AMD64",
+          "optional_header": "PE32+",
+          "imports": [
+            "api-ms-win-crt-convert-l1-1-0.dll",
+            "api-ms-win-crt-heap-l1-1-0.dll",
+            "api-ms-win-crt-runtime-l1-1-0.dll",
+            "api-ms-win-crt-stdio-l1-1-0.dll",
+            "api-ms-win-crt-string-l1-1-0.dll",
+            "kernel32.dll"
+          ],
+          "delay_imports": []
+        }
+      },
+      "runtime_requirement": "Windows x64 system DLLs/API sets plus only the listed packaged runtime files",
+      "validation_at_freeze": "not_run",
+      "loaded_image_attestation": false,
+      "report_exporter": {
+        "protocol_revision": "contain-trial-report-3",
+        "sha256": "14d21ad8c922365976206f5879a1d1ef83a90f8babbac796f1acfeea22a76f43"
+      },
+      "toolchain": {
+        "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+        "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)"
+      },
+      "build_input_sha256": {
+        "Cargo.toml": "d52f00111b2bc12c1999e270de864077e61084a0252c208904aa49fe740d8c77",
+        "Cargo.lock": "bb5ffe9bd269e153bd25d85fff134e108c0101812defc0bacaab7f49867edb5b",
+        "rust-toolchain.toml": "a6a0bbd29ffaa8182dc22d1d9149709f1091e47df40ed96eb8a78a711c66a4ce"
+      },
+      "rustflags_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "build_configuration_note": "Command/configuration of this CI build; no loaded-image attestation or release benchmark",
+      "build_platform": {
+        "system": "Windows",
+        "release": "2025Server",
+        "version": "10.0.26100",
+        "architecture": "AMD64",
+        "runner_image": "win25-vs2026",
+        "runner_image_version": "20261021.278.1",
+        "ci_run_url": "https://github.com/LuckyLivio/Contain/actions/runs/41102818151"
+      }
+    },
+    "privacy_review": "Reviewed fixture excerpts only; no raw databases, full traces, clock streams, host paths, inventories or private logs."
+  },
+  "windows_quality": {
+    "source_sha": "2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15",
+    "tools": {
+      "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+      "pwsh": "PowerShell 7.6.7",
+      "python": "Python 3.12.10",
+      "nextest": "cargo-nextest 0.9.149 (3fe4ef319 2026-10-20)",
+      "llvm_cov": "cargo-llvm-cov 0.9.1",
+      "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+      "deny": "cargo-deny 0.20.2"
+    },
+    "entrypoints": [
+      "./scripts/quality.ps1 -Mode Check",
+      "./scripts/quality.ps1 -Mode Coverage",
+      "./scripts/quality.ps1 -Mode CoverageOriginal",
+      "./scripts/quality.ps1 -Mode Dependencies",
+      "./scripts/quality.ps1 -Mode Companion"
+    ],
+    "gates_passed": 48,
+    "gates_failed": 0,
+    "missing_gates": {
+      "Check": [],
+      "Coverage": [],
+      "CoverageOriginal": [],
+      "Dependencies": [],
+      "Companion": []
+    },
+    "python": {
+      "suites": 22,
+      "executed": 340,
+      "passed": 340,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "powershell_demo": {
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0
+    },
+    "powershell_ci_wrapper": {
+      "assertions": 36,
+      "failed": 0
+    },
+    "scope": "Windows quality gate evidence. Shared production tests also execute in contain-offline; counts are executions, not unique tests. Workspace and original-package coverage stay separate. No real-ETW or release acceptance is inferred. Raw logs, XML bodies, source documents, host inventory and database files are not published.",
+    "coverage_floors": {
+      "lines_percent": 66.5,
+      "functions_percent": 70
+    },
+    "coverage_workspace": [
+      {
+        "lines": {
+          "count": 18005,
+          "covered": 13461,
+          "percent": 74.7625659539017
+        },
+        "functions": {
+          "count": 1419,
+          "covered": 1077,
+          "percent": 75.8985200845666
+        },
+        "regions": {
+          "count": 29809,
+          "covered": 21559,
+          "percent": 72.32379482706564
+        },
+        "instantiations": {
+          "count": 2291,
+          "covered": 1208,
+          "percent": 52.72806634657354
+        },
+        "branches": {
+          "count": 0,
+          "covered": 0,
+          "percent": 0
+        }
+      }
+    ],
+    "coverage_original_packages": [
+      {
+        "lines": {
+          "count": 13244,
+          "covered": 9591,
+          "percent": 72.41769858048929
+        },
+        "functions": {
+          "count": 1028,
+          "covered": 767,
+          "percent": 74.61089494163424
+        },
+        "regions": {
+          "count": 21467,
+          "covered": 15210,
+          "percent": 70.85293706619463
+        },
+        "instantiations": {
+          "count": 1871,
+          "covered": 875,
+          "percent": 46.766435061464456
+        },
+        "branches": {
+          "count": 0,
+          "covered": 0,
+          "percent": 0
+        }
+      }
+    ],
+    "gates": [
+      {
+        "mode": "Check",
+        "label": "fmt",
+        "command": [
+          "cargo",
+          "fmt",
+          "--all",
+          "--",
+          "--check"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "Check",
+        "label": "clippy",
+        "command": [
+          "cargo",
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "Check",
+        "label": "nextest",
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--workspace",
+          "--all-features",
+          "--locked",
+          "--profile",
+          "ci",
+          "--retries",
+          "0"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "nextest",
+          "executed": 291,
+          "passed": 291,
+          "failed": 0,
+          "skipped": 7,
+          "leaky": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "doctests",
+        "command": [
+          "cargo",
+          "test",
+          "--workspace",
+          "--all-features",
+          "--locked",
+          "--doc"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "cargo-test",
+          "groups": [
+            {
+              "passed": 0,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 0,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            }
+          ]
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "fuzz-fmt",
+        "command": [
+          "cargo",
+          "fmt",
+          "--manifest-path",
+          "fuzz/Cargo.toml",
+          "--all",
+          "--",
+          "--check"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "Check",
+        "label": "fuzz-clippy",
+        "command": [
+          "cargo",
+          "clippy",
+          "--manifest-path",
+          "fuzz/Cargo.toml",
+          "--all-targets",
+          "--locked",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "Check",
+        "label": "fuzz-seeds",
+        "command": [
+          "cargo",
+          "test",
+          "--manifest-path",
+          "fuzz/Cargo.toml",
+          "--lib",
+          "--locked"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "cargo-test",
+          "groups": [
+            {
+              "passed": 1,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            }
+          ]
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "scorer-pwsh",
+        "command": [
+          "pwsh",
+          "-NoProfile",
+          "-File",
+          "scripts/test-score.ps1"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "Check",
+        "label": "provenance-pwsh",
+        "command": [
+          "pwsh",
+          "-NoProfile",
+          "-File",
+          "scripts/test-demo-provenance.ps1"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "Check",
+        "label": "demo-checks-pwsh",
+        "command": [
+          "pwsh",
+          "-NoProfile",
+          "-File",
+          "scripts/test-demo-checks.ps1"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "Check",
+        "label": "ci-clock-pwsh",
+        "command": [
+          "pwsh",
+          "-NoProfile",
+          "-File",
+          "scripts/test-ci-etw-clock.ps1"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "Check",
+        "label": "test-analyze-etw-clock",
+        "command": [
+          "python",
+          "scripts/test-analyze-etw-clock.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 30,
+          "passed": 30,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-analyze-write-diagnostic",
+        "command": [
+          "python",
+          "scripts/test-analyze-write-diagnostic.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 25,
+          "passed": 25,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-checkpoint-gate",
+        "command": [
+          "python",
+          "scripts/test-checkpoint-gate.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 6,
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-commit-tail",
+        "command": [
+          "python",
+          "scripts/test-commit-tail.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 9,
+          "passed": 9,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-demo-measure",
+        "command": [
+          "python",
+          "scripts/test-demo-measure.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 5,
+          "passed": 5,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-fuzz-lock",
+        "command": [
+          "python",
+          "scripts/test-fuzz-lock.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 4,
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-hotpath-artifact",
+        "command": [
+          "python",
+          "scripts/test-hotpath-artifact.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 3,
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-package-trial",
+        "command": [
+          "python",
+          "scripts/test-package-trial.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 33,
+          "passed": 33,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-quality-summary",
+        "command": [
+          "python",
+          "scripts/test-quality-summary.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 14,
+          "passed": 14,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-read-interference",
+        "command": [
+          "python",
+          "scripts/test-read-interference.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-read-only-cli",
+        "command": [
+          "python",
+          "scripts/test-read-only-cli.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 15,
+          "passed": 15,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-report-paths",
+        "command": [
+          "python",
+          "scripts/test-report-paths.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "Check",
+        "label": "test-run-write-diagnostic",
+        "command": [
+          "python",
+          "scripts/test-run-write-diagnostic.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 17,
+          "passed": 17,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-run-write-stack-diagnostic",
+        "command": [
+          "python",
+          "scripts/test-run-write-stack-diagnostic.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 25,
+          "passed": 25,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-score",
+        "command": [
+          "python",
+          "scripts/test-score.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 8,
+          "passed": 8,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-summarize-checkpoint",
+        "command": [
+          "python",
+          "scripts/test-summarize-checkpoint.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 14,
+          "passed": 14,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-v04-clock-protocol",
+        "command": [
+          "python",
+          "scripts/test-v04-clock-protocol.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 60,
+          "passed": 60,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-v04-matrix",
+        "command": [
+          "python",
+          "scripts/test-v04-matrix.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 23,
+          "passed": 23,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-v04-metrics",
+        "command": [
+          "python",
+          "scripts/test-v04-metrics.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-v04-public",
+        "command": [
+          "python",
+          "scripts/test-v04-public.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 4,
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-v04-summarize-matrix",
+        "command": [
+          "python",
+          "scripts/test-v04-summarize-matrix.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 4,
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-v04-verify-views",
+        "command": [
+          "python",
+          "scripts/test-v04-verify-views.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 6,
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Check",
+        "label": "test-verify-layered-evidence",
+        "command": [
+          "python",
+          "scripts/test-verify-layered-evidence.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "unittest",
+          "executed": 31,
+          "passed": 31,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        }
+      },
+      {
+        "mode": "Coverage",
+        "label": "coverage",
+        "command": [
+          "cargo",
+          "llvm-cov",
+          "--workspace",
+          "--all-features",
+          "--locked",
+          "--json",
+          "--output-path",
+          "target/quality/coverage.json"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "cargo-test",
+          "groups": [
+            {
+              "passed": 11,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 190,
+              "failed": 0,
+              "ignored": 4,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 69,
+              "failed": 0,
+              "ignored": 3,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 0,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 0,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 5,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 7,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 9,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            }
+          ]
+        }
+      },
+      {
+        "mode": "Coverage",
+        "label": "coverage-html",
+        "command": [
+          "cargo",
+          "llvm-cov",
+          "report",
+          "--workspace",
+          "--html",
+          "--output-dir",
+          "target/quality/coverage-html"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "Coverage",
+        "label": "coverage-lcov",
+        "command": [
+          "cargo",
+          "llvm-cov",
+          "report",
+          "--workspace",
+          "--lcov",
+          "--output-path",
+          "target/quality/lcov.info"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "Coverage",
+        "label": "coverage-floor",
+        "command": [
+          "cargo",
+          "llvm-cov",
+          "report",
+          "--workspace",
+          "--summary-only",
+          "--fail-under-lines",
+          "66.5",
+          "--fail-under-functions",
+          "70"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "CoverageOriginal",
+        "label": "coverage-original",
+        "command": [
+          "cargo",
+          "llvm-cov",
+          "-p",
+          "contain-core",
+          "-p",
+          "contain-cli",
+          "-p",
+          "contain-test-installer",
+          "--all-features",
+          "--locked",
+          "--json",
+          "--output-path",
+          "target/quality/coverage-original.json"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "cargo-test",
+          "groups": [
+            {
+              "passed": 11,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 190,
+              "failed": 0,
+              "ignored": 4,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 5,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 7,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 9,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            }
+          ]
+        }
+      },
+      {
+        "mode": "CoverageOriginal",
+        "label": "coverage-original-html",
+        "command": [
+          "cargo",
+          "llvm-cov",
+          "report",
+          "-p",
+          "contain-core",
+          "-p",
+          "contain-cli",
+          "-p",
+          "contain-test-installer",
+          "--html",
+          "--output-dir",
+          "target/quality/coverage-original-html"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "CoverageOriginal",
+        "label": "coverage-original-lcov",
+        "command": [
+          "cargo",
+          "llvm-cov",
+          "report",
+          "-p",
+          "contain-core",
+          "-p",
+          "contain-cli",
+          "-p",
+          "contain-test-installer",
+          "--lcov",
+          "--output-path",
+          "target/quality/coverage-original-lcov.info"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "CoverageOriginal",
+        "label": "coverage-original-floor",
+        "command": [
+          "cargo",
+          "llvm-cov",
+          "report",
+          "-p",
+          "contain-core",
+          "-p",
+          "contain-cli",
+          "-p",
+          "contain-test-installer",
+          "--summary-only",
+          "--fail-under-lines",
+          "66.5",
+          "--fail-under-functions",
+          "70"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "Dependencies",
+        "label": "metadata",
+        "command": [
+          "cargo",
+          "metadata",
+          "--locked",
+          "--all-features",
+          "--filter-platform",
+          "x86_64-pc-windows-msvc",
+          "--format-version",
+          "1"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "Dependencies",
+        "label": "deny",
+        "command": [
+          "cargo",
+          "deny",
+          "--locked",
+          "check"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "Dependencies",
+        "label": "metadata-fuzz",
+        "command": [
+          "cargo",
+          "metadata",
+          "--manifest-path",
+          "fuzz/Cargo.toml",
+          "--locked",
+          "--format-version",
+          "1"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "Dependencies",
+        "label": "fuzz-lock",
+        "command": [
+          "python",
+          "scripts/check-fuzz-lock.py"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "Dependencies",
+        "label": "deny-fuzz",
+        "command": [
+          "cargo",
+          "deny",
+          "--manifest-path",
+          "fuzz/Cargo.toml",
+          "--config",
+          "deny.toml",
+          "--locked",
+          "check"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": null
+      },
+      {
+        "mode": "Companion",
+        "label": "companion-spool",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "contain-core",
+          "--locked",
+          "windows::clock::companion::spool::tests::paced_historical_callback_volume_fits_disk_quota_and_drains_every_record",
+          "--",
+          "--ignored",
+          "--exact",
+          "--nocapture"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "counts": {
+          "runner": "cargo-test",
+          "groups": [
+            {
+              "passed": 1,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 193
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "native_directory_identity_preflight": {
+    "schema_version": 1,
+    "scope": "synthetic_native_windows_directory_identity",
+    "native_windows": true,
+    "native": true,
+    "exporter": {
+      "protocol_revision": "contain-trial-report-3",
+      "sha256": "14d21ad8c922365976206f5879a1d1ef83a90f8babbac796f1acfeea22a76f43"
+    },
+    "test_script_sha256": "8adc208e6cf70ab8b3549d58c84fc83959626f4d9764b7d0ddd4bf5ca94e42c0",
+    "passed": true,
+    "tests_run": 7,
+    "passed_count": 7,
+    "failed_count": 0,
+    "skipped_count": 0,
+    "short_alias": {
+      "status": "covered",
+      "old_string_comparison_equal": false,
+      "native_samefile": true
+    },
+    "failures": [],
+    "skips": []
+  },
+  "full_synthetic_report_preflight": {
+    "protocol_revision": "contain-synthetic-report-preflight-2",
+    "scope": "synthetic_windows_cli_report_preflight",
+    "synthetic": true,
+    "native_windows": true,
+    "native_capture_executed": false,
+    "complete": true,
+    "passed": true,
+    "collection_verified": true,
+    "report_commands_executed": 14,
+    "negative_report_commands_executed": 7,
+    "all_cli_commands_executed": 24,
+    "save_commands_executed": 3,
+    "save_commands_passed": 3,
+    "save_commands_failed": 0,
+    "save_commands_not_run": 0,
+    "commands_passed": 14,
+    "commands_failed": 0,
+    "commands_not_run": 0,
+    "negative_report_commands_passed": 7,
+    "negative_report_commands_failed": 0,
+    "negative_report_commands_not_run": 0,
+    "cases_passed": 2,
+    "cases_failed": 0,
+    "cases_not_covered": 1,
+    "windows_8dot3": {
+      "status": "not_covered",
+      "reason": "filesystem_did_not_supply_distinct_8dot3_alias"
+    },
+    "source_sha": "2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15",
+    "preflight_sha256": "670918f1ea21377af79172c6c0630432c1eee84fce15a011989071a689792dac",
+    "generator_sha256": "5a6f689b64401ac7940d0188d98aac76592a1f9e89bf7cfc2cbadef46dd7d762",
+    "save_implementation_sha256": "34991eb6c5a40f5c2527209b4cf6e527e1fdae11746c845222b0ca6e070d729d",
+    "negative_verified": true,
+    "cases": [
+      {
+        "case": "normal",
+        "scope": "synthetic_windows_cli_report",
+        "status": "passed",
+        "commands": [
+          {
+            "name": "inspect-json",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "16bd2ca78d324d6b876d87b342dab0f313fea602c69c9c1a3ad0c54b43659aa1"
+          },
+          {
+            "name": "history-json",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "3f324c0760b957b67ae0275aff8a2d4665d76b1608c05c96f5a43cd904f375df"
+          },
+          {
+            "name": "explain-json",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "4d7ad1fc04d94ea11dc9c36ed1c868e38b2405d266da782f9f980a717e7afda8"
+          },
+          {
+            "name": "inspect-text",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "4d85e484d7e28261fad12c32146668e93648b22ef445b4fee940e4230d2cd600"
+          },
+          {
+            "name": "diff-text",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "776cf8b581d85c7c48d2028a662c01e6d737326083d2d169e4eb54e07500070c"
+          },
+          {
+            "name": "history-text",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "8ba0be1547d5121752e30952926a2d5c93199988b48db2154ae32b622c19dab6"
+          },
+          {
+            "name": "explain-text",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "ad32a9669d30e2b203b6b281b4e2781f23135c62b811d7869dac85228955a983"
+          }
+        ],
+        "save_commands": [
+          {
+            "name": "save-source-inspect-json",
+            "exit_code": 0,
+            "stdout_sha256": "16bd2ca78d324d6b876d87b342dab0f313fea602c69c9c1a3ad0c54b43659aa1"
+          }
+        ],
+        "failure": null,
+        "generator_exit_code": 0,
+        "shared_save": {
+          "exit_code": 0,
+          "implementation_sha256": "34991eb6c5a40f5c2527209b4cf6e527e1fdae11746c845222b0ca6e070d729d",
+          "source_sha256": "16bd2ca78d324d6b876d87b342dab0f313fea602c69c9c1a3ad0c54b43659aa1",
+          "saved_sha256": "16bd2ca78d324d6b876d87b342dab0f313fea602c69c9c1a3ad0c54b43659aa1",
+          "encoding": "utf-8-no-bom",
+          "newline": "CRLF_to_LF_append_missing_final_LF"
+        },
+        "report_exit_code": 0,
+        "report_failure": null,
+        "source_sha": "2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15",
+        "event_id": "synthetic-report-event-0",
+        "report_sha256": "e668f74f1b3e5bf4f12388c05dae435fc10a2dd0809a4c93309144bf5daa1d6b",
+        "collected_report_sha256": "e668f74f1b3e5bf4f12388c05dae435fc10a2dd0809a4c93309144bf5daa1d6b",
+        "checks": {
+          "real_contain_exe": true,
+          "all_seven_commands": true,
+          "shared_demo_save": true,
+          "serialization_sensitive_values": true,
+          "save_raw_text_preserved": true,
+          "same_event_paged_and_explained": true,
+          "historical_child_absent": true,
+          "unknown_preserved": true,
+          "all_four_sections": true,
+          "private_paths_redacted": true,
+          "production_collection": true,
+          "reopened_json_equal": true
+        }
+      },
+      {
+        "case": "extended",
+        "scope": "synthetic_windows_cli_report",
+        "status": "passed",
+        "commands": [
+          {
+            "name": "inspect-json",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "8cce4e5daecda86982b7026c3d93f59d77576f86e4ad9a8a5c48e94c272e005c"
+          },
+          {
+            "name": "history-json",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "4ef2e3ac8db18f931ae1c1747fe688a52466bcdd7f0e15cb4d701cdb929c0910"
+          },
+          {
+            "name": "explain-json",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "3f5147dccd892b45e64bb874a1e5d7e3d148dca7265f32c6e144758c57c8d8da"
+          },
+          {
+            "name": "inspect-text",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "4d85e484d7e28261fad12c32146668e93648b22ef445b4fee940e4230d2cd600"
+          },
+          {
+            "name": "diff-text",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "41da6d7fffa4916f1396ff16efc8b5aed0a9141e0784e019860add3b9f5846e4"
+          },
+          {
+            "name": "history-text",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "d7d2632869c98d210fa203805c2ad8746c222119f2410457ff775080839941ac"
+          },
+          {
+            "name": "explain-text",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "648a13f5f821442abddf41e4cb0ee81a718f1587248a8692071f32fcba6c58f8"
+          }
+        ],
+        "save_commands": [
+          {
+            "name": "save-source-inspect-json",
+            "exit_code": 0,
+            "stdout_sha256": "8cce4e5daecda86982b7026c3d93f59d77576f86e4ad9a8a5c48e94c272e005c"
+          }
+        ],
+        "failure": null,
+        "generator_exit_code": 0,
+        "shared_save": {
+          "exit_code": 0,
+          "implementation_sha256": "34991eb6c5a40f5c2527209b4cf6e527e1fdae11746c845222b0ca6e070d729d",
+          "source_sha256": "8cce4e5daecda86982b7026c3d93f59d77576f86e4ad9a8a5c48e94c272e005c",
+          "saved_sha256": "8cce4e5daecda86982b7026c3d93f59d77576f86e4ad9a8a5c48e94c272e005c",
+          "encoding": "utf-8-no-bom",
+          "newline": "CRLF_to_LF_append_missing_final_LF"
+        },
+        "report_exit_code": 0,
+        "report_failure": null,
+        "source_sha": "2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15",
+        "event_id": "synthetic-report-event-0",
+        "report_sha256": "e668f74f1b3e5bf4f12388c05dae435fc10a2dd0809a4c93309144bf5daa1d6b",
+        "collected_report_sha256": "e668f74f1b3e5bf4f12388c05dae435fc10a2dd0809a4c93309144bf5daa1d6b",
+        "checks": {
+          "real_contain_exe": true,
+          "all_seven_commands": true,
+          "shared_demo_save": true,
+          "serialization_sensitive_values": true,
+          "save_raw_text_preserved": true,
+          "same_event_paged_and_explained": true,
+          "historical_child_absent": true,
+          "unknown_preserved": true,
+          "all_four_sections": true,
+          "private_paths_redacted": true,
+          "production_collection": true,
+          "reopened_json_equal": true
+        }
+      }
+    ],
+    "negative_case": {
+      "case": "changed-event-id",
+      "scope": "synthetic_windows_cli_report",
+      "status": "passed",
+      "commands": [
+        {
+          "name": "inspect-json",
+          "status": "passed",
+          "exit_code": 0,
+          "stdout_sha256": "d061c5911f5ba42aaa98c0b2b024b3c2aada4f95ff9768f2423da8a4ccbc298b"
+        },
+        {
+          "name": "history-json",
+          "status": "passed",
+          "exit_code": 0,
+          "stdout_sha256": "3f324c0760b957b67ae0275aff8a2d4665d76b1608c05c96f5a43cd904f375df"
+        },
+        {
+          "name": "explain-json",
+          "status": "passed",
+          "exit_code": 0,
+          "stdout_sha256": "4d7ad1fc04d94ea11dc9c36ed1c868e38b2405d266da782f9f980a717e7afda8"
+        },
+        {
+          "name": "inspect-text",
+          "status": "passed",
+          "exit_code": 0,
+          "stdout_sha256": "4d85e484d7e28261fad12c32146668e93648b22ef445b4fee940e4230d2cd600"
+        },
+        {
+          "name": "diff-text",
+          "status": "passed",
+          "exit_code": 0,
+          "stdout_sha256": "776cf8b581d85c7c48d2028a662c01e6d737326083d2d169e4eb54e07500070c"
+        },
+        {
+          "name": "history-text",
+          "status": "passed",
+          "exit_code": 0,
+          "stdout_sha256": "8ba0be1547d5121752e30952926a2d5c93199988b48db2154ae32b622c19dab6"
+        },
+        {
+          "name": "explain-text",
+          "status": "passed",
+          "exit_code": 0,
+          "stdout_sha256": "ad32a9669d30e2b203b6b281b4e2781f23135c62b811d7869dac85228955a983"
+        }
+      ],
+      "save_commands": [
+        {
+          "name": "save-source-inspect-json",
+          "exit_code": 0,
+          "stdout_sha256": "d061c5911f5ba42aaa98c0b2b024b3c2aada4f95ff9768f2423da8a4ccbc298b"
+        }
+      ],
+      "failure": null,
+      "generator_exit_code": 0,
+      "shared_save": {
+        "exit_code": 0,
+        "implementation_sha256": "34991eb6c5a40f5c2527209b4cf6e527e1fdae11746c845222b0ca6e070d729d",
+        "source_sha256": "d061c5911f5ba42aaa98c0b2b024b3c2aada4f95ff9768f2423da8a4ccbc298b",
+        "saved_sha256": "d061c5911f5ba42aaa98c0b2b024b3c2aada4f95ff9768f2423da8a4ccbc298b",
+        "encoding": "utf-8-no-bom",
+        "newline": "CRLF_to_LF_append_missing_final_LF"
+      },
+      "report_exit_code": 2,
+      "report_failure": "report_reopened_capture_changed",
+      "comparison": {
+        "protocol_revision": "contain-capture-comparison-1",
+        "json_equal": false,
+        "comparison_scope": "complete_inspect_envelope_strict_types_and_values",
+        "difference_count": 1,
+        "counts": {
+          "value_changed": 1
+        },
+        "retained_count": 1,
+        "truncated": false,
+        "limit": 512,
+        "differences": [
+          {
+            "index": 0,
+            "category": "value_changed",
+            "path": "/data/events/0/id",
+            "before_type": "string",
+            "after_type": "string"
+          }
+        ],
+        "bytes_equal": false,
+        "byte_representation": "saved_UTF8_file_vs_native_CLI_stdout_bytes",
+        "source_sha": "2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15",
+        "exporter": {
+          "protocol_revision": "contain-trial-report-3",
+          "sha256": "14d21ad8c922365976206f5879a1d1ef83a90f8babbac796f1acfeea22a76f43"
+        },
+        "build_manifest_sha256": "5cc1e687526184734e798e223bab9d3de3574b6a44bf1a5c5d75ff7f739430e7",
+        "contain_sha256": "cb382fc8985e5d8d57dd1a73e2fd571f6d9def48bfcd7c936b2e1f2295027501",
+        "save_implementation_sha256": "34991eb6c5a40f5c2527209b4cf6e527e1fdae11746c845222b0ca6e070d729d",
+        "inputs": [
+          {
+            "name": "saved_capture_json",
+            "bytes": 14686,
+            "sha256": "852f2582fa42c03c6c537cdfe0d33e023488f753a94687f134709478e5a96f88",
+            "source": "demo_validated_CLI_stdout_save"
+          },
+          {
+            "name": "reopened_inspect_json",
+            "bytes": 14315,
+            "sha256": "d061c5911f5ba42aaa98c0b2b024b3c2aada4f95ff9768f2423da8a4ccbc298b",
+            "source": "packaged_CLI_private_database_snapshot"
+          }
+        ],
+        "database_snapshot": {
+          "name": "private_read_only_snapshot",
+          "bytes": 221184,
+          "sha256": "e7c2b6a9d011d6ef4604eb44639492050ac465316d149a1244527eec94407751"
+        }
+      },
+      "source_sha": "2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15",
+      "event_id": "synthetic-report-event-0",
+      "report_sha256": "3dee831349f06dd4e1fc216a8e63dca56ac060d482bad8d0563fb9a692550b2d",
+      "collected_report_sha256": "3dee831349f06dd4e1fc216a8e63dca56ac060d482bad8d0563fb9a692550b2d",
+      "checks": {
+        "real_contain_exe": true,
+        "all_seven_commands": true,
+        "shared_demo_save": true,
+        "serialization_sensitive_values": true,
+        "save_raw_text_preserved": true,
+        "same_event_paged_and_explained": true,
+        "historical_child_absent": true,
+        "unknown_preserved": true,
+        "all_four_sections": true,
+        "private_paths_redacted": true,
+        "production_collection": true,
+        "strict_mismatch_rejected": true,
+        "exact_field_difference": true,
+        "independent_commands_completed": true,
+        "report_marked_inconsistent": true,
+        "production_candidate_report_gate_rejected": true
+      }
+    },
+    "negative_result": {
+      "report_generated": true,
+      "acceptance_passed": false,
+      "complete": false,
+      "failure": "report_reopened_capture_changed",
+      "failures": [
+        "report_reopened_capture_changed"
+      ]
+    }
+  },
+  "original_synthetic_cli_regressions": {
+    "synthetic": true,
+    "scenarios": [
+      "finished",
+      "historical",
+      "interrupted"
+    ],
+    "cli_commands_passed": 66,
+    "schema_checks_passed": 33,
+    "failed": 0,
+    "ignored": 0,
+    "scope": "Separate from the new 24-call report preflight and real captures."
+  },
+  "real_controlled_fixture_reports": {
+    "default": {
+      "execution": {
+        "schema_version": 1,
+        "phase": "candidate",
+        "configuration": "default",
+        "attempt_index": 1,
+        "planned_attempts": 2,
+        "source_sha": "2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15",
+        "demo_exit_code": 0,
+        "analysis": {
+          "status": "not_requested",
+          "exit_code": null,
+          "error_type": null
+        },
+        "report": {
+          "status": "passed",
+          "exit_code": 0,
+          "error_type": null
+        },
+        "report_diagnostic": {
+          "status": "not_requested",
+          "exit_code": null,
+          "error_type": null
+        },
+        "source_unchanged": true,
+        "scripts_unchanged": true,
+        "build_manifest_sha256": "5cc1e687526184734e798e223bab9d3de3574b6a44bf1a5c5d75ff7f739430e7",
+        "build_manifest_unchanged": true,
+        "package_files_unchanged": true,
+        "optional_environment_isolated": true,
+        "wpr_started": false,
+        "formal_acceptance": "requirements_unmet"
+      },
+      "product": {
+        "status": "passed",
+        "required_passed": 35,
+        "required_failed": 0,
+        "required_not_run": 0,
+        "diagnostic_execution_status": "not_requested",
+        "supplied_view_clock_evidence": "not_evaluated",
+        "required_diagnostic_passed": 0,
+        "required_diagnostic_failed": 0,
+        "required_diagnostic_not_run": 0,
+        "bounded_pass": true,
+        "clock_requested": false,
+        "missing_planned_checks": [],
+        "source_summary_sha256": "3ab6eb0df2524d6d2f3511928c82455776132a2ea38b505fb9de1427c29b81e7"
+      },
+      "optional_product_checks_not_run": [
+        "registry_noise_fixture",
+        "snapshot_state_unknown"
+      ],
+      "report": {
+        "scope": "real_etw_controlled_fixture_cli_excerpt",
+        "source_sha": "2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15",
+        "exporter": {
+          "protocol_revision": "contain-trial-report-3",
+          "sha256": "14d21ad8c922365976206f5879a1d1ef83a90f8babbac796f1acfeea22a76f43"
+        },
+        "complete": true,
+        "report_generated": true,
+        "acceptance_passed": true,
+        "commands": [
+          {
+            "name": "inspect-json",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "42a7dd0740960186f5af99e587d70eac43b2c01ae7898142a13b50738a434dff"
+          },
+          {
+            "name": "history-json",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "6705e4ccb87a716a93ccdf8e76b644381bd83e92a80fc691fab0bc9dab8efa08"
+          },
+          {
+            "name": "explain-json",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "bcada77d784eb6a7176b7a94b12d517f142d55a07be2bd13198e14163b6476cf"
+          },
+          {
+            "name": "inspect-text",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "e2efa5dddd68fbe6bb16642913349c73cab9c5a8f56d8ffac6d4f02f5b09698d"
+          },
+          {
+            "name": "diff-text",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "1138efc61ccd0b98ed4799d150a9cdc34e937a26d0f1faa81723f56fd4ec8060"
+          },
+          {
+            "name": "history-text",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "8576527232e2ae4280e28b2ebdb6306e1774016930dfd4eb895a12fce5733a6b"
+          },
+          {
+            "name": "explain-text",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "22b5cde4f33d3b117ecc9c15a38c9815b78ea2f0051dec969b9cff468c4a7da9"
+          }
+        ],
+        "commands_executed": 7,
+        "commands_not_run": 0,
+        "commands_failed": 0,
+        "checks": {
+          "fixture_directory_identity": true,
+          "reopen_json_equal": true,
+          "reopened_scope_identity": true,
+          "history_page_equal": true,
+          "explain_event_equal": true,
+          "json_stdout_only": true,
+          "all_seven_commands_executed": true,
+          "text_json_agree": true,
+          "fixture_diff_present": true,
+          "public_paths_redacted": true
+        },
+        "failure": null,
+        "failures": [],
+        "comparison": {
+          "protocol_revision": "contain-capture-comparison-1",
+          "json_equal": true,
+          "comparison_scope": "complete_inspect_envelope_strict_types_and_values",
+          "difference_count": 0,
+          "counts": {},
+          "retained_count": 0,
+          "truncated": false,
+          "limit": 512,
+          "differences": [],
+          "bytes_equal": true,
+          "byte_representation": "saved_UTF8_file_vs_native_CLI_stdout_bytes",
+          "source_sha": "2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15",
+          "exporter": {
+            "protocol_revision": "contain-trial-report-3",
+            "sha256": "14d21ad8c922365976206f5879a1d1ef83a90f8babbac796f1acfeea22a76f43"
+          },
+          "build_manifest_sha256": "5cc1e687526184734e798e223bab9d3de3574b6a44bf1a5c5d75ff7f739430e7",
+          "contain_sha256": "cb382fc8985e5d8d57dd1a73e2fd571f6d9def48bfcd7c936b2e1f2295027501",
+          "save_implementation_sha256": "34991eb6c5a40f5c2527209b4cf6e527e1fdae11746c845222b0ca6e070d729d",
+          "inputs": [
+            {
+              "name": "saved_capture_json",
+              "bytes": 1021313,
+              "sha256": "42a7dd0740960186f5af99e587d70eac43b2c01ae7898142a13b50738a434dff",
+              "source": "demo_validated_CLI_stdout_save"
+            },
+            {
+              "name": "reopened_inspect_json",
+              "bytes": 1021313,
+              "sha256": "42a7dd0740960186f5af99e587d70eac43b2c01ae7898142a13b50738a434dff",
+              "source": "packaged_CLI_private_database_snapshot"
+            }
+          ],
+          "database_snapshot": {
+            "name": "private_read_only_snapshot",
+            "bytes": 2523136,
+            "sha256": "75d4e0155b8219bc33e69c4b02131023aef5f755f4c04d17093bd238cfeda290"
+          }
+        },
+        "event_id": "8574ea29-779b-4c2f-a583-a1e5f37b2117",
+        "capture_state": "finished",
+        "quality": "Degraded",
+        "omitted_limitation_lines": 4,
+        "omitted_explain_limitation_lines": 1,
+        "report_sha256": "edba06d48c8977aab58330a53597f62ef8f5ad2bdd60578c13e498986e49a65d"
+      },
+      "report_file": "windows-trial-default-41102818151.txt",
+      "legacy_score": {
+        "schema_version": 2,
+        "expected": 21,
+        "observed": 19,
+        "correctly_attributed": 17,
+        "unknown": 4,
+        "incorrect_attribution": 0,
+        "positive_raw_predictions": 17,
+        "false_positive_target_events": 0,
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 3,
+        "dropped": 0,
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0,
+        "precision": 1.0,
+        "unexpected_positive_events": []
+      },
+      "legacy_score_scope": "Unchanged original scorer; full reviewed rows retained in packaged report summary and CI evidence."
+    },
+    "dual-clock": {
+      "execution": {
+        "schema_version": 1,
+        "phase": "candidate",
+        "configuration": "dual-clock",
+        "attempt_index": 2,
+        "planned_attempts": 2,
+        "source_sha": "2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15",
+        "demo_exit_code": 0,
+        "analysis": {
+          "status": "passed",
+          "exit_code": 0,
+          "error_type": null
+        },
+        "report": {
+          "status": "passed",
+          "exit_code": 0,
+          "error_type": null
+        },
+        "report_diagnostic": {
+          "status": "not_requested",
+          "exit_code": null,
+          "error_type": null
+        },
+        "source_unchanged": true,
+        "scripts_unchanged": true,
+        "build_manifest_sha256": "5cc1e687526184734e798e223bab9d3de3574b6a44bf1a5c5d75ff7f739430e7",
+        "build_manifest_unchanged": true,
+        "package_files_unchanged": true,
+        "optional_environment_isolated": true,
+        "wpr_started": false,
+        "formal_acceptance": "requirements_unmet"
+      },
+      "product": {
+        "status": "passed",
+        "required_passed": 35,
+        "required_failed": 0,
+        "required_not_run": 0,
+        "diagnostic_execution_status": "completed",
+        "supplied_view_clock_evidence": "complete",
+        "required_diagnostic_passed": 1,
+        "required_diagnostic_failed": 0,
+        "required_diagnostic_not_run": 0,
+        "bounded_pass": true,
+        "clock_requested": true,
+        "missing_planned_checks": [],
+        "source_summary_sha256": "1271abe1744554b6db29fb5a1cdfc9c6dacc75936bdd585a307f7998c4d9d77f"
+      },
+      "optional_product_checks_not_run": [
+        "registry_noise_fixture",
+        "snapshot_state_unknown"
+      ],
+      "report": {
+        "scope": "real_etw_controlled_fixture_cli_excerpt",
+        "source_sha": "2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15",
+        "exporter": {
+          "protocol_revision": "contain-trial-report-3",
+          "sha256": "14d21ad8c922365976206f5879a1d1ef83a90f8babbac796f1acfeea22a76f43"
+        },
+        "complete": true,
+        "report_generated": true,
+        "acceptance_passed": true,
+        "commands": [
+          {
+            "name": "inspect-json",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "4ef3c7c7a84cdd1848aa4409b61da5b47364ebdf52d02337be134b85fb004b7e"
+          },
+          {
+            "name": "history-json",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "1ab7409c74babf70ec3a37f6138fd78cb10f16d5584b05fb4450dc3791e682d9"
+          },
+          {
+            "name": "explain-json",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "672b42da301cdd7301392253350ad06d1c6e5b1b7edcc103fadd60b8531f4a77"
+          },
+          {
+            "name": "inspect-text",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "0cf014d20f99a9b64831bd77c1003577eac4f97b446a020940dd4d2f25f42fca"
+          },
+          {
+            "name": "diff-text",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "13de30e7539d9ca25a8c701bffe8264b3754112a9958ac3324bc5fc828bd83f9"
+          },
+          {
+            "name": "history-text",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "11308cfe3fcc001e514362112397674e8bc5c6e349d12bca91d7470d5407aa66"
+          },
+          {
+            "name": "explain-text",
+            "status": "passed",
+            "exit_code": 0,
+            "stdout_sha256": "4bcb587b26aefbd01a10f5a3c27d973831f955183e551d7643f0c577d31fba54"
+          }
+        ],
+        "commands_executed": 7,
+        "commands_not_run": 0,
+        "commands_failed": 0,
+        "checks": {
+          "fixture_directory_identity": true,
+          "reopen_json_equal": true,
+          "reopened_scope_identity": true,
+          "history_page_equal": true,
+          "explain_event_equal": true,
+          "json_stdout_only": true,
+          "all_seven_commands_executed": true,
+          "text_json_agree": true,
+          "fixture_diff_present": true,
+          "public_paths_redacted": true
+        },
+        "failure": null,
+        "failures": [],
+        "comparison": {
+          "protocol_revision": "contain-capture-comparison-1",
+          "json_equal": true,
+          "comparison_scope": "complete_inspect_envelope_strict_types_and_values",
+          "difference_count": 0,
+          "counts": {},
+          "retained_count": 0,
+          "truncated": false,
+          "limit": 512,
+          "differences": [],
+          "bytes_equal": true,
+          "byte_representation": "saved_UTF8_file_vs_native_CLI_stdout_bytes",
+          "source_sha": "2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15",
+          "exporter": {
+            "protocol_revision": "contain-trial-report-3",
+            "sha256": "14d21ad8c922365976206f5879a1d1ef83a90f8babbac796f1acfeea22a76f43"
+          },
+          "build_manifest_sha256": "5cc1e687526184734e798e223bab9d3de3574b6a44bf1a5c5d75ff7f739430e7",
+          "contain_sha256": "cb382fc8985e5d8d57dd1a73e2fd571f6d9def48bfcd7c936b2e1f2295027501",
+          "save_implementation_sha256": "34991eb6c5a40f5c2527209b4cf6e527e1fdae11746c845222b0ca6e070d729d",
+          "inputs": [
+            {
+              "name": "saved_capture_json",
+              "bytes": 1179154,
+              "sha256": "4ef3c7c7a84cdd1848aa4409b61da5b47364ebdf52d02337be134b85fb004b7e",
+              "source": "demo_validated_CLI_stdout_save"
+            },
+            {
+              "name": "reopened_inspect_json",
+              "bytes": 1179154,
+              "sha256": "4ef3c7c7a84cdd1848aa4409b61da5b47364ebdf52d02337be134b85fb004b7e",
+              "source": "packaged_CLI_private_database_snapshot"
+            }
+          ],
+          "database_snapshot": {
+            "name": "private_read_only_snapshot",
+            "bytes": 3366912,
+            "sha256": "30fe4fb042eb126835db7cd188dd86a25ed67ec5b0d6d326a9c87298c4e8cd24"
+          }
+        },
+        "event_id": "f6757bc0-2365-415b-94e2-b3e91e34c4e9",
+        "capture_state": "finished",
+        "quality": "Degraded",
+        "omitted_limitation_lines": 4,
+        "omitted_explain_limitation_lines": 1,
+        "report_sha256": "fb58d659603b0e9c69048eb3fe4b67bcba6e39b34aff5fe3fb02592453122ec2"
+      },
+      "report_file": "windows-trial-dual-clock-41102818151.txt",
+      "legacy_score": {
+        "schema_version": 2,
+        "expected": 21,
+        "observed": 19,
+        "correctly_attributed": 17,
+        "unknown": 4,
+        "incorrect_attribution": 0,
+        "positive_raw_predictions": 17,
+        "false_positive_target_events": 0,
+        "supporting_duplicate_raw_events": 0,
+        "excluded_control_positive_events": 3,
+        "dropped": 0,
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0,
+        "precision": 1.0,
+        "unexpected_positive_events": []
+      },
+      "legacy_score_scope": "Unchanged original scorer; full reviewed rows retained in packaged report summary and CI evidence."
+    }
+  },
+  "dual_clock_supported_evidence": {
+    "protocol": "contain-etw-clock-audit-2",
+    "diagnostic_evidence_complete": true,
+    "missing_evidence": [],
+    "raw_join_status": "accounted_with_proven_raw_only",
+    "selection_status_counts": {
+      "same_id_final_connected": 315,
+      "raw_only_unknown": 59,
+      "outside_clock_operation_scope": 169
+    },
+    "unresolved_reason_categories": [
+      "source_original_qpc_or_actor_missing"
+    ],
+    "reason_category_note": "Reason categories are not event counts; Unknown is retained.",
+    "clock": {
+      "original_qpc_links": 91,
+      "primary_events_without_link": 0,
+      "source_events_without_qpc": 0,
+      "same_machine_boot_verified": true,
+      "qpc_frequency": "10000000",
+      "consumer_loss_counters_available": false,
+      "companion_stats": {
+        "received": 46729,
+        "stored": 46729,
+        "accepted": 46729,
+        "queued": 46729,
+        "queue_dropped": 0,
+        "quota_dropped": 0,
+        "not_persisted": 0,
+        "missing_event_key": 0,
+        "invalid_timestamp": 0,
+        "capacity_dropped": 0,
+        "writer_closed_dropped": 0,
+        "filtered_nonprimary": 0,
+        "readiness_probe_records": 2,
+        "duplicate_event_keys": null,
+        "disk_byte_capacity": 134217728,
+        "byte_capacity": 33554432,
+        "bytes": 2990656
+      },
+      "writer": {
+        "finished": true,
+        "drained": true,
+        "timed_out": false,
+        "cancel_requested": false,
+        "records": 46729,
+        "bytes": 2990656,
+        "partial_record_bytes": 0,
+        "write_calls": 12,
+        "drain_elapsed_ns": 6478600
+      }
+    },
+    "interpretation": "Complete only in the supplied supported scope. Unavailable consumer loss counters are not zero. No all-provider or causal-match acceptance."
+  },
+  "retained_failed_attempt": {
+    "source_sha": "189b0f3fef28885a2cf47209831d26d845a0b3e8",
+    "ci_run": 41099959322,
+    "ci_url": "https://github.com/LuckyLivio/Contain/actions/runs/41099959322",
+    "quality_artifact_id": 12999226596,
+    "result": "quality_failed_before_new_report_preflight_or_capture",
+    "recorded_gates": {
+      "passed": 32,
+      "failed": 1,
+      "not_run": 15
+    },
+    "blocking_gate": {
+      "mode": "Check",
+      "label": "test-package-trial",
+      "attempt": 1,
+      "invocation": 1,
+      "source_revision": "189b0f3fef28885a2cf47209831d26d845a0b3e8",
+      "program": "python",
+      "arguments": [
+        "scripts/test-package-trial.py"
+      ],
+      "exit_code": 1,
+      "status": "failed",
+      "counts": {
+        "runner": "unittest",
+        "executed": 33,
+        "passed": 32,
+        "failed": 1,
+        "errors": 0,
+        "skipped": 0,
+        "expected_failures": 0,
+        "unexpected_successes": 0
+      },
+      "log_available": true
+    },
+    "cause": "Test compared an unescaped Windows path with JSON-escaped text. Structured private path and production JSON/byte comparison were correct.",
+    "correction_commit": "2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15",
+    "correction": "Assert exact structured private path values and reject literal plus JSON-escaped private roots from public output.",
+    "new_report_preflight_cli_executed": 0,
+    "native_captures_executed": 0,
+    "package_generated": false,
+    "original_failure_retained": true,
+    "quality_tools": {
+      "llvm_cov": "cargo-llvm-cov 0.9.1",
+      "pwsh": "PowerShell 7.6.7",
+      "deny": "cargo-deny 0.20.2",
+      "python": "Python 3.12.10",
+      "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+      "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+      "nextest": "cargo-nextest 0.9.149 (3fe4ef319 2026-10-20)"
+    },
+    "ci_conclusion": "failure",
+    "scope": "Retained first attempt; not a retry of identical source. The specific Windows test assertion was corrected before any native capture."
+  },
+  "remaining_limits": [
+    "Both real sessions finished with quality Degraded, not Complete.",
+    "Formal provider/stabilization acceptance remains requirements_unmet; historical six timing doubts remain D.",
+    "The two older report failures lack field evidence; no retrospective timestamp root cause is claimed.",
+    "Native filesystem short-alias regression passed; full synthetic export volume supplied no distinct 8.3 alias.",
+    "Snapshot fallback was not run in this pair; optional unrun checks are not passed.",
+    "No formal 32-attempt, scaled, third-party installer, final ownership or safe-cleanup validation.",
+    "Debug build only, no loaded-image attestation, release or tag."
+  ]
+}

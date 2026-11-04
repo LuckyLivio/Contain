@@ -1,0 +1,8 @@
+/target/
+/artifacts/
+/coverage/
+# Keep reviewed seed corpora; generated corpus growth is deliberately ignored.
+/corpus/*/*
+!/corpus/event_json/seed-*
+!/corpus/lifetime_sequences/seed-*
+!/corpus/completion_correlation/seed-*

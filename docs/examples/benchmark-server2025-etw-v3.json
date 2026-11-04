@@ -9,7 +9,7 @@
   "elevated": true,
   "files": 10000,
   "end_to_end_overhead_seconds": 30.115353400000004,
-  "os": "Microsoft Windows NT 10.0.26100.0",
+  "os": "Windows",
   "schema_version": 1,
   "end_to_end_overhead_ratio": 3.281408111743581,
   "capture": {
@@ -63,5 +63,11 @@
     "etw_buffers_lost": 0,
     "quality": "Incomplete",
     "definition": "One row per instrumented syscall. Observed includes matching raw operation in its exact time interval or compatible final state; Correct requires exact PID+birth and application High. Noise remains Unknown. Missing observations are included in Unknown. This is fixture coverage, not global accuracy."
+  },
+  "public_redaction": {
+    "fields": [
+      "$.os (exact host version)"
+    ],
+    "meaning": "Withheld host metadata and historical branch labels are null, not zero. Original artifact digests refer to retained local pre-redaction evidence. Measured workload results and failed attempts are unchanged."
   }
 }

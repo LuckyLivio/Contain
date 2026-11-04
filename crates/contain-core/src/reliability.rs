@@ -1,12 +1,52 @@
 use crate::model::*;
+
+/// Describes the existing recorded-name claim, never a physical identity or a
+/// current-path query. Diagnostic flags alone cannot upgrade this statement.
+pub fn resource_evidence_reason(e: &SystemEvent) -> &'static str {
+    if e.evidence.source == EvidenceSource::EtwFile && e.event_type == "file" {
+        let source = e
+            .raw
+            .file_name
+            .as_ref()
+            .map(|n| n.path_source.as_str())
+            .or_else(|| {
+                e.raw
+                    .file_diagnostics
+                    .as_ref()
+                    .map(|d| d.path_source.as_str())
+            });
+        match source {
+            Some("file_object_cache") => {
+                "Recorded historical open name from the FileObject cache; not a verified current path or physical file identity. It does not establish an explicit application call or final state ownership."
+            }
+            Some("supplied_FileName" | "supplied_FilePath") => {
+                "Provider supplied this event's recorded name; this is not a handle query of the current path or physical file identity, an explicit application call, or final state ownership."
+            }
+            _ => {
+                "Recorded file name; provider/cache provenance and current path verification are unavailable. Name resolution does not establish physical identity, an explicit application call, or final state ownership."
+            }
+        }
+    } else {
+        "Source path or state observation identifies this recorded resource; does not establish exclusive ownership."
+    }
+}
 pub fn finish(c: &mut Capture) {
     for e in &mut c.events {
-        e.dimensions.actor =
-            if e.evidence.pid.is_some() && e.evidence.process_creation_time.is_some() {
-                Confidence::High
-            } else {
-                Confidence::Unknown
-            };
+        e.dimensions.actor = if e.evidence.pid.is_some()
+            && e.evidence.process_creation_time.is_some()
+            && matches!(
+                e.evidence.source,
+                EvidenceSource::ProcessApi
+                    | EvidenceSource::EtwFile
+                    | EvidenceSource::EtwRegistry
+                    | EvidenceSource::EtwProcess
+            )
+            && e.evidence.rule != AttributionRule::ExecutablePathMatch
+        {
+            Confidence::High
+        } else {
+            Confidence::Unknown
+        };
         e.dimensions.resource = if e.raw.resource_resolved
             || matches!(e.event_type.as_str(), "file_state" | "registry_state")
         {
@@ -66,7 +106,7 @@ pub fn finish(c: &mut Capture) {
     }
     if loss {
         c.quality.reasons.push(
-            "Source loss, decode failure or bounded cache/channel overflow was reported.".into(),
+            "Source loss, decode failure, bounded cache/channel overflow or raw journal/checkpoint failure was reported.".into(),
         );
     }
     if c.stats.drain_timed_out {
@@ -102,7 +142,9 @@ pub fn finish(c: &mut Capture) {
     }
     for e in &c.events {
         let node = format!("event:{}", e.id);
-        if let (Some(pid), Some(birth)) = (e.evidence.pid, e.evidence.process_creation_time) {
+        if let (Some(pid), Some(birth)) = (e.evidence.pid, e.evidence.process_creation_time)
+            && e.dimensions.actor == Confidence::High
+        {
             c.edges.push(EvidenceEdge {
                 from: format!("process:{pid}:{birth}"),
                 to: node.clone(),
@@ -110,9 +152,25 @@ pub fn finish(c: &mut Capture) {
                 confidence: e.dimensions.actor,
                 reason: e.reason.clone(),
             });
+        } else if e.evidence.rule == AttributionRule::ExecutablePathMatch
+            && let (Some(pid), Some(birth)) = (e.evidence.pid, e.evidence.process_creation_time)
+        {
+            c.edges.push(EvidenceEdge {
+                from: format!("process:{pid}:{birth}"),
+                to: node.clone(),
+                relation: "inventory_target".into(),
+                confidence: Confidence::Medium,
+                reason: "Inventory executable target matches this process; the configuration writer is unknown.".into(),
+            });
         }
         if e.dimensions.resource == Confidence::High {
-            c.edges.push(EvidenceEdge{from:node,to:format!("resource:{}",e.resource),relation:e.operation.clone(),confidence:e.dimensions.resource,reason:"Source path or state observation identifies this resource; does not establish exclusive ownership.".into()});
+            c.edges.push(EvidenceEdge {
+                from: node,
+                to: format!("resource:{}", e.resource),
+                relation: e.operation.clone(),
+                confidence: e.dimensions.resource,
+                reason: resource_evidence_reason(e).into(),
+            });
         }
     }
 }
@@ -120,6 +178,84 @@ pub fn finish(c: &mut Capture) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cached_name_does_not_claim_current_resource_or_application_intent() {
+        let mut value = serde_json::to_value(SystemEvent {
+            id: "native-write".into(),
+            event_type: "file".into(),
+            operation: "write_requested".into(),
+            resource: r"C:\fixture\old.tmp".into(),
+            confidence: Confidence::High,
+            success: Some(true),
+            evidence: AttributionEvidence {
+                source: EvidenceSource::EtwFile,
+                pid: Some(4),
+                process_creation_time: Some(10),
+                ..Default::default()
+            },
+            raw: RawEvidence {
+                resource_resolved: true,
+                object_generation: Some("original-open".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .unwrap();
+        let provenance = serde_json::json!({
+            "path_source":"file_object_cache",
+            "observed_ticks":"134350000000000001",
+            "source_event_id":"original-open-event",
+            "current_path_verified":false
+        });
+        value["raw"]["file_name"] = provenance.clone();
+        let event: SystemEvent = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            serde_json::to_value(&event).unwrap()["raw"]["file_name"],
+            provenance
+        );
+        let mut c = Capture {
+            events: vec![event],
+            ..Default::default()
+        };
+        finish(&mut c);
+        let edge = c
+            .edges
+            .iter()
+            .find(|e| e.to.starts_with("resource:"))
+            .unwrap();
+        assert!(edge.reason.contains("historical open name"));
+        assert!(edge.reason.contains("current path"));
+        assert_eq!(c.events[0].confidence, Confidence::High);
+        assert_eq!(c.events[0].dimensions.actor, Confidence::High);
+        assert_eq!(c.events[0].success, Some(true));
+        assert!(!c.events[0].state_validated);
+    }
+    #[test]
+    fn inventory_target_match_does_not_claim_an_observed_writer() {
+        let mut capture = Capture {
+            events: vec![SystemEvent {
+                id: "inventory".into(),
+                event_type: "service".into(),
+                evidence: AttributionEvidence {
+                    source: EvidenceSource::ServiceInventory,
+                    rule: AttributionRule::ExecutablePathMatch,
+                    pid: Some(1),
+                    process_creation_time: Some(10),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        finish(&mut capture);
+        assert_eq!(capture.events[0].dimensions.actor, Confidence::Unknown);
+        assert!(
+            !capture
+                .edges
+                .iter()
+                .any(|edge| edge.relation == "observed_actor")
+        );
+    }
     #[test]
     fn context_loss_suppresses_continuity_without_inventing_raw_record_drops() {
         let mut c = Capture::default();
@@ -138,6 +274,7 @@ mod tests {
             events: vec![SystemEvent {
                 event_type: "registry".into(),
                 evidence: AttributionEvidence {
+                    source: EvidenceSource::EtwRegistry,
                     pid: Some(1),
                     process_creation_time: Some(10),
                     ..Default::default()

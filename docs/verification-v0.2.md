@@ -4,7 +4,7 @@ Date: 2026-09-29. Scope: safe fixture and documented Windows APIs; no real appli
 
 ## Local Windows, ordinary token
 
-Host build: 10.0.26200.0, x64. Rust stable/MSVC. `doctor --json` confirmed a queryable process identity and successful read-only inventories (360 services, 214 scheduled tasks, 22 Run entries on this host at test time). Counts are environment-specific; no inventory contents are committed.
+Host: Windows x64; detailed build inventory retained locally. Rust stable/MSVC. `doctor --json` confirmed a queryable process identity and successful read-only inventories (360 services, 214 scheduled tasks, 22 Run entries on this host at test time). Counts are environment-specific; no inventory contents are committed.
 
 ETW start returned Access Denied. A manual UUID-named `logman` probe and the implemented backend agreed. Contain did not request elevation. The fixture fallback completed with 3 tracked processes, 10 file state changes, 3 registry value changes and 17 timeline records. File/registry state ownership remained Unknown; the independently launched process was absent from the installer family. Dry-run hashes/registry data were unchanged, and fixture cleanup removed its marked root and matching key.
 
@@ -14,7 +14,7 @@ ETW start returned Access Denied. A manual UUID-named `logman` probe and the imp
 - Initial v0.2 `796f25e`: [successful ETW and fallback CI](https://github.com/LuckyLivio/Contain/actions/runs/36536794866).
 - Precision/migration checkpoint `e921c2c`: [successful CI with source diagnostics](https://github.com/LuckyLivio/Contain/actions/runs/36537468528).
 
-The v0.2 runner was Windows Server 2025 build 10.0.26100, image windows-2025-vs2026. Both runs reported **9 High file source events** and **3 independent writer events remaining Unknown** for the fixture. The second run reported zero ETW losses, zero application drops and zero schema decode errors. The [unaltered sample event](examples/file-event-v2.json) is a real child-process write request with PID 4276, parent/installer PID 1720 and exact FILETIME birth evidence, extracted from that run's job log.
+The v0.2 runner was Windows Server 2025, image windows-2025-vs2026. Both runs reported **9 High file source events** and **3 independent writer events remaining Unknown** for the fixture. The second run reported zero ETW losses, zero application drops and zero schema decode errors. The [unaltered sample event](examples/file-event-v2.json) is a real child-process write request with PID 4276, parent/installer PID 1720 and exact FILETIME birth evidence, extracted from that run's job log.
 
 The captured file subset included new filesystem objects, writes and deletion of a transient file. Parent startup activity and a paired rename were not established by those logs. The parser supports rename path events but does not reconstruct both endpoints. Before/after state still detected the surviving rename result and old-path deletion.
 

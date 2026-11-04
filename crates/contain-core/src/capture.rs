@@ -1,9 +1,10 @@
+use crate::install_status::{InstallStatus, providers_ready};
 use crate::lifetime::LifetimeCache;
+use crate::profile::{self, measured};
 use crate::storage::{Storage, stream::RawBuffer};
 use crate::{
     attribution, filesystem, inventory,
     model::*,
-    monitor::EventSource,
     process::ProcessObserver,
     registry,
     windows::{etw::EtwSource, native},
@@ -14,7 +15,6 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
-use uuid::Uuid;
 
 pub struct InstallOptions {
     pub name: Option<String>,
@@ -29,6 +29,82 @@ pub struct InstallOptions {
 }
 
 pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
+    let mut status = InstallStatus::new(String::new(), options.etw);
+    install_controlled(options, db, &mut status, false, false, &mut |_| {})
+}
+
+/// Desktop observation uses isolated installer output and an exact session ID.
+/// Notification is infallible: a disconnected observer must not abandon a running installer.
+pub fn install_observed(
+    options: InstallOptions,
+    db: &mut Storage,
+    status: &mut InstallStatus,
+    require_etw: bool,
+    notify: &mut dyn FnMut(&InstallStatus),
+) -> Result<Capture> {
+    install_controlled(options, db, status, require_etw, true, notify)
+}
+
+fn install_controlled(
+    options: InstallOptions,
+    db: &mut Storage,
+    status: &mut InstallStatus,
+    require_etw: bool,
+    isolate_output: bool,
+    notify: &mut dyn FnMut(&InstallStatus),
+) -> Result<Capture> {
+    if status.sequence == 0 {
+        status.publish(notify);
+    }
+    let result = (|| {
+        let policy = crate::storage::checkpoint::Policy::from_env()?;
+        crate::storage::checkpoint::scoped(db, policy, |db| {
+            install_inner(
+                options,
+                db,
+                policy,
+                status,
+                require_etw,
+                isolate_output,
+                notify,
+            )
+        })
+    })();
+    let result = result.and_then(|capture: Capture| {
+        anyhow::ensure!(
+            !isolate_output || capture.capture_state.as_deref() == Some("finished"),
+            "Capture did not reach persisted finished state; evidence remains available under session {}",
+            status.session_id
+        );
+        Ok(capture)
+    });
+    match &result {
+        Ok(capture) => status.finished(capture, notify),
+        Err(error) => {
+            // Query only this attempt. Never substitute an older same-name session.
+            status.data_saved = match db.load_summary_by_id(&status.session_id) {
+                Ok(saved) => {
+                    status.quality = Some(saved.quality);
+                    true
+                }
+                Err(_) => status.data_saved,
+            };
+            status.fail(format!("{error:#}"), notify);
+        }
+    }
+    result
+}
+
+fn install_inner(
+    options: InstallOptions,
+    db: &mut Storage,
+    policy: crate::storage::checkpoint::Policy,
+    status: &mut InstallStatus,
+    require_etw: bool,
+    isolate_output: bool,
+    notify: &mut dyn FnMut(&InstallStatus),
+) -> Result<Capture> {
+    profile::start();
     let capture_clock = Instant::now();
     let mut phases = std::collections::BTreeMap::new();
     let before_clock = Instant::now();
@@ -39,7 +115,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     if !installer.is_file() {
         anyhow::bail!("installer is not a file: {}", installer.display());
     }
-    let id = Uuid::new_v4().to_string();
+    let id = status.session_id.clone();
     tracing::info!(session_id = %id, etw_requested = options.etw, "capture starting");
     let roots = if options.watch_roots.is_empty() {
         vec![
@@ -57,9 +133,16 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         .map(|p| p.to_string_lossy().into_owned())
         .collect();
     db.validate_capture_location(&watch_roots)?;
+    if let Some(path) = std::env::var_os("CONTAIN_ETW_RAW_CLOCK_PATH") {
+        if !options.etw {
+            anyhow::bail!(
+                "raw ETW clock diagnostics require ETW; snapshot-only is not a substitute"
+            );
+        }
+        db.validate_diagnostic_location(std::path::Path::new(&path))?;
+    }
     let mut warnings = Vec::new();
     let before_inventory = inventory::snapshot();
-    let before_files = filesystem::snapshot(&roots)?;
     let before_registry = options
         .registry_key
         .as_deref()
@@ -103,116 +186,183 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         },
         ..Default::default()
     };
-    let mut journal = RawBuffer::new(db, &initial, options.evidence_quota_bytes)?;
+    let mut journal = RawBuffer::with_policy(db, &initial, options.evidence_quota_bytes, policy)?;
+    status.data_saved = true;
     let mut source = EtwSource::start(&watch_roots, nt_root.clone(), options.etw);
+    status.backend(source.provider_status());
+    status.publish(notify);
+    anyhow::ensure!(
+        !require_etw || providers_ready(source.provider_status(), options.registry_key.is_some()),
+        "Required ETW providers are unavailable; installer was not launched. Check existing trace permissions or explicitly select snapshot mode. {:?}",
+        source.provider_status().warnings
+    );
+    source.ensure_raw_clock_ready()?;
     phases.insert(
         "provider_readiness".into(),
         ready_clock.elapsed().as_millis() as u64,
     );
-    let installer_clock = Instant::now();
-    let started_at = native::timestamp(native::now_ticks());
-    let mut child = Command::new(&installer)
-        .args(&options.args)
-        .spawn()
-        .with_context(|| format!("launching {}", installer.display()))?;
-    let identity =
-        native::identity_from_handle(child.as_handle(), child.id()).unwrap_or_else(|| {
-            warnings.push(
-                "Installer creation time query failed; descendant attribution is disabled.".into(),
+    source.initialize_identities(|page| journal.append(db, page));
+    let initial_identities = source.take_initial_identities();
+    let initial_threads = source.take_initial_threads();
+    let lifecycle_receiver =
+        crate::hotpath::Variant::from_env().lifecycle_receiver() && source.lifecycle_active();
+    let receive_clock = Instant::now();
+    let (observations, mut backend, stream) =
+        crate::ingest::record_while(&mut source, db, journal, |live| {
+            // Baseline reads now occur inside the active trace, before launch.
+            // The dedicated receiver remains active during both snapshots.
+            let before_files = filesystem::baseline_snapshot(&roots)?;
+            let installer_clock = Instant::now();
+            let started_at = native::timestamp(native::now_ticks());
+            let mut command = Command::new(&installer);
+            command.args(&options.args);
+            if isolate_output {
+                // Installer text must never enter the progress protocol, and its
+                // descendants must not retain the desktop's protocol pipe handles.
+                command
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null());
+            }
+            let mut child = command
+                .spawn()
+                .with_context(|| format!("launching {}", installer.display()))?;
+            let identity = native::identity_from_handle(child.as_handle(), child.id())
+                .unwrap_or_else(|| {
+                    warnings.push(
+                        "Installer creation time query failed; descendant attribution is disabled."
+                            .into(),
+                    );
+                    native::ProcessIdentity {
+                        pid: child.id(),
+                        creation_time: 0,
+                        image: installer.to_string_lossy().into_owned(),
+                    }
+                });
+            let root_pid = identity.pid;
+            let root_birth = identity.creation_time;
+            status.stage = "capturing".into();
+            status.installer_started = true;
+            status.installer_pid = Some(root_pid);
+            status.installer_creation_time = (root_birth != 0).then(|| root_birth.to_string());
+            status.publish(notify);
+            let mut process_observer = ProcessObserver::new(identity, &id);
+            let mut poll_at = Instant::now();
+            let exit_code = loop {
+                if !lifecycle_receiver && Instant::now() >= poll_at {
+                    measured!("capture_process_poll", process_observer.poll());
+                    poll_at = Instant::now() + Duration::from_millis(30);
+                }
+                if let Some(status) = child.try_wait()? {
+                    break status.code();
+                }
+                thread::sleep(Duration::from_millis(1));
+            };
+            phases.insert(
+                "installer_root".into(),
+                installer_clock.elapsed().as_millis() as u64,
             );
-            native::ProcessIdentity {
-                pid: child.id(),
-                creation_time: 0,
-                image: installer.to_string_lossy().into_owned(),
+            let exited_at = native::now_ticks();
+            status.installer_exited = true;
+            status.installer_exit_code = exit_code;
+            status.publish(notify);
+            live.reset_activity();
+            let drain_start = Instant::now();
+            let mut drain_timed_out = false;
+            loop {
+                if !lifecycle_receiver && Instant::now() >= poll_at {
+                    measured!("capture_process_poll", process_observer.poll());
+                    poll_at = Instant::now() + Duration::from_millis(30);
+                }
+                let descendants_live = live.descendants(
+                    process_observer.records(),
+                    (root_pid, root_birth),
+                    &id,
+                    lifecycle_receiver,
+                );
+                match crate::drain::decide(
+                    drain_start.elapsed().as_millis() as u64,
+                    live.quiet_ms(),
+                    descendants_live,
+                    options.settle_ms.max(if options.etw { 1200 } else { 0 }),
+                    options.max_drain_ms,
+                ) {
+                    crate::drain::Decision::Timeout => {
+                        drain_timed_out = true;
+                        break;
+                    }
+                    crate::drain::Decision::Quiet => break,
+                    crate::drain::Decision::Wait => {}
+                }
+                thread::sleep(Duration::from_millis(1));
             }
-        });
-    let root_pid = identity.pid;
-    let mut process_observer = ProcessObserver::new(identity, &id);
-    let mut live_cache = LifetimeCache::default();
-    let mut poll_at = Instant::now();
-    let exit_code = loop {
-        if Instant::now() >= poll_at {
-            process_observer.poll();
-            poll_at = Instant::now() + Duration::from_millis(30);
-        }
-        let incoming = source.drain();
-        let full_page = incoming.len() == crate::storage::stream::PAGE;
-        for e in &incoming {
-            live_cache.ingest(e);
-        }
-        journal.append(db, incoming);
-        if let Some(status) = child.try_wait()? {
-            break status.code();
-        }
-        if !full_page {
-            thread::sleep(Duration::from_millis(1));
-        }
-    };
-    phases.insert(
-        "installer_root".into(),
-        installer_clock.elapsed().as_millis() as u64,
+            phases.insert(
+                "descendant_quiet_drain".into(),
+                drain_start.elapsed().as_millis() as u64,
+            );
+            let after_clock = Instant::now();
+            let observed = filesystem::observed_snapshot(&roots)?;
+            phases.insert(
+                "after_file_snapshot_hash".into(),
+                after_clock.elapsed().as_millis() as u64,
+            );
+            let after_registry = options
+                .registry_key
+                .as_deref()
+                .map(registry::observed_snapshot)
+                .transpose()?;
+            Ok((
+                before_files,
+                observed,
+                after_registry,
+                process_observer,
+                root_pid,
+                root_birth,
+                exit_code,
+                exited_at,
+                started_at,
+                drain_timed_out,
+            ))
+        })?;
+    status.stage = "finalizing".into();
+    status.capture_finished = true;
+    status.backend(&backend);
+    status.publish(notify);
+    let (
+        before_files,
+        observed,
+        after_registry,
+        process_observer,
+        root_pid,
+        root_birth,
+        exit_code,
+        exited_at,
+        started_at,
+        drain_timed_out,
+    ) = observations;
+    let after_files = observed.finish(
+        &before_files,
+        backend.source_intact()
+            && stream.failed == 0
+            && stream.quota_dropped == 0
+            && stream.error.is_none()
+            && !drain_timed_out,
     );
-    let exited_at = native::now_ticks();
-    let root_birth = process_observer
-        .records()
-        .iter()
-        .find(|p| p.pid == root_pid)
-        .and_then(|p| p.creation_time)
-        .unwrap_or(0);
-    let mut cache = live_cache;
-    for p in process_observer.records() {
-        cache.seed(p);
+    if let Some(handoff) = &backend.handoff {
+        phases.insert(
+            "etw_stop_and_queue_drain".into(),
+            handoff.stop_and_drain_ns / 1_000_000,
+        );
     }
-    let mut last_activity = Instant::now();
-    let drain_start = Instant::now();
-    let mut drain_timed_out = false;
-    loop {
-        if Instant::now() >= poll_at {
-            process_observer.poll();
-            poll_at = Instant::now() + Duration::from_millis(30);
-        }
-        for p in process_observer.records() {
-            cache.seed(p);
-        }
-        let incoming = source.drain();
-        let full_page = incoming.len() == crate::storage::stream::PAGE;
-        for e in &incoming {
-            cache.ingest(e);
-            if e.event_type == "file" || (e.event_type == "registry" && e.raw.resource_resolved) {
-                last_activity = Instant::now();
-            }
-        }
-        journal.append(db, incoming);
-        cache.attach((root_pid, root_birth), &id);
-        let descendants_live = cache
-            .processes
-            .values()
-            .filter(|p| p.pid != root_pid && p.confidence == Confidence::High)
-            .any(|p| {
-                native::process_identity(p.pid)
-                    .is_some_and(|live| Some(live.creation_time) == p.creation_time)
-            });
-        match crate::drain::decide(
-            drain_start.elapsed().as_millis() as u64,
-            last_activity.elapsed().as_millis() as u64,
-            descendants_live,
-            options.settle_ms.max(if options.etw { 1200 } else { 0 }),
-            options.max_drain_ms,
-        ) {
-            crate::drain::Decision::Timeout => {
-                drain_timed_out = true;
-                break;
-            }
-            crate::drain::Decision::Quiet => break,
-            crate::drain::Decision::Wait => {}
-        }
-        if !full_page {
-            thread::sleep(Duration::from_millis(1));
-        }
+    profile::add(
+        "capture_receive_wall",
+        receive_clock.elapsed().as_nanos() as u64,
+    );
+    if let Some(checkpoint) = &stream.checkpoint {
+        phases.insert(
+            "post_raw_checkpoint".into(),
+            checkpoint.duration_ns / 1_000_000,
+        );
     }
-    let stop_clock = Instant::now();
-    let mut backend = source.stop_with(|incoming| journal.append(db, incoming));
-    let stream = journal.finish(db)?;
     phases.insert(
         "raw_persistence_overlapping".into(),
         stream.persistence_ns / 1_000_000,
@@ -227,15 +377,8 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         backend.warnings.push(error.clone());
     }
     backend.stream = Some(stream);
-    phases.insert(
-        "etw_stop_and_queue_drain".into(),
-        stop_clock.elapsed().as_millis() as u64,
-    );
-    phases.insert(
-        "descendant_quiet_drain".into(),
-        drain_start.elapsed().as_millis() as u64,
-    );
     let association_clock = Instant::now();
+    db.prepare_raw(&id)?;
     let mut processes = process_observer.finish();
     if let Some(root) = processes
         .iter_mut()
@@ -243,8 +386,19 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     {
         root.ended_at = Some(exited_at);
     }
-    drop(cache);
     let mut cache = LifetimeCache::default();
+    for (p, at) in initial_identities {
+        cache.seed_snapshot(p, at);
+    }
+    for identity in initial_threads {
+        if let Some(process) = cache
+            .processes
+            .get(&(identity.owner_pid, identity.owner_creation_time))
+            .cloned()
+        {
+            cache.seed_thread_snapshot(identity, process);
+        }
+    }
     for p in &processes {
         cache.seed(p.clone());
     }
@@ -255,7 +409,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
             break;
         }
         for e in &page {
-            cache.ingest(e);
+            measured!("lifetime_ingest", cache.ingest(e));
         }
         let last = page.last().unwrap();
         cursor = (last.timestamp_ticks, last.sequence);
@@ -266,7 +420,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         && !backend.has_loss()
         && cache.dropped == 0;
     if lifecycle_complete {
-        cache.attach((root_pid, root_birth), &id);
+        measured!("lifetime_attach", cache.attach((root_pid, root_birth), &id));
     }
     backend.context_losses += cache.dropped;
     if let Some(p) = &mut backend.pipeline {
@@ -284,88 +438,104 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     let mut raw_stats = CaptureStats::default();
     let mut cursor = (0, 0);
     loop {
-        let mut page = db.raw_page(&id, cursor)?;
-        if page.is_empty() {
+        let done = db.evidence_group(&id, |db| {
+            for _ in 0..4 {
+                let mut page = db.raw_page(&id, cursor)?;
+                if page.is_empty() {
+                    return Ok(true);
+                }
+                let last = page.last().unwrap();
+                cursor = (last.timestamp_ticks, last.sequence);
+                let mut retained = Vec::with_capacity(page.len());
+                let mut ops = Vec::new();
+                for mut e in page.drain(..) {
+                    let had_registry_path = e.event_type == "registry" && e.raw.resource_resolved;
+                    if lifecycle_complete {
+                        measured!("post_lifetime_resolve", cache.resolve_event(&mut e));
+                    }
+                    if had_registry_path && !e.raw.resource_resolved {
+                        backend.registry_path_gaps += 1;
+                    }
+                    measured!(
+                        "post_attribution",
+                        attribution::attribute(&mut e, &processes, &id)
+                    );
+                    if e.event_type == "lifecycle"
+                        && !processes.iter().any(|p| {
+                            Some(p.pid) == e.evidence.pid
+                                && p.creation_time == e.evidence.process_creation_time
+                        })
+                        && !e
+                            .evidence
+                            .pid
+                            .is_some_and(|pid| db.scoped_header(&id, pid).unwrap_or(true))
+                    {
+                        continue;
+                    }
+                    // Unresolved open/close metadata remains in committed raw evidence;
+                    // it is not a user mutation or a new monitored category.
+                    if e.event_type == "registry_context" {
+                        continue;
+                    }
+                    if db.select_raw_only_registry(&id, &e, lifecycle_complete)? {
+                        continue;
+                    }
+                    if !source_intact {
+                        suppress(&mut e);
+                    }
+                    if e.event_type == "file"
+                        && !matches!(e.operation.as_str(), "open_requested" | "close")
+                    {
+                        let mut pair = vec![e];
+                        if let Some(mut completion) = db.completion(&id, &pair[0].id)? {
+                            if !source_intact {
+                                completion.success = None;
+                            }
+                            pair.push(completion);
+                        }
+                        let mut normalized = crate::correlation::correlate(
+                            &mut pair,
+                            &Default::default(),
+                            &Default::default(),
+                        );
+                        e = pair.remove(0);
+                        if source_intact {
+                            measured!(
+                                "post_attribution",
+                                attribution::attribute(&mut e, &processes, &id)
+                            );
+                        }
+                        for o in &mut normalized {
+                            o.confidence = e.confidence;
+                        }
+                        ops.extend(normalized);
+                    }
+                    retained.push(e);
+                }
+                let mut batch = Capture {
+                    id: id.clone(),
+                    events: retained,
+                    operations: ops,
+                    backend: backend.clone(),
+                    ..Default::default()
+                };
+                measured!("post_quality_graph", crate::reliability::finish(&mut batch));
+                add_stats(&mut raw_stats, &batch.stats);
+                db.append_evidence(&batch)?;
+            }
+            Ok(false)
+        })?;
+        if done {
             break;
         }
-        let last = page.last().unwrap();
-        cursor = (last.timestamp_ticks, last.sequence);
-        let mut retained = Vec::with_capacity(page.len());
-        let mut ops = Vec::new();
-        for mut e in page.drain(..) {
-            if lifecycle_complete {
-                cache.resolve_event(&mut e);
-            }
-            attribution::attribute(&mut e, &processes, &id);
-            if e.event_type == "lifecycle"
-                && !processes.iter().any(|p| {
-                    Some(p.pid) == e.evidence.pid
-                        && p.creation_time == e.evidence.process_creation_time
-                })
-                && !e
-                    .evidence
-                    .pid
-                    .is_some_and(|pid| db.scoped_header(&id, pid).unwrap_or(true))
-            {
-                continue;
-            }
-            if e.event_type == "registry"
-                && !e.raw.resource_resolved
-                && e.confidence != Confidence::High
-            {
-                continue;
-            }
-            if !source_intact {
-                suppress(&mut e);
-            }
-            if e.event_type == "file" && !matches!(e.operation.as_str(), "open_requested" | "close")
-            {
-                let mut pair = vec![e];
-                if let Some(mut completion) = db.completion(&id, &pair[0].id)? {
-                    if !source_intact {
-                        completion.success = None;
-                    }
-                    pair.push(completion);
-                }
-                let mut normalized = crate::correlation::correlate(
-                    &mut pair,
-                    &Default::default(),
-                    &Default::default(),
-                );
-                e = pair.remove(0);
-                if source_intact {
-                    attribution::attribute(&mut e, &processes, &id);
-                }
-                for o in &mut normalized {
-                    o.confidence = e.confidence;
-                }
-                ops.extend(normalized);
-            }
-            retained.push(e);
-        }
-        let mut batch = Capture {
-            id: id.clone(),
-            events: retained,
-            operations: ops,
-            backend: backend.clone(),
-            ..Default::default()
-        };
-        crate::reliability::finish(&mut batch);
-        add_stats(&mut raw_stats, &batch.stats);
-        db.append_evidence(&batch)?;
     }
     phases.insert(
         "lifetime_attribution_and_paged_persistence".into(),
         association_clock.elapsed().as_millis() as u64,
     );
     drop(cache);
-    let after_clock = Instant::now();
-    let after_files = filesystem::snapshot(&roots)?;
-    phases.insert(
-        "after_file_snapshot_hash".into(),
-        after_clock.elapsed().as_millis() as u64,
-    );
     let correlation_clock = Instant::now();
+    let state_association_timer = profile::timer("post_state_association");
     let operations = crate::correlation::correlate(&mut [], &before_files, &after_files);
 
     let seen = observer
@@ -380,48 +550,32 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         }
     }
     let mut files = filesystem::diff(&before_files, &after_files, &seen);
-    let after_registry = options
-        .registry_key
-        .as_deref()
-        .map(registry::snapshot)
-        .transpose()?;
+    let registry_observations = after_registry.as_ref().map(|s| &s.observations);
     let mut registry = match (
         options.registry_key.as_deref(),
         before_registry,
-        after_registry,
+        after_registry.as_ref(),
     ) {
-        (Some(key), Some(before), Some(after)) => registry::diff(key, &before, &after),
+        (Some(key), Some(before), Some(after)) => registry::diff(key, &before, &after.values),
         _ => Vec::new(),
     };
-    let complete = backend.etw_events_lost == Some(0)
-        && backend.etw_buffers_lost == Some(0)
-        && !backend.has_loss();
-    for file in &mut files {
-        match db.resource_events(&id, &file.path)? {
-            Some(mut events) => {
-                attribution::compose_files(std::slice::from_mut(file), &mut events, complete);
-            }
-            None => {
-                backend.context_losses += 1;
-                if let Some(p) = &mut backend.pipeline {
-                    p.context_evictions += 1;
+    let complete = backend.source_intact() && !drain_timed_out && notification_gaps == 0;
+    // Persist exactly the observations validated by composition, for both files
+    // and registry values. One post-stop transaction retains the existing
+    // per-resource bound instead of accumulating a full-session event vector.
+    db.evidence_group(&id, |db| {
+        for file in &mut files {
+            match db.resource_events(&id, &file.path)? {
+                Some(mut events) => {
+                    let proof =
+                        filesystem::change_observation(&before_files, &after_files, &file.path);
+                    attribution::compose_file_observed(file, &mut events, complete, proof);
+                    db.persist_state_validation(&id, &events)?;
                 }
-                warnings.push(
-                    "Per-resource association quota exceeded; session promotion suppressed".into(),
-                );
-            }
-        }
-    }
-    if let Some(root) = &nt_root {
-        for change in &mut registry {
-            match db.resource_events(&id, &format!("{root}\\{}", change.name))? {
-                Some(mut events) => attribution::compose_registry(
-                    std::slice::from_mut(change),
-                    &mut events,
-                    nt_root.as_deref(),
-                    complete && backend.registry_path_gaps == 0,
-                ),
                 None => {
+                    let proof =
+                        filesystem::change_observation(&before_files, &after_files, &file.path);
+                    attribution::compose_file_observed(file, &mut [], false, proof);
                     backend.context_losses += 1;
                     if let Some(p) = &mut backend.pipeline {
                         p.context_evictions += 1;
@@ -433,11 +587,50 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
                 }
             }
         }
-    }
+        for change in &mut registry {
+            let proof = Some(registry::change_observation(change, registry_observations));
+            if let Some(root) = &nt_root {
+                match db.resource_events(&id, &format!("{root}\\{}", change.name))? {
+                    Some(mut events) => {
+                        attribution::compose_registry_observed(
+                            change,
+                            &mut events,
+                            nt_root.as_deref(),
+                            proof,
+                        );
+                        db.persist_state_validation(&id, &events)?;
+                    }
+                    None => {
+                        attribution::compose_registry_observed(
+                            change,
+                            &mut [],
+                            nt_root.as_deref(),
+                            proof,
+                        );
+                        backend.context_losses += 1;
+                        if let Some(p) = &mut backend.pipeline {
+                            p.context_evictions += 1;
+                        }
+                        warnings.push(
+                            "Per-resource association quota exceeded; session promotion suppressed"
+                                .into(),
+                        );
+                    }
+                }
+            } else {
+                // A missing SID prevents ETW resource lookup, not preservation
+                // of the independently observed value/read limitation.
+                attribution::compose_registry_observed(change, &mut [], None, proof);
+            }
+        }
+        Ok(())
+    })?;
+    warnings.push("File observations use bounded temporary read leases where available; they describe observed hashes and identities, not complete mutation coverage or ownership. Final file and registry state attribution remains Unknown where mutation coverage or read/clock proof is incomplete; verified source actors remain separate.".into());
     phases.insert(
         "correlation_attribution".into(),
         correlation_clock.elapsed().as_millis() as u64,
     );
+    drop(state_association_timer);
     let inventory_clock = Instant::now();
     let after_inventory = inventory::snapshot();
     let inventory = inventory::diff(&before_inventory, &after_inventory, &processes, &id);
@@ -449,7 +642,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     warnings.extend(after_inventory.warnings);
     warnings.extend(backend.warnings.iter().cloned());
     if backend.registry_path_gaps > 0 {
-        warnings.push(format!("Registry ETW omitted absolute hive/key names in {} provider records; unresolved records are retained only for verified installer actors. Registry state attribution uses Unknown snapshot fallback unless complete event evidence exists.", backend.registry_path_gaps));
+        warnings.push(format!("Registry paths could not be safely resolved in {} records (missing names/context or conflicting process generations); unresolved records are retained only for verified installer actors. Registry state attribution uses Unknown snapshot fallback unless complete event evidence exists.", backend.registry_path_gaps));
     }
     if !lifecycle_complete {
         warnings.push("Process lifecycle evidence was unavailable or incomplete. Sampling can miss short-lived/detached children; unresolved actors remain Unknown.".into());
@@ -462,7 +655,7 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
         ));
     }
     if backend.has_loss() {
-        warnings.push(format!("Capture incomplete: {} raw record losses, {} context losses, {:?} ETW events lost, {:?} ETW buffers lost, {} decode errors; state attribution remains Unknown.",backend.dropped_events,backend.context_losses,backend.etw_events_lost,backend.etw_buffers_lost,backend.decode_errors));
+        warnings.push(format!("Capture incomplete: {} raw record losses, {} context losses, {:?} ETW events lost, {:?} ETW buffers lost, {} decode errors, journal error={:?}; state attribution remains Unknown.",backend.dropped_events,backend.context_losses,backend.etw_events_lost,backend.etw_buffers_lost,backend.decode_errors,backend.stream.as_ref().and_then(|s|s.error.as_deref())));
     }
     let finished_at = native::timestamp(native::now_ticks());
     let name = options.name.unwrap_or_else(|| {
@@ -500,21 +693,36 @@ pub fn install(options: InstallOptions, db: &mut Storage) -> Result<Capture> {
     crate::timeline::complete(&mut capture, exited_at);
     crate::reliability::finish(&mut capture);
     add_stats(&mut capture.stats, &raw_stats);
-    if capture.backend.has_loss() {
+    if !capture.backend.source_intact() {
         capture.stats.high_confidence_events = 0;
         for f in &mut capture.files {
             f.confidence = Confidence::Unknown;
             f.reason = "Session continuity unverified; final promotion suppressed".into();
+            for evidence in &mut f.evidence {
+                if let Some(read) = &mut evidence.observation {
+                    read.final_source_complete = false;
+                }
+            }
         }
         for r in &mut capture.registry {
             r.confidence = Confidence::Unknown;
             r.reason = "Session continuity unverified; final promotion suppressed".into();
+            for evidence in &mut r.evidence {
+                if let Some(read) = &mut evidence.observation {
+                    read.final_source_complete = false;
+                }
+            }
         }
     }
-    db.save(&capture)?;
-    db.mark_finished(&capture)?;
+    measured!("post_summary_write", db.save(&capture))?;
+    measured!(
+        "post_final_downgrade_full_commit",
+        db.mark_finished(&capture)
+    )?;
     // Summary returns no full raw-event vector. Full/paged history remains in Storage.
-    capture = db.load_summary(&capture.id)?;
+    capture = measured!("post_summary_read", db.load_summary_by_id(&capture.id))?;
+    profile::add("post_wall", association_clock.elapsed().as_nanos() as u64);
+    profile::finish()?;
     tracing::info!(session_id = %capture.id, events = capture.events.len(), files = capture.files.len(),
         dropped = capture.backend.dropped_events, "capture completed");
     Ok(capture)
@@ -531,6 +739,19 @@ fn suppress(e: &mut SystemEvent) {
         e.reason = "Source continuity unverified; no application promotion".into();
     }
 }
+
+#[cfg(test)]
+fn state_coverage_intact(
+    backend: &BackendReport,
+    trace_stopped: Instant,
+    snapshots_finished: Instant,
+) -> bool {
+    // Preserve the historical counterexample: a snapshot taken after stopping
+    // has a blind interval even with zero losses. Those counters cannot establish
+    // final-state authorship, even when an earlier same-path event has a known actor.
+    backend.source_intact() && snapshots_finished <= trace_stopped
+}
+
 fn add_stats(to: &mut CaptureStats, from: &CaptureStats) {
     to.events_retained += from.events_retained;
     to.events_normalized += from.events_normalized;
@@ -539,4 +760,133 @@ fn add_stats(to: &mut CaptureStats, from: &CaptureStats) {
     to.known_resource_events += from.known_resource_events;
     to.unknown_resource_events += from.unknown_resource_events;
     to.high_confidence_events += from.high_confidence_events;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failed_attempt_cannot_open_old_same_name_record_as_its_result() {
+        assert_failed_attempt_keeps_its_session(false);
+    }
+
+    #[test]
+    fn failed_attempt_does_not_borrow_evidence_from_a_name_matching_its_session_id() {
+        assert_failed_attempt_keeps_its_session(true);
+    }
+
+    fn assert_failed_attempt_keeps_its_session(name_matches_session_id: bool) {
+        let directory =
+            std::env::temp_dir().join(format!("contain-status-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("records.db");
+        let mut db = Storage::open(&path).unwrap();
+        let mut status = InstallStatus::new(path.to_string_lossy().into_owned(), false);
+        let id = status.session_id.clone();
+        let old = Capture {
+            id: "old-same-name".into(),
+            name: if name_matches_session_id {
+                id.clone()
+            } else {
+                "same name".into()
+            },
+            schema_version: 3,
+            ..Default::default()
+        };
+        db.save(&old).unwrap();
+        let options = InstallOptions {
+            name: Some(old.name.clone()),
+            installer: directory.join("missing.exe"),
+            args: vec![],
+            watch_roots: vec![directory.clone()],
+            registry_key: None,
+            settle_ms: 1,
+            etw: false,
+            max_drain_ms: 1,
+            evidence_quota_bytes: 1024,
+        };
+        let mut rows = Vec::new();
+        let error = install_observed(options, &mut db, &mut status, false, &mut |row| {
+            rows.push(serde_json::to_value(row).unwrap())
+        })
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("installer not found"));
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["stage"], "preparing");
+        assert_eq!(rows[1]["stage"], "failed");
+        assert_eq!(rows[1]["session_id"], id);
+        assert!(!status.installer_started && !status.capture_finished && !status.data_saved);
+        assert!(db.load_summary_by_id(&id).is_err());
+        if name_matches_session_id {
+            assert_eq!(db.load_summary(&id).unwrap().id, old.id);
+        } else {
+            assert!(db.load_summary(&id).is_err());
+        }
+        assert_eq!(db.load_summary(&old.id).unwrap().name, old.name);
+        drop(db);
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn after_stop_snapshot_cannot_promote_an_earlier_attributed_mutation() {
+        let stopped = Instant::now();
+        let backend = BackendReport {
+            etw_events_lost: Some(0),
+            etw_buffers_lost: Some(0),
+            ..Default::default()
+        };
+        let complete = state_coverage_intact(&backend, stopped, stopped + Duration::from_millis(1));
+        assert!(!complete);
+        let file_event = SystemEvent {
+            event_type: "file".into(),
+            operation: "write_requested".into(),
+            resource: "C:\\test\\shared.txt".into(),
+            confidence: Confidence::High,
+            success: Some(true),
+            raw: RawEvidence {
+                resource_resolved: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut files = [FileChange {
+            path: file_event.resource.clone(),
+            operation: "modified".into(),
+            ..Default::default()
+        }];
+        let mut file_events = [file_event];
+        attribution::compose_files(&mut files, &mut file_events, complete);
+        assert_eq!(files[0].confidence, Confidence::Unknown);
+        assert_eq!(file_events[0].confidence, Confidence::High);
+        assert!(!file_events[0].state_validated);
+        let mut registry_events = [SystemEvent {
+            event_type: "registry".into(),
+            operation: "set_value".into(),
+            resource: "root\\value".into(),
+            confidence: Confidence::High,
+            success: Some(true),
+            raw: RawEvidence {
+                resource_resolved: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }];
+        let mut changes = [RegistryChange {
+            name: "value".into(),
+            operation: "modified".into(),
+            ..Default::default()
+        }];
+        attribution::compose_registry(&mut changes, &mut registry_events, Some("root"), complete);
+        assert_eq!(changes[0].confidence, Confidence::Unknown);
+        assert_eq!(registry_events[0].confidence, Confidence::High);
+        assert!(!registry_events[0].state_validated);
+        assert!(state_coverage_intact(&backend, stopped, stopped));
+        let lossy = BackendReport {
+            dropped_events: 1,
+            ..backend
+        };
+        assert!(!state_coverage_intact(&lossy, stopped, stopped));
+    }
 }

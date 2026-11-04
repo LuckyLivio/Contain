@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "ci_run": 41801560771,
+  "source_sha": "65739c3fc99f5d5de610db3e553927a3ba3a5c5e",
+  "status": "failed",
+  "failed_gate": "CoverageOriginal",
+  "failed_test": "tests::failed_api_is_logged_with_error_and_independent_clock_brackets",
+  "failure_location": "examples/test-installer/src/bin/write_diagnostic/tests.rs:6",
+  "failure_kind": "parallel_test_container_name_collision",
+  "native_error": {
+    "code": 183,
+    "kind": "AlreadyExists"
+  },
+  "check_passed": true,
+  "workspace_coverage_passed": true,
+  "dependencies_passed": true,
+  "companion_passed": true,
+  "native_ui_not_run": true,
+  "real_etw_executed": false,
+  "package_generated": false,
+  "quality_evidence": "https://github.com/LuckyLivio/Contain/actions/runs/41801560771/artifacts/13309636173",
+  "fix": "Test-helper names retain the 32-hex suffix but combine PID8, QPC16 and checked atomic sequence8. Deterministic same-tick concurrency and exhaustion regressions; no filesystem retry, deletion or assertion reduction."
+}

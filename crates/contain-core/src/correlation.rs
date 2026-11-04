@@ -7,29 +7,41 @@ pub fn correlate(
     before: &Snapshot,
     after: &Snapshot,
 ) -> Vec<NormalizedOperation> {
-    let completions: BTreeMap<_, _> = events
-        .iter()
-        .filter(|e| e.event_type == "completion")
-        .filter_map(|e| {
-            Some((
-                e.raw.related_event.clone()?,
-                (e.id.clone(), e.success, e.raw.status),
-            ))
-        })
-        .collect();
+    let mut completions: BTreeMap<_, Vec<_>> = BTreeMap::new();
+    for event in events.iter().filter(|e| e.event_type == "completion") {
+        if let Some(request) = &event.raw.related_event {
+            completions.entry(request.clone()).or_default().push((
+                event.id.clone(),
+                event.success,
+                event.raw.status,
+            ));
+        }
+    }
     let mut result = Vec::new();
     for e in events.iter_mut().filter(|e| {
         e.event_type == "file" && !matches!(e.operation.as_str(), "open_requested" | "close")
     }) {
         let mut refs = vec![e.id.clone()];
-        if let Some((id, success, status)) = completions.get(&e.id) {
-            e.success = *success;
-            e.raw.status = *status;
-            refs.push(id.clone());
+        let mut ambiguous_completion = false;
+        let mut matched_completion = false;
+        if let Some(matches) = completions.get(&e.id) {
+            refs.extend(matches.iter().map(|(id, _, _)| id.clone()));
+            if let [(.., success, status)] = matches.as_slice() {
+                e.success = *success;
+                e.raw.status = *status;
+                matched_completion = true;
+            } else {
+                // Match paged storage: more than one completion is ambiguous,
+                // even when statuses happen to agree. Never select by input order.
+                e.success = None;
+                e.raw.status = None;
+                ambiguous_completion = true;
+            }
         }
         let operation = match (e.operation.as_str(), e.success) {
             ("write_requested", Some(true)) => "Modified",
             ("delete_requested", Some(true)) => "Deleted",
+            ("delete_requested", None) => "DeleteRequested",
             (_, Some(false)) => "Failed",
             ("rename_requested", _) => "RenameRequested",
             ("create_new_file", _) => "CreateObserved",
@@ -42,10 +54,14 @@ pub fn correlate(
             raw_events: refs,
             success: e.success,
             confidence: e.confidence,
-            reason: if e.success == Some(false) {
+            reason: if ambiguous_completion {
+                "Multiple completion records refer to this request; result is ambiguous and all raw references are retained."
+            } else if e.success == Some(false) {
                 "Request failed; this is not a state deletion."
+            } else if e.success.is_some() && matched_completion {
+                "IRP completion matched the scoped request generation; raw status is retained. The operation label describes a native request result, not a final state observation or an explicit application API call."
             } else if e.success.is_some() {
-                "IRP completion matched the scoped request generation; raw status is retained."
+                "Recorded native request result without a matching completion record in this view; no completion join is claimed. The operation label is not a final state observation or an explicit application API call."
             } else {
                 "Completion or rename endpoints unresolved; raw request retained."
             }
@@ -96,6 +112,222 @@ pub fn correlate(
 mod tests {
     use super::*;
     use crate::filesystem::FileState;
+    #[test]
+    fn completed_native_write_retains_success_without_claiming_explicit_api_or_final_state() {
+        let request = SystemEvent {
+            id: "native-write".into(),
+            event_type: "file".into(),
+            operation: "write_requested".into(),
+            success: Some(true),
+            confidence: Confidence::High,
+            resource: r"C:\fixture\historical.tmp".into(),
+            raw: RawEvidence {
+                object_generation: Some("one-open".into()),
+                irp: Some("request-irp".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        for with_completion in [false, true] {
+            let mut events = vec![request.clone()];
+            if with_completion {
+                events.push(SystemEvent {
+                    id: "completion".into(),
+                    event_type: "completion".into(),
+                    success: Some(true),
+                    raw: RawEvidence {
+                        related_event: Some("native-write".into()),
+                        irp: Some("request-irp".into()),
+                        status: Some(0),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                });
+            }
+            let operations = correlate(&mut events, &Snapshot::default(), &Snapshot::default());
+            assert_eq!(operations[0].operation, "Modified");
+            assert_eq!(operations[0].confidence, Confidence::High);
+            assert_eq!(operations[0].success, Some(true));
+            assert!(operations[0].reason.contains("native request result"));
+            assert!(
+                operations[0]
+                    .reason
+                    .contains("not a final state observation or an explicit application API call")
+            );
+            assert_eq!(
+                operations[0].reason.contains("IRP completion matched"),
+                with_completion
+            );
+            assert_eq!(
+                operations[0]
+                    .reason
+                    .contains("no completion join is claimed"),
+                !with_completion
+            );
+            assert_eq!(
+                operations[0].raw_events.len(),
+                if with_completion { 2 } else { 1 }
+            );
+            if with_completion {
+                assert!(operations[0].raw_events.iter().any(|id| id == "completion"));
+            }
+            assert_eq!(
+                operations[0].resource_identity.as_deref(),
+                Some("open-generation:one-open")
+            );
+            assert_eq!(events[0].operation, "write_requested");
+            assert!(!events[0].state_validated);
+        }
+    }
+    #[test]
+    fn missing_delete_completion_remains_a_delete_request() {
+        let mut events = [SystemEvent {
+            id: "request".into(),
+            event_type: "file".into(),
+            operation: "delete_requested".into(),
+            ..Default::default()
+        }];
+        let operations = correlate(&mut events, &Snapshot::default(), &Snapshot::default());
+        assert_eq!(operations[0].operation, "DeleteRequested");
+        assert_eq!(operations[0].success, None);
+    }
+    #[test]
+    fn conflicting_completions_never_select_the_last_result() {
+        let request = SystemEvent {
+            id: "request".into(),
+            event_type: "file".into(),
+            operation: "delete_requested".into(),
+            ..Default::default()
+        };
+        let completion = |id: &str, success| SystemEvent {
+            id: id.into(),
+            event_type: "completion".into(),
+            success: Some(success),
+            raw: RawEvidence {
+                related_event: Some("request".into()),
+                status: Some(if success { 0 } else { 0xc0000022 }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        for completions in [
+            [completion("failed", false), completion("success", true)],
+            [completion("success", true), completion("failed", false)],
+        ] {
+            let mut events = vec![request.clone()];
+            events.extend(completions);
+            let operations = correlate(&mut events, &Snapshot::default(), &Snapshot::default());
+            assert_eq!(events[0].success, None);
+            assert_eq!(operations[0].operation, "DeleteRequested");
+            assert_eq!(operations[0].raw_events.len(), 3);
+        }
+    }
+
+    #[test]
+    fn duplicate_completions_are_ambiguous_even_when_statuses_agree_or_arrive_first() {
+        for statuses in [
+            [Some(true), Some(true)],
+            [Some(false), Some(false)],
+            [Some(true), Some(false)],
+            [Some(false), Some(true)],
+            [None, Some(true)],
+            [Some(true), None],
+            [None, Some(false)],
+            [Some(false), None],
+            [None, None],
+        ] {
+            for order in [
+                [0, 1, 2],
+                [0, 2, 1],
+                [1, 0, 2],
+                [1, 2, 0],
+                [2, 0, 1],
+                [2, 1, 0],
+            ] {
+                let request = SystemEvent {
+                    id: "request".into(),
+                    event_type: "file".into(),
+                    operation: "delete_requested".into(),
+                    // A repeated correlation pass must also revoke a provisional result.
+                    success: Some(true),
+                    raw: RawEvidence {
+                        status: Some(0),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                };
+                let completion = |index: usize| SystemEvent {
+                    id: format!("completion-{index}"),
+                    event_type: "completion".into(),
+                    success: statuses[index],
+                    raw: RawEvidence {
+                        related_event: Some("request".into()),
+                        status: statuses[index].map(|success| if success { 0 } else { 0xc0000022 }),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                };
+                let input = [request.clone(), completion(0), completion(1)];
+                let mut events = order.map(|index| input[index].clone());
+                let operations = correlate(&mut events, &Snapshot::default(), &Snapshot::default());
+                let request = events.iter().find(|e| e.id == "request").unwrap();
+                assert_eq!(request.success, None, "{statuses:?}/{order:?}");
+                assert_eq!(request.raw.status, None);
+                assert_eq!(operations.len(), 1);
+                assert_eq!(operations[0].operation, "DeleteRequested");
+                assert_eq!(operations[0].success, None);
+                let mut references = operations[0].raw_events.clone();
+                references.sort();
+                assert_eq!(references, ["completion-0", "completion-1", "request"]);
+            }
+        }
+    }
+
+    #[test]
+    fn ambiguous_snapshot_identities_never_choose_a_rename_endpoint() {
+        for duplicate_before in [false, true] {
+            let state = FileState {
+                hash: "same-content".into(),
+                identity: Some("shared-file-identity".into()),
+                ..Default::default()
+            };
+            let mut before = Snapshot::default();
+            let mut after = Snapshot::default();
+            before.files.insert("old".into(), state.clone());
+            after.files.insert("new".into(), state.clone());
+            if duplicate_before {
+                before.files.insert("old-alias".into(), state);
+            } else {
+                after.files.insert("new-alias".into(), state);
+            }
+            let operations = correlate(&mut [], &before, &after);
+            assert!(operations.is_empty(), "duplicate_before={duplicate_before}");
+        }
+    }
+
+    #[test]
+    fn identical_content_does_not_hide_snapshot_replacement_or_invent_an_actor() {
+        let mut before = Snapshot::default();
+        let mut after = Snapshot::default();
+        for (snapshot, identity) in [(&mut before, "old-id"), (&mut after, "new-id")] {
+            snapshot.files.insert(
+                "same-path".into(),
+                FileState {
+                    hash: "identical-content".into(),
+                    size: 17,
+                    identity: Some(identity.into()),
+                },
+            );
+        }
+        let operations = correlate(&mut [], &before, &after);
+        assert_eq!(operations.len(), 1);
+        assert_eq!(operations[0].operation, "Replaced");
+        assert_eq!(operations[0].confidence, Confidence::Unknown);
+        assert_eq!(operations[0].resource_identity.as_deref(), Some("new-id"));
+        assert!(operations[0].raw_events.is_empty());
+        assert!(operations[0].previous_path.is_none());
+    }
+
     #[test]
     fn rename_uses_identity_not_hash_and_replacement_is_separate() {
         let mut a = Snapshot::default();

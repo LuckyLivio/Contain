@@ -1,124 +1,66 @@
 # Contain
 
-**Contain doesn't just see changes. It explains why they belong to an app.**
+Windows 安装记录与证据查看 Beta。
 
-> Unknown is safer than a wrong answer.
+通过桌面选择安装器和有限观察范围，记录文件事件，保存并重新查看会话，浏览变化、
+解释事件并导出本地报告。使用 WinForms、Rust 核心和现有 CLI；普通桌面使用无需安装
+Rust、Visual Studio、Python、PowerShell 7 或独立 .NET 运行库。
 
-## Which app changed this?
+## 下载与使用
 
-Contain v0.3.1 observes Windows installation sessions, links real events to verified process instances, and explains the evidence. **Contain distinguishes observed changes from attributed changes.**
+**[直接下载 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.1/contain-0.3.2-beta.1-windows-x64.zip)** · [Beta Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.1) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.1/SHA256SUMS.txt)
 
-Contain records evidence and offers a cleanup **dry run**. It does not guarantee zero leftovers or isolate an installer.
+版本 **0.3.2-beta.1**，已验证源码 `85c522839523d259c09c80a4ce4e8c78ea11472d`。
+[第一阶段修复、验证范围和已知问题](docs/stage-one-beta.md)。
 
-## Try it
+1. 下载并完整解压 ZIP，双击 `Contain.Viewer.exe`。
+2. 选择“新建安装记录”，填写名称、安装器、**已有观察目录**和范围外的数据库位置。
+   安装目标由安装器界面选择；安装包所在目录不等于软件安装目标或完整观察范围。
+3. “检查环境”查看当前可用能力，确认实际范围后点击“开始记录”。只有这一步启动安装器。
+4. 等待收尾和保存，自动打开本次准确会话。选择事件查看依据，使用“导出本页报告”。
+   打开已有数据库始终只读；旧数据库兼容读取不迁移原文件。
 
-Requirements: Windows x64, [Rust stable](https://rust-lang.org/tools/install/), Visual Studio C++ build tools, and PowerShell. From the repository:
+包内 `TRY.md` 包含无需终端的受控夹具步骤。`BUILD.json`、`CONTENTS.json`、
+`VALIDATION.json` 和 `SOURCE.zip` 记录源码、配置、运行库、检查结果及哈希。
+构建未签名。ETW 需要当前令牌具备相应权限；程序不自动提权、不修改安全设置。
+明确选择快照模式时会显示它的实际边界，不会静默当成完整 ETW。
 
-```powershell
-./scripts/demo.ps1
-```
+## 第一阶段边界
 
-This builds the CLI, runs a safe parent → child → grandchild installer alongside an **independent process writing the same directory**, records independent ground truth, short-lived and detached helpers, rename/failure cases, and registry noise; checks attribution, JSON/SQLite readback and unchanged data after dry-run, then removes only the marked fixture. Files stay within `%TEMP%\contain-demo-*`; registry mutations stay within its matching `HKCU\Software\Contain\Demo\*` key. It creates no real services, tasks, or startup registrations.
+- 安装器退出、采集完成、数据保存及覆盖质量分别显示。非零退出不统一解释为用户取消，
+  保存记录也不等于软件安装成功。
+- High 表示有证据支持的执行进程关联；Unknown 表示证据不足。两者都不是最终文件归属
+  或安全删除许可。Degraded 表示覆盖受限，不表示已发现恶意行为。
+- 只观察指定有限目录及后端支持的来源，不自动扫描全盘或替用户创建软件安装目标。
+  注册表配置当前为一个选定 HKCU Software 键；未请求时显示 `not_requested`。
+- 事件筛选仅作用于当前页；本地 HTML 报告包含本会话状态变化、当前未筛选事件页及所选
+  explain，不是全库搜索或全历史导出。报告保留本地路径与证据，分享前请自行审阅。
+- 本轮不提供安全卸载、回滚、自动清理、完整软件足迹或最终所有权结论。没有会强杀
+  安装器的“取消”按钮；异常退出后的未完成证据应保留并重新查看。
 
-```powershell
-./scripts/demo.ps1 -SnapshotOnly  # explicit fallback
-./scripts/demo.ps1 -RequireEtw    # fails unless real PID-aware events are captured
-./scripts/demo.ps1 -KeepArtifacts # prints database and fixture paths for exploration
-```
+## 已知问题与证据来源
 
-ETW needs suitable Windows trace/provider permissions. Contain never opens UAC. With insufficient rights it continues with process observation and snapshots, and file/registry attribution remains `Unknown`. `-RequireEtw` is a test assertion, not an elevation request.
+用户曾在 Parallels / Windows 11 中手工试用 7-Zip，截图显示在专用目标/观察目录下
+安装退出 0、107 项文件变化及可解释的 High 源事件。未取得用户数据库或报告，
+不将其写成独立复现；来宾架构和实际 DPI 未确认，不能据此声称 ARM64 已验证。
 
-## Attribution reliability
+另一次观察整个 Program Files 的记录停留在 finalizing / Incomplete。缺少原始数据库
+和错误日志，根因尚未确认；小范围成功不证明已修复。该问题保留为 Beta 已知限制，
+没有通过禁止目录或全盘性能实验掩盖它。
 
-v0.3 retains ETW process/thread lifetimes, distinguishes PID reuse, joins file
-requests to completion where available, and explains actor, resource, operation
-and application confidence separately. A SQLite evidence graph connects the
-session, process instances, observations and resources.
+原生 Windows CI、模拟缩放压力、用户手工反馈和未验证条件在
+[当前交付记录](docs/stage-one-beta.md)中分别列出。此前三个里程碑保持关闭；
+[历史交付与失败证据索引](docs/delivery-history.md)保留原始记录，旧包不再并列为当前下载。
 
-The [verified fixture run](https://github.com/LuckyLivio/Contain/actions/runs/36542048919)
-observed 20 of 21 instrumented operations: **17 correctly attributed, 4 Unknown,
-0 incorrectly attributed, 0 application drops**. Unknown includes the unrelated
-writer and a blocked deletion with no matching mutation event. This is fixture
-coverage, not general accuracy. Both short-lived and post-installer-exit writes
-were attributed. Registry context recovered some full paths; unresolved objects
-still remain explicit. A later provider-readiness fix addresses asynchronous
-startup. See [verification](docs/verification-v0.3.md) for the final tested revisions.
+## 开发与参考
 
-- [Actual terminal demo](docs/demo-output.txt)
-- [Compatibility matrix](docs/windows-compatibility.md)
-- [Reproducible 10,000-file benchmark](docs/performance.md)
+[Contributing](CONTRIBUTING.md) · [Architecture](docs/architecture.md) ·
+[CLI / JSON contract](docs/json-contract.md) · [Desktop](desktop/README.md) ·
+[Security](SECURITY.md) · [Measured limits](docs/performance.md)
 
-## Use the CLI
-
-```powershell
-cargo build --workspace --locked
-./target/debug/contain.exe doctor
-./target/debug/contain.exe install .\SomeAppSetup.exe --name SomeApp --watch "$env:LOCALAPPDATA\SomeApp" --registry-key Software\Vendor\SomeApp
-./target/debug/contain.exe inspect SomeApp
-./target/debug/contain.exe inspect SomeApp --verbose
-./target/debug/contain.exe explain <event-id> --json
-./target/debug/contain.exe diff SomeApp
-./target/debug/contain.exe history SomeApp --json
-./target/debug/contain.exe remove SomeApp --dry-run
-```
-
-Watch directories must already exist. Repeat `--watch` for each scope. Without it only the installer's directory is watched. `--registry-key` selects one HKCU Software key: values are compared at that key; ETW may also observe operations beneath it. Installer arguments follow `--`. Use `--no-etw` to disable tracing. After root exit, `--settle-ms` (default 1500) sets the quiet period and `--max-drain-ms` (default 10000) bounds waiting for descendants/activity. A timeout marks the session Incomplete.
-
-`--db <path>` selects a database; default is `%LOCALAPPDATA%\Contain\contain.db`. `list --json`, `inspect --json`, `diff --json`, `history --json`, and `doctor --json` use a [versioned JSON contract](docs/json-contract.md). `install --manifest <path>` exports an inspect document. FILETIME identity fields use decimal strings to preserve full precision.
-
-v0.3.1 continuously commits a bounded raw evidence journal, then finalizes evidence
-in pages. Keep the database outside watched roots. `--evidence-quota-mib` defaults
-to 256; quota/write failures remain visible. Interrupted sessions are explicitly
-unfinished and expose no final attribution. `history <app> --json --limit 256
---offset 0` reads a page; default inspect reads a summary. See the
-[pipeline ADR](docs/adr/0006-capture-pipeline.md) and [counter definitions](docs/capture-counters.md).
-
-The current release comparison passes 100 files / four workers in three trials.
-1000 and 10000 files fail the useful-attribution gate; 1000 is a regression against
-the baseline. This remains experimental. See the [measured limits](docs/performance.md#final-measured-decision-2026-09-29).
-
-## What v0.3 records
-
-| Source | Recorded evidence | Attribution boundary |
-| --- | --- | --- |
-| Owned handle, ETW process/thread lifetimes and polling | PID, creation time, executable, verified parent chain | Installer Certain; observed descendants High |
-| ETW Kernel-File | Scoped create/write/rename/delete observations, timestamp, issuing thread → retained or live process identity, object generations and IRP completion | High only for a matching installer-family instance |
-| ETW Kernel-Registry | Scoped key/value operations, completion status when available, writer identity when queryable | Unknown unless the same lifetime/ancestry checks pass |
-| File hash and HKCU snapshots | Before/after state, including modified/deleted entries | Unknown alone; correlated event evidence is separate |
-| Service, scheduled task, startup inventories | Created/changed/removed configuration with before/after fields | Exact verified executable target can be Medium; timing alone stays Unknown |
-
-Inspect summarizes capture quality and counters; `--verbose` and `explain` show evidence details. Diff groups attributed and unattributed changes. History distinguishes source event times from end-of-session state observations. A successful operation, an attributed process, and a surviving state change are separate facts.
-
-## Safety and privacy
-
-- `remove` requires `--dry-run`; there is no deletion executor, uninstaller execution, or rollback.
-- User data stays `USER_DATA`. A High-attributed cache may be `REVIEW`; unknown or changed files remain `UNKNOWN`. Nothing is marked `SAFE` for deletion.
-- No automatic elevation, driver, service installation, Defender changes, AI classification, or GUI.
-- No account, telemetry, or uploads in the application. Databases/manifests contain local paths and possibly registry/configuration data; review them before sharing.
-- ETW providers produce system-wide activity; scoped records and verified installer lifecycle/unresolved-object evidence are retained; other resources are discarded. The scanner skips reparse points. Contain does not sandbox the installer you launch.
-
-## Limitations
-
-- Missing lifecycle events, ambiguous lifetimes, provider access failure or unsupported schemas reduce coverage. Captures are Degraded or Incomplete; v0.3 never claims a complete footprint.
-- Normalized operations preserve raw references. IRP completion is partial; stable file IDs prove surviving rename/replacement endpoints, not an entire transient chain or exclusive ownership.
-- Registry context requires a verified absolute base and the same process lifetime. Missing paths stay `<unresolved registry object>`. Registry snapshots remain Unknown when complete scoped writer evidence is unavailable.
-- Drain is finite. Broker/service-manager activity and changes after the session are not automatically descendants.
-- Services, tasks and Run entries are read-only inventories. Their actual writer and mutation time are unknown. Protected inventories produce warnings, not inferred removals.
-- Captures have bounded queues/caches, visible drops and separate ETW event/buffer loss. Reported loss suppresses application promotion; no-loss counters do not prove provider coverage.
-
-## Development
-
-```powershell
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-cargo build --workspace --locked
-./scripts/demo.ps1
-```
-
-Windows CI requires both real ETW evidence and fallback integration. Read the [architecture](docs/architecture.md), [backend ADR](docs/adr/0001-event-attribution-backend.md), [contribution guide](CONTRIBUTING.md), [security policy](SECURITY.md), and [code of conduct](CODE_OF_CONDUCT.md).
-
-Next: broader Windows validation, more registry context coverage and stronger multi-step operation evidence. GUI and real cleanup remain deferred.
+开发验证使用现有 `scripts/quality.ps1` 与 Windows CI。合成测试、交叉编译及跳过的
+检查不计作原生 ETW 或实际系统高 DPI 验证。正式 32 次、规模化和多安装器矩阵不属于
+本轮 Beta 收尾；它们不会因界面工作流通过而自动被宣布完成。
 
 ## License
 

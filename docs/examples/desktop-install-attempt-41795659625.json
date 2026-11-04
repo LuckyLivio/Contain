@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "protocol_revision": "contain-desktop-install-verification-1",
+  "source_sha": "3f81c7f56ba6e3c103e9dd6eab8671d0664a3dd5",
+  "native_windows": true,
+  "gui_initiated": false,
+  "real_etw_executed": false,
+  "synthetic": false,
+  "controlled_fixture": true,
+  "maximum_native_captures": 1,
+  "retries": 0,
+  "planned_checks": [
+    "install_protocol_and_arguments",
+    "install_configuration_without_launch",
+    "gui_real_etw_start_and_duplicate_guard",
+    "gui_runtime_stages_and_close_guard",
+    "gui_exact_session_autoopen",
+    "gui_real_source_event_explain_and_export"
+  ],
+  "checks": [
+    {
+      "name": "install_protocol_and_arguments",
+      "status": "passed",
+      "error_type": null,
+      "safe_reason": null
+    },
+    {
+      "name": "install_configuration_without_launch",
+      "status": "failed",
+      "error_type": "ArgumentOutOfRangeException",
+      "safe_reason": null
+    },
+    {
+      "name": "gui_real_etw_start_and_duplicate_guard",
+      "status": "not_run",
+      "error_type": "offline_or_runtime_prerequisite_failed",
+      "safe_reason": null
+    },
+    {
+      "name": "gui_runtime_stages_and_close_guard",
+      "status": "not_run",
+      "error_type": "offline_or_runtime_prerequisite_failed",
+      "safe_reason": null
+    },
+    {
+      "name": "gui_exact_session_autoopen",
+      "status": "not_run",
+      "error_type": "offline_or_runtime_prerequisite_failed",
+      "safe_reason": null
+    },
+    {
+      "name": "gui_real_source_event_explain_and_export",
+      "status": "not_run",
+      "error_type": "offline_or_runtime_prerequisite_failed",
+      "safe_reason": null
+    }
+  ],
+  "passed": 1,
+  "failed": 1,
+  "not_run": 4,
+  "skipped": 0,
+  "completed": false,
+  "accepted": false,
+  "automatic_checks_accepted": false,
+  "executed_interaction_failed": false,
+  "assertions_passed": 34,
+  "offline_viewer_checks_passed": true,
+  "package_manifest_sha256": "42dc3114a3c198cbaeebcd89486978ee404fe91009da74378e82b47cbfb1f11e",
+  "viewer_assembly_sha256": "e06cb65aba0c129b4dac3e405d79fa50699d1b3554f9811b8e8d266b98f7a928",
+  "viewer_launcher_sha256": "c0113d260a57ab1b9b7eebd64a10efc15b58ce6652b7536f5ce3194eb316d99f",
+  "contain_sha256": "ccfec551dd936efd545564fc2e1ce2fcfbf36091b673d9b18543c5e277ad8086",
+  "fixture_sha256": "a8cd48bb9a1fd17a0fb97c511d6d969660f274b4bb0e6e7af0bf23a6fa2a1516",
+  "session_id": null,
+  "event_id": null,
+  "installer_started": false,
+  "installer_pid": null,
+  "installer_creation_time": null,
+  "installer_exit_code": null,
+  "collection_finished": false,
+  "data_saved": false,
+  "capture_state": null,
+  "quality_level": null,
+  "quality_reasons": null,
+  "providers_active": false,
+  "real_source_event_count": 0,
+  "independent_truth_verified": false,
+  "capture_accounting": null,
+  "observed_stages": [],
+  "real_event": null,
+  "report_generated": false,
+  "report_sha256": null,
+  "report_publication": "local_only_full_report_may_include_host_registry_identity",
+  "screenshots": [],
+  "manual_checks": [],
+  "offline_checks": [
+    {
+      "name": "synthetic_invalid_exe_preserves_saved_session_and_old_records",
+      "status": "failed",
+      "error_type": "ArgumentOutOfRangeException",
+      "safe_reason": null
+    }
+  ],
+  "fault_injection": "Explicit synthetic read-only-database and invalid-EXE starts in selected snapshot mode; no successful installer process and no ETW acceptance credit.",
+  "screenshot_method": "Actual production WinForms controls rendered on Windows after product selection/start/status/result/explain actions. Controlled fixture; real ETW source records are not synthetic.",
+  "interaction_boundary": "Product controls/start logic executed. Native picker navigation and cancel separately reported; injected configuration is never counted as native picker navigation. No third-party installer, scale experiment or retry.",
+  "private_evidence_retained": true
+}

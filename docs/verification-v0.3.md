@@ -81,7 +81,7 @@ with 5374 observed and zero incorrect. See [performance](performance.md) for mea
 time, memory, database size and the limits of each metric. This demonstrates safe
 loss handling, not reliable high-volume coverage.
 
-Local Windows 11 build 26200 used a non-elevated token. Actual ETW startup returned
+Local Windows used a non-elevated token. Actual ETW startup returned
 access denied; automatic and explicit fallback demos passed. Doctor successfully
 queried 361 services, 214 scheduled tasks and 22 startup entries during verification.
 These are read-only inventory probes, not fixture-created system registrations.
@@ -101,4 +101,4 @@ cargo build --workspace --locked
 ```
 
 The RequireEtw switches assert existing privileges; they never elevate. The
-application remains local, without GUI, AI, driver, real cleanup or telemetry.
+application remains local, without GUI, automated classification, driver, real cleanup or telemetry.

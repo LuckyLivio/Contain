@@ -1,0 +1,1881 @@
+{
+  "schema_version": 1,
+  "scope": "Verified bounded desktop record viewer MVP; synthetic production-store databases, actual Windows UI and packaged CLI. Not a recording or real-installer trial.",
+  "source_sha": "4b4d38764ed417e6754b5db798488227ec147e21",
+  "version": "0.3.1",
+  "milestone": "desktop_record_viewer_mvp_closed",
+  "ci_run": 41122708670,
+  "ci_conclusion": "success",
+  "ci_url": "https://github.com/LuckyLivio/Contain/actions/runs/41122708670",
+  "download": "https://github.com/LuckyLivio/Contain/actions/runs/41122708670/artifacts/13010587633",
+  "evidence_artifact": "https://github.com/LuckyLivio/Contain/actions/runs/41122708670/artifacts/13009798835",
+  "package": {
+    "source_sha": "4b4d38764ed417e6754b5db798488227ec147e21",
+    "zip_sha256": "ff59a15260e49283bfc6e63c9780f22930e9767a1c058ce6daa9a65c198ed5ff",
+    "zip_bytes": 74077890,
+    "member_count": 475,
+    "contents_entries_verified": 474,
+    "frozen_files_verified": 472,
+    "build_manifest_sha256": "c7f5d2fe4f4bd7a166f0e90aa2472f80cf690442740fcb19b08db9903d6d3649",
+    "runtime": [
+      {
+        "name": "Microsoft.NETCore.App",
+        "version": "8.0.33"
+      },
+      {
+        "name": "Microsoft.WindowsDesktop.App",
+        "version": "8.0.33"
+      }
+    ],
+    "runtime_licenses": [
+      {
+        "framework": "Microsoft.NETCore.App",
+        "version": "8.0.33",
+        "third_party_notices": "licenses/Microsoft.NETCore.App-thirdpartynotices.txt",
+        "license": "licenses/Microsoft.NETCore.App-license.txt"
+      },
+      {
+        "framework": "Microsoft.WindowsDesktop.App",
+        "version": "8.0.33",
+        "third_party_notices": "not_supplied_in_runtime_pack",
+        "license": "licenses/Microsoft.WindowsDesktop.App-license.txt"
+      }
+    ],
+    "core_sha256": "a57e6ca406f6e7c89aca0ac3655142a2de9acc535b99e8d9e3bb077879106b4e",
+    "viewer_launcher_sha256": "7067616f4cf5790ec80f6a7db17ef145e8c732ef66b015dbfa84fc6e3ebdf669",
+    "viewer_assembly_sha256": "8220bb54967fc81d2dd6b0d299648a788f445df985dab0d7c7660f9ff1eff1b0",
+    "native_checks": 22,
+    "assertions_passed": 230,
+    "assertions_failed": 0,
+    "screenshots": [
+      {
+        "name": "empty-state.png",
+        "sha256": "9d74e811108f5c8b7f69f3ae706345f8601ce0fba7de9884b2e52eb70934c4c1",
+        "bytes": 38616,
+        "width": 1044,
+        "height": 788
+      },
+      {
+        "name": "finished-overview.png",
+        "sha256": "5c85f596565e7129b3a90845bd57dbbf3e5906975e244b3d956321d6eb7ee68e",
+        "bytes": 55020,
+        "width": 1044,
+        "height": 788
+      },
+      {
+        "name": "state-changes.png",
+        "sha256": "7fe9b463f5f4b578e24ce749d080bfa84bda904270eb2d89cfe37d136a96204b",
+        "bytes": 49715,
+        "width": 1044,
+        "height": 788
+      },
+      {
+        "name": "event-explanation.png",
+        "sha256": "23e2d6b110e8916b71715baf321f740eefd7d4dcb42dd98968c1b72ac96e8cff",
+        "bytes": 53930,
+        "width": 1044,
+        "height": 788
+      },
+      {
+        "name": "historical-name.png",
+        "sha256": "beb7f7d2303f500db99c5a05c89403232b761650966e80392c42d98a3977c592",
+        "bytes": 56097,
+        "width": 1044,
+        "height": 788
+      },
+      {
+        "name": "unknown-evidence.png",
+        "sha256": "d796df37fcf6c8987c8b35bebeff2ac6aadbfc7fd4aa090e74638ce6df773064",
+        "bytes": 55941,
+        "width": 1044,
+        "height": 788
+      },
+      {
+        "name": "interrupted-record.png",
+        "sha256": "668f8b8610572edb4b5fd2f8502bc886dd4be3f5645f0cea01ea4efdee104fff",
+        "bytes": 56074,
+        "width": 1044,
+        "height": 788
+      },
+      {
+        "name": "packaged-three-records.png",
+        "sha256": "9ed46772593b5f61a8317e44c38a57f19ab967c00e5c65be3acbd4c53f6c2a0c",
+        "bytes": 58288,
+        "width": 1044,
+        "height": 788
+      },
+      {
+        "name": "empty-database.png",
+        "sha256": "be2de55f233662a0ceed8dda44ec2debc9e288da95d26b2f9c8c6142d288fc2f",
+        "bytes": 39285,
+        "width": 1044,
+        "height": 788
+      },
+      {
+        "name": "database-error.png",
+        "sha256": "ece45106cb7e67e5ded69a1168c984c3be5f5ed9f28187edd0a3321743f5a1e1",
+        "bytes": 42731,
+        "width": 1044,
+        "height": 788
+      }
+    ],
+    "report": {
+      "path": "reports/synthetic-viewer-report.html",
+      "bytes": 45508,
+      "sha256": "5cd59752f74b5ac3b5848a6ad575bb9c8b824f269613afd1f097f1acff93ebf0"
+    },
+    "sample_sha256": "ecbf0d54d292da5cfc7aea9b72d6ad582572cce185bec216029d99ac7dd7fefd",
+    "validation": {
+      "frozen_package_unchanged": true,
+      "quality_complete": true,
+      "native_ui_cli_and_export": true
+    },
+    "toolchain": {
+      "dotnet": "10.0.403",
+      "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+      "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)"
+    },
+    "build_commands": [
+      "cargo build --workspace --locked",
+      "dotnet publish desktop/Contain.Viewer/Contain.Viewer.csproj -c Release -r win-x64 --self-contained true -o target/viewer-publish"
+    ],
+    "build_platform": {
+      "system": "Windows",
+      "release": "2025Server",
+      "version": "10.0.26100",
+      "architecture": "AMD64",
+      "runner_image": "win25-vs2026",
+      "runner_image_version": "20261030.294.1",
+      "ci_run_url": "https://github.com/LuckyLivio/Contain/actions/runs/41122708670"
+    },
+    "source_files_verified": 25,
+    "non_system_native_imports": [
+      {
+        "importer": "contain.exe",
+        "dependency": "vcruntime140.dll"
+      }
+    ],
+    "core_profile": "debug",
+    "viewer_configuration": "Release",
+    "clean_windows_10_11_manual_validation": "not_run; native launch and UI checks were on the recorded Windows Server CI runner",
+    "scope": "Existing-record desktop viewing only, synthetic production databases and real packaged CLI. No ETW or installer capture."
+  },
+  "native": {
+    "schema_version": 1,
+    "protocol_revision": "contain-desktop-verification-1",
+    "scope": "synthetic_actual_windows_desktop_and_packaged_cli",
+    "source_sha": "4b4d38764ed417e6754b5db798488227ec147e21",
+    "native_windows": true,
+    "actual_cli": true,
+    "completed": true,
+    "planned_checks": [
+      "frozen_package_and_actual_ui_assembly_identity",
+      "synthetic_inputs_and_special_character_paths",
+      "real_cli_records_summary_and_exact_time_strings",
+      "real_cli_second_page_and_explanation_identity",
+      "real_cli_diff_precise_integer_and_unknown_state",
+      "strict_protocol_rejects_invalid_schema_kind_and_shape",
+      "missing_null_unknown_enums_and_json_precision",
+      "real_cli_database_and_process_failures_are_errors",
+      "doctor_rejected_without_starting_capture",
+      "native_window_empty_state",
+      "native_production_executable_launch",
+      "ui_open_finished_record_and_overview",
+      "ui_state_changes_filter_and_reason",
+      "ui_page_then_select_and_explain_same_event",
+      "ui_filter_explicitly_applies_to_current_page",
+      "ui_local_report_matches_current_record_page_and_event",
+      "ui_historical_name_and_unknown_evidence",
+      "ui_unfinished_and_unavailable_metrics",
+      "ui_packaged_three_record_sample_switching",
+      "ui_valid_empty_database_and_cancel",
+      "ui_errors_are_visible_and_do_not_create_records",
+      "all_source_and_viewed_databases_unchanged"
+    ],
+    "package_manifest_sha256": "c7f5d2fe4f4bd7a166f0e90aa2472f80cf690442740fcb19b08db9903d6d3649",
+    "synthetic": true,
+    "real_etw_executed": false,
+    "viewer_assembly_sha256": "8220bb54967fc81d2dd6b0d299648a788f445df985dab0d7c7660f9ff1eff1b0",
+    "viewer_launcher_sha256": "7067616f4cf5790ec80f6a7db17ef145e8c732ef66b015dbfa84fc6e3ebdf669",
+    "contain_sha256": "a57e6ca406f6e7c89aca0ac3655142a2de9acc535b99e8d9e3bb077879106b4e",
+    "passed": 22,
+    "failed": 0,
+    "skipped": 0,
+    "not_run": 0,
+    "assertions_passed": 230,
+    "assertions_failed": 0,
+    "accepted": true,
+    "checks": [
+      {
+        "name": "frozen_package_and_actual_ui_assembly_identity",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "synthetic_inputs_and_special_character_paths",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "real_cli_records_summary_and_exact_time_strings",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "real_cli_second_page_and_explanation_identity",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "real_cli_diff_precise_integer_and_unknown_state",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "strict_protocol_rejects_invalid_schema_kind_and_shape",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "missing_null_unknown_enums_and_json_precision",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "real_cli_database_and_process_failures_are_errors",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "doctor_rejected_without_starting_capture",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "native_window_empty_state",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "native_production_executable_launch",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_open_finished_record_and_overview",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_state_changes_filter_and_reason",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_page_then_select_and_explain_same_event",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_filter_explicitly_applies_to_current_page",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_local_report_matches_current_record_page_and_event",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_historical_name_and_unknown_evidence",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_unfinished_and_unavailable_metrics",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_packaged_three_record_sample_switching",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_valid_empty_database_and_cancel",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_errors_are_visible_and_do_not_create_records",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "all_source_and_viewed_databases_unchanged",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      }
+    ],
+    "screenshots": [
+      {
+        "name": "empty-state.png",
+        "sha256": "9d74e811108f5c8b7f69f3ae706345f8601ce0fba7de9884b2e52eb70934c4c1",
+        "width": 1044,
+        "height": 788
+      },
+      {
+        "name": "finished-overview.png",
+        "sha256": "5c85f596565e7129b3a90845bd57dbbf3e5906975e244b3d956321d6eb7ee68e",
+        "width": 1044,
+        "height": 788
+      },
+      {
+        "name": "state-changes.png",
+        "sha256": "7fe9b463f5f4b578e24ce749d080bfa84bda904270eb2d89cfe37d136a96204b",
+        "width": 1044,
+        "height": 788
+      },
+      {
+        "name": "event-explanation.png",
+        "sha256": "23e2d6b110e8916b71715baf321f740eefd7d4dcb42dd98968c1b72ac96e8cff",
+        "width": 1044,
+        "height": 788
+      },
+      {
+        "name": "historical-name.png",
+        "sha256": "beb7f7d2303f500db99c5a05c89403232b761650966e80392c42d98a3977c592",
+        "width": 1044,
+        "height": 788
+      },
+      {
+        "name": "unknown-evidence.png",
+        "sha256": "d796df37fcf6c8987c8b35bebeff2ac6aadbfc7fd4aa090e74638ce6df773064",
+        "width": 1044,
+        "height": 788
+      },
+      {
+        "name": "interrupted-record.png",
+        "sha256": "668f8b8610572edb4b5fd2f8502bc886dd4be3f5645f0cea01ea4efdee104fff",
+        "width": 1044,
+        "height": 788
+      },
+      {
+        "name": "packaged-three-records.png",
+        "sha256": "9ed46772593b5f61a8317e44c38a57f19ab967c00e5c65be3acbd4c53f6c2a0c",
+        "width": 1044,
+        "height": 788
+      },
+      {
+        "name": "empty-database.png",
+        "sha256": "be2de55f233662a0ceed8dda44ec2debc9e288da95d26b2f9c8c6142d288fc2f",
+        "width": 1044,
+        "height": 788
+      },
+      {
+        "name": "database-error.png",
+        "sha256": "ece45106cb7e67e5ded69a1168c984c3be5f5ed9f28187edd0a3321743f5a1e1",
+        "width": 1044,
+        "height": 788
+      }
+    ],
+    "ui_observations": [
+      {
+        "phase": "event_tab_selected",
+        "is_busy": true,
+        "next_enabled": false,
+        "pending_operation_completed": false
+      },
+      {
+        "phase": "event_tab_idle",
+        "is_busy": false,
+        "next_enabled": true,
+        "pending_operation_completed": true
+      }
+    ],
+    "screenshot_method": "Actual production WinForms controls rendered by Windows DrawToBitmap after real button/selection actions; synthetic data only.",
+    "report_generated": true,
+    "report_sha256": "5cd59752f74b5ac3b5848a6ad575bb9c8b824f269613afd1f097f1acff93ebf0",
+    "report_scope": "Actual locally exported HTML from synthetic model data; public byte-identical copy only after reviewed-path checks. No user database or full CLI diagnostic log published.",
+    "report_publication": {
+      "path": "reports/synthetic-viewer-report.html",
+      "sha256": "5cd59752f74b5ac3b5848a6ad575bb9c8b824f269613afd1f097f1acff93ebf0",
+      "synthetic": true,
+      "byte_identical_to_local_export": true
+    },
+    "time_precision": "JSON string FILETIME and unrounded raw integer tokens; no JavaScript Number conversion.",
+    "private_error_details_retained": false
+  },
+  "quality": {
+    "source_sha": "4b4d38764ed417e6754b5db798488227ec147e21",
+    "ci_run": 41122708670,
+    "quality_artifact_id": 13010018494,
+    "quality_url": "https://github.com/LuckyLivio/Contain/actions/runs/41122708670/artifacts/13010018494",
+    "quality_summary_sha256": "0b08ee9475a98e5da168e46223424294e34d2074c6271c69071cc7e64772cb7f",
+    "quality_status": "passed",
+    "desktop_acceptance": "Separate native integration and package manifests determine desktop acceptance; quality alone is insufficient.",
+    "tools": {
+      "llvm_cov": "cargo-llvm-cov 0.9.1",
+      "pwsh": "PowerShell 7.6.9",
+      "nextest": "cargo-nextest 0.9.149 (3fe4ef319 2026-10-20)",
+      "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+      "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+      "python": "Python 3.12.10",
+      "deny": "cargo-deny 0.20.2"
+    },
+    "commands": [
+      "./scripts/quality.ps1 -Mode Check",
+      "./scripts/quality.ps1 -Mode Coverage",
+      "./scripts/quality.ps1 -Mode CoverageOriginal",
+      "./scripts/quality.ps1 -Mode Dependencies",
+      "./scripts/quality.ps1 -Mode Companion"
+    ],
+    "gate_counts": {
+      "passed": 49,
+      "failed": 0,
+      "not_run": 0
+    },
+    "gate_records": [
+      {
+        "mode": "Check",
+        "label": "fmt",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "fmt",
+          "--all",
+          "--",
+          "--check"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": false
+      },
+      {
+        "mode": "Check",
+        "label": "clippy",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "nextest",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "nextest",
+          "run",
+          "--workspace",
+          "--all-features",
+          "--locked",
+          "--profile",
+          "ci",
+          "--retries",
+          "0"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "nextest",
+          "executed": 314,
+          "passed": 314,
+          "failed": 0,
+          "skipped": 7,
+          "leaky": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "doctests",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "test",
+          "--workspace",
+          "--all-features",
+          "--locked",
+          "--doc"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "cargo-test",
+          "groups": [
+            {
+              "passed": 0,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 0,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            }
+          ]
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "fuzz-fmt",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "fmt",
+          "--manifest-path",
+          "fuzz/Cargo.toml",
+          "--all",
+          "--",
+          "--check"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": false
+      },
+      {
+        "mode": "Check",
+        "label": "fuzz-clippy",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "clippy",
+          "--manifest-path",
+          "fuzz/Cargo.toml",
+          "--all-targets",
+          "--locked",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "fuzz-seeds",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "test",
+          "--manifest-path",
+          "fuzz/Cargo.toml",
+          "--lib",
+          "--locked"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "cargo-test",
+          "groups": [
+            {
+              "passed": 1,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            }
+          ]
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "scorer-pwsh",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "pwsh",
+        "arguments": [
+          "-NoProfile",
+          "-File",
+          "scripts/test-score.ps1"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "provenance-pwsh",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "pwsh",
+        "arguments": [
+          "-NoProfile",
+          "-File",
+          "scripts/test-demo-provenance.ps1"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "demo-checks-pwsh",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "pwsh",
+        "arguments": [
+          "-NoProfile",
+          "-File",
+          "scripts/test-demo-checks.ps1"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "ci-clock-pwsh",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "pwsh",
+        "arguments": [
+          "-NoProfile",
+          "-File",
+          "scripts/test-ci-etw-clock.ps1"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-analyze-etw-clock",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-analyze-etw-clock.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 30,
+          "passed": 30,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-analyze-write-diagnostic",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-analyze-write-diagnostic.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 25,
+          "passed": 25,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-checkpoint-gate",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-checkpoint-gate.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 6,
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-commit-tail",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-commit-tail.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 9,
+          "passed": 9,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-demo-measure",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-demo-measure.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 5,
+          "passed": 5,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-fuzz-lock",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-fuzz-lock.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 4,
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-hotpath-artifact",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-hotpath-artifact.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 3,
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-package-trial",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-package-trial.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 33,
+          "passed": 33,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-package-viewer",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-package-viewer.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 12,
+          "passed": 12,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-quality-summary",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-quality-summary.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 15,
+          "passed": 15,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-read-interference",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-read-interference.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-read-only-cli",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-read-only-cli.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 15,
+          "passed": 15,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-report-paths",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-report-paths.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-run-write-diagnostic",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-run-write-diagnostic.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 17,
+          "passed": 17,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-run-write-stack-diagnostic",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-run-write-stack-diagnostic.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 25,
+          "passed": 25,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-score",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-score.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 8,
+          "passed": 8,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-summarize-checkpoint",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-summarize-checkpoint.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 14,
+          "passed": 14,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-v04-clock-protocol",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-v04-clock-protocol.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 60,
+          "passed": 60,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-v04-matrix",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-v04-matrix.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 23,
+          "passed": 23,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-v04-metrics",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-v04-metrics.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-v04-public",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-v04-public.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 4,
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-v04-summarize-matrix",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-v04-summarize-matrix.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 4,
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-v04-verify-views",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-v04-verify-views.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 6,
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Check",
+        "label": "test-verify-layered-evidence",
+        "attempt": 1,
+        "invocation": 1,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/test-verify-layered-evidence.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "unittest",
+          "executed": 31,
+          "passed": 31,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "expected_failures": 0,
+          "unexpected_successes": 0
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Coverage",
+        "label": "coverage",
+        "attempt": 1,
+        "invocation": 2,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "llvm-cov",
+          "--workspace",
+          "--all-features",
+          "--locked",
+          "--json",
+          "--output-path",
+          "target/quality/coverage.json"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "cargo-test",
+          "groups": [
+            {
+              "passed": 15,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 198,
+              "failed": 0,
+              "ignored": 4,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 80,
+              "failed": 0,
+              "ignored": 3,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 0,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 0,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 0,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 5,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 7,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 9,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            }
+          ]
+        },
+        "log_available": true
+      },
+      {
+        "mode": "Coverage",
+        "label": "coverage-html",
+        "attempt": 1,
+        "invocation": 2,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "llvm-cov",
+          "report",
+          "--workspace",
+          "--html",
+          "--output-dir",
+          "target/quality/coverage-html"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": true
+      },
+      {
+        "mode": "Coverage",
+        "label": "coverage-lcov",
+        "attempt": 1,
+        "invocation": 2,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "llvm-cov",
+          "report",
+          "--workspace",
+          "--lcov",
+          "--output-path",
+          "target/quality/lcov.info"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": true
+      },
+      {
+        "mode": "Coverage",
+        "label": "coverage-floor",
+        "attempt": 1,
+        "invocation": 2,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "llvm-cov",
+          "report",
+          "--workspace",
+          "--summary-only",
+          "--fail-under-lines",
+          "66.5",
+          "--fail-under-functions",
+          "70"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": true
+      },
+      {
+        "mode": "CoverageOriginal",
+        "label": "coverage-original",
+        "attempt": 1,
+        "invocation": 3,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "llvm-cov",
+          "-p",
+          "contain-core",
+          "-p",
+          "contain-cli",
+          "-p",
+          "contain-test-installer",
+          "--all-features",
+          "--locked",
+          "--json",
+          "--output-path",
+          "target/quality/coverage-original.json"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "cargo-test",
+          "groups": [
+            {
+              "passed": 15,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 198,
+              "failed": 0,
+              "ignored": 4,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 5,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 7,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            },
+            {
+              "passed": 9,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 0
+            }
+          ]
+        },
+        "log_available": true
+      },
+      {
+        "mode": "CoverageOriginal",
+        "label": "coverage-original-html",
+        "attempt": 1,
+        "invocation": 3,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "llvm-cov",
+          "report",
+          "-p",
+          "contain-core",
+          "-p",
+          "contain-cli",
+          "-p",
+          "contain-test-installer",
+          "--html",
+          "--output-dir",
+          "target/quality/coverage-original-html"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": true
+      },
+      {
+        "mode": "CoverageOriginal",
+        "label": "coverage-original-lcov",
+        "attempt": 1,
+        "invocation": 3,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "llvm-cov",
+          "report",
+          "-p",
+          "contain-core",
+          "-p",
+          "contain-cli",
+          "-p",
+          "contain-test-installer",
+          "--lcov",
+          "--output-path",
+          "target/quality/coverage-original-lcov.info"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": true
+      },
+      {
+        "mode": "CoverageOriginal",
+        "label": "coverage-original-floor",
+        "attempt": 1,
+        "invocation": 3,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "llvm-cov",
+          "report",
+          "-p",
+          "contain-core",
+          "-p",
+          "contain-cli",
+          "-p",
+          "contain-test-installer",
+          "--summary-only",
+          "--fail-under-lines",
+          "66.5",
+          "--fail-under-functions",
+          "70"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": true
+      },
+      {
+        "mode": "Dependencies",
+        "label": "metadata",
+        "attempt": 1,
+        "invocation": 4,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "metadata",
+          "--locked",
+          "--all-features",
+          "--filter-platform",
+          "x86_64-pc-windows-msvc",
+          "--format-version",
+          "1"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": true
+      },
+      {
+        "mode": "Dependencies",
+        "label": "deny",
+        "attempt": 1,
+        "invocation": 4,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "deny",
+          "--locked",
+          "check"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": true
+      },
+      {
+        "mode": "Dependencies",
+        "label": "metadata-fuzz",
+        "attempt": 1,
+        "invocation": 4,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "metadata",
+          "--manifest-path",
+          "fuzz/Cargo.toml",
+          "--locked",
+          "--format-version",
+          "1"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": true
+      },
+      {
+        "mode": "Dependencies",
+        "label": "fuzz-lock",
+        "attempt": 1,
+        "invocation": 4,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "python",
+        "arguments": [
+          "scripts/check-fuzz-lock.py"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": true
+      },
+      {
+        "mode": "Dependencies",
+        "label": "deny-fuzz",
+        "attempt": 1,
+        "invocation": 4,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "deny",
+          "--manifest-path",
+          "fuzz/Cargo.toml",
+          "--config",
+          "deny.toml",
+          "--locked",
+          "check"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": null,
+        "log_available": true
+      },
+      {
+        "mode": "Companion",
+        "label": "companion-spool",
+        "attempt": 1,
+        "invocation": 5,
+        "source_revision": "4b4d38764ed417e6754b5db798488227ec147e21",
+        "program": "cargo",
+        "arguments": [
+          "test",
+          "-p",
+          "contain-core",
+          "--locked",
+          "windows::clock::companion::spool::tests::paced_historical_callback_volume_fits_disk_quota_and_drains_every_record",
+          "--",
+          "--ignored",
+          "--exact",
+          "--nocapture"
+        ],
+        "exit_code": 0,
+        "status": "passed",
+        "counts": {
+          "runner": "cargo-test",
+          "groups": [
+            {
+              "passed": 1,
+              "failed": 0,
+              "ignored": 0,
+              "measured": 0,
+              "filtered": 201
+            }
+          ]
+        },
+        "log_available": true
+      }
+    ],
+    "nextest": {
+      "runner": "nextest",
+      "executed": 314,
+      "passed": 314,
+      "failed": 0,
+      "skipped": 7,
+      "leaky": 0
+    },
+    "python": {
+      "suites": 23,
+      "executed": 353,
+      "passed": 353,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "powershell_demo": {
+      "passed": 15,
+      "failed": 0,
+      "ignored": 0
+    },
+    "powershell_ci_wrapper": {
+      "assertions_passed": 36,
+      "native_collection_executed": false
+    },
+    "native_directory_identity": {
+      "schema_version": 1,
+      "scope": "synthetic_native_windows_directory_identity",
+      "native_windows": true,
+      "native": true,
+      "exporter": {
+        "protocol_revision": "contain-trial-report-3",
+        "sha256": "14d21ad8c922365976206f5879a1d1ef83a90f8babbac796f1acfeea22a76f43"
+      },
+      "test_script_sha256": "8adc208e6cf70ab8b3549d58c84fc83959626f4d9764b7d0ddd4bf5ca94e42c0",
+      "passed": true,
+      "tests_run": 7,
+      "passed_count": 7,
+      "failed_count": 0,
+      "skipped_count": 0,
+      "short_alias": {
+        "status": "covered",
+        "old_string_comparison_equal": false,
+        "native_samefile": true
+      },
+      "failures": [],
+      "skips": []
+    },
+    "doctests": {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "measured": 0,
+      "filtered": 0
+    },
+    "zero_test_targets_are_not_feature_validation": true,
+    "fuzz_seed_test": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "measured": 0,
+      "filtered": 0
+    },
+    "coverage_tests": {
+      "passed": 314,
+      "failed": 0,
+      "ignored": 7,
+      "measured": 0,
+      "filtered": 0
+    },
+    "coverage_original_tests": {
+      "passed": 234,
+      "failed": 0,
+      "ignored": 4,
+      "measured": 0,
+      "filtered": 0
+    },
+    "coverage_workspace": [
+      {
+        "lines": {
+          "count": 18615,
+          "covered": 14032,
+          "percent": 75.38006983615364
+        },
+        "functions": {
+          "count": 1452,
+          "covered": 1108,
+          "percent": 76.30853994490359
+        },
+        "regions": {
+          "count": 30965,
+          "covered": 22603,
+          "percent": 72.99531729371871
+        },
+        "instantiations": {
+          "count": 2351,
+          "covered": 1239,
+          "percent": 52.70097830710336
+        },
+        "branches": {
+          "count": 0,
+          "covered": 0,
+          "percent": 0
+        }
+      }
+    ],
+    "coverage_original_packages": [
+      {
+        "lines": {
+          "count": 13491,
+          "covered": 9800,
+          "percent": 72.64101993921874
+        },
+        "functions": {
+          "count": 1043,
+          "covered": 781,
+          "percent": 74.88015340364333
+        },
+        "regions": {
+          "count": 21903,
+          "covered": 15563,
+          "percent": 71.05419348947632
+        },
+        "instantiations": {
+          "count": 1913,
+          "covered": 889,
+          "percent": 46.47151071615264
+        },
+        "branches": {
+          "count": 0,
+          "covered": 0,
+          "percent": 0
+        }
+      }
+    ],
+    "floors": {
+      "lines_percent": 66.5,
+      "functions_percent": 70
+    },
+    "dependencies_gates": {
+      "passed": 5,
+      "failed": 0,
+      "not_run": 0
+    },
+    "companion": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "measured": 0,
+      "filtered": 201
+    },
+    "affected_function_assessment": {
+      "summary_counts": "Main executed record covered 49/49 code regions; predicate closure 2/2. This is not a branch-coverage claim.",
+      "open_read_only": "Main executed record covered 58/70 regions. Unexecuted regions include SQLite open/busy timeout/schema prepare/in-memory backup/migration and read-transaction setup error propagation; the contextual open-error closure also has zero execution.",
+      "list_details": "Main executed record 11/13 regions; row conversion closure 12/17. SQL prepare/query iteration and per-column conversion error propagation remain unexecuted.",
+      "events_page_compatible": "Main executed record 36/39 regions; SQLite query/stream-state/full legacy load error propagation remains unexecuted.",
+      "aliases": "All raw instance records including zero-count instantiations and offline aliases are retained. No merged unique-source percentage is invented."
+    },
+    "scope": "Windows Rust unit/quality execution. Shared production tests execute again in contain-offline; stable coverage includes inline tests. LLVM branch denominator is zero. .NET coverage was not measured; actual native UI integration and overall CI results are reported separately. No ETW acceptance is inferred.",
+    "earlier_attempts": [
+      "../viewer-ci-41115571642/retained-attempt-reviewed.json",
+      "../viewer-ci-41119283849/quality-reviewed.json"
+    ]
+  },
+  "not_run": [
+    "New ETW capture (zero planned and executed)",
+    "Old 66-command integration because its doctor actively probes ETW; required read-only views exercised through the native viewer instead",
+    "Snapshot fallback integration (outside existing-record desktop scope)",
+    "Formal 32-attempt acceptance, scale trials and third-party installers",
+    "Manual clean Windows 10/11 operation and native file-picker navigation",
+    "A .NET UI code-coverage percentage"
+  ],
+  "reviewed_report": {
+    "path": "viewer-41122708670-report.html",
+    "synthetic": true,
+    "byte_identical_to_actual_export": true,
+    "record_id": "synthetic-finished",
+    "event_id": "synthetic-finished-event-50",
+    "history_page_offset": 50,
+    "events_on_page": 10,
+    "history_explain_event_fields_equal": true,
+    "exact_timestamp": "2026-10-01T00:00:01.123400+00:00",
+    "exact_filetime": "134350000000000061"
+  },
+  "retained_attempts": "windows-desktop-viewer-attempts.json"
+}

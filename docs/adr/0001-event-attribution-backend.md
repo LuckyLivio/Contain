@@ -17,7 +17,7 @@ v0.1 has useful state differences but lacks file/registry writer identity. Time 
 | Minifilter / registry callback driver | Deployment, signing, privileged service and security burden exceed this scope; deferred |
 | Procmon or audit-policy changes | External dependency or machine policy changes; unsuitable default backend |
 
-Local Windows build 10.0.26200.0 exposed the manifest providers via `logman query providers` and `Get-WinEvent -ListProvider`:
+Local Windows host exposed the manifest providers via `logman query providers` and `Get-WinEvent -ListProvider`:
 
 - Kernel-File: `edd08927-9cc4-4e65-b970-c2560fb5c289`.
 - Kernel-Registry: `70eb4f03-c1de-4f73-a051-33d13d5413bd`.
@@ -55,4 +55,4 @@ ETW provider traffic is system-wide before consumer scope filtering. Live identi
 
 ## Future migration
 
-Add process/thread lifecycle caching with precise unique keys; implement supported completion/path correlations with loss-aware lifetime expiry; validate registry names through documented sources or use a separate well-scoped backend. Add independent Windows/version tests before expanding confidence rules. A minifilter can later emit the same evidence interface if user-mode evidence leaves a justified gap. No AI heuristic or deletion authority is introduced by this decision.
+Add process/thread lifecycle caching with precise unique keys; implement supported completion/path correlations with loss-aware lifetime expiry; validate registry names through documented sources or use a separate well-scoped backend. Add independent Windows/version tests before expanding confidence rules. A minifilter can later emit the same evidence interface if user-mode evidence leaves a justified gap. No automated heuristic or deletion authority is introduced by this decision.

@@ -4,10 +4,10 @@
   "baseline_commit": "f8037e90658cdf46aab93d397508036ebc7c22ee",
   "profile": "release --locked",
   "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-pc-windows-msvc\nrelease: 1.98.1\nLLVM version: 22.1.8",
-  "os": "Microsoft Windows NT 10.0.26100.0",
+  "os": "Windows",
   "elevated": true,
   "filesystem": "NTFS",
-  "logical_processors": 4,
+  "logical_processors": null,
   "candidate_lock_sha256": "0D1F8E631F086ADE1CBB1A6D944A52243EEC29D6466EDED73E8D3B7B70C66E27",
   "baseline_lock_sha256": "0D1F8E631F086ADE1CBB1A6D944A52243EEC29D6466EDED73E8D3B7B70C66E27",
   "fixture_sha256": "4046FD548C5693F094A236D1279A667CB416D488E70B724D1376990225BF63F8",
@@ -2429,5 +2429,12 @@
       "counter_balances": true,
       "acceptance_pass": false
     }
-  ]
+  ],
+  "public_redaction": {
+    "fields": [
+      "$.os (exact host version)",
+      "$.logical_processors"
+    ],
+    "meaning": "Withheld host metadata and historical branch labels are null, not zero. Original artifact digests refer to retained local pre-redaction evidence. Measured workload results and failed attempts are unchanged."
+  }
 }

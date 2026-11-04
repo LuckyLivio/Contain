@@ -6,3 +6,7 @@ __pycache__/
 *.db-wal
 .idea/
 .vscode/
+/fuzz/target/
+/fuzz/artifacts/
+/desktop/**/bin/
+/desktop/**/obj/

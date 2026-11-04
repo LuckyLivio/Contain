@@ -1,0 +1,98 @@
+name: Capture deferred-checkpoint experiment
+on:
+  workflow_call:
+  workflow_dispatch:
+jobs:
+  compare:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Required Rust and frozen oracle validation
+        shell: pwsh
+        run: |
+          cargo fmt --all -- --check
+          if($LASTEXITCODE -ne 0){throw 'Rust formatting failed'}
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          if($LASTEXITCODE -ne 0){throw 'Clippy failed'}
+          cargo test --workspace --locked
+          if($LASTEXITCODE -ne 0){throw 'Rust tests failed'}
+          ./scripts/test-score.ps1
+          python scripts/test-score.py
+          if($LASTEXITCODE -ne 0){throw 'Frozen scorer tests failed'}
+          python scripts/test-commit-tail.py
+          if($LASTEXITCODE -ne 0){throw 'Commit-tail diagnostic tests failed'}
+          python scripts/test-checkpoint-gate.py
+          if($LASTEXITCODE -ne 0){throw 'Checkpoint gate tests failed'}
+          python scripts/test-hotpath-artifact.py
+          if($LASTEXITCODE -ne 0){throw 'Safe partial-artifact tests failed'}
+      - name: Ten fixed E1 small attempts with D3 (five ordinary and five noisy)
+        shell: pwsh
+        run: ./scripts/hotpath-small.ps1 -Phase final -CheckpointVariant E1 -OutputDirectory ./target/checkpoint-public
+      - name: Record fixed small gate
+        id: small_gate
+        shell: pwsh
+        run: |
+          $r=Get-Content -Raw ./target/checkpoint-public/final-summary.json | ConvertFrom-Json
+          $passed=$r.trials.Count -eq 10 -and @($r.trials|Where-Object {-not $_.acceptance_pass}).Count -eq 0
+          "passed=$($passed.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+      - name: Three alternating E0-E1 1000-file pairs with fixed D3
+        shell: pwsh
+        run: ./scripts/compare-release.ps1 -BaselineDirectory . -BaselineVariant D3 -CandidateVariant D3 -CheckpointComparison -Files 1000 -Trials 3 -Profile -SingleScale -SkipExtras -OutputDirectory ./target/checkpoint-stress
+      - name: Record 1000-file and experiment integrity gates
+        id: thousand_gate
+        shell: pwsh
+        run: |
+          $file=Get-ChildItem ./target/checkpoint-stress/run-*/comparison.json | Select-Object -First 1
+          $r=Get-Content -Raw $file.FullName | ConvertFrom-Json
+          $candidate=@($r.trials|Where-Object mode -eq 'candidate')
+          $baseline=@($r.trials|Where-Object mode -eq 'baseline')
+          $valid=@($r.trials|Where-Object {$_.checkpoint_validation -and $_.checkpoint_validation.pass_all})
+          $passed=$r.trials.Count -eq 6 -and $candidate.Count -eq 3 -and $baseline.Count -eq 3 -and $valid.Count -eq 6 -and @($candidate|Where-Object {-not $_.acceptance_pass}).Count -eq 0
+          "passed=$($passed.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+      - name: Three alternating E0-E1 10000-file pairs after preceding gates
+        if: steps.small_gate.outputs.passed == 'true' && steps.thousand_gate.outputs.passed == 'true'
+        shell: pwsh
+        run: |
+          ./scripts/compare-release.ps1 -BaselineDirectory . -BaselineVariant D3 -CandidateVariant D3 -CheckpointComparison -Files 10000 -Trials 3 -Profile -SingleScale -SkipExtras -OutputDirectory ./target/checkpoint-stress
+          foreach($file in Get-ChildItem ./target/checkpoint-stress/run-*/comparison.json){
+            $r=Get-Content -Raw $file.FullName | ConvertFrom-Json
+            $candidate=@($r.trials|Where-Object mode -eq 'candidate')
+            $valid=@($r.trials|Where-Object {$_.checkpoint_validation -and $_.checkpoint_validation.pass_all})
+            if($r.trials.Count -ne 6 -or $candidate.Count -ne 3 -or $valid.Count -ne 6 -or @($candidate|Where-Object {-not $_.acceptance_pass}).Count){throw 'Frozen E1 stress gate or experiment integrity failed; every attempt retained'}
+          }
+      - name: Enforce preceding gates without replacing failures
+        shell: pwsh
+        env:
+          SMALL_PASSED: ${{ steps.small_gate.outputs.passed }}
+          THOUSAND_PASSED: ${{ steps.thousand_gate.outputs.passed }}
+        run: |
+          if($env:SMALL_PASSED -ne 'true' -or $env:THOUSAND_PASSED -ne 'true'){throw 'Predeclared E1 small/1000 or experiment gate failed; 10000 was not run'}
+      - name: Retain safe stress and partial-attempt evidence
+        if: always()
+        shell: pwsh
+        run: |
+          python scripts/hotpath-stress-artifact.py ./target/checkpoint-stress ./target/checkpoint-public
+          if($LASTEXITCODE -ne 0){throw 'Safe fixture artifact collection failed'}
+      - name: Summarize commit windows without changing acceptance
+        if: always()
+        shell: pwsh
+        run: |
+          if(Test-Path ./target/checkpoint-public){
+            foreach($profile in Get-ChildItem ./target/checkpoint-public -Filter profile.json -Recurse){
+              python scripts/analyze-commit-tail.py $profile.FullName --output (Join-Path $profile.DirectoryName 'commit-tail.json')
+              if($LASTEXITCODE -ne 0){throw 'Commit-tail diagnostic analysis failed; fixture evidence retained'}
+            }
+          }
+      - name: Upload fixture-only evidence and counters
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-checkpoint-safe-fixture
+          path: target/checkpoint-public

@@ -1,0 +1,22 @@
+{
+  "id": "seed",
+  "timestamp": "",
+  "timestamp_ticks": "-1",
+  "event_type": "file",
+  "operation": "delete_requested",
+  "resource": "C:\\fixture\\payload.bin",
+  "confidence": "Unknown",
+  "reason": "",
+  "evidence": {
+    "source": "EtwFile",
+    "pid": 17,
+    "process_creation_time": "134350000000000017",
+    "process_image": "C:\\fixture\\installer.exe",
+    "parent_pid": null,
+    "ancestor_pid": null,
+    "session_id": null,
+    "rule": "MissingWriter"
+  },
+  "success": null,
+  "state_validated": false
+}

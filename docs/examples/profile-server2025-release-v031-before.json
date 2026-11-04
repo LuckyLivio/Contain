@@ -20,7 +20,7 @@
     "quality": "Incomplete",
     "definition": "One row per instrumented syscall. Observed includes matching raw operation in its exact time interval or compatible final state; Correct requires exact PID+birth and application High. Noise remains Unknown. Missing observations are included in Unknown. This is fixture coverage, not global accuracy."
   },
-  "os": "Microsoft Windows NT 10.0.26100.0",
+  "os": "Windows",
   "capture": {
     "admitted_events_per_second": 8854.599410665489,
     "quality": {
@@ -110,5 +110,11 @@
   "end_to_end_overhead_seconds": 16.0518445,
   "measurement": "release build; one diagnostic sequential baseline/capture pair, four fixture workers; process wall time includes inventory, drain, hashing and SQLite commit. Memory is parent PeakWorkingSet sampled every 20ms, excluding descendants and kernel ETW buffers. Admission rate is per full capture wall time. Not a repeated baseline/candidate comparison. Scoring is outside timing.",
   "profile": "release",
-  "workflow_url": "https://github.com/LuckyLivio/Contain/actions/runs/36547686685"
+  "workflow_url": "https://github.com/LuckyLivio/Contain/actions/runs/36547686685",
+  "public_redaction": {
+    "fields": [
+      "$.os (exact host version)"
+    ],
+    "meaning": "Withheld host metadata and historical branch labels are null, not zero. Original artifact digests refer to retained local pre-redaction evidence. Measured workload results and failed attempts are unchanged."
+  }
 }

@@ -4,10 +4,13 @@ pub mod cleanup;
 pub mod correlation;
 pub mod doctor;
 pub mod filesystem;
+pub mod ingest;
+pub mod install_status;
 pub mod inventory;
 pub mod lifetime;
 pub mod model;
 pub mod monitor;
+pub(crate) mod path;
 pub mod process;
 pub mod registry;
 pub mod reliability;
@@ -16,3 +19,6 @@ mod timeline;
 pub mod windows;
 
 mod drain;
+
+pub mod hotpath;
+pub mod profile;
