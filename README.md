@@ -8,10 +8,10 @@ Rust、Visual Studio、Python、PowerShell 7 或独立 .NET 运行库。
 
 ## 下载与使用
 
-**[直接下载 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.1/contain-0.3.2-beta.1-windows-x64.zip)** · [Beta Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.1) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.1/SHA256SUMS.txt)
+**[直接下载 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.2/contain-0.3.2-beta.2-windows-x64.zip)** · [Beta Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.2) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.2/SHA256SUMS.txt)
 
-版本 **0.3.2-beta.1**，已验证源码 `85c522839523d259c09c80a4ce4e8c78ea11472d`。
-[第一阶段修复、验证范围和已知问题](docs/stage-one-beta.md)。
+版本 **0.3.2-beta.2**，已验证源码 `b79622901355e53964752bf21993094d76e782f4`。
+[本版改进、实际验证和已知问题](docs/progress-beta2.md)。
 
 1. 下载并完整解压 ZIP，双击 `Contain.Viewer.exe`。
 2. 选择“新建安装记录”，填写名称、安装器、**已有观察目录**和范围外的数据库位置。
@@ -19,6 +19,8 @@ Rust、Visual Studio、Python、PowerShell 7 或独立 .NET 运行库。
 3. “检查环境”查看当前可用能力，确认实际范围后点击“开始记录”。只有这一步启动安装器。
 4. 等待收尾和保存，自动打开本次准确会话。选择事件查看依据，使用“导出本页报告”。
    打开已有数据库始终只读；旧数据库兼容读取不迁移原文件。
+
+本版显示实际执行步骤、任务/阶段/步骤耗时、已处理数量及最近实际进展；总量未知时不显示百分比或预计时间。失败后可查看详情、复制任务摘要，并重开已经保存的准确会话。界面计时、状态接收和后端实际工作分别报告。
 
 包内 `TRY.md` 包含无需终端的受控夹具步骤。`BUILD.json`、`CONTENTS.json`、
 `VALIDATION.json` 和 `SOURCE.zip` 记录源码、配置、运行库、检查结果及哈希。
@@ -46,10 +48,10 @@ Rust、Visual Studio、Python、PowerShell 7 或独立 .NET 运行库。
 
 另一次观察整个 Program Files 的记录停留在 finalizing / Incomplete。缺少原始数据库
 和错误日志，根因尚未确认；小范围成功不证明已修复。该问题保留为 Beta 已知限制，
-没有通过禁止目录或全盘性能实验掩盖它。
+没有通过禁止目录或全盘性能实验掩盖它；继续跟踪于 [Issue #5](https://github.com/LuckyLivio/Contain/issues/5)。
 
 原生 Windows CI、模拟缩放压力、用户手工反馈和未验证条件在
-[当前交付记录](docs/stage-one-beta.md)中分别列出。此前三个里程碑保持关闭；
+[当前交付记录](docs/progress-beta2.md)中分别列出。此前四个里程碑保持关闭；
 [历史交付与失败证据索引](docs/delivery-history.md)保留原始记录，旧包不再并列为当前下载。
 
 ## 开发与参考

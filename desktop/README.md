@@ -7,8 +7,8 @@ Graphical recording is a separate [implementation and validation milestone](../d
 
 ## Current download
 
-Use the [phase-one Beta release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.1).
-Its [fixes, validation scope and known issues](../docs/stage-one-beta.md) distinguish
+Use the [Beta 2 release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.2).
+Its [fixes, validation scope and known issues](../docs/progress-beta2.md) distinguish
 native Windows results, simulated layout stress and user-reported trials.
 The entries below retain historical evidence rather than additional current downloads.
 

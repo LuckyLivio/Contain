@@ -1,0 +1,2 @@
+58cad9ffb8de6c5e125898a79084560cc0fce6c17a39607e25dad80d49960cfa  contain-0.3.2-beta.2-windows-x64.zip
+a0967ddeb3c2274b7a0275cbbf80cc42d538e995c3fd050ac7b3cde178311d11  BUILD-IDENTITY.json

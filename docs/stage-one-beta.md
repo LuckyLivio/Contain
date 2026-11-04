@@ -1,11 +1,14 @@
 # Phase-one Beta: Windows installation records and evidence viewing
 
 The three earlier milestones remain closed. This delivery retains WinForms, the
-Rust core and CLI/schema-3 contracts. The current delivery is **0.3.2-beta.1**, frozen at
+Rust core and CLI/schema-3 contracts. This historical phase-one delivery is **0.3.2-beta.1**, frozen at
 `85c522839523d259c09c80a4ce4e8c78ea11472d`.
 [Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.1) ·
 [Windows x64 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.1/contain-0.3.2-beta.1-windows-x64.zip) ·
 [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.1/SHA256SUMS.txt).
+
+The current Beta 2 progress delivery and verification are recorded [separately](progress-beta2.md).
+The phase-one milestone and its immutable artifacts remain closed and preserved.
 
 ## Scope
 
