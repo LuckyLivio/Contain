@@ -5,6 +5,21 @@ provides an explicit **新建安装记录** flow through the packaged Rust CLI.
 The bounded read-only core and desktop record viewer milestones remain closed.
 Graphical recording is a separate [implementation and validation milestone](../docs/graphical-install-record.md).
 
+## Verified graphical installation recording delivery
+
+The graphical recording MVP is **closed** for version 0.3.1, frozen source
+`15f214442d69baa0ebd91f5ad12edc5661281779`.
+[Download the self-contained x64 ZIP](https://github.com/LuckyLivio/Contain/actions/runs/41805319059/artifacts/13311396065).
+[Windows CI 41805319059](https://github.com/LuckyLivio/Contain/actions/runs/41805319059)
+passed all 49 quality gates, 22 existing viewer checks, six new product checks,
+actual installer-picker navigation/cancel and explicit synthetic failure preservation.
+The actual GUI-started ETW session saved 219 source events with Degraded coverage,
+auto-opened its exact UUID among older/same-name rows, and explained/exported a
+High file event verified against the independent fixture oracle.
+[Exact evidence, screenshots, hashes, limits and retained failures](../docs/graphical-install-record.md).
+The previous viewer/core milestones remain closed separately; no third-party,
+formal 32-attempt or scale trial was added.
+
 ## Use the Windows package
 
 Extract the complete package and double-click `Contain.Viewer.exe`. Ordinary

@@ -23,6 +23,11 @@ Version remains **0.3.1**. The **bounded read-only candidate delivery** remains
 closed for source `2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15` and its original
 controlled-ETW package. The **desktop record viewer MVP is now closed** for frozen
 source `4b4d38764ed417e6754b5db798488227ec147e21` and the desktop package below.
+The **graphical installation recording MVP is also closed** for frozen source
+`15f214442d69baa0ebd91f5ad12edc5661281779`: actual native picker → product Start →
+real ETW → save → exact session → explain/export passed in the final Windows package.
+[Download Windows x64 0.3.1](https://github.com/LuckyLivio/Contain/actions/runs/41805319059/artifacts/13311396065),
+[actual results and retained failures](docs/graphical-install-record.md).
 These are separate bounded results, not release or general stability acceptance.
 
 | User task | Implemented | Verified platform / scenario | Status and specific limit | Build / evidence |
@@ -40,6 +45,23 @@ scopes. None is implied by the desktop viewer. Graphical recording has its own
 [bounded acceptance record](docs/graphical-install-record.md).
 The [failed desktop attempts](docs/examples/windows-desktop-viewer-attempts.json)
 remain available alongside the successful result.
+
+## Try graphical recording
+
+[Download the self-contained Windows x64 package](https://github.com/LuckyLivio/Contain/actions/runs/41805319059/artifacts/13311396065),
+extract the complete contained ZIP and double-click **Contain.Viewer.exe**.
+Choose **新建安装记录**, select an EXE, name, existing observation directory and
+outside database, then **检查环境 → 开始记录**. After finalization the exact session
+opens automatically; select an event to read explain and export a local report.
+`TRY.md` includes a no-terminal controlled fixture walkthrough. Only that controlled
+EXE is validated; MSI, updater/service-agent coverage and clean Windows 10/11 manual
+compatibility remain unverified. Current coverage is Degraded, not a complete footprint.
+
+[Configuration](docs/examples/install-41805319059-new-record.png) ·
+[recording](docs/examples/install-41805319059-recording.png) ·
+[actual result and explain](docs/examples/install-41805319059-real-event-explain.png).
+The record deliberately shares an old synthetic record's name to test exact-ID
+isolation; its new UUID and source events are real GUI-started ETW.
 
 ## Try the desktop viewer
 
