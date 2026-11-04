@@ -667,7 +667,7 @@ impl Storage {
         let Some((session, document)) = found else {
             let raw:Option<(String,String)>=self.connection.query_row("SELECT session_id,document FROM raw_stream WHERE json_extract(document,'$.id')=?1 UNION ALL SELECT session_id,document FROM raw_ingest WHERE json_extract(document,'$.id')=?1 LIMIT 1",[id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
             if let Some((session, document)) = raw {
-                let mut c = self.load_summary(&session)?;
+                let mut c = self.load_summary_by_id(&session)?;
                 let mut e: SystemEvent = serde_json::from_str(&document)?;
                 suppress_unfinished(&mut e);
                 if c.capture_state.as_deref().is_none_or(|s| s == "finished") {
@@ -678,7 +678,7 @@ impl Storage {
             }
             return Ok(None);
         };
-        let mut c = self.load_summary(&session)?;
+        let mut c = self.load_summary_by_id(&session)?;
         if c.capture_state.as_deref().is_some_and(|s| s != "finished") {
             // Derived rows may have committed before an interrupted finalization.
             // Explain the same committed raw record as paged/full history, never

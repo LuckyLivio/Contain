@@ -17,7 +17,12 @@ internal static class Program
         // This executable is only a negative version fixture when the real bridge
         // probes --version; it never supplies successful query data.
         if (args.SequenceEqual(new[] { "--version" })) { Console.WriteLine("contain 99.0.0"); return 0; }
-        ApplicationConfiguration.Initialize();
+        // InternalsVisibleTo also exposes the production assembly's global
+        // generated ApplicationConfiguration. Spell out the bootstrap to avoid
+        // that ambiguous type, with awareness matching Directory.Build.props.
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         var options = Options.Parse(args);
         var runner = new Runner(options);
         using var form = new ViewerForm(runner.Client, runner.Dialogs);
@@ -26,14 +31,15 @@ internal static class Program
             try
             {
                 await runner.RunAsync(form);
+                runner.LayoutAccepted = await new LayoutVerification(options, runner.Success).RunAsync();
                 if (options.InstallFixture is not null)
-                    runner.InstallAccepted = await new InstallVerification(options, runner.Success).RunAsync();
+                    runner.InstallAccepted = await new InstallVerification(options, runner.Success && runner.LayoutAccepted).RunAsync();
             }
             catch (Exception error) { runner.RecordUnhandled(error); }
             finally { runner.Finish(); form.Close(); }
         };
         Application.Run(form);
-        return runner.Success && runner.InstallAccepted ? 0 : 1;
+        return runner.Success && runner.LayoutAccepted && runner.InstallAccepted ? 0 : 1;
     }
 }
 
@@ -114,6 +120,7 @@ internal sealed class Runner
     public TestDialogs Dialogs { get; } = new();
     public CoreClient Client { get; }
     public bool InstallAccepted { get; set; } = true;
+    public bool LayoutAccepted { get; set; }
     public bool Success => results.Count > 0 && results.All(result => result.Status == "passed");
 
     public Runner(Options options)
@@ -126,14 +133,25 @@ internal sealed class Runner
 
     public async Task RunAsync(ViewerForm form)
     {
-        await Check("frozen_package_and_actual_ui_assembly_identity", () =>
+        await Check("frozen_package_and_actual_ui_assembly_identity", async () =>
         {
             Require(options.Source.Length == 40 && options.Source.All(Uri.IsHexDigit), "source SHA");
             Require(File.Exists(Client.ExecutablePath), "packaged core exists");
             Require(File.Exists(Path.Combine(options.Package, "Contain.Viewer.exe")), "packaged launcher exists");
             Require(Hash(typeof(ViewerForm).Assembly.Location) == Hash(Path.Combine(options.Package, "Contain.Viewer.dll")),
                 "tested production UI assembly equals delivered UI assembly");
-            return Task.CompletedTask;
+            using var manifest = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(options.Package, "BUILD.json")));
+            Require(manifest.RootElement.GetProperty("version").GetString() == ProductVersion.Version, "frozen package and actual assembly product version match");
+            using var versionProcess = Process.Start(new ProcessStartInfo
+            {
+                FileName = Client.ExecutablePath, UseShellExecute = false, RedirectStandardOutput = true,
+                RedirectStandardError = true, ArgumentList = { "--version" }
+            }) ?? throw new InvalidOperationException("Version probe did not start.");
+            var versionText = await versionProcess.StandardOutput.ReadToEndAsync();
+            var versionError = await versionProcess.StandardError.ReadToEndAsync();
+            await versionProcess.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            Require(versionProcess.ExitCode == 0 && versionText.Trim() == ProductVersion.CliVersion && string.IsNullOrWhiteSpace(versionError),
+                "packaged core and desktop product versions match");
         });
         await Check("synthetic_inputs_and_special_character_paths", () =>
         {

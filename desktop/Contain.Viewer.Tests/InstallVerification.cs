@@ -80,7 +80,7 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
             && interactionChecks.All(check => check.Status != "failed");
     }
 
-    private Task TestProtocol()
+    private async Task TestProtocol()
     {
         var db = Path.Combine(Path.GetTempPath(), "参数 中文 & $ ; [x].db");
         var id = Guid.NewGuid().ToString();
@@ -109,6 +109,21 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         Reject(() => stream.Accept(Change(StatusDocument(db, id, 5, "finished", true, true, true), node => node["data"]!["data_saved"] = false)));
         var finished = stream.Accept(StatusDocument(db, id, 5, "finished", true, true, true));
         Require(finished.CaptureFinished && finished.DataSaved && finished.QualityLevel == "Degraded", "finished independently confirms persistence and quality");
+        var nonzeroInstaller = finished with { InstallerExitCode = 1 };
+        Require(new InstallRunResult(nonzeroInstaller, 0, null, "").Succeeded && nonzeroInstaller.InstallerExitCode == 1,
+            "successful collection retains nonzero installer outcome separately and does not infer cancellation");
+        var nonzeroText = InstallForm.FormatStatus(nonzeroInstaller, true);
+        Require(nonzeroText.Contains("退出码 1（非零；具体原因由安装器决定）", StringComparison.Ordinal)
+            && !nonzeroText.Contains("用户取消", StringComparison.Ordinal)
+            && nonzeroText.Contains("记录：已完成；数据保存：已保存记录", StringComparison.Ordinal),
+            "synthetic nonzero installer result remains distinct from saved complete collection and is not guessed as cancellation");
+        var unfinishedText = InstallForm.FormatStatus(finalizing with { DataSaved = true }, false);
+        Require(unfinishedText.Contains("失败 / 未完成", StringComparison.Ordinal)
+            && unfinishedText.Contains("已保存证据（可能仍不完整）", StringComparison.Ordinal)
+            && !unfinishedText.Contains("记录：已完成", StringComparison.Ordinal),
+            "synthetic saved finalizing evidence is not formatted as a complete record");
+        Require(InstallForm.FormatStatus(finished with { InstallerExitCode = null }, true).Contains("已退出，未提供退出码", StringComparison.Ordinal),
+            "synthetic absent installer exit code remains unknown");
         Reject(() => stream.Accept(StatusDocument(db, id, 6, "finished", true, true, true)));
         Require(!new InstallRunResult(null, 0, null, "").Succeeded, "missing result never succeeds");
         Require(!new InstallRunResult(finalizing, 0, null, "").Succeeded, "process exit while finalizing never succeeds");
@@ -133,7 +148,7 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         Require(!Directory.Exists(absentRoot), "watch validation never creates a software target directory");
         Reject(() => (request with { Arguments = ["bad\0argument"] }).Validate());
         Reject(() => (request with { Installer = installer + ".msi" }).Validate());
-        return Task.CompletedTask;
+        await InstallDiagnosticsChecks.Run(Require);
     }
 
     private async Task Configure()
@@ -389,8 +404,8 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
                 lockedForm.Close();
             }
             finally { File.SetAttributes(lockedDatabase, File.GetAttributes(lockedDatabase) & ~FileAttributes.ReadOnly); }
-            using var failedForm = new InstallForm(new InstallClient(client.ExecutablePath), failureViewer.OpenCapturedSessionAsync);
-            failedForm.Show(failureViewer);
+            C<Button>(failureViewer, "NewInstall").PerformClick();
+            using var failedForm = failureViewer.ActiveInstallForm ?? throw new InvalidOperationException("Failure fixture did not open the production install entry.");
             C<TextBox>(failedForm, "InstallerPath").Text = invalidInstaller;
             C<TextBox>(failedForm, "RecordName").Text = recordName;
             C<TextBox>(failedForm, "WatchRoot").Text = root!;
@@ -408,6 +423,13 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
             C<Button>(failedForm, "StartRecording").PerformClick();
             await failedForm.PendingOperation.WaitAsync(TimeSpan.FromSeconds(100));
             Require(failedForm.Result is { Succeeded: false } && failedForm.LastStatus is { Stage: "failed", InstallerStarted: false, DataSaved: true }, "OS-invalid EXE failure saves unfinished evidence without reporting success");
+            Require(failedForm.Result is { CollectorPid: > 0, LastConfirmedStage: "preparing" },
+                "real child process failure retains the managed collector PID and last confirmed work phase");
+            var failureText = C<TextBox>(failedForm, "InstallStatus").Text;
+            Require(failureText.Contains("最后确认阶段：preparing", StringComparison.Ordinal)
+                && failureText.Contains("采集进程 PID：" + failedForm.Result!.CollectorPid, StringComparison.Ordinal)
+                && failureText.Contains("失败", StringComparison.Ordinal),
+                "visible failed-task details retain the confirmed phase and collector identity");
             var failureId = failedForm.LastStatus!.SessionId;
             var saved = await client.SummaryAsync(failureDatabase, failureId);
             Require(Text(saved.Data, "capture_state") != "finished", "failed launch remains unfinished in existing viewer");
@@ -422,7 +444,9 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
             Require(selected.Count == 1 && Text((JsonElement)selected[0].Tag!, "id") == failureId, "failed saved attempt opens exact backend-issued session");
             foreach (var earlier in earlierSummaries)
                 Require(JsonView.JsonEqual(earlier.Value, (await client.SummaryAsync(failureDatabase, earlier.Key)).Data), "failure preserves earlier database records");
-            failedForm.Close(); failureViewer.Close();
+            failedForm.Close();
+            await VerifyRetainedTaskDetails(failureViewer, failureId, failedForm.Result!.CollectorPid!.Value);
+            failureViewer.Close();
             offlineChecks.Add(new(name, "passed"));
         }
         catch (Exception error)
@@ -431,6 +455,42 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
             privateLog.AppendLine(name).AppendLine(error.ToString());
             throw;
         }
+    }
+
+    private async Task VerifyRetainedTaskDetails(ViewerForm form, string failureId, int collectorPid)
+    {
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var timer = new System.Windows.Forms.Timer { Interval = 30 };
+        var watch = Stopwatch.StartNew();
+        timer.Tick += (_, _) =>
+        {
+            var details = Application.OpenForms.Cast<Form>().SingleOrDefault(window => window.Name == "LastTaskDetails");
+            if (details is null)
+            {
+                if (watch.Elapsed < TimeSpan.FromSeconds(5)) return;
+                timer.Stop(); completion.TrySetException(new TimeoutException("Retained task details did not open.")); return;
+            }
+            timer.Stop();
+            try
+            {
+                var text = C<TextBox>(details, "LastTaskDiagnostics").Text;
+                Require(text.Contains(failureId, StringComparison.Ordinal) && text.Contains("最后确认阶段：preparing", StringComparison.Ordinal)
+                    && text.Contains("采集进程 PID：" + collectorPid, StringComparison.Ordinal),
+                    "task details remain accessible with exact failed session, work phase and collector PID after recording window closes");
+                Require(text.Contains("失败或未完成", StringComparison.Ordinal) && text.Contains("不代表记录完整或安装成功", StringComparison.Ordinal),
+                    "retained failure details never promote saved evidence to capture or installation success");
+                completion.TrySetResult();
+            }
+            catch (Exception error) { completion.TrySetException(error); }
+            finally { details.Close(); }
+        };
+        timer.Start();
+        // A real production LinkLabel accessibility action opens its actual modal;
+        // this is a control interaction, not a claim about native file-dialog navigation.
+        var taskLink = C<LinkLabel>(form, "CaptureOutcome").AccessibilityObject.GetChild(0)
+            ?? throw new InvalidOperationException("Retained task has no accessible link.");
+        taskLink.DoDefaultAction();
+        await completion.Task.WaitAsync(TimeSpan.FromSeconds(8));
     }
 
     private static bool MatchesTruth(JsonElement item, JsonElement row)

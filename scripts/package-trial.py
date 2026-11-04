@@ -19,6 +19,7 @@ import sqlite3
 import stat
 import struct
 import subprocess
+import tomllib
 import zipfile
 
 
@@ -65,6 +66,16 @@ PUBLIC_CHECK_NAMES = DEMO_PLAN | {"demo_runtime", "package_identity"}
 def require(condition, code):
     if not condition:
         raise ValueError(code)
+
+
+def product_version(repository=REPO):
+    """Use the same canonical version as the Rust and desktop builds."""
+    with safe_file(repository / "Cargo.toml").open("rb") as source:
+        version = tomllib.load(source).get("workspace", {}).get("package", {}).get("version")
+    require(isinstance(version, str) and re.fullmatch(
+        r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?", version),
+        "product_version_invalid")
+    return version
 
 
 def read(path):
@@ -213,7 +224,7 @@ def platform_summary():
 
 
 def usage_text(manifest):
-    return f"""# Contain 0.3.1 Windows x64 read-only trial
+    return f"""# Contain {manifest['version']} Windows x64 read-only trial
 
 Source: {manifest['source_sha']}
 Build: {manifest['target']}, {manifest['profile']} (diagnostic/functional build, not a release-performance claim).
@@ -269,7 +280,7 @@ def prepare(args):
     revision, tree = source_identity(repo)
     require(args.profile in {"debug", "release"}, "invalid_profile")
     output = new_directory(args.output)
-    manifest = dict(schema_version=1, protocol_revision=PROTOCOL, version="0.3.1", source_sha=revision,
+    manifest = dict(schema_version=1, protocol_revision=PROTOCOL, version=product_version(repo), source_sha=revision,
         runtime_tree_sha256=tree, target=TARGET, profile=args.profile,
         build_command=["cargo", "build", "--workspace", "--locked"] + (["--release"] if args.profile == "release" else []),
         binaries=[], scripts=[], resources=[], runtime_files=[], pe_dependencies={},
@@ -329,7 +340,7 @@ def prepare(args):
 def verify_package(package):
     manifest = read(safe_file(package / "BUILD.json"))
     require(manifest.get("schema_version") == 1 and manifest.get("protocol_revision") == PROTOCOL
-            and manifest.get("target") == TARGET and manifest.get("version") == "0.3.1"
+            and manifest.get("target") == TARGET and manifest.get("version") == product_version()
             and manifest.get("profile") in {"debug", "release"}
             and re.fullmatch(r"[0-9a-f]{40}", manifest.get("source_sha", "")), "invalid_build_manifest")
     require({row.get("name") for row in manifest["binaries"]} == set(BINARIES), "required_binaries_missing")
@@ -1217,7 +1228,7 @@ def finalize(args):
             require(item.get("report_sha256") == sha(root / "cli-report.txt"), "public_report_changed")
             files.append((root / "cli-report.txt").relative_to(package).as_posix())
     complete = all(value is True for value in checks.values())
-    result = dict(schema_version=1, protocol_revision=PROTOCOL, version="0.3.1", source_sha=manifest["source_sha"],
+    result = dict(schema_version=1, protocol_revision=PROTOCOL, version=manifest["version"], source_sha=manifest["source_sha"],
         build_manifest_sha256=sha(package / "BUILD.json"), build_profile=manifest["profile"], target=TARGET,
         candidate_status="bounded_read_only_trial_verified" if complete else "diagnostic_build_unverified",
         candidate_verified=complete, checks=checks, default_product=default, dual_clock_product=clock,

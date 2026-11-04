@@ -17,9 +17,15 @@ public sealed class ViewerForm : Form
     private readonly IInstallDialogs? _installDialogs;
     private readonly Button _newInstall = Button("NewInstall", "新建安装记录", true);
     private readonly Button _open = Button("OpenDatabase", "打开记录数据库", true);
-    private readonly Button _export = Button("ExportReport", "导出本地报告");
+    private readonly Button _export = Button("ExportReport", "导出本页报告");
     private readonly Label _databaseLabel = Label("DatabasePath", "尚未打开数据库", Muted);
-    private readonly Label _captureSummary = Label("CaptureOutcome", "新建记录会显式启动安装器；打开已有数据库始终只读。", Muted);
+    private readonly LinkLabel _captureSummary = new()
+    {
+        Name = "CaptureOutcome", Text = "新建记录会显式启动安装器；打开已有数据库始终只读。",
+        UseMnemonic = false, ForeColor = Muted, LinkColor = Muted, ActiveLinkColor = Accent,
+        LinkBehavior = LinkBehavior.HoverUnderline, LinkArea = new LinkArea(0, 0),
+        Dock = DockStyle.Fill, AutoSize = true, TextAlign = ContentAlignment.MiddleLeft
+    };
     private readonly Label _status = Label("Status", "选择已有数据库开始查看。数据仅保留在本机，不启动采集。", Muted);
     private readonly Label _sessionTitle = Label("SessionTitle", "打开一份记录，了解它留下的证据", Ink);
     private readonly Label _summaryStatus = Label("SummaryStatus", "只读查看 · 不修改原数据库 · 不判断安全删除", Muted);
@@ -41,6 +47,7 @@ public sealed class ViewerForm : Form
     private readonly Button _copyEvent = Button("CopyEventId", "复制事件 ID");
     private readonly CheckBox _rawToggle = new() { Name = "RawToggle", Text = "显示高级原始字段（JSON）", AutoSize = true, ForeColor = Muted };
     private readonly TabControl _tabs = new() { Name = "Tabs", Dock = DockStyle.Fill, Padding = new Point(18, 8) };
+    private readonly TableLayoutPanel _detailHost = new() { Name = "EventDetailHost", Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
     private readonly ToolTip _tips = new();
     private CancellationTokenSource? _operationCancellation;
     private long _operationVersion;
@@ -54,6 +61,7 @@ public sealed class ViewerForm : Form
     private int _changeOffset;
     private bool _moreEvents;
     private bool _moreChanges;
+    private InstallRunResult? _lastRun;
 
     public bool IsBusy { get; private set; }
     public Task PendingOperation { get; private set; } = Task.CompletedTask;
@@ -68,7 +76,11 @@ public sealed class ViewerForm : Form
         _pageSize = pageSize;
         _installDialogs = installDialogs;
         Name = "ContainViewer";
-        Text = "Contain · 安装记录";
+        Text = Contain.Viewer.ProductVersion.Display + " · 安装记录";
+        // These programmatic dimensions are logical pixels at 96 DPI. Without
+        // this baseline Windows can scale the font while fixed layout rows keep
+        // their original height on the first high-DPI window.
+        AutoScaleDimensions = new SizeF(96F, 96F);
         AutoScaleMode = AutoScaleMode.Dpi;
         Font = new Font("Microsoft YaHei UI", 9.5F, FontStyle.Regular, GraphicsUnit.Point);
         ForeColor = Ink;
@@ -84,18 +96,23 @@ public sealed class ViewerForm : Form
 
     private void BuildLayout()
     {
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(22, 16, 22, 12), ColumnCount = 1, RowCount = 5 };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 68));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        var root = new TableLayoutPanel
+        {
+            Name = "ViewerLayout", Dock = DockStyle.Fill, Padding = new Padding(22, 16, 22, 12), ColumnCount = 1, RowCount = 5,
+            AutoScroll = true, AutoScrollMinSize = new Size(960, 640)
+        };
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         Controls.Add(root);
-        var header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1 };
+        var header = new TableLayoutPanel { Name = "ViewerHeader", Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 4, RowCount = 1, Margin = Padding.Empty };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 172));
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 188));
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 166));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         var brand = Label("Brand", "Contain  /  安装记录", Ink);
         brand.Font = new Font(Font.FontFamily, 21F, FontStyle.Bold);
         header.Controls.Add(brand, 0, 0);
@@ -106,15 +123,17 @@ public sealed class ViewerForm : Form
         _databaseLabel.AutoEllipsis = true;
         _databaseLabel.Padding = new Padding(4, 0, 4, 8);
         root.Controls.Add(_databaseLabel, 0, 1);
+        _captureSummary.Padding = new Padding(4, 2, 4, 8);
         root.Controls.Add(_captureSummary, 0, 2);
-        var body = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 };
-        body.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 360));
-        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var body = new TableLayoutPanel { Name = "ViewerBody", Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 28));
+        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 72));
         root.Controls.Add(body, 0, 3);
-        var left = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(0, 0, 16, 0) };
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+        var left = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(0, 0, 16, 0), Margin = Padding.Empty };
+        left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        left.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 66));
+        left.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         var listHeading = Label("SessionsHeading", "已保存记录", Ink);
         listHeading.Font = new Font(Font.FontFamily, 12F, FontStyle.Bold);
         left.Controls.Add(listHeading, 0, 0);
@@ -127,12 +146,15 @@ public sealed class ViewerForm : Form
         listNote.Padding = new Padding(2, 12, 0, 0);
         left.Controls.Add(listNote, 0, 2);
         body.Controls.Add(left, 0, 0);
-        var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+        var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = Padding.Empty };
+        right.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         right.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         _sessionTitle.Font = new Font(Font.FontFamily, 15F, FontStyle.Bold);
         _sessionTitle.AutoEllipsis = true;
+        _sessionTitle.Padding = new Padding(0, 0, 0, 4);
+        _summaryStatus.Padding = new Padding(0, 0, 0, 8);
         right.Controls.Add(_sessionTitle, 0, 0);
         right.Controls.Add(_summaryStatus, 0, 1);
         right.Controls.Add(_tabs, 0, 2);
@@ -140,10 +162,12 @@ public sealed class ViewerForm : Form
         var summary = new TabPage("记录概览") { Name = "OverviewTab", BackColor = Color.White, Padding = new Padding(16) };
         summary.Controls.Add(_overview);
         _tabs.TabPages.Add(summary);
-        var changeTab = new TabPage("状态变化") { Name = "ChangesTab", BackColor = Color.White, Padding = new Padding(12) };
-        var changeLayout = Rows(44, 32, -100, 92, 44);
+        var changeTab = new TabPage("状态变化") { Name = "ChangesTab", BackColor = Color.White, Padding = new Padding(12), AutoScroll = true };
+        var changeLayout = Rows(0, 0, -75, -25, 0);
+        changeLayout.Name = "ChangesLayout";
+        changeLayout.MinimumSize = new Size(0, 340);
         changeLayout.Controls.Add(_changeFilter, 0, 0);
-        changeLayout.Controls.Add(Label("ChangesScope", "前后状态差异与事件数量不同；这些变化不自动属于目标程序。", Muted), 0, 1);
+        changeLayout.Controls.Add(Label("ChangesScope", "筛选本记录全部状态变化，按页显示。状态差异与源事件数量不同；变化不自动属于目标程序。", Muted), 0, 1);
         _changes.Columns.Add(Column("Kind", "类别", 90));
         _changes.Columns.Add(Column("Operation", "变化", 100));
         _changes.Columns.Add(Column("Resource", "记录名称 / 位置", 320));
@@ -154,39 +178,46 @@ public sealed class ViewerForm : Form
         changeLayout.Controls.Add(Pager(_previousChanges, _changesPage, _nextChanges), 0, 4);
         changeTab.Controls.Add(changeLayout);
         _tabs.TabPages.Add(changeTab);
-        var eventsTab = new TabPage("事件与依据") { Name = "EventsTab", BackColor = Color.White, Padding = new Padding(12) };
-        var eventLayout = Rows(44, 31, -48, 44, 40, -52);
+        var eventsTab = new TabPage("事件与依据") { Name = "EventsTab", BackColor = Color.White, Padding = new Padding(12), AutoScroll = true };
+        var eventLayout = Rows(0, 0, -45, 0, 0, -55);
+        eventLayout.Name = "EventsLayout";
+        eventLayout.MinimumSize = new Size(0, 400);
         eventLayout.Controls.Add(_eventFilter, 0, 0);
-        eventLayout.Controls.Add(Label("EventsScope", $"仅筛选当前页（最多 {_pageSize} 条），不是全库搜索。时间线含源操作、生命周期与状态观测。", Muted), 0, 1);
+        eventLayout.Controls.Add(Label("EventsScope", $"仅筛选当前页（最多 {_pageSize} 条），不会搜索其他页。报告包含：本记录全部状态变化、当前未筛选事件页、所选事件解释。", Muted), 0, 1);
         _events.Columns.Add(Column("Time", "观测时间", 175));
         _events.Columns.Add(Column("Operation", "操作", 145));
         _events.Columns.Add(Column("Resource", "记录名称 / 资源", 250));
         _events.Columns.Add(Column("Confidence", "应用关联", 90));
         eventLayout.Controls.Add(_events, 0, 2);
         eventLayout.Controls.Add(Pager(_previousEvents, _eventsPage, _nextEvents), 0, 3);
-        var detailTools = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
-        _copyEvent.Width = 135;
+        var detailTools = new FlowLayoutPanel { Name = "EventDetailTools", Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, Margin = Padding.Empty };
         _copyEvent.Dock = DockStyle.None;
-        _copyEvent.Margin = new Padding(0, 2, 12, 2);
-        _rawToggle.Margin = new Padding(0, 10, 0, 0);
+        _copyEvent.Margin = new Padding(0, 3, 12, 3);
+        _rawToggle.Margin = new Padding(0, 8, 0, 3);
         detailTools.Controls.Add(_copyEvent);
         detailTools.Controls.Add(_rawToggle);
         eventLayout.Controls.Add(detailTools, 0, 4);
-        var detailHost = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
-        _rawDetails.Visible = false;
+        _detailHost.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        _detailHost.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        _detailHost.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
         _rawDetails.Font = new Font("Consolas", 9F);
-        detailHost.Controls.Add(_rawDetails);
-        detailHost.Controls.Add(_eventDetails);
-        eventLayout.Controls.Add(detailHost, 0, 5);
+        _detailHost.Controls.Add(_eventDetails, 0, 0);
+        _detailHost.Controls.Add(_rawDetails, 0, 1);
+        ShowEventDetails(false);
+        eventLayout.Controls.Add(_detailHost, 0, 5);
         eventsTab.Controls.Add(eventLayout);
         _tabs.TabPages.Add(eventsTab);
         _status.AutoEllipsis = true;
         _status.Padding = new Padding(4, 6, 4, 0);
         root.Controls.Add(_status, 0, 4);
+        _tips.SetToolTip(_export, "导出本记录全部状态变化、当前未筛选的事件页和所选事件解释。筛选框不会改变报告范围。报告不是全部事件历史。");
     }
 
     private void WireEvents()
     {
+        Shown += (_, _) => FitWorkingArea();
+        DpiChanged += (_, _) => FitWorkingArea();
+        Resize += (_, _) => { if (IsHandleCreated) FitWorkingArea(); };
         _newInstall.Click += (_, _) =>
         {
             if (ActiveInstallForm is { IsDisposed: false })
@@ -199,13 +230,17 @@ public sealed class ViewerForm : Form
             ActiveInstallForm.RecordingEnded += result =>
             {
                 var state = result.LastStatus;
-                _captureSummary.Text = $"本次任务：{(result.Succeeded ? "记录已结束并保存" : "失败或未完成")} · 安装器退出 { (state?.InstallerExited == true ? state.InstallerExitCode?.ToString() ?? "未知" : "未确认") } · 覆盖 {state?.QualityLevel ?? "未确认"}。点击“本次任务状态”查看分别确认的结果。";
+                _lastRun = result;
+                _captureSummary.Text = $"最近任务：安装器退出 {(state?.InstallerExited == true ? state.InstallerExitCode?.ToString() ?? "未知" : "未确认")} · 记录{(result.Succeeded ? "已完成" : "失败或未完成")} · 保存{(state?.DataSaved == true ? "已确认" : "未确认")} · 覆盖 {state?.QualityLevel ?? "未确认"}。点击查看任务详情。";
+                _captureSummary.LinkArea = new LinkArea(0, _captureSummary.Text.Length);
+                _tips.SetToolTip(_captureSummary, "任务详情保留最后确认阶段、采集进程退出结果和诊断。安装器退出结果与记录完成分别判断。");
                 UpdateEnabled();
             };
             ActiveInstallForm.FormClosed += (_, _) => { ActiveInstallForm = null; UpdateEnabled(); };
             ActiveInstallForm.Show(this);
             UpdateEnabled();
         };
+        _captureSummary.LinkClicked += (_, _) => ShowLastTaskDetails();
         _open.Click += (_, _) =>
         {
             var path = _dialogs.ChooseDatabase(this);
@@ -235,12 +270,7 @@ public sealed class ViewerForm : Form
         _changeFilter.TextChanged += (_, _) => { _changeOffset = 0; RenderChanges(); };
         _previousChanges.Click += (_, _) => { _changeOffset = Math.Max(0, _changeOffset - _pageSize); RenderChanges(); };
         _nextChanges.Click += (_, _) => { _changeOffset += _pageSize; RenderChanges(); };
-        _rawToggle.CheckedChanged += (_, _) =>
-        {
-            _rawDetails.Visible = _rawToggle.Checked;
-            _eventDetails.Visible = !_rawToggle.Checked;
-            if (_rawToggle.Checked) _rawDetails.BringToFront(); else _eventDetails.BringToFront();
-        };
+        _rawToggle.CheckedChanged += (_, _) => ShowEventDetails(_rawToggle.Checked);
         _copyEvent.Click += (_, _) =>
         {
             if (_selectedEventId is null) return;
@@ -260,7 +290,7 @@ public sealed class ViewerForm : Form
             {
                 await ReportExporter.ExportAsync(_client, db, id, eventId, _pageSize, offset, path, token);
                 token.ThrowIfCancellationRequested();
-                SetStatus($"已导出本地报告：{path}。包含本记录状态变化、当前事件页和所选事件；原始路径保留在本地。", false);
+                SetStatus($"已导出本地报告：{path}。范围：本记录全部状态变化、当前未筛选事件页、所选事件解释；不包含全部事件历史。", false);
             });
         };
         FormClosed += (_, _) => { _operationCancellation?.Cancel(); _tips.Dispose(); };
@@ -336,7 +366,7 @@ public sealed class ViewerForm : Form
         token.ThrowIfCancellationRequested();
         _recordId = id;
         _sessionTitle.Text = FieldText(summary.Data, "name");
-        _summaryStatus.Text = $"记录：{State(FieldText(summary.Data, "capture_state"))}    |    覆盖质量：{Quality(FieldText(Field(summary.Data, "quality"), "level"))}";
+        _summaryStatus.Text = $"安装器退出：{FieldText(summary.Data, "exit_code")}  ·  记录：{State(FieldText(summary.Data, "capture_state"))}  ·  保存：已读取  ·  覆盖：{Quality(FieldText(Field(summary.Data, "quality"), "level"))}";
         _overview.Text = OverviewText(summary.Data);
         _allChanges = [];
         foreach (var item in Array(Field(changes.Data, "files"))) _allChanges.Add(("文件", item.Clone()));
@@ -503,7 +533,13 @@ public sealed class ViewerForm : Form
         _newInstall.Enabled = !IsBusy;
         _newInstall.Text = ActiveInstallForm is null ? "新建安装记录" : "本次任务状态";
         _sessions.Enabled = !IsBusy && _database is not null;
-        _tabs.Enabled = !IsBusy;
+        // Keep tab-page ownership and visibility stable during read-only work.
+        // Disabling the entire tab tree also disables inactive page windows;
+        // only the controls that can start another query need to be gated.
+        _events.Enabled = !IsBusy;
+        _changes.Enabled = !IsBusy;
+        _eventFilter.Enabled = !IsBusy;
+        _changeFilter.Enabled = !IsBusy;
         _export.Enabled = !IsBusy && _database is not null && _recordId is not null;
         _previousEvents.Enabled = !IsBusy && _recordId is not null && _eventOffset > 0;
         _nextEvents.Enabled = !IsBusy && _recordId is not null && _moreEvents;
@@ -520,19 +556,100 @@ public sealed class ViewerForm : Form
         _tips.SetToolTip(_status, message);
     }
 
+    private void FitWorkingArea()
+    {
+        var area = Screen.FromControl(this).WorkingArea;
+        var minimum = new Size(Math.Min(MinimumSize.Width, area.Width), Math.Min(MinimumSize.Height, area.Height));
+        if (MinimumSize != minimum) MinimumSize = minimum;
+        if (WindowState == FormWindowState.Normal && (Width > area.Width || Height > area.Height))
+            Size = new Size(Math.Min(Width, area.Width), Math.Min(Height, area.Height));
+    }
+
+    private void ShowEventDetails(bool raw)
+    {
+        // Each detail view owns a separate row. The inactive row is collapsed,
+        // rather than stacking two Dock.Fill native text windows over one another.
+        _detailHost.SuspendLayout();
+        try
+        {
+            _detailHost.RowStyles[0].SizeType = raw ? SizeType.Absolute : SizeType.Percent;
+            _detailHost.RowStyles[0].Height = raw ? 0 : 100;
+            _detailHost.RowStyles[1].SizeType = raw ? SizeType.Percent : SizeType.Absolute;
+            _detailHost.RowStyles[1].Height = raw ? 100 : 0;
+            _eventDetails.Visible = !raw;
+            _rawDetails.Visible = raw;
+        }
+        finally { _detailHost.ResumeLayout(true); }
+    }
+
+    private void ShowLastTaskDetails()
+    {
+        if (_lastRun is not { } result) return;
+        var state = result.LastStatus;
+        var details = new StringBuilder()
+            .AppendLine($"安装器退出结果：{(state?.InstallerExited == true ? state.InstallerExitCode?.ToString() ?? "未提供退出码" : "未确认退出")}")
+            .AppendLine("非零退出码的含义由安装器定义；不会自动判断为用户取消。")
+            .AppendLine($"记录完成：{(result.Succeeded ? "已确认" : "失败或未完成")}")
+            .AppendLine($"数据保存：{(state?.DataSaved == true ? "已确认保存过证据；不代表记录完整或安装成功" : "未确认；不会删除已有记录")}")
+            .AppendLine($"覆盖质量：{state?.QualityLevel ?? "未确认"}")
+            .AppendLine($"最后确认阶段：{result.LastConfirmedStage ?? state?.Stage ?? "未取得结构化状态"}")
+            .AppendLine($"后端最终状态：{state?.Stage ?? "未取得结构化状态"}")
+            .AppendLine($"会话 ID：{state?.SessionId ?? "未确认"}")
+            .AppendLine($"数据库：{state?.Database ?? "未取得结构化状态"}")
+            .AppendLine().AppendLine("高级诊断（保留在本机）")
+            .AppendLine($"采集进程 PID：{result.CollectorPid?.ToString() ?? "未确认"}")
+            .AppendLine($"采集进程退出码：{result.CollectorExitCode}")
+            .AppendLine($"采集来源已停止：{state?.CaptureFinished.ToString() ?? "未确认"}")
+            .AppendLine($"实际 ETW 来源：进程 {state?.EtwProcess ?? "未确认"} / 文件 {state?.EtwFile ?? "未确认"} / 注册表 {state?.EtwRegistry ?? "未确认"}")
+            .AppendLine($"结构化状态错误：{result.ProtocolError ?? "未报告"}")
+            .AppendLine($"后端错误：{state?.Error ?? "未报告"}");
+        foreach (var reason in state?.QualityReasons ?? []) details.AppendLine("• " + reason);
+        details.AppendLine().AppendLine("采集进程诊断输出：").AppendLine(string.IsNullOrEmpty(result.Diagnostics) ? "未提供" : result.Diagnostics);
+        if (result.DiagnosticsTruncated) details.AppendLine("诊断过长，仅保留有界输出；此标记不表示记录成功。");
+        using var window = new Form
+        {
+            Name = "LastTaskDetails", Text = "Contain · 最近任务详情", Font = Font,
+            AutoScaleDimensions = new SizeF(96F, 96F), AutoScaleMode = AutoScaleMode.Dpi,
+            ClientSize = new Size(760, 560), MinimizeBox = false, StartPosition = FormStartPosition.CenterParent
+        };
+        var content = ReadText("LastTaskDiagnostics");
+        content.Text = details.ToString();
+        content.Padding = new Padding(12);
+        window.Controls.Add(content);
+        window.Shown += (_, _) =>
+        {
+            var area = Screen.FromControl(window).WorkingArea;
+            window.Size = new Size(Math.Min(window.Width, area.Width), Math.Min(window.Height, area.Height));
+            window.Location = new Point(area.Left + (area.Width - window.Width) / 2, area.Top + (area.Height - window.Height) / 2);
+        };
+        window.ShowDialog(this);
+    }
+
     private static string OverviewText(JsonElement data)
     {
         var text = new StringBuilder();
         var counts = Field(data, "summary_counts");
         var backend = Field(data, "backend");
         var quality = Field(data, "quality");
-        text.AppendLine("观察对象与范围").AppendLine($"程序：{FieldText(data, "name")}")
+        var captureState = FieldText(data, "capture_state");
+        var exitCode = Field(data, "exit_code");
+        var exitResult = exitCode.ValueKind == JsonValueKind.Number && exitCode.TryGetInt32(out var code)
+            ? code == 0 ? "退出码 0（安装器报告成功，未验证最终安装状态）" : $"退出码 {code}（非零；具体含义由安装器定义）"
+            : "未确认（记录没有提供退出码）";
+        text.AppendLine("本次记录结果")
+            .AppendLine($"安装器退出结果：{exitResult}")
+            .AppendLine($"记录完成：{(captureState == "finished" ? "已确认结束" : "未确认完整结束")}；数据保存：已从数据库读到记录。保存不代表安装成功或记录完整。")
+            .AppendLine($"观察到的状态变化：文件 {Count(Field(data, "files"))} 项 / 注册表值 {Count(Field(data, "registry"))} 项 / 配置清单 {Count(Field(data, "inventory"))} 项。")
+            .AppendLine($"覆盖质量：{Quality(FieldText(quality, "level"))}")
+            .AppendLine(FieldText(quality, "level") == "Incomplete" ? "覆盖限制：证据不完整。数据库未确认结束时，不能仅凭当前阶段确定中断根因。" : "覆盖限制：仅观察所选范围；实际来源启用也不能证明完整软件足迹或最终文件归属。")
+            .AppendLine().AppendLine("观察对象与范围").AppendLine($"程序：{FieldText(data, "name")}")
             .AppendLine($"安装程序：{FieldText(data, "installer")}")
             .AppendLine($"开始：{FieldText(data, "started_at")}")
             .AppendLine($"记录结束时间：{FieldText(data, "finished_at")}")
-            .AppendLine($"记录状态：{State(FieldText(data, "capture_state"))}")
-            .AppendLine($"目录：{Join(Field(data, "watch_roots"))}")
+            .AppendLine($"记录状态：{State(captureState)}")
+            .AppendLine($"观察目录：{Join(Field(data, "watch_roots"))}")
             .AppendLine($"注册表范围：{FieldText(data, "registry_key")}").AppendLine()
+            .AppendLine("高级诊断与原始依据")
             .AppendLine("实际来源（active 表示启用，不证明覆盖完整）")
             .AppendLine($"ETW 进程：{FieldText(backend, "etw_process")}  ·  文件：{FieldText(backend, "etw_file")}  ·  注册表：{FieldText(backend, "etw_registry")}").AppendLine()
             .AppendLine("记录内容（不同口径分别统计）")
@@ -568,6 +685,7 @@ public sealed class ViewerForm : Form
             .AppendLine($"执行进程：{FieldText(evidence, "process_image")}  ·  PID {FieldText(evidence, "pid")}")
             .AppendLine($"进程创建时间（精确 FILETIME）：{FieldText(evidence, "process_creation_time")}")
             .AppendLine($"应用关联：{Confidence(FieldText(item, "confidence"))}  ·  请求结果：{FieldText(item, "success")}")
+            .AppendLine("执行进程关联描述谁发出了这次请求；它不判断最终文件归属。请求完成也不自动验证前后状态变化。")
             .AppendLine($"名称来源：{source}");
         text.AppendLine(source == "file_object_cache" ? "名称边界：历史缓存名称，不是已验证的当前路径。" : "名称边界：保留所记录的名称；不能推导现在的路径或最终所有权。");
         text.AppendLine($"名称观察时间（精确 FILETIME）：{FieldText(name, "observed_ticks")}")
@@ -592,23 +710,25 @@ public sealed class ViewerForm : Form
     private static TableLayoutPanel Rows(params float[] sizes)
     {
         var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = sizes.Length };
-        foreach (var size in sizes) panel.RowStyles.Add(new RowStyle(size < 0 ? SizeType.Percent : SizeType.Absolute, Math.Abs(size)));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        foreach (var size in sizes) panel.RowStyles.Add(size == 0 ? new RowStyle(SizeType.AutoSize) : new RowStyle(size < 0 ? SizeType.Percent : SizeType.Absolute, Math.Abs(size)));
         return panel;
     }
     private static Control Pager(Button previous, Label page, Button next)
     {
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1 };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 92));
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3, RowCount = 1, Margin = Padding.Empty };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 92));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         page.TextAlign = ContentAlignment.MiddleCenter;
         layout.Controls.Add(previous, 0, 0); layout.Controls.Add(page, 1, 0); layout.Controls.Add(next, 2, 0);
         return layout;
     }
-    private static Label Label(string name, string text, Color color) => new() { Name = name, Text = text, UseMnemonic = false, ForeColor = color, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoSize = false };
+    private static Label Label(string name, string text, Color color) => new() { Name = name, Text = text, UseMnemonic = false, ForeColor = color, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoSize = true };
     private static Button Button(string name, string text, bool primary = false) => new()
     {
-        Name = name, Text = text, Dock = DockStyle.Fill, Height = 34, Margin = new Padding(4, 8, 4, 8),
+        Name = name, Text = text, Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+        Padding = new Padding(10, 6, 10, 6), Margin = new Padding(4, 3, 4, 3),
         FlatStyle = FlatStyle.Flat, BackColor = primary ? Accent : Color.White,
         ForeColor = primary ? Color.White : Ink, UseVisualStyleBackColor = false
     };
@@ -638,7 +758,7 @@ public sealed class ViewerForm : Form
         grid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(219, 236, 239);
         grid.DefaultCellStyle.SelectionForeColor = Ink;
         grid.DefaultCellStyle.Padding = new Padding(4, 4, 4, 4);
-        grid.RowTemplate.Height = 36;
+        grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.DisplayedCellsExceptHeaders;
         return grid;
     }
 }

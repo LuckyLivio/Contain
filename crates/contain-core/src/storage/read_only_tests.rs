@@ -46,6 +46,54 @@ fn sample() -> Capture {
 }
 
 #[test]
+fn exact_session_id_wins_over_a_newer_uuid_shaped_record_name() {
+    let file = TestFile::new();
+    let mut requested = sample();
+    requested.id = "11111111-1111-4111-8111-111111111111".into();
+    requested.name = "shared record name".into();
+    let mut shadow = sample();
+    shadow.id = "22222222-2222-4222-8222-222222222222".into();
+    shadow.name = requested.id.clone();
+    shadow.started_at = "2026-02-02T03:04:05+00:00".into();
+    for event in &mut shadow.events {
+        event.id = format!("shadow-{}", event.id);
+    }
+    let mut latest_name = sample();
+    latest_name.id = "33333333-3333-4333-8333-333333333333".into();
+    latest_name.name = requested.name.to_uppercase();
+    latest_name.started_at = "2026-03-02T03:04:05+00:00".into();
+    for event in &mut latest_name.events {
+        event.id = format!("latest-{}", event.id);
+    }
+    {
+        let mut db = Storage::open(&file.0).unwrap();
+        for capture in [&requested, &shadow, &latest_name] {
+            db.save(capture).unwrap();
+        }
+    }
+    let before = fs::read(&file.0).unwrap();
+    let db = Storage::open_read_only(&file.0).unwrap();
+    assert_eq!(db.load(&requested.id).unwrap().id, requested.id);
+    assert_eq!(db.load_summary(&requested.id).unwrap().id, requested.id);
+    assert_eq!(db.load_by_id(&requested.id).unwrap().id, requested.id);
+    assert_eq!(
+        db.load_summary_by_id(&requested.id).unwrap().id,
+        requested.id
+    );
+    assert_eq!(db.load(&requested.name).unwrap().id, latest_name.id);
+    assert_eq!(db.load_summary(&requested.name).unwrap().id, latest_name.id);
+    assert!(db.load_by_id(&requested.name).is_err());
+    assert!(db.load_summary_by_id(&requested.name).is_err());
+    let page = db.events_page_compatible(&requested.id, 0, 2).unwrap();
+    assert_eq!(page[0].id, requested.events[0].id);
+    let explained = db.for_event(&page[0].id).unwrap();
+    assert_eq!(explained.id, requested.id);
+    assert_eq!(explained.events[0].id, page[0].id);
+    drop(db);
+    assert_eq!(fs::read(&file.0).unwrap(), before);
+}
+
+#[test]
 fn read_only_missing_and_non_database_inputs_never_create_a_database() {
     let missing = TestFile::new();
     assert!(Storage::open_read_only(&missing.0).is_err());

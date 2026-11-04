@@ -83,7 +83,7 @@ public sealed class CoreClient
         {
             if (versionChecked) return;
             var version = (await RunAsync(["--version"], cancellationToken)).Trim();
-            if (version != "contain 0.3.1")
+            if (version != ProductVersion.CliVersion)
                 throw new CoreClientException("cli_version", "CLI 版本不匹配，请使用桌面包附带的 contain.exe。", diagnostic: version);
             versionChecked = true;
         }

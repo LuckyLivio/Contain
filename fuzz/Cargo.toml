@@ -12,7 +12,7 @@ cargo-fuzz = true
 members = ["."]
 
 [dependencies]
-contain-core = { path = "../crates/contain-core", version = "0.3.1" }
+contain-core = { path = "../crates/contain-core", version = "0.3.2-beta.1" }
 libfuzzer-sys = "0.4"
 serde_json = "1"
 

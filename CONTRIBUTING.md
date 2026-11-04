@@ -2,8 +2,8 @@
 
 ## Development synchronization
 
-The owner authorizes ordinary reviewed fast-forward pushes for this project to
-`LuckyLivio/Contain`, branch `fix/raw-clock-stabilization`. After each coherent stage:
+Use an independent descriptive branch in `LuckyLivio/Contain`. Task authorization
+controls which synchronization, merge and release actions are permitted. After each coherent stage:
 run relevant checks, commit explicitly selected files, push that development
 branch, and verify its remote SHA. Live validation need not be complete before
 synchronizing development work; commit messages and reports must identify failed
@@ -20,8 +20,10 @@ results with explicit redaction, preserving failed samples and denominators.
 Do not stage the entire working tree without file-by-file review.
 
 Protect unrelated uncommitted work, including UI/preview and quality-tooling work.
-Do not force push, rewrite published history, push directly to the default branch,
-merge, tag or publish a release. Authentication failure or remote divergence is
+Do not force push, rewrite published history or push directly to the default branch.
+Normal PR merges and new tags/releases require explicit task authorization and
+passing applicable checks; the phase-one Beta delivery task supplies that
+authorization. Existing Beta tags and published asset contents are immutable. Authentication failure or remote divergence is
 a reported blocker, not permission to overwrite remote work. Archived local
 pre-redaction refs are not publication sources. This authorization does not grant
 elevation, deletion, external resources or additional remote test dispatches.

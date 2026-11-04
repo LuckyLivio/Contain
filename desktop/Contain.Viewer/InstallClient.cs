@@ -28,6 +28,9 @@ public sealed record InstallRequest(string Installer, string Name, string WatchR
 
 public sealed record InstallRunResult(InstallStatus? LastStatus, int CollectorExitCode, string? ProtocolError, string Diagnostics)
 {
+    public int? CollectorPid { get; init; }
+    public string? LastConfirmedStage { get; init; }
+    public bool DiagnosticsTruncated { get; init; }
     public bool Succeeded => CollectorExitCode == 0 && ProtocolError is null && LastStatus is { Stage: "finished", CaptureFinished: true, DataSaved: true };
 }
 
@@ -89,23 +92,35 @@ public sealed class InstallClient(string executablePath)
             using var process = NewProcess(BuildArguments(valid));
             var sequence = new InstallStatusSequence(valid.Database);
             string? protocolError = null;
+            string? lastConfirmedStage = null;
             if (!process.Start()) throw new InvalidOperationException("无法启动采集进程；安装器未由桌面启动。");
-            var stderr = ReadBoundedAsync(process.StandardError, 1024 * 1024);
-            var stdout = ReadLinesAsync(process.StandardOutput, line =>
+            var collectorPid = process.Id;
+            var stderr = InstallDiagnosticOutput.ReadAsync(process.StandardError.BaseStream, 1024 * 1024);
+            var stdout = ReadStatusOutputAsync(process.StandardOutput, line =>
             {
                 if (protocolError is not null) return;
-                try { progress(sequence.Accept(line)); }
+                try
+                {
+                    var current = sequence.Accept(line);
+                    if (current.Stage != "failed") lastConfirmedStage = current.Stage;
+                    progress(current);
+                }
                 catch (Exception error) { protocolError = error.Message; }
             });
             // Never kill this process tree: it owns the real installer. Drain output even
             // after a protocol error, and keep the window open until the collector exits.
             await process.WaitForExitAsync();
-            try { await stdout; } catch (Exception error) { protocolError ??= error.Message; }
-            string diagnostics;
-            try { diagnostics = await stderr; }
-            catch (Exception error) { protocolError ??= error.Message; diagnostics = error.Message; }
+            var outputError = await stdout;
+            protocolError ??= outputError;
+            var diagnostics = await stderr;
+            protocolError ??= diagnostics.Error;
             if (sequence.Last?.Stage is not ("finished" or "failed")) protocolError ??= "采集进程已退出，但缺少可靠的结束结果。已保存证据可能属于未完成会话。";
-            return new(sequence.Last, process.ExitCode, protocolError, diagnostics);
+            return new(sequence.Last, process.ExitCode, protocolError, diagnostics.Text)
+            {
+                CollectorPid = collectorPid,
+                LastConfirmedStage = lastConfirmedStage,
+                DiagnosticsTruncated = diagnostics.Truncated
+            };
         }
         finally
         {
@@ -133,7 +148,7 @@ public sealed class InstallClient(string executablePath)
         var stdout = ReadBoundedAsync(process.StandardOutput, 4096);
         var stderr = ReadBoundedAsync(process.StandardError, 4096);
         await WaitProbeAsync(process, token);
-        if (process.ExitCode != 0 || (await stdout).Trim() != "contain 0.3.1") throw new InvalidDataException("CLI 版本不匹配；请使用附带的 0.3.1 程序。");
+        if (process.ExitCode != 0 || (await stdout).Trim() != ProductVersion.CliVersion) throw new InvalidDataException($"CLI 版本不匹配；请使用附带的 {ProductVersion.Version} 程序。");
         _ = await stderr;
     }
 
@@ -198,5 +213,18 @@ public sealed class InstallClient(string executablePath)
         catch (DecoderFallbackException) { await reader.BaseStream.CopyToAsync(Stream.Null); throw new InvalidDataException("记录状态流含无效 UTF-8。"); }
         if (line.Length > 0) error ??= new InvalidDataException("记录状态流意外截断。");
         if (error is not null) throw error;
+    }
+
+    internal static async Task<string?> ReadStatusOutputAsync(StreamReader reader, Action<string> consume)
+    {
+        try { await ReadLinesAsync(reader, consume); return null; }
+        catch (Exception error)
+        {
+            // A faulted reader must not leave an open, undrained pipe that could block
+            // the collector's next write. Closing only this read end never kills its
+            // process tree; the core already tolerates a disconnected status observer.
+            reader.Dispose();
+            return "记录状态读取失败：" + error.Message;
+        }
     }
 }

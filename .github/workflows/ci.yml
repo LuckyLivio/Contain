@@ -24,26 +24,47 @@ jobs:
         shell: pwsh
         env:
           TRIAL_PAIR_REQUESTED: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[trial-pair]') }}
-          INSTALL_REQUESTED: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[desktop-install]') }}
-          DESKTOP_REQUESTED: ${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[desktop-viewer]') || contains(github.event.head_commit.message, '[desktop-install]')) }}
+          INSTALL_REQUESTED: ${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[desktop-install]') || contains(github.event.head_commit.message, '[stage1-beta]')) }}
+          BETA_REQUESTED: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[stage1-beta]') }}
+          SNAPSHOT_REQUESTED: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[snapshot-fixture]') }}
+          DESKTOP_REQUESTED: ${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[desktop-viewer]') || (contains(github.event.head_commit.message, '[desktop-install]') || contains(github.event.head_commit.message, '[stage1-beta]'))) }}
         run: |
           $desktop = $env:DESKTOP_REQUESTED -eq 'true'
+          $beta = $env:BETA_REQUESTED -eq 'true'
+          "beta=$($beta.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          $version = (python -c "import pathlib,tomllib; print(tomllib.loads(pathlib.Path('Cargo.toml').read_text())['workspace']['package']['version'])").Trim()
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch '^\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?$') { throw 'Invalid canonical package version' }
+          "CONTAIN_VERSION=$version" >> $env:GITHUB_ENV
+          "CONTAIN_PACKAGE=target/contain-$version-windows-x64.zip" >> $env:GITHUB_ENV
           $install = $env:INSTALL_REQUESTED -eq 'true'
           "install=$($install.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           if ($desktop -and $env:TRIAL_PAIR_REQUESTED -eq 'true') { throw 'Desktop viewing and native capture are separate plans' }
           $requested = $env:TRIAL_PAIR_REQUESTED -eq 'true'
+          $snapshot = $env:SNAPSHOT_REQUESTED -eq 'true'
+          if ($snapshot -and ($requested -or $desktop)) { throw 'Snapshot fixture and native capture/viewer plans are separate' }
+          "snapshot=$($snapshot.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           "desktop=$($desktop.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           "capture=$($requested.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           New-Item -ItemType Directory -Path target/quality-public -Force | Out-Null
           [ordered]@{
             schema_version=1; source_sha=$env:GITHUB_SHA; requested=($requested -or $install)
-            configurations=$(if($install){@('gui-controlled-exe')}elseif($desktop){@()}else{@('default','dual-clock')}); maximum_native_captures=$(if($install){1}elseif($desktop){0}else{2}); retries=0
-            desktop_viewer=$desktop; desktop_install=$install
+            configurations=$(if($install){@('gui-controlled-exe')}elseif($requested){@('default','dual-clock')}else{@()}); maximum_native_captures=$(if($install){1}elseif($requested){2}else{0}); retries=0
+            desktop_viewer=$desktop; desktop_install=$install; stage_one_beta=$beta
+            beta_layout=$(if($beta){@('native_default_resize_maximize_tabs_paging','simulated_150_percent_layout_stress_not_system_dpi','simulated_200_percent_layout_stress_not_system_dpi','readonly_database_identity_after_layout')}else{@()})
             install_plan=$(if($install){@('offline_protocol_arguments_and_read_only_regressions','configure_without_launch','one_gui_started_controlled_fixture_real_etw','duplicate_start_and_conservative_close','exact_session_autoopen','source_event_explain_and_export','native_picker_navigation_and_cancel_if_available')}else{@()})
             legacy_synthetic_cli=$(if($desktop){'not_run_active_doctor_excluded; native_desktop_harness_covers_read_only_views'}else{'planned'})
-            snapshot_fallback=$(if($install){'explicit_snapshot_mode_offline_checks_only_no_live_fallback_substitution'}elseif($desktop){'not_run_desktop_existing_records_only'}else{'existing_plan'})
+            snapshot_fallback=$(if($install){'explicit_snapshot_mode_offline_checks_only_no_live_fallback_substitution'}elseif($snapshot){'explicit_snapshot_fixture_requested'}else{'not_requested_not_validated'})
             status=$(if($install){'planned_after_quality_and_offline_desktop_regressions'}elseif($requested){'planned_after_quality_and_windows_report_preflights'}else{'not_requested_not_validated'})
           } | ConvertTo-Json | Set-Content target/quality-public/capture-plan.json -Encoding utf8
+      - name: Restore fixed quality tool executables
+        id: quality_tool_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-nextest.exe
+            ~/.cargo/bin/cargo-llvm-cov.exe
+            ~/.cargo/bin/cargo-deny.exe
+          key: ${{ runner.os }}-contain-quality-nextest-0.9.149-llvm-cov-0.9.1-deny-0.20.2
       - name: Required quality tools
         shell: pwsh
         run: |
@@ -56,6 +77,15 @@ jobs:
               if ($LASTEXITCODE -ne 0) { throw "Installing cargo-$tool failed" }
             }
           }
+      - name: Retain successfully prepared quality tools
+        if: ${{ steps.quality_tool_cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-nextest.exe
+            ~/.cargo/bin/cargo-llvm-cov.exe
+            ~/.cargo/bin/cargo-deny.exe
+          key: ${{ steps.quality_tool_cache.outputs.cache-primary-key }}
       - name: Quality Check
         id: quality_check
         shell: pwsh
@@ -171,15 +201,16 @@ jobs:
         if: ${{ !cancelled() && steps.viewer_package.outcome == 'success' }}
         shell: pwsh
         run: |
-          $finalArgs = @('scripts/package-viewer.py','finalize','--package','target/windows-viewer','--quality-summary','target/quality-public/summary.json','--verification','target/viewer-public/summary.json','--output','target/contain-0.3.1-windows-x64-viewer.zip')
+          $finalArgs = @('scripts/package-viewer.py','finalize','--package','target/windows-viewer','--quality-summary','target/quality-public/summary.json','--verification','target/viewer-public/summary.json','--output',$env:CONTAIN_PACKAGE)
           if ('${{ steps.trial_plan.outputs.install }}' -eq 'true') { $finalArgs += @('--install-verification','target/viewer-public/install-summary.json') }
+          if ('${{ steps.trial_plan.outputs.beta }}' -eq 'true') { $finalArgs += @('--layout-verification','target/viewer-public/layout-summary.json') }
           python @finalArgs
           if ($LASTEXITCODE -ne 0) { throw 'Desktop milestone unverified; diagnostic package retains the actual failed or unexecuted checks' }
       - uses: actions/upload-artifact@v4
         if: ${{ always() && steps.viewer_package.outcome == 'success' }}
         with:
           name: contain-windows-x64-viewer
-          path: target/contain-0.3.1-windows-x64-viewer.zip
+          path: ${{ env.CONTAIN_PACKAGE }}
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: ${{ always() && steps.viewer_package.outcome == 'success' }}
@@ -188,6 +219,7 @@ jobs:
           path: |
             target/viewer-public/summary.json
             target/viewer-public/install-summary.json
+            target/viewer-public/layout-summary.json
             target/viewer-public/screenshots/*.png
             target/viewer-public/reports/*.html
           if-no-files-found: error
@@ -259,11 +291,11 @@ jobs:
               if ($LASTEXITCODE -ne 0) { Write-Host "Report collection failed for configuration $scenario; candidate finalization will preserve the failed gate." }
             }
           }
-          python scripts/package-trial.py finalize --package target/windows-trial --default-directory target/trial-default/capture --clock-directory target/trial-dual-clock/capture --clock-analysis target/trial-public-dual-clock/summary.json --quality-summary target/quality-public/summary.json --report-paths target/quality-public/report-paths.json --report-preflight target/quality-public/trial-report-preflight --output target/contain-0.3.1-windows-x64.zip
+          python scripts/package-trial.py finalize --package target/windows-trial --default-directory target/trial-default/capture --clock-directory target/trial-dual-clock/capture --clock-analysis target/trial-public-dual-clock/summary.json --quality-summary target/quality-public/summary.json --report-paths target/quality-public/report-paths.json --report-preflight target/quality-public/trial-report-preflight --output $env:CONTAIN_PACKAGE
           if ($LASTEXITCODE -ne 0) { throw 'Trial candidate is unverified; retain the diagnostic package and actual failures' }
       - name: Snapshot fallback integration
         id: fallback
-        if: ${{ !cancelled() && steps.trial_plan.outputs.capture != 'true' && steps.trial_plan.outputs.desktop != 'true' && steps.build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.trial_plan.outputs.snapshot == 'true' && steps.build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/demo.ps1 -SnapshotOnly -OutputDirectory ./target/demo-fallback
       - name: Publish fixture-only evidence after scoring
@@ -291,7 +323,7 @@ jobs:
         if: ${{ always() && steps.trial_package.outcome == 'success' }}
         with:
           name: contain-windows-x64-trial
-          path: target/contain-0.3.1-windows-x64.zip
+          path: ${{ env.CONTAIN_PACKAGE }}
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()

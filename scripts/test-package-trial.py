@@ -52,6 +52,7 @@ class TrialTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         self.repo = self.root / "repo"; self.repo.mkdir()
+        (self.repo / "Cargo.toml").write_text('[workspace.package]\nversion = "' + TRIAL.product_version() + '"\n')
         for relative in ["scripts/" + name for name in TRIAL.SCRIPTS] + list(TRIAL.RESOURCES):
             path = self.repo / relative; path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("synthetic package resource\n")
@@ -62,6 +63,14 @@ class TrialTests(unittest.TestCase):
 
     def tearDown(self):
         self.temporary.cleanup()
+
+    def test_product_version_is_canonical_and_rejects_missing_or_invalid_values(self):
+        self.assertEqual(TRIAL.product_version(self.repo),TRIAL.product_version())
+        (self.repo/'Cargo.toml').write_text('[workspace.package]\nversion = "0.3.2-beta.1"\n')
+        self.assertEqual(TRIAL.product_version(self.repo),'0.3.2-beta.1')
+        for value in ('missing','version = "0.3.1 extra"','version = 3','version = "../0.3.1"'):
+            (self.repo/'Cargo.toml').write_text('[workspace.package]\n' + ('' if value=='missing' else value) + '\n')
+            with self.assertRaisesRegex(ValueError,'product_version_invalid'): TRIAL.product_version(self.repo)
 
     def prepare(self, runtime=None):
         args = argparse.Namespace(repository=self.repo, contain=self.contain, fixture=self.fixture,

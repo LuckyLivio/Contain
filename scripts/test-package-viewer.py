@@ -25,12 +25,15 @@ class ViewerPackageTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.repo = self.root / "repo"; self.repo.mkdir()
+        (self.repo / "Cargo.toml").write_text('[workspace.package]\nversion = "' + VIEWER.TRIAL.product_version() + '"\n')
         (self.repo / "LICENSE").write_text("SYNTHETIC license fixture")
         self.publish = self.root / "publish"; self.publish.mkdir()
         for name in ("Contain.Viewer.exe", "Contain.Viewer.dll", "coreclr.dll", "hostfxr.dll", "hostpolicy.dll"):
             (self.publish / name).write_bytes(TRIAL_TESTS.synthetic_pe())
         (self.publish / "Contain.Viewer.pdb").write_bytes(b"SYNTHETIC private symbols excluded")
-        (self.publish / "Contain.Viewer.deps.json").write_text('{}')
+        identity = 'Contain.Viewer/' + VIEWER.TRIAL.product_version()
+        (self.publish / "Contain.Viewer.deps.json").write_text(json.dumps({
+            'libraries': {identity: {'type': 'project'}}, 'targets': {'SYNTHETIC win-x64': {identity: {}}}}))
         self.frameworks = [{"name": name, "version": "8.0.99"} for name in ("Microsoft.NETCore.App", "Microsoft.WindowsDesktop.App")]
         self.config = self.publish / "Contain.Viewer.runtimeconfig.json"
         self.config.write_text(json.dumps({"runtimeOptions": {"tfm": "net8.0", "includedFrameworks": self.frameworks}}))
@@ -57,6 +60,22 @@ class ViewerPackageTests(unittest.TestCase):
     def sample_result(self, ids=None):
         return mock.Mock(returncode=0, stdout=json.dumps({"schema_version":3,"kind":"list_details","data":[
             {"id":identity,"name":"Synthetic " + identity} for identity in (ids or sorted(VIEWER.SAMPLE_IDS))]}).encode())
+
+    def valid_layout_verification(self, build):
+        expected = {entry['path']: entry['sha256'] for entry in build['files']}
+        return dict(schema_version=1, protocol_revision=VIEWER.LAYOUT_VERIFICATION, source_sha=self.source,
+            native_windows=True, synthetic=True, real_etw_executed=False, completed=True, accepted=True,
+            package_manifest_sha256=VIEWER.sha(self.package/'BUILD.json'),
+            viewer_assembly_sha256=expected['Contain.Viewer.dll'], viewer_launcher_sha256=expected['Contain.Viewer.exe'],
+            contain_sha256=expected['contain.exe'], planned_checks=sorted(VIEWER.LAYOUT_REQUIRED_CHECKS),
+            checks=[dict(name=name,status='passed') for name in sorted(VIEWER.LAYOUT_REQUIRED_CHECKS)],
+            passed=4,failed=0,skipped=0,not_run=0,conditions=[
+                dict(name=name,requested_scale=scale,test_method=method,device_dpi=96,
+                    system_high_dpi_verified=False,working_area_width=1920,working_area_height=1080,assertions=10)
+                for name,scale,method in (
+                    ('native_default_layout_resize_maximize',1,'native_default'),
+                    ('simulated_150_percent_layout',1.5,'simulated_native_controls'),
+                    ('simulated_200_percent_layout',2,'simulated_native_controls'))])
 
     def prepare(self, fixture=None):
         args = argparse.Namespace(repository=self.repo, viewer=self.publish, contain=self.contain,
@@ -228,6 +247,69 @@ class ViewerPackageTests(unittest.TestCase):
             self.config.write_text(json.dumps({'runtimeOptions':options}))
             with self.assertRaises(ValueError): VIEWER.runtime_contract(self.publish)
 
+    def test_viewer_publish_and_build_manifest_require_current_canonical_beta_version(self):
+        version=VIEWER.TRIAL.product_version()
+        build=self.prepare()
+        self.assertEqual(build['version'],version)
+        self.assertIn(version,(self.package/'TRY.md').read_text())
+        build['version']='0.3.1'
+        (self.package/'BUILD.json').write_text(json.dumps(build))
+        with self.assertRaisesRegex(ValueError,'build_identity_invalid'): VIEWER.verify_package(self.package)
+        (self.publish/'Contain.Viewer.deps.json').write_text(json.dumps({
+            'libraries': {'Contain.Viewer/0.3.1': {}}, 'targets': {'SYNTHETIC win-x64': {'Contain.Viewer/0.3.1': {}}}}))
+        with self.assertRaisesRegex(ValueError,'product_version_mismatch'): VIEWER.runtime_contract(self.publish)
+
+    def test_layout_requires_exact_native_package_and_explicit_simulated_scale_evidence(self):
+        build=self.prepare();good=self.valid_layout_verification(build);manifest=VIEWER.sha(self.package/'BUILD.json')
+        self.assertTrue(VIEWER.layout_verification_matches(good,build,manifest))
+        mutations=[lambda d:d.update(native_windows=False),lambda d:d.update(synthetic=False),
+            lambda d:d.update(completed=False),lambda d:d.update(accepted=False),lambda d:d.update(real_etw_executed=True),
+            lambda d:d.update(source_sha='0'*40),lambda d:d.update(package_manifest_sha256='0'*64),
+            lambda d:d.update(viewer_assembly_sha256='0'*64),lambda d:d.update(viewer_launcher_sha256='0'*64),
+            lambda d:d.update(contain_sha256='0'*64),lambda d:d.update(checks=[]),lambda d:d['checks'].pop(),
+            lambda d:d['checks'].append(d['checks'][0]),lambda d:d['checks'][0].update(status='not_run'),
+            lambda d:d['planned_checks'].pop(),lambda d:d.update(passed=True),lambda d:d.update(not_run=1),
+            lambda d:d.update(conditions=[]),lambda d:d['conditions'].append(d['conditions'][0]),
+            lambda d:d['conditions'][1].update(system_high_dpi_verified=True),
+            lambda d:d['conditions'][1].update(test_method='native_default'),
+            lambda d:d['conditions'][1].update(requested_scale=1),lambda d:d['conditions'][0].update(device_dpi=0),
+            lambda d:d['conditions'][0].update(working_area_width=0),lambda d:d['conditions'][0].update(assertions=0),
+            lambda d:d['checks'][0].update(name=[]),lambda d:d.update(checks=[None])]
+        for mutate in mutations:
+            bad=copy.deepcopy(good);mutate(bad)
+            self.assertFalse(VIEWER.layout_verification_matches(bad,build,manifest))
+
+    def test_beta_layout_gate_missing_summary_retains_diagnostic_zip_and_fails(self):
+        build=self.prepare();verification=self.root/'verification.json';verification.write_text(json.dumps(self.valid_verification(build)))
+        quality=self.root/'quality.json';quality.write_text(json.dumps(dict(source_revision=self.source,
+            current_required_gates_passed=True,all_recorded_invocations_passed=True,
+            coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
+        args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+            layout_verification=self.root/'layout-missing.json',output=self.root/'layout-diagnostic.zip')
+        self.assertEqual(VIEWER.finalize(args),2)
+        with zipfile.ZipFile(args.output) as archive:
+            validation=json.loads(archive.read('VALIDATION.json'))
+            self.assertFalse(validation['viewer_verified'])
+            self.assertFalse(validation['checks']['native_layout_and_simulated_scale'])
+            self.assertEqual(validation['status'],'diagnostic_unverified')
+            self.assertFalse(validation['system_high_dpi_verified'])
+
+    def test_beta_layout_gate_embeds_exact_evidence_without_claiming_system_high_dpi(self):
+        build=self.prepare();verification=self.root/'verification.json';verification.write_text(json.dumps(self.valid_verification(build)))
+        quality=self.root/'quality.json';quality.write_text(json.dumps(dict(source_revision=self.source,
+            current_required_gates_passed=True,all_recorded_invocations_passed=True,
+            coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
+        evidence=self.valid_layout_verification(build);layout=self.root/'layout.json';layout.write_text(json.dumps(evidence))
+        args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+            layout_verification=layout,output=self.root/'layout-verified.zip')
+        self.assertEqual(VIEWER.finalize(args),0)
+        with zipfile.ZipFile(args.output) as archive:
+            validation=json.loads(archive.read('VALIDATION.json'))
+            self.assertTrue(validation['viewer_verified'])
+            self.assertEqual(validation['native_layout_verification'],evidence)
+            self.assertEqual(validation['layout_verification_summary_sha256'],VIEWER.sha(layout))
+            self.assertFalse(validation['system_high_dpi_verified'])
+
     def test_missing_runtime_file_fails_before_freeze(self):
         (self.publish/'hostpolicy.dll').unlink()
         with self.assertRaises(ValueError): self.prepare()
@@ -316,6 +398,12 @@ class ViewerPackageTests(unittest.TestCase):
         section=source.split('PlannedChecks =',1)[1].split('];',1)[0]
         names=set(VIEWER.re.findall(r'"([a-z_]+)"',section))
         self.assertEqual(names,VIEWER.REQUIRED_CHECKS)
+
+    def test_layout_required_plan_matches_actual_harness(self):
+        source=(Path(__file__).parent.parent/'desktop/Contain.Viewer.Tests/LayoutVerification.cs').read_text(encoding='utf-8')
+        section=source.split('Plan =',1)[1].split('];',1)[0]
+        names=set(VIEWER.re.findall(r'"([a-z_0-9]+)"',section))
+        self.assertEqual(names,VIEWER.LAYOUT_REQUIRED_CHECKS)
 
 
 if __name__=='__main__': unittest.main()

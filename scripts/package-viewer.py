@@ -22,6 +22,11 @@ safe_file, relative_path = TRIAL.safe_file, TRIAL.relative_path
 PROTOCOL = "contain-desktop-package-1"
 VERIFICATION = "contain-desktop-verification-1"
 INSTALL_VERIFICATION = "contain-desktop-install-verification-1"
+LAYOUT_VERIFICATION = "contain-desktop-layout-verification-1"
+LAYOUT_REQUIRED_CHECKS = frozenset({
+    "native_default_layout_resize_maximize", "simulated_150_percent_layout",
+    "simulated_200_percent_layout", "unchanged_read_only_fixture_after_layout",
+})
 INSTALL_REQUIRED_CHECKS = frozenset({
     "install_protocol_and_arguments", "install_configuration_without_launch",
     "gui_real_etw_start_and_duplicate_guard", "gui_runtime_stages_and_close_guard",
@@ -61,7 +66,8 @@ def source_identity(repo):
     return revision, core_tree, tree, identities
 
 
-def runtime_contract(viewer):
+def runtime_contract(viewer, version=None):
+    version = version or TRIAL.product_version()
     config = read(safe_file(viewer / "Contain.Viewer.runtimeconfig.json"))
     options = config.get("runtimeOptions", {})
     frameworks = options.get("includedFrameworks", [])
@@ -73,6 +79,11 @@ def runtime_contract(viewer):
             "self_contained_framework_identity_missing")
     for name in ("Contain.Viewer.exe", "Contain.Viewer.dll", "Contain.Viewer.deps.json", "coreclr.dll", "hostfxr.dll", "hostpolicy.dll"):
         safe_file(viewer / name)
+    dependencies = read(viewer / "Contain.Viewer.deps.json")
+    identity = "Contain.Viewer/" + version
+    require(identity in dependencies.get("libraries", {}) and any(
+        isinstance(target, dict) and identity in target for target in dependencies.get("targets", {}).values()),
+        "viewer_product_version_mismatch")
     return frameworks
 
 
@@ -122,7 +133,8 @@ def validate_sample(contain, fixtures):
     return metadata
 
 
-def usage(source, install=False):
+def usage(source, install=False, version=None):
+    version = version or TRIAL.product_version()
     recording = """
 新建受控安装记录：
 
@@ -151,7 +163,7 @@ def usage(source, install=False):
 完成环境检查后点击开始，等待整理结束，选择真实事件查看依据并导出。
 以上步骤是使用说明；是否完成原生人工验证以 VALIDATION.json 为准。
 """ if install else ""
-    return f"""# Contain 桌面安装记录与查看器 0.3.1
+    return f"""# Contain {version} · Windows 安装记录与证据查看 Beta
 
 源码：{source}
 
@@ -171,8 +183,11 @@ Unknown 和中断模型。它由生产 Storage/RawBuffer 写入，未发生真�
 
 事件筛选作用于当前页；状态变化和源操作是不同证据。High 不是安全删除授权；
 Unknown 不是危险判定；记录结束不代表覆盖完整。报告包含本地路径与记录内容，
-由你决定保存位置，不会上传。版本、脚本、界面和核心身份见 BUILD.json；
-必需检查的实际结果见 VALIDATION.json。构建未签名，不是正式 Release。
+由你决定保存位置，不会上传。报告仅包含本条记录的当前事件页、所选事件解释与
+状态变化；当前页筛选不会搜索全库。版本、脚本、界面和核心身份见 BUILD.json；
+必需检查的实际结果见 VALIDATION.json。构建未签名，属于有限范围的 Beta。
+整个 Program Files 目录曾有用户反馈停在整理阶段；缺少原始数据库和错误日志，
+根因尚未确认。请保留未完成记录和诊断，不能将已保存证据当作完整结束。
 """
 
 
@@ -180,7 +195,8 @@ def prepare(args):
     repo = args.repository.resolve()
     identity = source_identity(repo)
     revision, core_tree, viewer_tree, source_files = identity
-    frameworks = runtime_contract(args.viewer)
+    version = TRIAL.product_version(repo)
+    frameworks = runtime_contract(args.viewer, version)
     validate_sample(args.contain.resolve(), args.fixtures)
     output = TRIAL.new_directory(args.output)
     for source in sorted(args.viewer.rglob("*")):
@@ -229,11 +245,11 @@ def prepare(args):
         require(archive.testzip() is None and bool(archive.namelist()), "desktop_source_archive_invalid")
         require(all(not name.startswith(".git/") and not name.endswith((".db", ".db-wal", ".db-shm"))
                     for name in archive.namelist()), "desktop_source_archive_private_data")
-    (output / "TRY.md").write_text(usage(revision, fixture is not None), encoding="utf-8", newline="\n")
+    (output / "TRY.md").write_text(usage(revision, fixture is not None, version), encoding="utf-8", newline="\n")
     license_root = args.runtime_packs or Path(os.environ.get("NUGET_PACKAGES", str(Path.home() / ".nuget/packages")))
     runtime_licenses = copy_runtime_licenses(frameworks, output, license_root)
     files = [row(path, path.relative_to(output).as_posix()) for path in sorted(output.rglob("*")) if path.is_file()]
-    build = dict(schema_version=1, protocol_revision=PROTOCOL, version="0.3.1", source_sha=revision,
+    build = dict(schema_version=1, protocol_revision=PROTOCOL, version=version, source_sha=revision,
         target="win-x64", viewer_configuration="Release", viewer_framework="net8.0-windows", self_contained=True,
         core_profile="debug", core_target="x86_64-pc-windows-msvc", core_source_tree_sha256=core_tree,
         viewer_source_tree_sha256=viewer_tree, source_files=source_files,
@@ -250,7 +266,7 @@ def prepare(args):
             scope="Explicit controlled TEMP fixture only; no third-party installer support claim")
             if fixture is not None else None),
         sample_scope="SYNTHETIC production Storage/RawBuffer; no ETW, installer or private user database",
-        build_platform=TRIAL.platform_summary(), validation_at_freeze="not_run")
+        build_platform=TRIAL.platform_summary(), signed=False, validation_at_freeze="not_run")
     require(source_identity(repo) == identity, "source_changed_during_desktop_freeze")
     write(output / "BUILD.json", build)
     print(json.dumps({"phase": "frozen", "source_sha": revision, "files": len(files), "viewer_verified": False}))
@@ -259,7 +275,7 @@ def prepare(args):
 
 def verify_package(package):
     build = read(safe_file(package / "BUILD.json"))
-    require(build.get("protocol_revision") == PROTOCOL and build.get("version") == "0.3.1"
+    require(build.get("protocol_revision") == PROTOCOL and build.get("version") == TRIAL.product_version()
             and build.get("target") == "win-x64" and build.get("self_contained") is True
             and re.fullmatch(r"[0-9a-f]{40}", build.get("source_sha", "")), "desktop_build_identity_invalid")
     require(build.get("packager_sha256") == sha(Path(__file__)), "desktop_packager_changed_after_freeze")
@@ -362,6 +378,49 @@ def native_picker_failed(value):
         and row.get("name") == "native_picker_navigation_and_cancel" and row.get("status") == "failed" for row in rows)
 
 
+def layout_verification_matches(value, build, manifest_sha):
+    """Native controls at default DPI and explicit simulated scale stress are distinct."""
+    if not isinstance(value, dict):
+        return False
+    checks, planned, conditions = value.get("checks"), value.get("planned_checks"), value.get("conditions")
+    if not (isinstance(checks, list) and all(isinstance(check, dict) for check in checks)
+            and isinstance(planned, list) and all(isinstance(name, str) for name in planned)
+            and isinstance(conditions, list) and all(isinstance(condition, dict) for condition in conditions)):
+        return False
+    names = [check.get("name") for check in checks]
+    condition_names = [condition.get("name") for condition in conditions]
+    expected_conditions = {
+        "native_default_layout_resize_maximize": (1, "native_default"),
+        "simulated_150_percent_layout": (1.5, "simulated_native_controls"),
+        "simulated_200_percent_layout": (2, "simulated_native_controls"),
+    }
+    if (not all(isinstance(name, str) for name in names + condition_names)
+            or len(names) != len(set(names)) or set(names) != LAYOUT_REQUIRED_CHECKS
+            or len(planned) != len(set(planned)) or set(planned) != LAYOUT_REQUIRED_CHECKS
+            or len(condition_names) != len(set(condition_names)) or set(condition_names) != set(expected_conditions)):
+        return False
+    for condition in conditions:
+        scale, method = expected_conditions[condition["name"]]
+        if not (type(condition.get("requested_scale")) in {int, float} and condition["requested_scale"] == scale
+                and condition.get("test_method") == method and condition.get("system_high_dpi_verified") is False
+                and all(type(condition.get(key)) is int and condition[key] > 0
+                        for key in ("device_dpi", "working_area_width", "working_area_height", "assertions"))):
+            return False
+    expected = {entry["path"]: entry["sha256"] for entry in build["files"]}
+    return (
+        value.get("schema_version") == 1 and value.get("protocol_revision") == LAYOUT_VERIFICATION
+        and value.get("source_sha") == build["source_sha"] and value.get("native_windows") is True
+        and value.get("synthetic") is True and value.get("real_etw_executed") is False
+        and value.get("completed") is True and value.get("accepted") is True
+        and value.get("package_manifest_sha256") == manifest_sha
+        and value.get("viewer_assembly_sha256") == expected["Contain.Viewer.dll"]
+        and value.get("viewer_launcher_sha256") == expected["Contain.Viewer.exe"]
+        and value.get("contain_sha256") == expected["contain.exe"]
+        and all(check.get("status") == "passed" for check in checks)
+        and type(value.get("passed")) is int and value["passed"] == len(LAYOUT_REQUIRED_CHECKS)
+        and all(type(value.get(key)) is int and value[key] == 0 for key in ("failed", "skipped", "not_run")))
+
+
 def finalize(args):
     package = args.package.resolve()
     build = verify_package(package)
@@ -370,6 +429,8 @@ def finalize(args):
     verification = read(args.verification) if args.verification.is_file() else {}
     install_path = getattr(args, "install_verification", None)
     installation = read(install_path) if install_path and install_path.is_file() else {}
+    layout_path = getattr(args, "layout_verification", None)
+    layout = read(layout_path) if layout_path and layout_path.is_file() else {}
     install_requested = build.get("controlled_fixture") is not None or install_path is not None
     checks = {
         "frozen_package_unchanged": True,
@@ -381,6 +442,8 @@ def finalize(args):
     }
     if install_requested:
         checks["native_gui_install_etw_and_exact_result"] = install_verification_matches(installation, build, manifest_sha)
+    if layout_path is not None:
+        checks["native_layout_and_simulated_scale"] = layout_verification_matches(layout, build, manifest_sha)
     passed = all(checks.values())
     milestone_checks = dict(automated_product_and_quality=passed,
                            native_picker_navigation_and_cancel=native_picker_verified(installation)) if install_requested else None
@@ -401,6 +464,9 @@ def finalize(args):
         native_verification=verification,
         native_install_verification=installation,
         install_verification_summary_sha256=sha(install_path) if install_path and install_path.is_file() else None,
+        native_layout_verification=layout,
+        layout_verification_summary_sha256=sha(layout_path) if layout_path and layout_path.is_file() else None,
+        system_high_dpi_verified=False if layout_path is not None else None,
         scope=("One GUI-initiated controlled real-ETW fixture using the frozen desktop, CLI and runtime; no third-party installer or scale trial. Manual dialog navigation remains separately reported."
                if install_requested else "Existing-record desktop viewing only, synthetic production databases and real packaged CLI. No ETW or installer capture."),
         prior_read_only_candidate_milestone="remains_closed_separately", formal_acceptance="not_run")
@@ -442,6 +508,8 @@ def main():
     finish.add_argument("--quality-summary", type=Path, required=True)
     finish.add_argument("--verification", type=Path, required=True)
     finish.add_argument("--install-verification", type=Path)
+    finish.add_argument("--layout-verification", type=Path,
+        help="Require default native layout and explicitly simulated 150/200%% scale checks")
     finish.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:

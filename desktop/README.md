@@ -5,11 +5,17 @@ provides an explicit **新建安装记录** flow through the packaged Rust CLI.
 The bounded read-only core and desktop record viewer milestones remain closed.
 Graphical recording is a separate [implementation and validation milestone](../docs/graphical-install-record.md).
 
-## Verified graphical installation recording delivery
+## Current download
+
+Use the [phase-one Beta release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.1).
+Its [fixes, validation scope and known issues](../docs/stage-one-beta.md) distinguish
+native Windows results, simulated layout stress and user-reported trials.
+The entries below retain historical evidence rather than additional current downloads.
+
+## Historical graphical installation recording delivery
 
 The graphical recording MVP is **closed** for version 0.3.1, frozen source
 `15f214442d69baa0ebd91f5ad12edc5661281779`.
-[Download the self-contained x64 ZIP](https://github.com/LuckyLivio/Contain/actions/runs/41805319059/artifacts/13311396065).
 [Windows CI 41805319059](https://github.com/LuckyLivio/Contain/actions/runs/41805319059)
 passed all 49 quality gates, 22 existing viewer checks, six new product checks,
 actual installer-picker navigation/cancel and explicit synthetic failure preservation.
@@ -55,7 +61,7 @@ are unavailable rather than zero.
 
 The native .NET 8 WinForms interface uses `CoreClient` to launch only the packaged
 CLI with `ProcessStartInfo.ArgumentList`, UTF-8 pipes and no shell. It validates
-CLI version 0.3.1, JSON envelope version 3, document kind, record/event identity,
+the canonical Cargo product version, JSON envelope version 3, document kind, record/event identity,
 exact time-string types and bounded page size. Unknown additive labels remain
 visible. It never parses human-readable CLI output into business data or
 recalculates attribution. Errors, invalid JSON, nonzero exits, cancellation and
@@ -135,7 +141,8 @@ the operating system's file-picker navigation or establish manual Windows 10/11
 compatibility. The packaged executable also has a separate native launch/close
 check; screenshots are not browser previews.
 
-The existing CI uses `[desktop-viewer]` for viewing regressions and
+The existing CI uses `[stage1-beta]` for this bounded Beta validation,
+`[desktop-viewer]` for viewing regressions and
 `[desktop-install]` for the bounded graphical recording plan. The viewing plan
 executes no ETW capture or snapshot fixture. The install plan declares one controlled
 GUI-started ETW capture after offline regressions; it does not invoke demo.ps1 to
@@ -163,7 +170,6 @@ passed. A build or Linux cross-compile alone does not establish native operation
 
 The **desktop record viewer MVP is closed** for frozen source
 `4b4d38764ed417e6754b5db798488227ec147e21`, version 0.3.1.
-[Download the desktop ZIP artifact](https://github.com/LuckyLivio/Contain/actions/runs/41122708670/artifacts/13010587633).
 [CI 41122708670](https://github.com/LuckyLivio/Contain/actions/runs/41122708670)
 completed successfully on Windows Server 2025 x64, build 10.0.26100,
 runner image `win25-vs2026/20261030.294.1`.

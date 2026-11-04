@@ -231,7 +231,7 @@ impl Storage {
         anyhow::ensure!((1..=4096).contains(&limit), "page limit must be 1..4096");
         let missing: bool = self.connection.query_row("SELECT EXISTS(SELECT 1 FROM observations o WHERE session_id=?1 AND NOT EXISTS(SELECT 1 FROM event_documents d WHERE d.id=o.id))", [session], |row| row.get(0))?;
         if missing && self.stream_state(session)?.is_none() {
-            let capture = self.load(session)?;
+            let capture = self.load_by_id(session)?;
             let start = usize::try_from(offset).unwrap_or(usize::MAX);
             Ok(capture
                 .events
@@ -245,17 +245,24 @@ impl Storage {
     }
 
     pub fn load(&self, identity: &str) -> Result<Capture> {
-        self.load_internal(identity, true)
+        self.load_internal(identity, true, true)
     }
     pub fn load_summary(&self, identity: &str) -> Result<Capture> {
-        self.load_internal(identity, false)
+        self.load_internal(identity, false, true)
     }
-    fn load_internal(&self, identity: &str, full: bool) -> Result<Capture> {
+    fn load_by_id(&self, id: &str) -> Result<Capture> {
+        self.load_internal(id, true, false)
+    }
+    pub(crate) fn load_summary_by_id(&self, id: &str) -> Result<Capture> {
+        self.load_internal(id, false, false)
+    }
+    fn load_internal(&self, identity: &str, full: bool, allow_name: bool) -> Result<Capture> {
         let header = self.connection.query_row(
             "SELECT a.id,a.name,a.installer,s.started_at,s.finished_at,s.exit_code,s.watch_roots_json,s.registry_key,s.warnings_json
              FROM applications a JOIN installation_sessions s ON s.application_id=a.id
-             WHERE a.id=?1 OR a.name=?1 COLLATE NOCASE ORDER BY s.started_at DESC LIMIT 1",
-            [identity], |row| Ok((row.get::<_, String>(0)?,row.get::<_, String>(1)?,row.get::<_, String>(2)?,row.get::<_, String>(3)?,row.get::<_, String>(4)?,row.get::<_, Option<i32>>(5)?,row.get::<_, String>(6)?,row.get::<_, Option<String>>(7)?,row.get::<_, String>(8)?))
+             WHERE a.id=?1 OR (?2 AND a.name=?1 COLLATE NOCASE)
+             ORDER BY CASE WHEN a.id=?1 THEN 0 ELSE 1 END,s.started_at DESC LIMIT 1",
+            params![identity, allow_name], |row| Ok((row.get::<_, String>(0)?,row.get::<_, String>(1)?,row.get::<_, String>(2)?,row.get::<_, String>(3)?,row.get::<_, String>(4)?,row.get::<_, Option<i32>>(5)?,row.get::<_, String>(6)?,row.get::<_, Option<String>>(7)?,row.get::<_, String>(8)?))
         ).optional()?.with_context(|| format!("app not found: {identity}"))?;
         let mut processes = Vec::new();
         let mut statement = self.connection.prepare("SELECT pid,parent_pid,image,first_seen,confidence,reason FROM processes WHERE session_id=?1 ORDER BY first_seen,pid")?;
@@ -378,7 +385,7 @@ impl Storage {
                 |r| r.get(0),
             )
             .with_context(|| format!("event not found: {id}"))?;
-        self.load(&session)
+        self.load_by_id(&session)
     }
 }
 

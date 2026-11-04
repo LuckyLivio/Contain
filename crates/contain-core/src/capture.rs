@@ -82,7 +82,7 @@ fn install_controlled(
         Ok(capture) => status.finished(capture, notify),
         Err(error) => {
             // Query only this attempt. Never substitute an older same-name session.
-            status.data_saved = match db.load_summary(&status.session_id) {
+            status.data_saved = match db.load_summary_by_id(&status.session_id) {
                 Ok(saved) => {
                     status.quality = Some(saved.quality);
                     true
@@ -720,7 +720,7 @@ fn install_inner(
         db.mark_finished(&capture)
     )?;
     // Summary returns no full raw-event vector. Full/paged history remains in Storage.
-    capture = measured!("post_summary_read", db.load_summary(&capture.id))?;
+    capture = measured!("post_summary_read", db.load_summary_by_id(&capture.id))?;
     profile::add("post_wall", association_clock.elapsed().as_nanos() as u64);
     profile::finish()?;
     tracing::info!(session_id = %capture.id, events = capture.events.len(), files = capture.files.len(),
@@ -768,14 +768,29 @@ mod tests {
 
     #[test]
     fn failed_attempt_cannot_open_old_same_name_record_as_its_result() {
+        assert_failed_attempt_keeps_its_session(false);
+    }
+
+    #[test]
+    fn failed_attempt_does_not_borrow_evidence_from_a_name_matching_its_session_id() {
+        assert_failed_attempt_keeps_its_session(true);
+    }
+
+    fn assert_failed_attempt_keeps_its_session(name_matches_session_id: bool) {
         let directory =
             std::env::temp_dir().join(format!("contain-status-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&directory).unwrap();
         let path = directory.join("records.db");
         let mut db = Storage::open(&path).unwrap();
+        let mut status = InstallStatus::new(path.to_string_lossy().into_owned(), false);
+        let id = status.session_id.clone();
         let old = Capture {
             id: "old-same-name".into(),
-            name: "same name".into(),
+            name: if name_matches_session_id {
+                id.clone()
+            } else {
+                "same name".into()
+            },
             schema_version: 3,
             ..Default::default()
         };
@@ -791,8 +806,6 @@ mod tests {
             max_drain_ms: 1,
             evidence_quota_bytes: 1024,
         };
-        let mut status = InstallStatus::new(path.to_string_lossy().into_owned(), false);
-        let id = status.session_id.clone();
         let mut rows = Vec::new();
         let error = install_observed(options, &mut db, &mut status, false, &mut |row| {
             rows.push(serde_json::to_value(row).unwrap())
@@ -804,7 +817,12 @@ mod tests {
         assert_eq!(rows[1]["stage"], "failed");
         assert_eq!(rows[1]["session_id"], id);
         assert!(!status.installer_started && !status.capture_finished && !status.data_saved);
-        assert!(db.load_summary(&id).is_err());
+        assert!(db.load_summary_by_id(&id).is_err());
+        if name_matches_session_id {
+            assert_eq!(db.load_summary(&id).unwrap().id, old.id);
+        } else {
+            assert!(db.load_summary(&id).is_err());
+        }
         assert_eq!(db.load_summary(&old.id).unwrap().name, old.name);
         drop(db);
         std::fs::remove_file(path).unwrap();

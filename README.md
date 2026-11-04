@@ -1,242 +1,66 @@
 # Contain
 
-**Record installation changes and inspect the evidence behind them.**
+Windows 安装记录与证据查看 Beta。
 
-> Unknown is safer than a wrong answer.
+通过桌面选择安装器和有限观察范围，记录文件事件，保存并重新查看会话，浏览变化、
+解释事件并导出本地报告。使用 WinForms、Rust 核心和现有 CLI；普通桌面使用无需安装
+Rust、Visual Studio、Python、PowerShell 7 或独立 .NET 运行库。
 
-## Which app changed this?
+## 下载与使用
 
-Contain v0.3.1 observes Windows installation sessions, links real events to verified process instances, and explains the evidence. **Contain distinguishes observed changes from attributed changes.**
+**[Windows x64 自包含 ZIP：v0.3.2-beta.1](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.1)**
 
-Contain records evidence and offers a cleanup **dry run**. It does not guarantee zero leftovers or isolate an installer.
+此任务分支的 Beta 正在验证和准备发布；上方固定入口将在实际发布后启用。
+[第一阶段修复、验证范围和已知问题](docs/stage-one-beta.md)。
 
-The [Windows desktop](desktop/README.md) opens existing databases read-only and
-adds an explicit new-installation recording flow through the same Rust CLI.
-It shows state changes and paged source events, explains a selected event and
-exports a local HTML report. Ordinary use needs no development tools.
-The [graphical recording validation](docs/graphical-install-record.md) records
-the current implementation and its separate acceptance status.
+1. 下载并完整解压 ZIP，双击 `Contain.Viewer.exe`。
+2. 选择“新建安装记录”，填写名称、安装器、**已有观察目录**和范围外的数据库位置。
+   安装目标由安装器界面选择；安装包所在目录不等于软件安装目标或完整观察范围。
+3. “检查环境”查看当前可用能力，确认实际范围后点击“开始记录”。只有这一步启动安装器。
+4. 等待收尾和保存，自动打开本次准确会话。选择事件查看依据，使用“导出本页报告”。
+   打开已有数据库始终只读；旧数据库兼容读取不迁移原文件。
 
-## Current delivery status
+包内 `TRY.md` 包含无需终端的受控夹具步骤。`BUILD.json`、`CONTENTS.json`、
+`VALIDATION.json` 和 `SOURCE.zip` 记录源码、配置、运行库、检查结果及哈希。
+构建未签名。ETW 需要当前令牌具备相应权限；程序不自动提权、不修改安全设置。
+明确选择快照模式时会显示它的实际边界，不会静默当成完整 ETW。
 
-Version remains **0.3.1**. The **bounded read-only candidate delivery** remains
-closed for source `2ba98b6cbb99e2cf622ad45713fd8d38d9b76c15` and its original
-controlled-ETW package. The **desktop record viewer MVP is now closed** for frozen
-source `4b4d38764ed417e6754b5db798488227ec147e21` and the desktop package below.
-The **graphical installation recording MVP is also closed** for frozen source
-`15f214442d69baa0ebd91f5ad12edc5661281779`: actual native picker → product Start →
-real ETW → save → exact session → explain/export passed in the final Windows package.
-[Download Windows x64 0.3.1](https://github.com/LuckyLivio/Contain/actions/runs/41805319059/artifacts/13311396065),
-[actual results and retained failures](docs/graphical-install-record.md).
-These are separate bounded results, not release or general stability acceptance.
+## 第一阶段边界
 
-| User task | Implemented | Verified platform / scenario | Status and specific limit | Build / evidence |
-| --- | --- | --- | --- | --- |
-| Record controlled activity → save → reopen → explain | Existing native capture, SQLite, original JSON saving and CLI views | Prior Windows Server 2025 default and dual-clock fixtures: 35 product checks and 7 report commands each; saved/readback JSON identical | **Closed and retained.** Both records finished with Degraded coverage. No new capture in the desktop round | [Original core delivery](docs/read-only-workflow.md#verified-bounded-delivery), [original CLI ZIP](https://github.com/LuckyLivio/Contain/actions/runs/41102818151/artifacts/13000967787), source `2ba98b6` |
-| Open an existing database without a terminal | Native WinForms picker, record list and overview; explicit read-only CLI; legacy compatibility in an in-memory copy | Windows Server 2025 x64, actual packaged CLI and controls; finished, historical/Unknown, interrupted and empty production-store synthetic databases | **Verified.** Missing, corrupt, unrelated and newer databases rejected; original database bytes unchanged | [Desktop CI 41122708670](https://github.com/LuckyLivio/Contain/actions/runs/41122708670), frozen source `4b4d387` |
-| Browse changes and trace an event | Separate state/source views, bounded pages, current-page event filter, explain and ID copy | Actual 50/10 event paging, same-event JSON equality and clipboard; historical names and unavailable counters retained | **Verified.** Event filtering is page-local; old unindexed history can still require a full internal read | [Actual Windows screenshot](docs/examples/viewer-41122708670-event-explanation.png), [verification](docs/examples/windows-desktop-viewer-41122708670.json) |
-| Export the selected record and event locally | Self-contained HTML from the same CLI; exact JSON, record/page/event identity checks, no upload | Actual export contains the selected record, current ten-event page and matching explain; reviewed public copy is byte-identical | **Verified.** Report contains the current unfiltered event page, not all history; local paths remain in user reports | [Actual synthetic HTML](docs/examples/viewer-41122708670-report.html), [viewer guide](desktop/README.md) |
-| Download and double-click the desktop viewer | Windows x64 viewer, core CLI, self-contained .NET/MSVC runtime, three-record synthetic sample and identity manifests | Same frozen files in native launch/control tests and final ZIP; all 22 required desktop checks passed | **Desktop MVP closed.** Unsigned trial ZIP; clean Windows 10/11 manual compatibility remains untested | [Download desktop ZIP artifact](https://github.com/LuckyLivio/Contain/actions/runs/41122708670/artifacts/13010587633) |
+- 安装器退出、采集完成、数据保存及覆盖质量分别显示。非零退出不统一解释为用户取消，
+  保存记录也不等于软件安装成功。
+- High 表示有证据支持的执行进程关联；Unknown 表示证据不足。两者都不是最终文件归属
+  或安全删除许可。Degraded 表示覆盖受限，不表示已发现恶意行为。
+- 只观察指定有限目录及后端支持的来源，不自动扫描全盘或替用户创建软件安装目标。
+  注册表配置当前为一个选定 HKCU Software 键；未请求时显示 `not_requested`。
+- 事件筛选仅作用于当前页；本地 HTML 报告包含本会话状态变化、当前未筛选事件页及所选
+  explain，不是全库搜索或全历史导出。报告保留本地路径与证据，分享前请自行审阅。
+- 本轮不提供安全卸载、回滚、自动清理、完整软件足迹或最终所有权结论。没有会强杀
+  安装器的“取消”按钮；异常退出后的未完成证据应保留并重新查看。
 
-Historical six clock questions remain D; formal provider/stabilization acceptance
-is still unmet. Formal 32-attempt acceptance, scale validation, third-party
-installers, final-state ownership and safe cleanup remain separate follow-up
-scopes. None is implied by the desktop viewer. Graphical recording has its own
-[bounded acceptance record](docs/graphical-install-record.md).
-The [failed desktop attempts](docs/examples/windows-desktop-viewer-attempts.json)
-remain available alongside the successful result.
+## 已知问题与证据来源
 
-## Try graphical recording
+用户曾在 Parallels / Windows 11 中手工试用 7-Zip，截图显示在专用目标/观察目录下
+安装退出 0、107 项文件变化及可解释的 High 源事件。未取得用户数据库或报告，
+不将其写成独立复现；来宾架构和实际 DPI 未确认，不能据此声称 ARM64 已验证。
 
-[Download the self-contained Windows x64 package](https://github.com/LuckyLivio/Contain/actions/runs/41805319059/artifacts/13311396065),
-extract the complete contained ZIP and double-click **Contain.Viewer.exe**.
-Choose **新建安装记录**, select an EXE, name, existing observation directory and
-outside database, then **检查环境 → 开始记录**. After finalization the exact session
-opens automatically; select an event to read explain and export a local report.
-`TRY.md` includes a no-terminal controlled fixture walkthrough. Only that controlled
-EXE is validated; MSI, updater/service-agent coverage and clean Windows 10/11 manual
-compatibility remain unverified. Current coverage is Degraded, not a complete footprint.
+另一次观察整个 Program Files 的记录停留在 finalizing / Incomplete。缺少原始数据库
+和错误日志，根因尚未确认；小范围成功不证明已修复。该问题保留为 Beta 已知限制，
+没有通过禁止目录或全盘性能实验掩盖它。
 
-[Configuration](docs/examples/install-41805319059-new-record.png) ·
-[recording](docs/examples/install-41805319059-recording.png) ·
-[actual result and explain](docs/examples/install-41805319059-real-event-explain.png).
-The record deliberately shares an old synthetic record's name to test exact-ID
-isolation; its new UUID and source events are real GUI-started ETW.
+原生 Windows CI、模拟缩放压力、用户手工反馈和未验证条件在
+[当前交付记录](docs/stage-one-beta.md)中分别列出。此前三个里程碑保持关闭；
+[历史交付与失败证据索引](docs/delivery-history.md)保留原始记录，旧包不再并列为当前下载。
 
-## Try the desktop viewer
+## 开发与参考
 
-[Download the Windows x64 desktop artifact](https://github.com/LuckyLivio/Contain/actions/runs/41122708670/artifacts/13010587633),
-extract the complete contained ZIP, then double-click **Contain.Viewer.exe**.
-No Rust, Visual Studio, Python or separately installed .NET is needed for viewing.
-Choose **打开记录数据库**, select your database or the explicitly synthetic
-`samples/viewer-demo.db`, select a record, then open **事件与依据** and click an
-event. **导出本地报告** saves the current record/page/event to a new local HTML file.
-The application never silently fills an empty database with sample records.
+[Contributing](CONTRIBUTING.md) · [Architecture](docs/architecture.md) ·
+[CLI / JSON contract](docs/json-contract.md) · [Desktop](desktop/README.md) ·
+[Security](SECURITY.md) · [Measured limits](docs/performance.md)
 
-![Actual Windows viewer, synthetic record and selected event](docs/examples/viewer-41122708670-event-explanation.png)
-
-## Try the controlled CLI fixture
-
-The Windows x64 CI trial package contains `contain.exe`, the controlled fixture,
-required non-system runtime files, `BUILD.json`, `VALIDATION.json` and `TRY.md`.
-Read its actual validation status before use: a diagnostic package is not a
-verified candidate. Ordinary CLI use needs neither Rust nor Visual Studio.
-The controlled demo additionally needs PowerShell 7 and Python 3.
-From the extracted package, use a new output directory:
-
-```powershell
-pwsh -NoProfile -File .\scripts\demo.ps1 -RequireEtw -KeepArtifacts -OutputDirectory "$PWD\demo-result-new"
-```
-
-The prebuilt demo preserves its database and fixture and prints their locations.
-It records a parent → child → grandchild fixture with an independent writer,
-short-lived and detached helpers, rename/failure cases and registry noise;
-then checks attribution, database reopening, JSON, paged views, event explanation
-and unchanged data after dry-run. Files and registry changes stay within the
-marked temporary fixture and its matching `HKCU\Software\Contain\Demo\*` key.
-It creates no services, tasks or startup registrations.
-
-For development from source, install Rust stable and Visual Studio C++ build
-tools in addition to those demo tools. The original build entrypoint remains:
-
-```powershell
-./scripts/demo.ps1 -RequireEtw -KeepArtifacts
-./scripts/demo.ps1 -SnapshotOnly -KeepArtifacts # explicit, separate fallback
-```
-
-ETW needs suitable Windows trace/provider permissions. Contain never opens UAC. With insufficient rights it continues with process observation and snapshots, and file/registry attribution remains `Unknown`. `-RequireEtw` is a test assertion, not an elevation request.
-
-## Attribution reliability
-
-v0.3 retains ETW process/thread lifetimes, distinguishes PID reuse, joins file
-requests to completion where available, and explains actor, resource, operation
-and application confidence separately. A SQLite evidence graph connects the
-session, process instances, observations and resources.
-
-The [verified fixture run](https://github.com/LuckyLivio/Contain/actions/runs/36542048919)
-observed 20 of 21 instrumented operations: **17 correctly attributed, 4 Unknown,
-0 incorrectly attributed, 0 application drops**. Unknown includes the unrelated
-writer and a blocked deletion with no matching mutation event. This is fixture
-coverage, not general accuracy. Both short-lived and post-installer-exit writes
-were attributed. Registry context recovered some full paths; unresolved objects
-still remain explicit. A later provider-readiness fix addresses asynchronous
-startup. See [verification](docs/verification-v0.3.md) for the final tested revisions.
-
-- [Actual terminal demo](docs/demo-output.txt)
-- [Compatibility matrix](docs/windows-compatibility.md)
-- [Reproducible 10,000-file benchmark](docs/performance.md)
-
-## Use the CLI
-
-```powershell
-cargo build --workspace --locked
-./target/debug/contain.exe doctor
-./target/debug/contain.exe install .\SomeAppSetup.exe --name SomeApp --watch "$env:LOCALAPPDATA\SomeApp" --registry-key Software\Vendor\SomeApp
-./target/debug/contain.exe inspect SomeApp
-./target/debug/contain.exe inspect SomeApp --verbose
-./target/debug/contain.exe explain <event-id> --json
-./target/debug/contain.exe diff SomeApp
-./target/debug/contain.exe history SomeApp --json
-./target/debug/contain.exe remove SomeApp --dry-run
-```
-
-Watch directories must already exist. Repeat `--watch` for each scope. Without it only the installer's directory is watched. `--registry-key` selects one HKCU Software key: values are compared at that key; ETW may also observe operations beneath it. Installer arguments follow `--`. Use `--no-etw` to disable tracing. After root exit, `--settle-ms` (default 1500) sets the quiet period and `--max-drain-ms` (default 10000) bounds waiting for descendants/activity. A timeout marks the session Incomplete.
-
-`--db <path>` selects a database; default is `%LOCALAPPDATA%\Contain\contain.db`. `list --json`, `inspect --json`, `diff --json`, `history --json`, and `doctor --json` use a [versioned JSON contract](docs/json-contract.md). `install --manifest <path>` exports an inspect document. FILETIME identity fields use decimal strings to preserve full precision.
-
-v0.3.1 continuously commits a bounded raw evidence journal, then finalizes evidence
-in pages. Keep the database outside watched roots. `--evidence-quota-mib` defaults
-to 256; quota/write failures remain visible. Interrupted sessions are explicitly
-unfinished and expose no final attribution. `history <app> --json --limit 256
---offset 0` reads a page; default inspect reads a summary. See the
-[pipeline ADR](docs/adr/0006-capture-pipeline.md) and [counter definitions](docs/capture-counters.md).
-
-The current release comparison passes 100 files / four workers in three trials.
-1000 and 10000 files fail the useful-attribution gate; 1000 is a regression against
-the baseline. This remains experimental. See the [measured limits](docs/performance.md#final-measured-decision-2026-09-29).
-
-Opt-in development experiments are tracked separately in the
-[commit-window diagnostics](docs/capture-commit-tail.md) and
-[deferred checkpoint report](docs/capture-deferred-checkpoint.md).
-
-The [v0.4 development report](docs/validation-v0.4.md) records measured readback
-optimizations and attribution fixes. Release gates remain unmet; the package is
-still 0.3.1. The stabilization candidate separates receiving from SQLite and
-observes final resources while tracing. The administrator-run small ETW demo is
-now archived; it does not replace the 1,000/10,000-file acceptance runs. Controlled
-tests found that retained file read leases blocked legitimate operations, so the
-current candidate uses shared reads without retaining those restrictive handles.
-These reads are not a global atomic snapshot. Uncovered mutations and registry read races
-still prevent final-state ownership claims. Valid source actor evidence remains
-separate. The stabilization milestone is not yet accepted by live ETW validation.
-
-## What v0.3 records
-
-| Source | Recorded evidence | Attribution boundary |
-| --- | --- | --- |
-| Owned handle, ETW process/thread lifetimes and polling | PID, creation time, executable, verified parent chain | Installer Certain; observed descendants High |
-| ETW Kernel-File | Scoped create/write/rename/delete observations, timestamp, issuing thread → retained or live process identity, object generations and IRP completion | High only for a matching installer-family instance |
-| ETW Kernel-Registry | Scoped key/value operations, completion status when available, writer identity when queryable | Unknown unless the same lifetime/ancestry checks pass |
-| File hash and HKCU snapshots | Before/after state, including modified/deleted entries | Unknown alone; correlated event evidence is separate |
-| Service, scheduled task, startup inventories | Created/changed/removed configuration with before/after fields | Exact verified executable target can be Medium; timing alone stays Unknown |
-
-Inspect summarizes capture quality and counters; `--verbose` and `explain` show evidence details. Diff groups attributed and unattributed changes. History distinguishes source event times from end-of-session state observations. A successful operation, an attributed process, and a surviving state change are separate facts.
-
-## Safety and privacy
-
-- `remove` requires `--dry-run`; there is no deletion executor, uninstaller execution, or rollback.
-- User data stays `USER_DATA`. A High-attributed cache may be `REVIEW`; unknown or changed files remain `UNKNOWN`. Nothing is marked `SAFE` for deletion.
-- No automatic elevation, driver, service installation, Defender changes or automated classification. The desktop interface only views existing records and exports local reports.
-- No account, telemetry, or uploads in the application. Databases/manifests contain local paths and possibly registry/configuration data; review them before sharing.
-- ETW providers produce system-wide activity; scoped records and verified installer lifecycle/unresolved-object evidence are retained; other resources are discarded. The scanner skips reparse points. Contain does not sandbox the installer you launch.
-
-## Limitations
-
-- File source confidence identifies an execution actor and recorded name, not an
-  explicit application API call, verified current path or final content owner.
-  Ordinary capture retains provider/cache name provenance and its observation
-  time; a historical cached name is labelled as such. Older records without this
-  evidence remain readable with provenance unavailable.
-
-- Missing lifecycle events, ambiguous lifetimes, provider access failure or unsupported schemas reduce coverage. Captures are Degraded or Incomplete; v0.3 never claims a complete footprint.
-- Normalized operations preserve raw references. IRP completion is partial; stable file IDs prove surviving rename/replacement endpoints, not an entire transient chain or exclusive ownership.
-- Registry context requires a verified absolute base and the same process lifetime. Missing paths stay `<unresolved registry object>`. Registry snapshots remain Unknown when complete scoped writer evidence is unavailable.
-- Drain is finite. Broker/service-manager activity and changes after the session are not automatically descendants.
-- Services, tasks and Run entries are read-only inventories. Their actual writer and mutation time are unknown. Protected inventories produce warnings, not inferred removals.
-- Captures have bounded queues/caches, visible drops and separate ETW event/buffer loss. Reported loss suppresses application promotion; no-loss counters do not prove provider coverage.
-
-## Development
-
-```powershell
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-cargo build --workspace --locked
-./scripts/demo.ps1
-```
-
-Windows CI keeps real ETW and fallback integration separate from the desktop
-existing-records plan. Desktop validation runs the required quality gates and
-native UI/CLI checks without recording new activity. Read the
-[architecture](docs/architecture.md), [backend ADR](docs/adr/0001-event-attribution-backend.md),
-[contribution guide](CONTRIBUTING.md), [security policy](SECURITY.md), and
-[code of conduct](CODE_OF_CONDUCT.md).
-
-The next stabilization matrix is **preregistered, not executed**. With frozen
-baseline/candidate executables, one common fixture and their full source revisions,
-this command plans 32 real-ETW attempts (three pairs at 100/10000, ten at 1000):
-
-```powershell
-python scripts/v04-matrix.py --stabilization --baseline $baselineExe --candidate $candidateExe --fixture $commonFixtureExe --baseline-revision $baselineRevision --candidate-revision $candidateRevision --output target/v04/stabilization-etw --files 100 1000 10000 --workers 4 --trials 3 --stability-trials 10 --noise-files 100
-```
-
-The [protocol](docs/v04-validation.md) retains the original scores separately.
-Its new gate remains blocked until original ETW QPC and provider timing rules are
-independently validated; fallback or a clock diagnostic cannot count as a pass.
-
-Graphical recording is tracked in its [own bounded milestone](docs/graphical-install-record.md).
-Real-installer trials will be arranged separately after graphical acceptance;
-real cleanup remains unimplemented.
+开发验证使用现有 `scripts/quality.ps1` 与 Windows CI。合成测试、交叉编译及跳过的
+检查不计作原生 ETW 或实际系统高 DPI 验证。正式 32 次、规模化和多安装器矩阵不属于
+本轮 Beta 收尾；它们不会因界面工作流通过而自动被宣布完成。
 
 ## License
 
