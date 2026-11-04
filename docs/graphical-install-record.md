@@ -61,8 +61,31 @@ System-picker checks are reported separately from injected-dialog UI checks.
 ## Branch cleanup policy
 
 All existing remote topic tips were inspected before changes. Each was reachable
-from the retained desktop branch; none had been merged into `main`. Cleanup can
-remove redundant topic refs after verifying the new development branch remotely,
-while retaining `main`, `feat/desktop-record-viewer` and this delivery branch.
+from the retained desktop branch; none had been merged into `main`. After pushing and verifying `80342317422499da6d755f7e03f378adb22da44e`,
+11 redundant remote topic refs were removed atomically. Every removed exact tip
+was rechecked as reachable from both retained desktop branches. Remote now retains
+`main`, `feat/desktop-record-viewer` and this delivery branch. Local stale remote
+refs were pruned; the original local `work` branch remains. The
+[exact-tip audit](examples/desktop-install-branch-cleanup.json) preserves the list.
 No history rewrite, automatic merge, default-branch push, tag or Release is part
 of this task. The local original `work` branch is retained.
+
+## Retained validation attempts
+
+- Linux integrated preflight: 83 passed / 0 failed / 8 ignored in the actual
+  production-module offline tests; zero-test binaries/doctests are not feature
+  evidence. Windows-target Clippy and test executable compilation passed;
+  neither executes Windows behavior. Production desktop and harness Release
+  compilation passed with zero warnings/errors. Python packaging regressions:
+  19 passed. Linux native-directory identity checks: 7 skipped, not validated.
+- A direct `cargo test -p ferrisetw` attempt failed because the patched dependency
+  is excluded from the workspace. Its exact production ownership helper was
+  imported by the existing offline package instead; all four ownership tests
+  passed. No provider is started by these synthetic tests.
+- [CI 41795312477](https://github.com/LuckyLivio/Contain/actions/runs/41795312477),
+  source `80342317422499da6d755f7e03f378adb22da44e`, was deliberately canceled
+  during quality-tool installation, before quality/native/ETW execution. Review
+  found the existing numeric coverage exporter did not yet list the newly changed
+  lifecycle functions. The following source adds their region evidence without
+  changing coverage floors, exclusions or tests. This is not a successful native
+  attempt and supplies no capture evidence.
