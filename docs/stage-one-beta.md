@@ -26,6 +26,9 @@ limit, not an installation outcome.
   Labels, row heights and action/paging buttons use preferred content sizes;
   constrained windows scroll rather than hide controls. Explanation views occupy
   exclusive rows, and changing tabs no longer disables the whole tab tree.
+  Following the retained native geometry failure, the body has an explicit
+  percentage row and ordinary viewport panels own the scaled content extents;
+  nested tab content also registers its actual minimum size for scrolling.
 - Configuration distinguishes the executable, installer-selected target and
   observation scope. The exact watch root, registry request, database and mode
   are visible before Start. Existing-root and outside-database checks remain.
@@ -99,6 +102,26 @@ GUI-started ETW fixture run through Start, save, exact auto-open, explain and ex
 Native installer-picker navigation/cancel and failure preservation remain required.
 No third-party installer, formal 32-attempt plan, scale trial, ownership study or
 cleanup research is added. Actual unavailable conditions will remain unverified.
+
+## Retained failures and diagnostic boundary
+
+[Attempt history](examples/stage-one-beta-attempts.json) keeps the earlier
+cancelled preflights, the actual Windows UTF-8 test-reader failure and the first
+native scaled-layout failure. The latter passed all 49 quality gates and all 22
+existing viewer checks, plus default 96-DPI layout; the 1.5x and 2x simulated
+conditions could not bring the complete NextEvents button into the viewport.
+The install protocol check passed, but the five dependent product/capture checks
+were not run and no real ETW installer capture occurred.
+
+A single follow-up used the existing desktop-viewer plan with zero native
+captures. Numerical scroll/pager geometry and failure screenshots confirmed the
+implicit AutoSize body row extended beyond its parent while the outer virtual
+scroll size stayed unscaled. The pager fit horizontally. This is diagnostic
+evidence, not a repaired acceptance result; the complete reachability assertions
+remain required. Source tags cannot replay
+capture markers, snapshot fixtures require explicit opt-in, and historical scale
+workflows now require a separate manual dispatch. A normal main merge without
+capture markers runs ordinary quality/read-only checks, not those experiments.
 
 ## Release and repository closure
 

@@ -96,10 +96,11 @@ public sealed class ViewerForm : Form
 
     private void BuildLayout()
     {
+        var viewport = new Panel { Name = "ViewerViewport", Dock = DockStyle.Fill, AutoScroll = true };
         var root = new TableLayoutPanel
         {
-            Name = "ViewerLayout", Dock = DockStyle.Fill, Padding = new Padding(22, 16, 22, 12), ColumnCount = 1, RowCount = 5,
-            AutoScroll = true, AutoScrollMinSize = new Size(960, 640)
+            Name = "ViewerLayout", Padding = new Padding(22, 16, 22, 12), ColumnCount = 1, RowCount = 5,
+            MinimumSize = new Size(960, 640)
         };
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -107,7 +108,8 @@ public sealed class ViewerForm : Form
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        Controls.Add(root);
+        Controls.Add(viewport);
+        AddScrollableContent(viewport, root);
         var header = new TableLayoutPanel { Name = "ViewerHeader", Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 4, RowCount = 1, Margin = Padding.Empty };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -128,6 +130,9 @@ public sealed class ViewerForm : Form
         var body = new TableLayoutPanel { Name = "ViewerBody", Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
         body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 28));
         body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 72));
+        // The implicit row is AutoSize and can retain the children's preferred
+        // height after a DPI/font change, overflowing the allocated body cell.
+        body.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.Controls.Add(body, 0, 3);
         var left = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(0, 0, 16, 0), Margin = Padding.Empty };
         left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -176,7 +181,7 @@ public sealed class ViewerForm : Form
         _changeDetails.Text = "选择一项变化查看记录的依据。";
         changeLayout.Controls.Add(_changeDetails, 0, 3);
         changeLayout.Controls.Add(Pager(_previousChanges, _changesPage, _nextChanges), 0, 4);
-        changeTab.Controls.Add(changeLayout);
+        AddScrollableContent(changeTab, changeLayout);
         _tabs.TabPages.Add(changeTab);
         var eventsTab = new TabPage("事件与依据") { Name = "EventsTab", BackColor = Color.White, Padding = new Padding(12), AutoScroll = true };
         var eventLayout = Rows(0, 0, -45, 0, 0, -55);
@@ -205,7 +210,7 @@ public sealed class ViewerForm : Form
         _detailHost.Controls.Add(_rawDetails, 0, 1);
         ShowEventDetails(false);
         eventLayout.Controls.Add(_detailHost, 0, 5);
-        eventsTab.Controls.Add(eventLayout);
+        AddScrollableContent(eventsTab, eventLayout);
         _tabs.TabPages.Add(eventsTab);
         _status.AutoEllipsis = true;
         _status.Padding = new Padding(4, 6, 4, 0);
@@ -713,6 +718,37 @@ public sealed class ViewerForm : Form
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         foreach (var size in sizes) panel.RowStyles.Add(size == 0 ? new RowStyle(SizeType.AutoSize) : new RowStyle(size < 0 ? SizeType.Percent : SizeType.Absolute, Math.Abs(size)));
         return panel;
+    }
+    private static void AddScrollableContent(ScrollableControl viewport, Control content)
+    {
+        // A real content extent gives the viewport ownership of scrolling.
+        // Dock.Fill can overflow at a scaled minimum without extending scroll
+        // bounds, and AutoScrollMinSize alone is not scaled by Control.Scale.
+        content.Dock = DockStyle.None;
+        content.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+        content.Margin = Padding.Empty;
+        content.Location = new Point(viewport.Padding.Left, viewport.Padding.Top);
+        viewport.Controls.Add(content);
+        var sizing = false;
+        void FitContent()
+        {
+            if (sizing) return;
+            sizing = true;
+            try
+            {
+                var padding = viewport.Padding;
+                var minimum = content.MinimumSize;
+                var extent = new Size(minimum.Width + padding.Horizontal, minimum.Height + padding.Vertical);
+                if (viewport.AutoScrollMinSize != extent) viewport.AutoScrollMinSize = extent;
+                var size = new Size(Math.Max(minimum.Width, viewport.ClientSize.Width - padding.Horizontal),
+                    Math.Max(minimum.Height, viewport.ClientSize.Height - padding.Vertical));
+                if (content.Size != size) content.Size = size;
+            }
+            finally { sizing = false; }
+        }
+        viewport.ClientSizeChanged += (_, _) => FitContent();
+        viewport.Layout += (_, _) => FitContent();
+        FitContent();
     }
     private static Control Pager(Button previous, Label page, Button next)
     {

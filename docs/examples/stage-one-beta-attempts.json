@@ -1,0 +1,219 @@
+{
+  "schema_version": 1,
+  "scope": "Phase-one Beta development attempts; failures and unexecuted stages remain distinct. No user database, original screenshot or private host inventory.",
+  "local_preflight": {
+    "scope": "development preflight; not native GUI/ETW validation",
+    "entries": [
+      {
+        "check": "integrated .NET cross compilation",
+        "initial": "CS0234 caused by generated ApplicationConfiguration visibility after friend assembly",
+        "fix": "explicit test bootstrap with production PerMonitorV2 setting",
+        "final": "passed; zero warnings/errors",
+        "logs": [
+          "target/beta-integrated-dotnet-preflight.log",
+          "target/beta-integrated-dotnet-final.log"
+        ]
+      },
+      {
+        "check": "ad hoc YAML sanity assertion",
+        "initial": "expected 35 steps, actual 34; assertion failed",
+        "fix": "asserted explicit branches/tag filtering, opt-in snapshot, and native verifier IDs instead",
+        "final": "passed; tag filtering corrected before native capture"
+      },
+      {
+        "check": "SQLite ID/name collision regression",
+        "initial": "old query failed deterministically",
+        "fix": "ID priority and strict internal ID lookups",
+        "final": "passed; production modules tested",
+        "logs": [
+          "target/quality/beta-diagnostics/"
+        ]
+      }
+    ]
+  },
+  "cancelled_before_capture": {
+    "source_sha": "dcce59e92ca48b7587966ddd51d32cd7ce1d2546",
+    "runs": [
+      41824374601,
+      41824455486
+    ],
+    "outcome": "cancelled_before_native_capture",
+    "last_observed_step": "Required quality tools",
+    "reason": "Prevent tag creation from replaying the source commit GUI/ETW opt-in marker; new source has tags-ignore.",
+    "capture_executed": false,
+    "additional_superseded_pr_run": 41824730315,
+    "follow_up": "GitHub tag exclusion needs explicit branches matching; push validation restored before any new capture.",
+    "scale_trigger_guard": {
+      "source": "d75e2d174cbcbd2afe4df2518a6ef6c73c661d95",
+      "runs": [
+        41827275155,
+        41827282622
+      ],
+      "last_observed_step": "Quality Check",
+      "native_capture_executed": false,
+      "reason": "Historical v04 push path trigger can activate on tag pushes (path filters ignored) and first main merge. Retain the matrix but require workflow_dispatch."
+    }
+  },
+  "windows_failures": [
+    {
+      "source_sha": "a148fae307336cdc12191b81cffebac197cbd0af",
+      "push_run": 41824965464,
+      "pr_run": 41824973571,
+      "actual_outcome": "failed",
+      "failure": "scripts/test-package-viewer.py new version assertion read UTF-8 Chinese TRY.md using Windows default cp1252; UnicodeDecodeError byte 0x81 at position 51",
+      "native_capture_executed": false,
+      "native_gui_checks": "not_run_due_to_quality_gate",
+      "rust_nextest": "passed; see actual summary",
+      "both_coverage_gates": "passed",
+      "fix_source": "d75e2d174cbcbd2afe4df2518a6ef6c73c661d95",
+      "fix": "explicit UTF-8 read; original version assertion retained",
+      "linux_encoding_simulation": "old assertion failed under cp1252; fixed assertion passed; not native validation",
+      "push_run_url": "https://github.com/LuckyLivio/Contain/actions/runs/41824965464",
+      "pr_run_url": "https://github.com/LuckyLivio/Contain/actions/runs/41824973571"
+    },
+    {
+      "source_sha": "78acff083a043c194243ac1910baad96a6279369",
+      "run": 41828069458,
+      "outcome": "failed",
+      "quality": "49 required gates passed; both coverage scopes passed unchanged floors",
+      "viewer": "22 passed",
+      "layout_checks": [
+        {
+          "name": "native_default_layout_resize_maximize",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "simulated_150_percent_layout",
+          "status": "failed",
+          "error_type": "TestFailureException",
+          "safe_reason": "scrolling makes complete control reachable: NextEvents"
+        },
+        {
+          "name": "simulated_200_percent_layout",
+          "status": "failed",
+          "error_type": "TestFailureException",
+          "safe_reason": "scrolling makes complete control reachable: NextEvents"
+        },
+        {
+          "name": "unchanged_read_only_fixture_after_layout",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        }
+      ],
+      "conditions": [
+        {
+          "name": "native_default_layout_resize_maximize",
+          "device_dpi": 96,
+          "requested_scale": 1,
+          "test_method": "native_default",
+          "system_high_dpi_verified": false,
+          "working_area_width": 1024,
+          "working_area_height": 720,
+          "assertions": 558,
+          "explanation": "Actual Windows DeviceDpi; real resize, maximize, tab, paging and explain actions."
+        },
+        {
+          "name": "simulated_150_percent_layout",
+          "device_dpi": 96,
+          "requested_scale": 1.5,
+          "test_method": "simulated_native_controls",
+          "system_high_dpi_verified": false,
+          "working_area_width": 1024,
+          "working_area_height": 720,
+          "assertions": 146,
+          "explanation": "Injected Control.Scale and font enlargement on real Windows controls. Does not change system/monitor DPI and does not validate Windows 11/Parallels DPI transitions."
+        },
+        {
+          "name": "simulated_200_percent_layout",
+          "device_dpi": 96,
+          "requested_scale": 2,
+          "test_method": "simulated_native_controls",
+          "system_high_dpi_verified": false,
+          "working_area_width": 1024,
+          "working_area_height": 720,
+          "assertions": 146,
+          "explanation": "Injected Control.Scale and font enlargement on real Windows controls. Does not change system/monitor DPI and does not validate Windows 11/Parallels DPI transitions."
+        }
+      ],
+      "install_checks": [
+        {
+          "name": "install_protocol_and_arguments",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "install_configuration_without_launch",
+          "status": "not_run",
+          "error_type": "offline_or_runtime_prerequisite_failed",
+          "safe_reason": null
+        },
+        {
+          "name": "gui_real_etw_start_and_duplicate_guard",
+          "status": "not_run",
+          "error_type": "offline_or_runtime_prerequisite_failed",
+          "safe_reason": null
+        },
+        {
+          "name": "gui_runtime_stages_and_close_guard",
+          "status": "not_run",
+          "error_type": "offline_or_runtime_prerequisite_failed",
+          "safe_reason": null
+        },
+        {
+          "name": "gui_exact_session_autoopen",
+          "status": "not_run",
+          "error_type": "offline_or_runtime_prerequisite_failed",
+          "safe_reason": null
+        },
+        {
+          "name": "gui_real_source_event_explain_and_export",
+          "status": "not_run",
+          "error_type": "offline_or_runtime_prerequisite_failed",
+          "safe_reason": null
+        }
+      ],
+      "real_etw_executed": false,
+      "diagnostic_follow_up": "Existing [desktop-viewer] plan only; no capture. Add failed geometry and screenshots without loosening reach assertions.",
+      "run_url": "https://github.com/LuckyLivio/Contain/actions/runs/41828069458"
+    }
+  ],
+  "targeted_layout_diagnostic": {
+    "source_sha": "da8f756d8453badea77a2495507e820e4676dc45",
+    "plan": "existing desktop-viewer, maximum native captures zero, no active doctor or installer",
+    "status": "failed_as_expected_diagnostic_only",
+    "purpose": "Collect the exact scroll ancestor and pager geometry plus failure screenshots; assertions unchanged. This is diagnostic execution, not a repaired acceptance result.",
+    "run": 41830585853,
+    "url": "https://github.com/LuckyLivio/Contain/actions/runs/41830585853",
+    "real_etw_executed": false,
+    "viewer_checks": "22 passed",
+    "layout": "default and unchanged database passed; simulated 150/200 failed at complete NextEvents reachability",
+    "concrete_geometry": [
+      {
+        "scale": 1.5,
+        "root_client_height": 679,
+        "body_height": 417,
+        "body_child_row_height": 1038,
+        "next_events_y_in_root": 760,
+        "next_events_height": 55,
+        "root_scrollbar_visible": false
+      },
+      {
+        "scale": 2,
+        "root_client_height": 679,
+        "body_height": 152,
+        "body_child_row_height": 1384,
+        "next_events_y_in_root": 1223,
+        "next_events_height": 71,
+        "root_scrollbar_visible": false
+      }
+    ],
+    "diagnosis": "The body table has an implicit AutoSize row whose children exceed the body viewport; the dock-filled root does not register descendant overflow as scrollable extent. Pager fits horizontally, and NextEvents fits its oversized TabPage, so this is outer vertical layout clipping.",
+    "product_fix_prepared": "Explicit 100% body row; separate ordinary scroll viewport with scaled MinimumSize-driven content extent; tab content registers actual minimum size. No Refresh or assertion relaxation. Native revalidation pending."
+  },
+  "user_feedback_boundary": "The Windows 11 / Parallels 7-Zip trial is screenshot-supported user feedback only; no database/report was supplied. Guest architecture and original DPI are unknown. Personal identifiers are omitted.",
+  "program_files": "Unresolved user-reported finalizing/Incomplete. Missing original database/error logs prevent a root-cause claim. No scale experiment was started."
+}
