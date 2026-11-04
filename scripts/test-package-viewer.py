@@ -27,6 +27,10 @@ class ViewerPackageTests(unittest.TestCase):
         self.repo = self.root / "repo"; self.repo.mkdir()
         (self.repo / "Cargo.toml").write_text('[workspace.package]\nversion = "' + VIEWER.TRIAL.product_version() + '"\n')
         (self.repo / "LICENSE").write_text("SYNTHETIC license fixture")
+        (self.repo / "desktop").mkdir()
+        (self.repo / "desktop/Directory.Build.props").write_text(
+            '<Project><PropertyGroup><RuntimeFrameworkVersion>' + VIEWER.runtime_patch() +
+            '</RuntimeFrameworkVersion></PropertyGroup></Project>')
         self.publish = self.root / "publish"; self.publish.mkdir()
         for name in ("Contain.Viewer.exe", "Contain.Viewer.dll", "coreclr.dll", "hostfxr.dll", "hostpolicy.dll"):
             (self.publish / name).write_bytes(TRIAL_TESTS.synthetic_pe())
@@ -34,7 +38,7 @@ class ViewerPackageTests(unittest.TestCase):
         identity = 'Contain.Viewer/' + VIEWER.TRIAL.product_version()
         (self.publish / "Contain.Viewer.deps.json").write_text(json.dumps({
             'libraries': {identity: {'type': 'project'}}, 'targets': {'SYNTHETIC win-x64': {identity: {}}}}))
-        self.frameworks = [{"name": name, "version": "8.0.99"} for name in ("Microsoft.NETCore.App", "Microsoft.WindowsDesktop.App")]
+        self.frameworks = [{"name": name, "version": VIEWER.runtime_patch()} for name in ("Microsoft.NETCore.App", "Microsoft.WindowsDesktop.App")]
         self.config = self.publish / "Contain.Viewer.runtimeconfig.json"
         self.config.write_text(json.dumps({"runtimeOptions": {"tfm": "net8.0", "includedFrameworks": self.frameworks}}))
         self.contain = self.root / "contain.exe"; self.contain.write_bytes(TRIAL_TESTS.synthetic_pe())
@@ -243,6 +247,7 @@ class ViewerPackageTests(unittest.TestCase):
     def test_runtime_requires_self_contained_and_both_framework_identities(self):
         for options in ({'tfm':'net8.0','framework':self.frameworks[0]},
                         {'tfm':'net8.0','includedFrameworks':self.frameworks[:1]},
+                        {'tfm':'net8.0','includedFrameworks':[dict(f,version='8.0.22') for f in self.frameworks]},
                         {'tfm':'net8.0','includedFrameworks':[dict(f,version='9.0.1') for f in self.frameworks]}):
             self.config.write_text(json.dumps({'runtimeOptions':options}))
             with self.assertRaises(ValueError): VIEWER.runtime_contract(self.publish)

@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import zipfile
+import xml.etree.ElementTree as ET
 
 SPEC = importlib.util.spec_from_file_location("viewer_trial_helpers", Path(__file__).with_name("package-trial.py"))
 TRIAL = importlib.util.module_from_spec(SPEC)
@@ -73,8 +74,15 @@ def source_identity(repo):
     return revision, core_tree, tree, identities
 
 
-def runtime_contract(viewer, version=None):
+def runtime_patch(repository=TRIAL.REPO):
+    patch = ET.parse(repository / "desktop/Directory.Build.props").findtext("./PropertyGroup/RuntimeFrameworkVersion")
+    require(isinstance(patch, str) and re.fullmatch(r"8\.0\.[0-9]+", patch), "runtime_patch_not_pinned")
+    return patch
+
+
+def runtime_contract(viewer, version=None, patch=None):
     version = version or TRIAL.product_version()
+    patch = patch or runtime_patch()
     config = read(safe_file(viewer / "Contain.Viewer.runtimeconfig.json"))
     options = config.get("runtimeOptions", {})
     frameworks = options.get("includedFrameworks", [])
@@ -82,7 +90,7 @@ def runtime_contract(viewer, version=None):
             "viewer_must_be_self_contained_net8")
     require(isinstance(frameworks, list) and len(frameworks) == 2 and
             {f.get("name") for f in frameworks} == {"Microsoft.NETCore.App", "Microsoft.WindowsDesktop.App"}
-            and all(re.fullmatch(r"8\.0\.[0-9]+", f.get("version", "")) for f in frameworks),
+            and all(f.get("version") == patch for f in frameworks),
             "self_contained_framework_identity_missing")
     for name in ("Contain.Viewer.exe", "Contain.Viewer.dll", "Contain.Viewer.deps.json", "coreclr.dll", "hostfxr.dll", "hostpolicy.dll"):
         safe_file(viewer / name)
@@ -203,7 +211,7 @@ def prepare(args):
     identity = source_identity(repo)
     revision, core_tree, viewer_tree, source_files = identity
     version = TRIAL.product_version(repo)
-    frameworks = runtime_contract(args.viewer, version)
+    frameworks = runtime_contract(args.viewer, version, runtime_patch(repo))
     validate_sample(args.contain.resolve(), args.fixtures)
     output = TRIAL.new_directory(args.output)
     for source in sorted(args.viewer.rglob("*")):
@@ -264,7 +272,7 @@ def prepare(args):
         toolchain={p: subprocess.check_output([p, "--version"], text=True, encoding="utf-8").strip()
                    for p in ("dotnet", "rustc", "cargo")},
         build_commands=["cargo build --workspace --locked",
-            "dotnet publish desktop/Contain.Viewer/Contain.Viewer.csproj -c Release -r win-x64 --self-contained true -o <publish-directory>"],
+            "dotnet publish desktop/Contain.Viewer/Contain.Viewer.csproj -c Release -r win-x64 --self-contained true -p:RuntimeFrameworkVersion=" + frameworks[0]["version"] + " -o <publish-directory>"],
         build_command_scope="Reproducible configuration templates; <publish-directory> is the chosen output directory. CI uses a per-run temporary directory; machine-specific paths are not published.",
         included_frameworks=frameworks, runtime_licenses=runtime_licenses, pe_dependencies=imports, files=files,
         source_archive=dict(path="SOURCE.zip", source_sha=revision, sha256=sha(output / "SOURCE.zip"),
