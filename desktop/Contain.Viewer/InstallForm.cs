@@ -14,8 +14,8 @@ public sealed class InstallForm : Form
     private readonly TextBox database = Input("DatabaseSavePath");
     private readonly TextBox arguments = new() { Name = "InstallerArguments", Multiline = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill };
     private readonly TextBox registryKey = Input("RegistryKey");
-    private readonly NumericUpDown settle = new() { Name = "SettleMilliseconds", Value = 1500, Maximum = 600000, Increment = 100, Dock = DockStyle.Fill };
-    private readonly NumericUpDown maxDrain = new() { Name = "MaxDrainMilliseconds", Value = 10000, Maximum = 600000, Increment = 100, Dock = DockStyle.Fill };
+    private readonly NumericUpDown settle = new() { Name = "SettleMilliseconds", Maximum = 600000, Value = 1500, Increment = 100, Dock = DockStyle.Fill };
+    private readonly NumericUpDown maxDrain = new() { Name = "MaxDrainMilliseconds", Maximum = 600000, Value = 10000, Increment = 100, Dock = DockStyle.Fill };
     private readonly CheckBox snapshot = new() { Name = "SnapshotOnly", Text = "明确选择快照模式（不尝试 ETW，缺少内核源证据）", AutoSize = true };
     private readonly CheckBox advancedToggle = new() { Name = "AdvancedToggle", Text = "高级参数", AutoSize = true };
     private readonly Button check = Action("CheckEnvironment", "检查环境");

@@ -89,3 +89,17 @@ of this task. The local original `work` branch is retained.
   lifecycle functions. The following source adds their region evidence without
   changing coverage floors, exclusions or tests. This is not a successful native
   attempt and supplies no capture evidence.
+
+- [CI 41795659625](https://github.com/LuckyLivio/Contain/actions/runs/41795659625),
+  source `3f81c7f56ba6e3c103e9dd6eab8671d0664a3dd5`, passed all quality gates
+  and all 22 native existing-record viewer checks. The install protocol check
+  passed; configuration failed with `ArgumentOutOfRangeException` before any
+  installer or real ETW capture. Four dependent product checks were not run.
+  [Original failed install summary](examples/desktop-install-attempt-41795659625.json).
+  The new form initialized NumericUpDown.Value (1500/10000) before raising its
+  default Maximum of 100. The fix sets Maximum first; code review checked the
+  remaining new constructor properties for the same error. The affected
+  new-form/synthetic-failure checks and their previously unexecuted recording
+  dependents need native execution on the corrected frozen package. The failed
+  [diagnostic package](https://github.com/LuckyLivio/Contain/actions/runs/41795659625/artifacts/13306645145)
+  remains available and does not establish graphical acceptance.
