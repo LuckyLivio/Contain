@@ -56,7 +56,7 @@ jobs:
             schema_version=1; source_sha=$env:GITHUB_SHA; requested=($requested -or $install)
             configurations=$(if($install){@('gui-controlled-exe')}elseif($requested){@('default','dual-clock')}else{@()}); maximum_native_captures=$(if($install){1}elseif($requested){2}else{0}); retries=0
             desktop_viewer=$desktop; desktop_install=$install; stage_one_beta=$beta
-            beta_layout=$(if($beta){@('native_default_resize_maximize_tabs_paging','simulated_150_percent_layout_stress_not_system_dpi','simulated_200_percent_layout_stress_not_system_dpi','readonly_database_identity_after_layout')}else{@()})
+            beta_layout=$(if($desktop){@('native_default_resize_maximize_tabs_paging','simulated_150_percent_layout_stress_not_system_dpi','simulated_200_percent_layout_stress_not_system_dpi','readonly_database_identity_after_layout')}else{@()})
             install_plan=$(if($install){@('offline_protocol_arguments_and_read_only_regressions','configure_without_launch','one_gui_started_controlled_fixture_real_etw','duplicate_start_and_conservative_close','exact_session_autoopen','source_event_explain_and_export','native_picker_navigation_and_cancel_if_available')}else{@()})
             legacy_synthetic_cli=$(if($desktop){'not_run_active_doctor_excluded; native_desktop_harness_covers_read_only_views'}else{'planned'})
             snapshot_fallback=$(if($install){'explicit_snapshot_mode_offline_checks_only_no_live_fallback_substitution'}elseif($snapshot){'explicit_snapshot_fixture_requested'}else{'not_requested_not_validated'})
@@ -209,7 +209,7 @@ jobs:
         run: |
           $finalArgs = @('scripts/package-viewer.py','finalize','--package','target/windows-viewer','--quality-summary','target/quality-public/summary.json','--verification','target/viewer-public/summary.json','--output',$env:CONTAIN_PACKAGE)
           if ('${{ steps.trial_plan.outputs.install }}' -eq 'true') { $finalArgs += @('--install-verification','target/viewer-public/install-summary.json') }
-          if ('${{ steps.trial_plan.outputs.beta }}' -eq 'true') { $finalArgs += @('--layout-verification','target/viewer-public/layout-summary.json') }
+          $finalArgs += @('--layout-verification','target/viewer-public/layout-summary.json')
           python @finalArgs
           if ($LASTEXITCODE -ne 0) { throw 'Desktop milestone unverified; diagnostic package retains the actual failed or unexecuted checks' }
       - uses: actions/upload-artifact@v4
