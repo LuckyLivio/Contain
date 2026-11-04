@@ -235,5 +235,24 @@
     "cause": "Cargo cache restored target/read-only-windows from an earlier successful PR. Existing fixture generator refused replacement, as required. Later fixed output directories have the same collision risk.",
     "real_etw_executed": false,
     "fix_prepared": "Use a unique per-run-and-attempt output root for non-Cargo fixtures/reports/packages; keep existing quality-script archives and Cargo build caches."
+  },
+  "final_verified": {
+    "source_sha": "85c522839523d259c09c80a4ce4e8c78ea11472d",
+    "run": 41834806392,
+    "outcome": "success",
+    "real_etw_executed": true,
+    "native_captures": 1,
+    "viewer": 22,
+    "layout": 4,
+    "gui_install": 6,
+    "native_picker_navigation_and_cancel": "passed",
+    "package_sha256": "4b5c533b3e45e65fcd579ca45475c92e6e027144d0c73ba3ee6a97bf8a46192f"
+  },
+  "publication_channel": {
+    "cloud_upload": "HTTP401 on uploads.github.com after API draft creation; valid API/Git identity unchanged",
+    "release_id": 433954322,
+    "tag": "v0.3.2-beta.1",
+    "tag_source": "85c522839523d259c09c80a4ce4e8c78ea11472d",
+    "recovery": "Standard repository GITHUB_TOKEN uploads the same verified artifact through a manual workflow. No rebuild/recapture, credential replacement or asset clobbering."
   }
 }

@@ -1,0 +1,239 @@
+{
+  "schema_version": 1,
+  "product": "Contain Windows installation recording and evidence viewer Beta",
+  "version": "0.3.2-beta.1",
+  "release_tag": "v0.3.2-beta.1",
+  "source_sha": "85c522839523d259c09c80a4ce4e8c78ea11472d",
+  "ci_run_url": "https://github.com/LuckyLivio/Contain/actions/runs/41834806392",
+  "package": {
+    "filename": "contain-0.3.2-beta.1-windows-x64.zip",
+    "bytes": 76802668,
+    "sha256": "4b5c533b3e45e65fcd579ca45475c92e6e027144d0c73ba3ee6a97bf8a46192f",
+    "source": "Unmodified Windows CI ZIP; the same frozen desktop, CLI and runtime files underwent native verification."
+  },
+  "source_archive": {
+    "path": "SOURCE.zip",
+    "source_sha": "85c522839523d259c09c80a4ce4e8c78ea11472d",
+    "sha256": "80e48dbdb08a3832dd817f2f42fa8dcc39294a83df4362313f3136ec04c1ec0e",
+    "format": "git archive zip; exact tracked HEAD snapshot; no repository history",
+    "exact_tracked_files": 357
+  },
+  "build_manifest_sha256": "1ddc544614c87b7415d672bb50c3119cf711809e8232119a9a8c8be6d4b4132e",
+  "validation_manifest_sha256": "c76934c63b53888e2ecd63ffbd0ae930d432c05c5d9a7131d86cda9f003fed99",
+  "build": {
+    "viewer": {
+      "configuration": "Release",
+      "framework": "net8.0-windows",
+      "target": "win-x64",
+      "self_contained": true
+    },
+    "core": {
+      "profile": "debug",
+      "target": "x86_64-pc-windows-msvc"
+    },
+    "controlled_fixture": {
+      "path": "contain-test-installer.exe",
+      "profile": "debug",
+      "target": "x86_64-pc-windows-msvc",
+      "automatic_execution": false
+    },
+    "signed": false,
+    "included_frameworks": [
+      {
+        "name": "Microsoft.NETCore.App",
+        "version": "8.0.33"
+      },
+      {
+        "name": "Microsoft.WindowsDesktop.App",
+        "version": "8.0.33"
+      }
+    ],
+    "toolchain": {
+      "dotnet": "10.0.403",
+      "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+      "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)"
+    },
+    "platform": {
+      "system": "Windows",
+      "release": "2025Server",
+      "version": "10.0.26100",
+      "architecture": "AMD64",
+      "runner_image": "win25-vs2026",
+      "runner_image_version": "20261030.294.1",
+      "ci_run_url": "https://github.com/LuckyLivio/Contain/actions/runs/41834806392"
+    },
+    "commands": [
+      "cargo build --workspace --locked",
+      "dotnet publish desktop/Contain.Viewer/Contain.Viewer.csproj -c Release -r win-x64 --self-contained true -o <publish-directory>"
+    ],
+    "command_scope": "Reproducible configuration templates; <publish-directory> is the chosen output directory. CI uses a per-run temporary directory; machine-specific paths are not published.",
+    "performance_scope": "MSVC debug core and fixture; no release-performance claim."
+  },
+  "frozen_binaries": [
+    {
+      "path": "Contain.Viewer.exe",
+      "bytes": 152064,
+      "sha256": "f6fa554f0874c1bfa7fb4effee0de06d12571adb6974a1f62a132ddfe6f72877"
+    },
+    {
+      "path": "Contain.Viewer.dll",
+      "bytes": 154624,
+      "sha256": "5774f1b12c1ffe222bbfab0ad792d681b99397519d841506fdcdbea8e914d2f1"
+    },
+    {
+      "path": "contain.exe",
+      "bytes": 12503552,
+      "sha256": "62335ba3c3b278bc6c5e4495ec5cb4a751308c51b9ab1e435a6d1b62011901c5"
+    },
+    {
+      "path": "contain-test-installer.exe",
+      "bytes": 2180608,
+      "sha256": "9197938f6c3f7d899a4868f3bba13347618162662955ee8a31fbf06106835837"
+    }
+  ],
+  "validation": {
+    "status": "bounded_graphical_install_verified",
+    "all_package_gates_passed": true,
+    "checks": {
+      "frozen_package_unchanged": true,
+      "quality_complete": true,
+      "native_ui_cli_and_export": true,
+      "native_gui_install_etw_and_exact_result": true,
+      "native_layout_and_simulated_scale": true
+    },
+    "quality": {
+      "required_gates": 49,
+      "all_recorded_gates_passed": true,
+      "current_required_gates_passed": true,
+      "coverage_floors": {
+        "lines_percent": 66.5,
+        "functions_percent": 70
+      },
+      "workspace_coverage": {
+        "lines": {
+          "count": 19126,
+          "covered": 14490,
+          "percent": 75.7607445362334
+        },
+        "functions": {
+          "count": 1506,
+          "covered": 1160,
+          "percent": 77.02523240371846
+        }
+      },
+      "coverage_scope": "Unchanged workspace denominator includes inline tests; no .NET or branch coverage claim."
+    },
+    "native_viewer": {
+      "native_windows": true,
+      "synthetic": true,
+      "actual_cli": true,
+      "real_etw_executed": false,
+      "passed": 22,
+      "failed": 0,
+      "skipped": 0,
+      "not_run": 0,
+      "accepted": true
+    },
+    "native_layout": {
+      "native_windows": true,
+      "synthetic": true,
+      "real_etw_executed": false,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "not_run": 0,
+      "accepted": true,
+      "conditions": [
+        {
+          "name": "native_default_layout_resize_maximize",
+          "device_dpi": 96,
+          "requested_scale": 1,
+          "test_method": "native_default",
+          "system_high_dpi_verified": false,
+          "working_area_width": 1024,
+          "working_area_height": 720
+        },
+        {
+          "name": "simulated_150_percent_layout",
+          "device_dpi": 96,
+          "requested_scale": 1.5,
+          "test_method": "simulated_native_controls",
+          "system_high_dpi_verified": false,
+          "working_area_width": 1024,
+          "working_area_height": 720
+        },
+        {
+          "name": "simulated_200_percent_layout",
+          "device_dpi": 96,
+          "requested_scale": 2,
+          "test_method": "simulated_native_controls",
+          "system_high_dpi_verified": false,
+          "working_area_width": 1024,
+          "working_area_height": 720
+        }
+      ],
+      "actual_system_high_dpi_verified": false
+    },
+    "gui_install": {
+      "native_windows": true,
+      "gui_initiated": true,
+      "real_etw_executed": true,
+      "controlled_fixture": true,
+      "maximum_native_captures": 1,
+      "retries": 0,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "not_run": 0,
+      "accepted": true,
+      "installer_started": true,
+      "installer_exit_code": 0,
+      "collection_finished": true,
+      "data_saved": true,
+      "capture_state": "finished",
+      "quality_level": "Degraded",
+      "quality_reasons": [
+        "Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.",
+        "364 registry provider records lacked a verified absolute path."
+      ],
+      "providers_active": true,
+      "real_source_event_count": 219,
+      "independent_truth_verified": true,
+      "capture_accounting": {
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0,
+        "dropped_events": 0,
+        "context_losses": 0,
+        "decode_errors": 0,
+        "events_received": 306,
+        "events_retained": 307,
+        "snapshot_gaps": 0,
+        "notification_gaps": 0,
+        "drain_timed_out": false
+      },
+      "observed_stages": [
+        "preparing",
+        "capturing",
+        "finalizing",
+        "finished"
+      ],
+      "report_generated": true
+    },
+    "native_picker_navigation_and_cancel": "passed",
+    "unexecuted": [
+      "Windows 11/Parallels native high-DPI verification",
+      "Formal 32-run and scale trials",
+      "Additional third-party installers"
+    ],
+    "user_feedback_boundary": "A successful Windows 11/Parallels 7-Zip trial is user-supplied screenshot feedback only. Original database/report unavailable; not independently reproduced or checked; guest architecture and DPI unconfirmed."
+  },
+  "known_limits": [
+    "Finite existing-directory scope; installer location is not the installation target or complete footprint.",
+    "Registry observation is limited to one explicitly selected HKCU Software subkey; absent by default.",
+    "Filtering applies to the current event page. Export is the selected record, current event page, selected explanation and state changes, not the whole database.",
+    "Actor confidence and final file ownership are distinct. No complete footprint, safe uninstall or rollback claim.",
+    "A user-reported whole Program Files capture stopped finalizing/incomplete. Root cause is unconfirmed without its database and diagnostic logs.",
+    "Unsigned Beta; MSI, updaters and service-mediated installations do not have a complete support guarantee."
+  ],
+  "privacy": "No user database, raw diagnostic log, personal screenshot, user path, session ID or process identity is included in this identity file."
+}

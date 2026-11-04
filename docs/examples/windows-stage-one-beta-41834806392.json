@@ -1,0 +1,696 @@
+{
+  "schema_version": 1,
+  "source_sha": "85c522839523d259c09c80a4ce4e8c78ea11472d",
+  "native_ci": "https://github.com/LuckyLivio/Contain/actions/runs/41834806392",
+  "artifact_ids": {
+    "package": 13328075262,
+    "native_evidence": 13327785680,
+    "quality": 13327070890
+  },
+  "package_audit": {
+    "source_sha": "85c522839523d259c09c80a4ce4e8c78ea11472d",
+    "package": "contain-0.3.2-beta.1-windows-x64.zip",
+    "bytes": 76802668,
+    "sha256": "4b5c533b3e45e65fcd579ca45475c92e6e027144d0c73ba3ee6a97bf8a46192f",
+    "files": 477,
+    "frozen_manifest_entries": 474,
+    "contents_entries": 476,
+    "exact_git_source_files": 357,
+    "source_archive_sha256": "80e48dbdb08a3832dd817f2f42fa8dcc39294a83df4362313f3136ec04c1ec0e",
+    "build_manifest_sha256": "1ddc544614c87b7415d672bb50c3119cf711809e8232119a9a8c8be6d4b4132e",
+    "native_viewer": 22,
+    "native_layout": 4,
+    "gui_install": 6,
+    "gui_real_etw": true,
+    "session_id": "dbf73c05-1220-46c1-a5c4-ad31104bec1c",
+    "event_id": "e059368a-a322-40e4-972e-90f2a455a943",
+    "system_high_dpi_verified": false,
+    "audit": "passed; file hashes, exact git archive, build configuration, frozen identity and actual native summaries checked"
+  },
+  "quality": {
+    "tools": {
+      "pwsh": "PowerShell 7.6.9",
+      "llvm_cov": "cargo-llvm-cov 0.9.1",
+      "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+      "nextest": "cargo-nextest 0.9.149 (3fe4ef319 2026-10-20)",
+      "python": "Python 3.12.10",
+      "deny": "cargo-deny 0.20.2",
+      "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)"
+    },
+    "current_required_gates_passed": true,
+    "all_recorded_invocations_passed": true,
+    "coverage_floors": {
+      "lines_percent": 66.5,
+      "functions_percent": 70
+    },
+    "nextest_junit": {
+      "producing_invocation": 1,
+      "source_revision": "85c522839523d259c09c80a4ce4e8c78ea11472d",
+      "producing_gate_exit_code": 0,
+      "testcase_entries": 331,
+      "passed": 331,
+      "failed": 0,
+      "errors": 0,
+      "skipped_entries": 0,
+      "scope": "JUnit entries only; nextest may omit ignored tests from JUnit. Use its console summary for the selected/skipped denominator."
+    }
+  },
+  "coverage_workspace": [
+    {
+      "lines": {
+        "count": 19126,
+        "covered": 14490,
+        "percent": 75.7607445362334
+      },
+      "functions": {
+        "count": 1506,
+        "covered": 1160,
+        "percent": 77.02523240371846
+      },
+      "regions": {
+        "count": 31783,
+        "covered": 23311,
+        "percent": 73.34424063178429
+      },
+      "instantiations": {
+        "count": 2451,
+        "covered": 1296,
+        "percent": 52.87637698898408
+      },
+      "branches": {
+        "count": 0,
+        "covered": 0,
+        "percent": 0
+      }
+    }
+  ],
+  "coverage_original_packages": [
+    {
+      "lines": {
+        "count": 13834,
+        "covered": 10095,
+        "percent": 72.97238687292179
+      },
+      "functions": {
+        "count": 1070,
+        "covered": 808,
+        "percent": 75.51401869158877
+      },
+      "regions": {
+        "count": 22441,
+        "covered": 16002,
+        "percent": 71.3069827547792
+      },
+      "instantiations": {
+        "count": 1980,
+        "covered": 917,
+        "percent": 46.313131313131315
+      },
+      "branches": {
+        "count": 0,
+        "covered": 0,
+        "percent": 0
+      }
+    }
+  ],
+  "coverage_scope": "Includes inline tests/shared offline executions; original-package denominator separately reported. Changed ID reads/explain regions inspected; SQLite error propagation and zero-count instantiations remain partly uncovered. No .NET/LLVM branch coverage measurement.",
+  "native_viewer": {
+    "schema_version": 1,
+    "protocol_revision": "contain-desktop-verification-1",
+    "scope": "synthetic_actual_windows_desktop_and_packaged_cli",
+    "source_sha": "85c522839523d259c09c80a4ce4e8c78ea11472d",
+    "native_windows": true,
+    "actual_cli": true,
+    "completed": true,
+    "planned_checks": [
+      "frozen_package_and_actual_ui_assembly_identity",
+      "synthetic_inputs_and_special_character_paths",
+      "real_cli_records_summary_and_exact_time_strings",
+      "real_cli_second_page_and_explanation_identity",
+      "real_cli_diff_precise_integer_and_unknown_state",
+      "strict_protocol_rejects_invalid_schema_kind_and_shape",
+      "missing_null_unknown_enums_and_json_precision",
+      "real_cli_database_and_process_failures_are_errors",
+      "doctor_rejected_without_starting_capture",
+      "native_window_empty_state",
+      "native_production_executable_launch",
+      "ui_open_finished_record_and_overview",
+      "ui_state_changes_filter_and_reason",
+      "ui_page_then_select_and_explain_same_event",
+      "ui_filter_explicitly_applies_to_current_page",
+      "ui_local_report_matches_current_record_page_and_event",
+      "ui_historical_name_and_unknown_evidence",
+      "ui_unfinished_and_unavailable_metrics",
+      "ui_packaged_three_record_sample_switching",
+      "ui_valid_empty_database_and_cancel",
+      "ui_errors_are_visible_and_do_not_create_records",
+      "all_source_and_viewed_databases_unchanged"
+    ],
+    "package_manifest_sha256": "1ddc544614c87b7415d672bb50c3119cf711809e8232119a9a8c8be6d4b4132e",
+    "synthetic": true,
+    "real_etw_executed": false,
+    "viewer_assembly_sha256": "5774f1b12c1ffe222bbfab0ad792d681b99397519d841506fdcdbea8e914d2f1",
+    "viewer_launcher_sha256": "f6fa554f0874c1bfa7fb4effee0de06d12571adb6974a1f62a132ddfe6f72877",
+    "contain_sha256": "62335ba3c3b278bc6c5e4495ec5cb4a751308c51b9ab1e435a6d1b62011901c5",
+    "passed": 22,
+    "failed": 0,
+    "skipped": 0,
+    "not_run": 0,
+    "assertions_passed": 232,
+    "assertions_failed": 0,
+    "accepted": true,
+    "checks": [
+      {
+        "name": "frozen_package_and_actual_ui_assembly_identity",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "synthetic_inputs_and_special_character_paths",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "real_cli_records_summary_and_exact_time_strings",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "real_cli_second_page_and_explanation_identity",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "real_cli_diff_precise_integer_and_unknown_state",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "strict_protocol_rejects_invalid_schema_kind_and_shape",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "missing_null_unknown_enums_and_json_precision",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "real_cli_database_and_process_failures_are_errors",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "doctor_rejected_without_starting_capture",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "native_window_empty_state",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "native_production_executable_launch",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_open_finished_record_and_overview",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_state_changes_filter_and_reason",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_page_then_select_and_explain_same_event",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_filter_explicitly_applies_to_current_page",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_local_report_matches_current_record_page_and_event",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_historical_name_and_unknown_evidence",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_unfinished_and_unavailable_metrics",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_packaged_three_record_sample_switching",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_valid_empty_database_and_cancel",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "ui_errors_are_visible_and_do_not_create_records",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "all_source_and_viewed_databases_unchanged",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      }
+    ],
+    "screenshots": [
+      {
+        "name": "empty-state.png",
+        "sha256": "0cc05dfe3d8520529cfe6923f29adf0edb5bbdd46343206f3a43866f5948bc7c",
+        "width": 1024,
+        "height": 720
+      },
+      {
+        "name": "finished-overview.png",
+        "sha256": "ff2aa933e43b9a5e61c1526636c0fcafcfff17c5634a0c308019120c37a9922f",
+        "width": 1024,
+        "height": 720
+      },
+      {
+        "name": "state-changes.png",
+        "sha256": "cfb147991b714c9c63ff8fa569956aef0bfc44068f3d8bc91d3e2995304afb11",
+        "width": 1024,
+        "height": 720
+      },
+      {
+        "name": "event-explanation.png",
+        "sha256": "fa756ae92380138b361e5d28373c9f5ed5565e50d9ce47d98047a217b54e36d2",
+        "width": 1024,
+        "height": 720
+      },
+      {
+        "name": "historical-name.png",
+        "sha256": "31e52ab44d8b3b09d708924c633bd673e62c5f5d660ea1ee2f873e30dec94449",
+        "width": 1024,
+        "height": 720
+      },
+      {
+        "name": "unknown-evidence.png",
+        "sha256": "352a580f009c49e1262f64277ce8b3bcba70d888f06cc9e25e370951fd647741",
+        "width": 1024,
+        "height": 720
+      },
+      {
+        "name": "interrupted-record.png",
+        "sha256": "cda79dda2ef8604115da28ba177841ed9efc206beb869bd952cae0513176b8e1",
+        "width": 1024,
+        "height": 720
+      },
+      {
+        "name": "packaged-three-records.png",
+        "sha256": "6aa71995060dea5ee5b96631a962589f2863e5273f46af78b78b1b7d00ba7880",
+        "width": 1024,
+        "height": 720
+      },
+      {
+        "name": "empty-database.png",
+        "sha256": "fd32f9ec4629e57b5761a2c24618b2ac2dd65ee840671678dcba790702e64110",
+        "width": 1024,
+        "height": 720
+      },
+      {
+        "name": "database-error.png",
+        "sha256": "07d0f42d8c98170c6515f055ea1f89c6eff40de34d732e6676193826e7906f76",
+        "width": 1024,
+        "height": 720
+      }
+    ],
+    "ui_observations": [
+      {
+        "phase": "event_tab_selected",
+        "is_busy": true,
+        "next_enabled": false,
+        "pending_operation_completed": false
+      },
+      {
+        "phase": "event_tab_idle",
+        "is_busy": false,
+        "next_enabled": true,
+        "pending_operation_completed": true
+      }
+    ],
+    "screenshot_method": "Actual production WinForms controls rendered by Windows DrawToBitmap after real button/selection actions; synthetic data only.",
+    "report_generated": true,
+    "report_sha256": "d26569cb868a31f39e0c6f5ae7d7d9dc0ccae7dd59eccd997701c797f82c523e",
+    "report_scope": "Actual locally exported HTML from synthetic model data; public byte-identical copy only after reviewed-path checks. No user database or full CLI diagnostic log published.",
+    "report_publication": {
+      "path": "reports/synthetic-viewer-report.html",
+      "sha256": "d26569cb868a31f39e0c6f5ae7d7d9dc0ccae7dd59eccd997701c797f82c523e",
+      "synthetic": true,
+      "byte_identical_to_local_export": true
+    },
+    "time_precision": "JSON string FILETIME and unrounded raw integer tokens; no JavaScript Number conversion.",
+    "private_error_details_retained": false
+  },
+  "native_layout": {
+    "schema_version": 1,
+    "protocol_revision": "contain-desktop-layout-verification-1",
+    "source_sha": "85c522839523d259c09c80a4ce4e8c78ea11472d",
+    "native_windows": true,
+    "completed": true,
+    "accepted": true,
+    "synthetic": true,
+    "real_etw_executed": false,
+    "package_manifest_sha256": "1ddc544614c87b7415d672bb50c3119cf711809e8232119a9a8c8be6d4b4132e",
+    "viewer_assembly_sha256": "5774f1b12c1ffe222bbfab0ad792d681b99397519d841506fdcdbea8e914d2f1",
+    "viewer_launcher_sha256": "f6fa554f0874c1bfa7fb4effee0de06d12571adb6974a1f62a132ddfe6f72877",
+    "contain_sha256": "62335ba3c3b278bc6c5e4495ec5cb4a751308c51b9ab1e435a6d1b62011901c5",
+    "planned_checks": [
+      "native_default_layout_resize_maximize",
+      "simulated_150_percent_layout",
+      "simulated_200_percent_layout",
+      "unchanged_read_only_fixture_after_layout"
+    ],
+    "checks": [
+      {
+        "name": "native_default_layout_resize_maximize",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "simulated_150_percent_layout",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "simulated_200_percent_layout",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "unchanged_read_only_fixture_after_layout",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      }
+    ],
+    "conditions": [
+      {
+        "name": "native_default_layout_resize_maximize",
+        "device_dpi": 96,
+        "requested_scale": 1,
+        "test_method": "native_default",
+        "system_high_dpi_verified": false,
+        "working_area_width": 1024,
+        "working_area_height": 720,
+        "assertions": 558,
+        "last_phase": "install_maximized",
+        "explanation": "Actual Windows DeviceDpi; real resize, maximize, tab, paging and explain actions."
+      },
+      {
+        "name": "simulated_150_percent_layout",
+        "device_dpi": 96,
+        "requested_scale": 1.5,
+        "test_method": "simulated_native_controls",
+        "system_high_dpi_verified": false,
+        "working_area_width": 1024,
+        "working_area_height": 720,
+        "assertions": 558,
+        "last_phase": "install_maximized",
+        "explanation": "Injected Control.Scale and font enlargement on real Windows controls. Does not change system/monitor DPI and does not validate Windows 11/Parallels DPI transitions."
+      },
+      {
+        "name": "simulated_200_percent_layout",
+        "device_dpi": 96,
+        "requested_scale": 2,
+        "test_method": "simulated_native_controls",
+        "system_high_dpi_verified": false,
+        "working_area_width": 1024,
+        "working_area_height": 720,
+        "assertions": 558,
+        "last_phase": "install_maximized",
+        "explanation": "Injected Control.Scale and font enlargement on real Windows controls. Does not change system/monitor DPI and does not validate Windows 11/Parallels DPI transitions."
+      }
+    ],
+    "screenshots": [
+      {
+        "name": "native_default_layout_resize_maximize-viewer.png",
+        "sha256": "c6e483bcc4a43b3110b2e9a6825df68843f534a84a5bf04d8cf02ac59850ceab",
+        "width": 1040,
+        "height": 736
+      },
+      {
+        "name": "native_default_layout_resize_maximize-install.png",
+        "sha256": "bd44b7c3cb43d93f4d340af9f3e60abc6420737f34571c8423a49cba7f6ca22d",
+        "width": 1040,
+        "height": 736
+      },
+      {
+        "name": "simulated_150_percent_layout-viewer.png",
+        "sha256": "da5a3d170c058d9195fbc4f49cbb4391ea88977f4fa06a847236630cbe1b42b1",
+        "width": 1040,
+        "height": 736
+      },
+      {
+        "name": "simulated_150_percent_layout-install.png",
+        "sha256": "2395a17a9e626b2c9bc35fce49cf2f4bada78ab2d8b2fe7859fe0b6ae1e489b9",
+        "width": 1040,
+        "height": 736
+      },
+      {
+        "name": "simulated_200_percent_layout-viewer.png",
+        "sha256": "cdf03aa2f96033417501ea14dbfc9aab73d0adb835b86ae3750162a990811a4e",
+        "width": 1040,
+        "height": 736
+      },
+      {
+        "name": "simulated_200_percent_layout-install.png",
+        "sha256": "64750b87d33ff99fed1fa8740477bdc7fed087d057acba151e2e04f5f9611515",
+        "width": 1040,
+        "height": 736
+      }
+    ],
+    "reach_failures": [],
+    "screenshot_failures": [],
+    "assertions_passed": 1678,
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0,
+    "not_run": 0,
+    "manual_checks": [
+      {
+        "name": "windows_11_parallels_actual_high_dpi",
+        "status": "not_run",
+        "reason": "CI Windows Server display is not the user's Windows 11/Parallels monitor; guest architecture and original DPI are unconfirmed."
+      }
+    ],
+    "screenshot_method": "Actual production Windows controls rendered by DrawToBitmap; synthetic fixture/configuration only. Simulated scale/font images are explicitly named and are not actual high-DPI monitor evidence."
+  },
+  "gui_install": {
+    "schema_version": 1,
+    "protocol_revision": "contain-desktop-install-verification-1",
+    "source_sha": "85c522839523d259c09c80a4ce4e8c78ea11472d",
+    "native_windows": true,
+    "gui_initiated": true,
+    "real_etw_executed": true,
+    "synthetic": false,
+    "controlled_fixture": true,
+    "maximum_native_captures": 1,
+    "retries": 0,
+    "planned_checks": [
+      "install_protocol_and_arguments",
+      "install_configuration_without_launch",
+      "gui_real_etw_start_and_duplicate_guard",
+      "gui_runtime_stages_and_close_guard",
+      "gui_exact_session_autoopen",
+      "gui_real_source_event_explain_and_export"
+    ],
+    "checks": [
+      {
+        "name": "install_protocol_and_arguments",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "install_configuration_without_launch",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "gui_real_etw_start_and_duplicate_guard",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "gui_runtime_stages_and_close_guard",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "gui_exact_session_autoopen",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      },
+      {
+        "name": "gui_real_source_event_explain_and_export",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      }
+    ],
+    "passed": 6,
+    "failed": 0,
+    "not_run": 0,
+    "skipped": 0,
+    "completed": true,
+    "accepted": true,
+    "automatic_checks_accepted": true,
+    "executed_interaction_failed": false,
+    "assertions_passed": 173,
+    "offline_viewer_checks_passed": true,
+    "package_manifest_sha256": "1ddc544614c87b7415d672bb50c3119cf711809e8232119a9a8c8be6d4b4132e",
+    "viewer_assembly_sha256": "5774f1b12c1ffe222bbfab0ad792d681b99397519d841506fdcdbea8e914d2f1",
+    "viewer_launcher_sha256": "f6fa554f0874c1bfa7fb4effee0de06d12571adb6974a1f62a132ddfe6f72877",
+    "contain_sha256": "62335ba3c3b278bc6c5e4495ec5cb4a751308c51b9ab1e435a6d1b62011901c5",
+    "fixture_sha256": "9197938f6c3f7d899a4868f3bba13347618162662955ee8a31fbf06106835837",
+    "session_id": "dbf73c05-1220-46c1-a5c4-ad31104bec1c",
+    "event_id": "e059368a-a322-40e4-972e-90f2a455a943",
+    "installer_started": true,
+    "installer_pid": 1436,
+    "installer_creation_time": "134382718063178942",
+    "installer_exit_code": 0,
+    "collection_finished": true,
+    "data_saved": true,
+    "capture_state": "finished",
+    "quality_level": "Degraded",
+    "quality_reasons": [
+      "Scoped capture cannot prove a complete machine footprint; unsupported paths and missed provider events remain possible.",
+      "364 registry provider records lacked a verified absolute path."
+    ],
+    "providers_active": true,
+    "real_source_event_count": 219,
+    "independent_truth_verified": true,
+    "capture_accounting": {
+      "etw_events_lost": 0,
+      "etw_buffers_lost": 0,
+      "dropped_events": 0,
+      "context_losses": 0,
+      "decode_errors": 0,
+      "events_received": 306,
+      "events_retained": 307,
+      "snapshot_gaps": 0,
+      "notification_gaps": 0,
+      "drain_timed_out": false
+    },
+    "observed_stages": [
+      "preparing",
+      "capturing",
+      "finalizing",
+      "finished"
+    ],
+    "real_event": {
+      "id": "e059368a-a322-40e4-972e-90f2a455a943",
+      "operation": "write_requested",
+      "confidence": "High",
+      "source": "EtwFile",
+      "timestamp_ticks": "134382718063537053",
+      "pid": "7396",
+      "creation_time": "134382718063413983"
+    },
+    "report_generated": true,
+    "report_sha256": "c39fe137802e2cd0f9488451bb2dd329ad0b4d8068e9b14d7d1cbfb0804f2881",
+    "report_publication": "byte_identical_controlled_fixture_export",
+    "screenshots": [
+      {
+        "name": "install-new-record.png",
+        "sha256": "84a625d91cd0507b86fdfdd4a0508a50aeef1ec85e47482c997a493a06bd8de9",
+        "width": 916,
+        "height": 720
+      },
+      {
+        "name": "install-recording.png",
+        "sha256": "5b74b284a0144feb9cdf58480ffdb6a98e97750bb35e97fc9179f2dae9d5f0ec",
+        "width": 916,
+        "height": 720
+      },
+      {
+        "name": "install-result.png",
+        "sha256": "bc8714d10e57ae2b6aa3201c500611b28b4666ab0692569c33200e012a4bee24",
+        "width": 916,
+        "height": 720
+      },
+      {
+        "name": "install-autoopened-session.png",
+        "sha256": "51c9f01e44b49ce5f5f95c365647da34132774db25eacf6ff40076b092f8645e",
+        "width": 1024,
+        "height": 720
+      },
+      {
+        "name": "install-real-event-explain.png",
+        "sha256": "de55df705992856fdb86bd81cf749f5eb6f3c61226fb7bc2ddf62094c48e97cd",
+        "width": 1024,
+        "height": 720
+      }
+    ],
+    "manual_checks": [
+      {
+        "name": "native_picker_navigation_and_cancel",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      }
+    ],
+    "offline_checks": [
+      {
+        "name": "synthetic_invalid_exe_preserves_saved_session_and_old_records",
+        "status": "passed",
+        "error_type": null,
+        "safe_reason": null
+      }
+    ],
+    "fault_injection": "Explicit synthetic read-only-database and invalid-EXE starts in selected snapshot mode; no successful installer process and no ETW acceptance credit.",
+    "screenshot_method": "Actual production WinForms controls rendered on Windows after product selection/start/status/result/explain actions. Controlled fixture; real ETW source records are not synthetic.",
+    "interaction_boundary": "Product controls/start logic executed. Native picker navigation and cancel separately reported; injected configuration is never counted as native picker navigation. No third-party installer, scale experiment or retry.",
+    "private_evidence_retained": true
+  },
+  "independent_review": "Packaged source, all file hashes, native summary identities, 21 screenshot hashes and both report hashes independently checked locally; CI oracle assertions read, no second ETW capture or private raw database/oracle readback.",
+  "user_feedback": "7-Zip on Windows 11/Parallels is screenshot-supported user feedback only; no original DB/report, guest architecture/DPI unknown. No user identifiers/screenshots are included."
+}

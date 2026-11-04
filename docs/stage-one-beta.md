@@ -1,8 +1,11 @@
 # Phase-one Beta: Windows installation records and evidence viewing
 
 The three earlier milestones remain closed. This delivery retains WinForms, the
-Rust core and CLI/schema-3 contracts. The current candidate is **0.3.2-beta.1**;
-publication and final Windows evidence are pending the checks below.
+Rust core and CLI/schema-3 contracts. The current delivery is **0.3.2-beta.1**, frozen at
+`85c522839523d259c09c80a4ce4e8c78ea11472d`.
+[Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.1) ·
+[Windows x64 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.1/contain-0.3.2-beta.1-windows-x64.zip) ·
+[SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.1/SHA256SUMS.txt).
 
 ## Scope
 
@@ -20,7 +23,7 @@ whole-database search or full-history export. High concerns evidence-backed acto
 association, not final ownership or safe deletion. Degraded is a scope/coverage
 limit, not an installation outcome.
 
-## Changes prepared for validation
+## Changes and final validation
 
 - Both forms have an explicit 96-DPI design baseline and PerMonitorV2 bootstrap.
   Labels, row heights and action/paging buttons use preferred content sizes;
@@ -129,12 +132,92 @@ Non-Cargo test outputs now use a run-and-attempt-specific root; existing evidenc
 and useful build caches remain intact. This infrastructure failure supplies no
 installer or ETW evidence.
 
+## Actual Windows package result
+
+[CI 41834806392](https://github.com/LuckyLivio/Contain/actions/runs/41834806392)
+passed on Windows Server 2025 AMD64, build 10.0.26100, image
+`win25-vs2026/20261030.294.1`. Actual DeviceDpi was 96 and work area 1024 × 720.
+The same frozen UI, CLI and runtime passed all 22 read-only checks, four layout
+checks and six GUI record checks. Native installer-picker navigation/cancel,
+duplicate Start, conservative window closing, failure details after closing the
+task window, exact-session auto-open, explain and export passed. The 1.5x/2x
+conditions remain simulated control/font stress; virtual-canvas screenshots show
+the current scroll position, not all content at once.
+
+The GUI started the controlled installer once, after configuration and preflight.
+It observed preparing → capturing → finalizing → finished, installer exit 0,
+collection completion and saved data separately. The exact session is
+`dbf73c05-1220-46c1-a5c4-ad31104bec1c`, with 13 file and three registry-value
+state changes and 219 real source events. The deliberately reused record name
+matches an older synthetic fixture; session identity, not its name or latest-row
+position, selected the real record.
+
+The selected `write_requested` EtwFile event is
+`e059368a-a322-40e4-972e-90f2a455a943`, ticks `134382718063537053`.
+Its High writer is the verified child instance PID 7396 / creation time
+`134382718063413983`, linked to the managed installer PID 1436 / creation time
+`134382718063178942`. The existing harness matched the selected operation against
+the independent fixture oracle. Local review rechecked the published summaries,
+actual report, IDs/times and hashes; it did not execute another ETW capture or
+read the private raw database/oracle. High remains actor association, not final
+ownership.
+
+Reported ETW event/buffer loss, dropped events, context loss, decode errors,
+snapshot gaps and notification gaps were 0; drain did not time out. Coverage
+still is **Degraded**: scope cannot prove a machine footprint, and 364 registry
+provider records lacked a verified absolute path. Different received/retained
+counters have different denominators and are not an accuracy percentage.
+
+The 49 required quality gates passed with unchanged 66.5% line / 70% function
+floors. nextest ran 331 passing tests and skipped seven named experiments;
+Companion separately ran its one required regression. Zero doctests are not
+feature validation. Workspace line/function coverage was 75.760745% / 77.025232%;
+the original-package denominator was 72.972387% / 75.514019%. These overlapping
+executions include inline tests and shared source aliases. Changed ID-read and
+explain regions were inspected; SQLite error propagation and zero-count
+instantiations remain partly uncovered. No .NET or LLVM branch coverage was
+measured. No new fuzz campaign, benchmark, third-party install, formal 32-attempt
+or scale plan ran.
+
+[Reviewed result and actual summaries](examples/windows-stage-one-beta-41834806392.json)
+include exact identities, source accounting and unexecuted conditions.
+[The actual controlled-fixture report](examples/stage-one-41834806392-controlled-report.html)
+is byte-identical to the GUI export and is not the user's 7-Zip report. It was
+reviewed for personal paths, SIDs and network/script content before copying.
+No user database, original user screenshot or private raw log was published.
+
+Actual application screenshots, copied without image modification:
+
+- [New record](examples/stage-one-41834806392-new-record.png)
+- [Running](examples/stage-one-41834806392-recording.png)
+- [Automatically opened result](examples/stage-one-41834806392-result.png)
+- [Selected real source event and explanation](examples/stage-one-41834806392-event-explain.png)
+- [Simulated 200% stress, scrolled viewport](examples/stage-one-41834806392-simulated-200-percent.png)
+
 ## Release and repository closure
 
-After exact-source validation, a new immutable `v0.3.2-beta.1` tag and GitHub
-Prerelease will carry the same verified x64 ZIP, SHA-256 and build identity.
-User authorization includes a normal PR merge into main after checks and branch
-rules. The tag/assets will not move when subsequent documentation is merged.
+The immutable `v0.3.2-beta.1` tag points to the validated source above. The ZIP is
+76,802,668 bytes, SHA-256
+`4b5c533b3e45e65fcd579ca45475c92e6e027144d0c73ba3ee6a97bf8a46192f`.
+All 477 package members and 476 content-manifest entries matched; `SOURCE.zip`
+matched all 357 tracked files at the tagged revision. Desktop is Release /
+self-contained .NET 8.0.33, built with SDK 10.0.403; core and controlled fixture
+are MSVC debug. The package is unsigned and carries no release-performance claim.
+[Build identity](delivery/v0.3.2-beta.1/BUILD-IDENTITY.json) records the configuration.
+
+Cloud API/Git authentication worked, but `uploads.github.com` returned 401 when
+uploading the draft's first asset. The retained draft has no replacement asset.
+A separately invoked repository workflow uses its standard GITHUB_TOKEN to
+upload the exact verified artifact and reviewed hash/identity files. It never
+rebuilds, captures, moves the tag, clobbers an asset or edits a published release.
+The upload and publication result is authoritative at the Release link above.
+
+The authorized normal [PR #3](https://github.com/LuckyLivio/Contain/pull/3) brings
+this exact Beta source plus current documentation/release entry into main.
+Documentation and publication tooling do not alter the tagged runtime files.
 Old delivery links and failed attempts remain in [the history index](delivery-history.md).
-Only redundant task files/refs whose commits are safely retained may be cleaned;
-user records, logs, evidence and useful build caches stay intact.
+After merge only redundant branches whose commits are retained in main and the
+Beta ancestry may be removed. User records, logs, historical evidence and useful
+build caches remain. Windows 11/Parallels actual system DPI, guest architecture
+and a clean Windows 10/11 manual trial remain unverified; the Program Files
+incident above remains unresolved.
