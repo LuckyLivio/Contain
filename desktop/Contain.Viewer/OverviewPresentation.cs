@@ -5,14 +5,13 @@ namespace Contain.Viewer;
 
 /// <summary>A projection of this session's read-only queries, never of task memory.</summary>
 internal sealed record OverviewPresentation(string Installer, string InstallerNote, string Record,
-    string RecordNote, string Scope, string Coverage, string Changes, string ChangesNote,
+    string RecordNote, string Scope, string RegistryScope, string Coverage, string Changes, string ChangesNote,
     string Alert, bool IsUnfinished)
 {
     internal static OverviewPresentation Build(JsonElement summary, JsonElement diff)
     {
         var state = Text(summary, "capture_state");
         var finished = state == "finished";
-        var end = Text(summary, "finished_at");
         var exit = Field(summary, "exit_code");
         var hasExit = exit.ValueKind == JsonValueKind.Number && exit.TryGetInt32(out _);
         var exitCode = hasExit ? exit.GetInt32() : 0;
@@ -22,14 +21,14 @@ internal sealed record OverviewPresentation(string Installer, string InstallerNo
             : "没有可靠退出码，不能判断安装器结果。";
         var record = finished ? "会话已结束" : state is "capturing" or "finalizing" or "failed"
             ? "会话未完成" : "会话结束状态未确认";
-        var recordNote = "已从数据库读取保存的记录。\n结束时间：" + (end ?? "未记录") +
-            (finished ? "" : "\n已有证据可查看；不代表采集进程仍在运行。");
+        var recordNote = "已从数据库读取保存的记录。" +
+            (finished ? "" : "\n采集进程当前状态未确认。");
         var roots = Field(summary, "watch_roots");
         var directories = roots.ValueKind == JsonValueKind.Array && roots.GetArrayLength() != 0
             ? string.Join("\r\n", roots.EnumerateArray().Select(Value)) : "未记录 / 不可用";
         var registry = Text(summary, "registry_key");
-        var scope = "观察目录：\r\n" + directories + "\r\n注册表范围：" +
-            (registry is null ? "未选择 / 未记录" : "HKEY_CURRENT_USER\\" + registry);
+        var scope = "观察目录：\r\n" + directories;
+        var registryScope = "注册表范围：" + (registry is null ? "未选择 / 未记录" : "HKEY_CURRENT_USER\\" + registry);
         var quality = Field(summary, "quality");
         var coverage = Text(quality, "level") switch
         {
@@ -47,9 +46,7 @@ internal sealed record OverviewPresentation(string Installer, string InstallerNo
         var diagnostics = Diagnostics(summary).ToArray();
         var streamError = Text(Field(backend, "stream"), "error");
         var alerts = new List<string>();
-        if (!finished) alerts.Add("记录未确认完整结束，请查看技术详情。历史阶段不能证明采集仍在运行。");
-        if (hasExit && exitCode != 0) alerts.Add("安装器非零退出；已保存的记录仍可独立查看。");
-        if (streamError is not null) alerts.Add("记录来源报告错误：" + Brief(streamError));
+        if (streamError is not null) alerts.Add("记录来源报告错误；完整原因可在技术详情中查看或复制。");
         if (diagnostics.Any(text => text.Contains("Legacy capture:", StringComparison.Ordinal)))
             alerts.Add("旧记录未保存完整覆盖元数据；缺失统计不可按 0 解读。");
         var losses = new List<string>();
@@ -66,10 +63,13 @@ internal sealed record OverviewPresentation(string Installer, string InstallerNo
         {
             var important = diagnostics.FirstOrDefault(text => new[] { "error", "fail", "missing", "lost", "gap", "timeout", "incomplete" }
                 .Any(word => text.Contains(word, StringComparison.OrdinalIgnoreCase))) ?? diagnostics[0];
-            alerts.Add("记录限制：" + Brief(important));
+            alerts.Add(important.StartsWith("Scoped capture cannot prove a complete machine footprint", StringComparison.Ordinal)
+                ? "仅覆盖所选范围；无法证明完整软件足迹，仍可能遗漏不支持的路径与事件。"
+                : "记录限制：" + Brief(important));
         }
         if (diagnostics.Length > 1) alerts.Add($"共 {diagnostics.Length} 条诊断，技术详情保留完整文字。");
-        return new(installer, installerNote, record, recordNote, scope, coverage, changes, changesNote,
+        if (alerts.Count == 0 && !finished) alerts.Add("记录未确认完整结束；已保存条目不代表完整证据。可展开技术详情检查已记录的阶段。");
+        return new(installer, installerNote, record, recordNote, scope, registryScope, coverage, changes, changesNote,
             string.Join("\r\n", alerts), !finished);
     }
 

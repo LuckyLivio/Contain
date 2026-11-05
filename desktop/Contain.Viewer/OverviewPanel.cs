@@ -21,6 +21,12 @@ internal sealed class OverviewPanel : TableLayoutPanel
         ScrollBars = ScrollBars.Vertical, WordWrap = true
     };
     private readonly Label coverage = TextLabel("OverviewCoverage");
+    private readonly TextBox registryScope = new()
+    {
+        Name = "OverviewRegistryScope", Dock = DockStyle.Fill, Multiline = true, ReadOnly = true,
+        BorderStyle = BorderStyle.None, BackColor = Color.White, ForeColor = Ink,
+        ScrollBars = ScrollBars.Vertical, WordWrap = true
+    };
     private readonly Label changes = TextLabel("OverviewChanges", true);
     private readonly Label changesNote = TextLabel("OverviewChangesNote");
     private readonly TextBox alert = new()
@@ -44,10 +50,11 @@ internal sealed class OverviewPanel : TableLayoutPanel
         Name = "OverviewPanel";
         Dock = DockStyle.Fill;
         ColumnCount = 1;
-        RowCount = 2;
+        RowCount = 3;
         Margin = Padding.Empty;
         ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
         RowStyles.Add(new RowStyle(SizeType.AutoSize));
         details = technicalDetails;
         details.Margin = new Padding(6, 6, 6, 6);
@@ -73,12 +80,14 @@ internal sealed class OverviewPanel : TableLayoutPanel
         cards.Controls.Add(Card("InstallerCard", "安装器结果", installer, installerNote), 0, 0);
         cards.Controls.Add(Card("RecordCard", "记录状态", record, recordNote), 1, 0);
         var scopeCard = Card("ScopeCard", "观察范围与覆盖", coverage, scope);
-        scopeCard.RowCount = 4;
+        scopeCard.RowCount = 5;
+        scopeCard.RowStyles.Add(new RowStyle(SizeType.Absolute, Font.Height * 2));
         scopeCard.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         copyScope.Dock = DockStyle.None;
         copyScope.Anchor = AnchorStyles.Left;
         copyScope.Padding = new Padding(5, 1, 5, 1);
-        scopeCard.Controls.Add(copyScope, 0, 3);
+        scopeCard.Controls.Add(registryScope, 0, 3);
+        scopeCard.Controls.Add(copyScope, 0, 4);
         cards.Controls.Add(scopeCard, 0, 1);
         cards.Controls.Add(Card("ChangesCard", "主要变化", changes, changesNote), 1, 1);
         actions = new FlowLayoutPanel
@@ -90,11 +99,11 @@ internal sealed class OverviewPanel : TableLayoutPanel
         actions.Controls.Add(viewEvents);
         actions.Controls.Add(toggleTechnical);
         document.Controls.Add(cards, 0, 0);
-        document.Controls.Add(alert, 0, 1);
         document.Controls.Add(details, 0, 2);
         viewport.Controls.Add(document);
         Controls.Add(viewport, 0, 0);
-        Controls.Add(actions, 0, 1);
+        Controls.Add(alert, 0, 1);
+        Controls.Add(actions, 0, 2);
         viewChanges.Click += (_, _) => changesAction();
         viewEvents.Click += (_, _) => eventsAction();
         toggleTechnical.Click += (_, _) =>
@@ -107,7 +116,7 @@ internal sealed class OverviewPanel : TableLayoutPanel
         copyScope.Click += (_, _) =>
         {
             if (!hasRecord) return;
-            try { Clipboard.SetText(scope.Text); status("完整观察范围已复制。", false); }
+            try { Clipboard.SetText(scope.Text + "\r\n" + registryScope.Text); status("完整观察范围已复制。", false); }
             catch (System.Runtime.InteropServices.ExternalException) { status("剪贴板正忙，可在观察范围中选中文字复制。", true); }
         };
         FontChanged += (_, _) => UpdateLayout();
@@ -122,7 +131,7 @@ internal sealed class OverviewPanel : TableLayoutPanel
         expanded = false;
         viewport.AutoScrollPosition = Point.Empty;
         AccessibleDescription = null;
-        installer.Text = installerNote.Text = record.Text = recordNote.Text = scope.Text = coverage.Text = changes.Text = changesNote.Text = alert.Text = "";
+        installer.Text = installerNote.Text = record.Text = recordNote.Text = scope.Text = registryScope.Text = coverage.Text = changes.Text = changesNote.Text = alert.Text = "";
         UpdateLayout();
     }
 
@@ -139,6 +148,8 @@ internal sealed class OverviewPanel : TableLayoutPanel
         recordNote.Text = model.RecordNote;
         scope.Text = model.Scope;
         scope.SelectionStart = 0;
+        registryScope.Text = model.RegistryScope;
+        registryScope.SelectionStart = 0;
         coverage.Text = model.Coverage;
         changes.Text = model.Changes;
         changesNote.Text = model.ChangesNote;
@@ -164,7 +175,9 @@ internal sealed class OverviewPanel : TableLayoutPanel
             details.Visible = !hasRecord || expanded;
             document.RowStyles[0].SizeType = hasRecord ? expanded ? SizeType.Absolute : SizeType.Percent : SizeType.Absolute;
             document.RowStyles[0].Height = hasRecord ? 100 : 0;
-            document.RowStyles[1].Height = alert.Visible ? Font.Height * 3 + 12 : 0;
+            // Important limitations stay beside the actions while the user
+            // scrolls the cards or the full diagnostic document.
+            RowStyles[1].Height = hasRecord && alert.Text.Length > 0 ? Font.Height * 3 + 12 : 0;
             document.RowStyles[2].SizeType = !hasRecord || expanded ? SizeType.Percent : SizeType.Absolute;
             document.RowStyles[2].Height = !hasRecord || expanded ? 100 : 0;
             toggleTechnical.Text = expanded ? "收起技术详情" : "技术详情";
@@ -180,19 +193,24 @@ internal sealed class OverviewPanel : TableLayoutPanel
         sizing = true;
         try
         {
-            var width = Math.Max(1, viewport.ClientSize.Width);
+            // Reserve the native vertical-scrollbar gutter before sizing the
+            // document. Otherwise adding that bar can trigger a horizontal bar
+            // and obscure the last line at a real high-DPI working-area limit.
+            var gutter = (int)Math.Ceiling(SystemInformation.VerticalScrollBarWidth * DeviceDpi / 96.0);
+            var width = Math.Max(1, viewport.ClientSize.Width - gutter);
             var cardWidth = Math.Max(100, width / 2 - 30);
             int Lines(Control value) => value.GetPreferredSize(new Size(cardWidth, 0)).Height + value.Margin.Vertical;
             var heading = Font.Height + 14;
             var firstRow = Math.Max(Lines(installer) + Lines(installerNote), Lines(record) + Lines(recordNote)) + heading + 20;
-            var secondRow = Math.Max(Lines(changes) + Lines(changesNote), Lines(coverage) + Font.Height * 4 + copyScope.GetPreferredSize(Size.Empty).Height) + heading + 24;
+            ((TableLayoutPanel)registryScope.Parent!).RowStyles[3].Height = Font.Height * 2 + registryScope.Margin.Vertical;
+            var secondRow = Math.Max(Lines(changes) + Lines(changesNote), Lines(coverage) + Font.Height * 5 + copyScope.GetPreferredSize(Size.Empty).Height) + heading + 24;
             var cardHeight = firstRow + secondRow;
             cards.RowStyles[0].SizeType = SizeType.Absolute;
             cards.RowStyles[0].Height = firstRow;
             cards.RowStyles[1].SizeType = SizeType.Percent;
             cards.RowStyles[1].Height = 100;
             if (hasRecord && expanded) document.RowStyles[0].Height = cardHeight;
-            var minimum = hasRecord ? cardHeight + (int)document.RowStyles[1].Height + (expanded ? Font.Height * 12 : 0) : 0;
+            var minimum = hasRecord ? cardHeight + (expanded ? Font.Height * 12 : 0) : 0;
             var extent = new Size(0, minimum);
             if (viewport.AutoScrollMinSize != extent) viewport.AutoScrollMinSize = extent;
             var target = new Size(width, Math.Max(minimum, viewport.ClientSize.Height));

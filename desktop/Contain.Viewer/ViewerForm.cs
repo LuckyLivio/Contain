@@ -55,6 +55,7 @@ public sealed class ViewerForm : Form
     private CancellationTokenSource? _operationCancellation;
     private long _operationVersion;
     private bool _rendering;
+    private bool _sessionSelectionQueued;
     private string? _database;
     private string? _recordId;
     private string? _selectedEventId;
@@ -290,8 +291,24 @@ public sealed class ViewerForm : Form
         _sessions.SelectionChanged += (_, _) =>
         {
             if (_rendering || IsBusy || _sessions.SelectedRows.Count == 0) return;
-            var record = (JsonElement)_sessions.SelectedRows[0].Tag!;
-            StartOperation(token => OpenRecordAsync(record, token));
+            // Native focus can briefly select row zero before applying the row
+            // the user actually invoked. Starting a query and disabling the grid
+            // inside that first notification would discard the intended row.
+            // Clear old evidence immediately, then read the final selection after
+            // this native event sequence has completed.
+            if (_sessionSelectionQueued) return;
+            var database = _database;
+            ResetRecord();
+            _summaryStatus.Text = "正在读取所选会话的已保存数据…";
+            _overview.Text = "正在读取当前选择的记录…";
+            _sessionSelectionQueued = true;
+            BeginInvoke((Action)(() =>
+            {
+                _sessionSelectionQueued = false;
+                if (IsDisposed || Disposing || _rendering || IsBusy || _database != database || _sessions.SelectedRows.Count == 0) return;
+                var record = (JsonElement)_sessions.SelectedRows[0].Tag!;
+                StartOperation(token => OpenRecordAsync(record, token));
+            }));
         };
         _events.SelectionChanged += (_, _) =>
         {

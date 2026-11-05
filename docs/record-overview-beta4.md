@@ -54,6 +54,17 @@ identity are recorded after the final candidate passes.
 
 ## Known limits
 
+The first local candidate `5ac26283d3ddb04d856a0d3803dd97592a9a7a7d`
+passed the 36 Check gates and nine of ten focused overview checks. Actual Windows
+144-DPI inspection found an unnecessary horizontal scrollbar and a limitation
+notice below the viewport; the corrective layout reserves scrollbar space and
+keeps the notice with the actions. An initial direct selection of a non-first
+session exposed a native focus/selection ordering defect: transient row-zero
+selection started a query before the intended selection completed. The corrected
+handler clears old results immediately and queries the final row after that native
+event sequence. The original failure and explicit non-first-selection regression
+are retained; no retry or alternate-row workaround replaces acceptance.
+
 The original whole-Program-Files / Parallels finalizing incident remains
 unconfirmed and tracked independently in [Issue #5](https://github.com/LuckyLivio/Contain/issues/5).
 No new full-history search, complete export, automatic install-directory discovery,

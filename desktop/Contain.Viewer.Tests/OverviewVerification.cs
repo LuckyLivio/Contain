@@ -44,8 +44,12 @@ internal sealed class OverviewVerification(Options options, bool viewerChecksPas
     internal static int RunStandalone(string package, string fixtures, string output)
     {
         Directory.CreateDirectory(output);
+        using var build = JsonDocument.Parse(File.ReadAllText(Path.Combine(Path.GetFullPath(package), "BUILD.json")));
+        var source = build.RootElement.GetProperty("source_sha").GetString();
+        if (source is null || source.Length != 40 || !source.All(Uri.IsHexDigit))
+            throw new InvalidDataException("The overview preflight requires a frozen package source SHA.");
         var options = new Options(Path.GetFullPath(package), Path.GetFullPath(fixtures), Path.GetFullPath(output),
-            Path.Combine(Path.GetFullPath(output), "private"), "working-tree", null);
+            Path.Combine(Path.GetFullPath(output), "private"), source, null);
         var passed = false;
         using var owner = new Form { Text = "Contain isolated overview checks", ShowInTaskbar = false };
         owner.Shown += async (_, _) => { try { passed = await new OverviewVerification(options, true).RunAsync(owner); } finally { owner.Close(); } };
@@ -65,8 +69,7 @@ internal sealed class OverviewVerification(Options options, bool viewerChecksPas
                 Require(Hash(typeof(ViewerForm).Assembly.Location) == Hash(Path.Combine(options.Package, "Contain.Viewer.dll")), "tested and packaged assembly bytes match");
                 using var build = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(options.Package, "BUILD.json")));
                 Require(build.RootElement.GetProperty("version").GetString() == ProductVersion.Version, "overview and package version match");
-                if (options.Source != "working-tree")
-                    Require(build.RootElement.GetProperty("source_sha").GetString() == options.Source, "overview source equals frozen package");
+                Require(build.RootElement.GetProperty("source_sha").GetString() == options.Source, "overview source equals frozen package");
                 library = PersonalRecords.ForCurrentUser().DatabasePath;
                 Directory.CreateDirectory(Path.GetDirectoryName(library)!);
                 var original = Path.Combine(options.Package, "samples", "viewer-demo.db");
@@ -210,6 +213,8 @@ internal sealed class OverviewVerification(Options options, bool viewerChecksPas
                         Require(await desktop.TextAsync("OverviewInstaller") == expected.Installer, "actual packaged installer summary equals persisted result");
                         Require(await desktop.TextAsync("OverviewRecord") == expected.Record, "actual packaged session summary equals persisted result");
                         Require(await desktop.TextAsync("OverviewChanges") == expected.Changes, "actual packaged changes summary equals backend counts");
+                        Require(await desktop.TextAsync("OverviewRegistryScope") == expected.RegistryScope, "actual registry scope bound to this saved record");
+                        Require(await desktop.OnscreenAsync("OverviewRegistryScope"), "registry range visible separately from long file paths");
                         screenshots.Add(await desktop.ScreenshotAsync(Path.Combine(options.Output, "screenshots"), "overview-packaged-" + imageName + ".png"));
                     }
                     await SelectPackaged(desktop, Sessions[0]); initialCards = await Cards(desktop);
@@ -235,6 +240,8 @@ internal sealed class OverviewVerification(Options options, bool viewerChecksPas
                     Require((await desktop.TextAsync("OverviewScope")).Contains(LongRoot, StringComparison.Ordinal), "actual scope text contains complete long Chinese path");
                     await desktop.InvokeAsync("CopyOverviewScope");
                     Require(Clipboard.GetText().Contains(LongRoot, StringComparison.Ordinal), "actual copy retains complete scope");
+                    Require(Clipboard.GetText().Contains(OverviewPresentation.Build(summaries[Sessions[2]].Data, diffs[Sessions[2]].Data).RegistryScope, StringComparison.Ordinal),
+                        "scope copy includes separately visible registry range");
                     foreach (var size in new[] { new Size(1120, 780), new Size(1400, 980) })
                     {
                         await desktop.ResizeAsync(size.Width, size.Height);
@@ -297,16 +304,31 @@ internal sealed class OverviewVerification(Options options, bool viewerChecksPas
         var row = grid.Rows.Cast<DataGridViewRow>().Single(row => ((JsonElement)row.Tag!).GetProperty("id").GetString() == id);
         grid.ClearSelection(); row.Selected = true; grid.CurrentCell = row.Cells[0]; await Idle(form);
     }
-    private static async Task SelectPackaged(PackagedDesktop desktop, string id)
+    private async Task SelectPackaged(PackagedDesktop desktop, string id)
     {
-        await desktop.SelectTabAsync("记录概览");
-        await PackagedDesktop.WaitAsync(() => desktop.EnabledAsync("NewInstall"), TimeSpan.FromSeconds(30));
-        await desktop.SelectIdentityAsync("session:" + id);
-        await PackagedDesktop.WaitAsync(async () => (await desktop.DescriptionAsync("SessionTitle")) == "session:" + id, TimeSpan.FromSeconds(30));
-        await PackagedDesktop.WaitAsync(() => desktop.EnabledAsync("ViewChanges"), TimeSpan.FromSeconds(30));
+        try
+        {
+            await desktop.SelectTabAsync("记录概览");
+            await PackagedDesktop.WaitAsync(() => desktop.EnabledAsync("NewInstall"), TimeSpan.FromSeconds(30));
+            await desktop.SelectIdentityAsync("session:" + id);
+            await PackagedDesktop.WaitAsync(async () => (await desktop.DescriptionAsync("SessionTitle")) == "session:" + id, TimeSpan.FromSeconds(30));
+            await PackagedDesktop.WaitAsync(() => desktop.EnabledAsync("ViewChanges"), TimeSpan.FromSeconds(30));
+        }
+        catch
+        {
+            // Preserve the actual failed selection; never retry or switch to a different row.
+            var failure = "overview-selection-" + desktop.ProcessId + "-" + id;
+            try
+            {
+                File.WriteAllText(Path.Combine(options.PrivateOutput, failure + ".txt"), await desktop.DumpAsync());
+                await desktop.ScreenshotAsync(options.PrivateOutput, failure + ".png");
+            }
+            catch (Exception diagnostic) { errors.AppendLine("Selection diagnostic unavailable: " + diagnostic); }
+            throw;
+        }
     }
     private static async Task<string> Cards(PackagedDesktop desktop) => string.Join("\n", await Task.WhenAll(
-        new[] { "OverviewInstaller", "OverviewRecord", "OverviewScope", "OverviewChanges" }.Select(desktop.TextAsync)));
+        new[] { "OverviewInstaller", "OverviewRecord", "OverviewScope", "OverviewRegistryScope", "OverviewCoverage", "OverviewChanges" }.Select(desktop.TextAsync)));
     private static T C<T>(Control parent, string name) where T : Control => parent.Controls.Find(name, true).Single() as T ?? throw new InvalidOperationException(name);
     private static async Task Idle(ViewerForm form) { await Task.Delay(40); await form.PendingOperation.WaitAsync(TimeSpan.FromSeconds(90)); await Task.Delay(80); }
     private async Task Check(string name, Func<Task> action, Func<bool>? prerequisite = null)
