@@ -215,7 +215,7 @@ jobs:
         run: |
           $finalArgs = @('scripts/package-viewer.py','finalize','--package',"$env:CONTAIN_RUN_DIR/windows-viewer",'--quality-summary',"$env:CONTAIN_RUN_DIR/quality-public/summary.json",'--verification',"$env:CONTAIN_RUN_DIR/viewer-public/summary.json",'--output',$env:CONTAIN_PACKAGE)
           if ('${{ steps.trial_plan.outputs.install }}' -eq 'true') { $finalArgs += @('--install-verification',"$env:CONTAIN_RUN_DIR/viewer-public/install-summary.json") }
-          $finalArgs += @('--layout-verification',"$env:CONTAIN_RUN_DIR/viewer-public/layout-summary.json",'--progress-verification',"$env:CONTAIN_RUN_DIR/viewer-public/progress-summary.json")
+          $finalArgs += @('--layout-verification',"$env:CONTAIN_RUN_DIR/viewer-public/layout-summary.json",'--progress-verification',"$env:CONTAIN_RUN_DIR/viewer-public/progress-summary.json",'--personal-records-verification',"$env:CONTAIN_RUN_DIR/viewer-public/personal-records-summary.json")
           python @finalArgs
           if ($LASTEXITCODE -ne 0) { throw 'Desktop milestone unverified; diagnostic package retains the actual failed or unexecuted checks' }
       - uses: actions/upload-artifact@v4
@@ -233,6 +233,7 @@ jobs:
             ${{ env.CONTAIN_RUN_DIR }}/viewer-public/install-summary.json
             ${{ env.CONTAIN_RUN_DIR }}/viewer-public/layout-summary.json
             ${{ env.CONTAIN_RUN_DIR }}/viewer-public/progress-summary.json
+            ${{ env.CONTAIN_RUN_DIR }}/viewer-public/personal-records-summary.json
             ${{ env.CONTAIN_RUN_DIR }}/viewer-public/screenshots/*.png
             ${{ env.CONTAIN_RUN_DIR }}/viewer-public/reports/*.html
           if-no-files-found: error

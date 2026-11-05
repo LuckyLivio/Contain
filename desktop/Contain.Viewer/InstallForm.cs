@@ -8,6 +8,7 @@ public sealed class InstallForm : Form
 {
     private readonly InstallClient client;
     private readonly IInstallDialogs dialogs;
+    private readonly PersonalRecords records;
     private readonly Func<string, string, Task> openSession;
     private readonly TextBox installer = Input("InstallerPath");
     private readonly TextBox recordName = Input("RecordName");
@@ -18,6 +19,9 @@ public sealed class InstallForm : Form
     private readonly NumericUpDown settle = new() { Name = "SettleMilliseconds", Maximum = 600000, Value = 1500, Increment = 100, Dock = DockStyle.Fill };
     private readonly NumericUpDown maxDrain = new() { Name = "MaxDrainMilliseconds", Maximum = 600000, Value = 10000, Increment = 100, Dock = DockStyle.Fill };
     private readonly CheckBox snapshot = new() { Name = "SnapshotOnly", Text = "明确选择快照模式（不启用 ETW，证据受限）", AutoSize = true };
+    private readonly CheckBox customDatabase = new() { Name = "CustomDatabaseToggle", Text = "使用自定义保存位置", AutoSize = true };
+    private readonly Label saveLocation = new() { Name = "DefaultSaveLocation", Text = "保存到我的记录", AutoSize = true, Dock = DockStyle.Top };
+    private readonly Button changeSaveLocation = Action("ChangeSaveLocation", "更改保存位置");
     private readonly CheckBox advancedToggle = new() { Name = "AdvancedToggle", Text = "高级参数", AutoSize = true };
     private readonly Button check = Action("CheckEnvironment", "检查环境");
     private readonly Button start = Action("StartRecording", "开始记录");
@@ -26,19 +30,22 @@ public sealed class InstallForm : Form
     private readonly Button copySummary = Action("CopyTaskSummary", "复制任务摘要");
     private readonly System.Windows.Forms.Timer displayTimer = new() { Interval = 500 };
     private readonly Stopwatch taskClock = new();
-    private readonly InstallProgressClock progressClock = new();
+    private InstallProgressClock progressClock = new();
     private readonly object progressGate = new();
     private (InstallStatus Status, long ReceivedAt)? pendingProgress;
     private bool dispatchScheduled;
     private int generation;
     private long lastStatusReceivedAt;
     private string? localFailure;
+    private string? localFailureDetails;
     private bool closeRefused;
     private readonly TextBox status = new() { Name = "InstallStatus", Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BackColor = Color.White };
     private readonly TextBox scopePreview = new() { Name = "CaptureConfigurationPreview", Multiline = true, ReadOnly = true, WordWrap = false, ScrollBars = ScrollBars.Both, Dock = DockStyle.Fill, BackColor = SystemColors.Control, BorderStyle = BorderStyle.FixedSingle, MinimumSize = new Size(0, 100) };
     private readonly Panel configuration = new() { Dock = DockStyle.Fill, AutoScroll = true };
     private bool checking;
     private bool consumed;
+    private bool nameEdited;
+    private bool suggestingName;
 
     public bool IsActive { get; private set; }
     public bool IsChecking => checking;
@@ -46,14 +53,17 @@ public sealed class InstallForm : Form
     public Task PendingOperation { get; private set; } = Task.CompletedTask;
     public InstallStatus? LastStatus { get; private set; }
     public string? SessionId => LastStatus?.SessionId;
-    public string Database => Path.GetFullPath(database.Text);
+    private string SelectedDatabase => customDatabase.Checked ? database.Text : records.DatabasePath;
+    public string Database => Path.GetFullPath(SelectedDatabase);
     public InstallRunResult? Result { get; private set; }
 
-    public InstallForm(InstallClient client, Func<string, string, Task> openSession, IInstallDialogs? dialogs = null)
+    public InstallForm(InstallClient client, Func<string, string, Task> openSession, IInstallDialogs? dialogs = null, PersonalRecords? records = null)
     {
         this.client = client;
         this.openSession = openSession;
         this.dialogs = dialogs ?? new InstallDialogs();
+        this.records = records ?? PersonalRecords.ForCurrentUser();
+        database.Text = this.records.DatabasePath;
         Name = "NewInstallForm";
         Text = Contain.Viewer.ProductVersion.Display + " · 新建安装记录";
         Font = new Font("Microsoft YaHei UI", 9.5F);
@@ -65,6 +75,15 @@ public sealed class InstallForm : Form
         Build();
         foreach (var input in new[] { installer, watchRoot, database, registryKey }) input.TextChanged += (_, _) => UpdateScopePreview();
         snapshot.CheckedChanged += (_, _) => UpdateScopePreview();
+        recordName.TextChanged += (_, _) => { if (!suggestingName) nameEdited = true; };
+        installer.TextChanged += (_, _) => SuggestRecordName();
+        customDatabase.CheckedChanged += (_, _) => { saveLocation.Text = customDatabase.Checked ? "保存到自定义位置" : "保存到我的记录"; UpdateScopePreview(); };
+        changeSaveLocation.Visible = false;
+        changeSaveLocation.Click += (_, _) =>
+        {
+            advancedToggle.Checked = true; customDatabase.Checked = true;
+            configuration.ScrollControlIntoView(database); database.Focus(); database.SelectAll();
+        };
         UpdateScopePreview();
         status.Text = "准备配置。仅点击“开始记录”才会启动所选安装器。\r\n当前支持可直接启动的 EXE；未承诺 MSI、更新器或服务代理完整支持。";
         start.Click += (_, _) => { if (!IsActive && !checking && !consumed) PendingOperation = StartAsync(); };
@@ -131,7 +150,9 @@ public sealed class InstallForm : Form
         AddRow(fields, "安装器 EXE", installer, Browse("ChooseInstaller", () => dialogs.ChooseInstaller(this), installer));
         AddRow(fields, "记录名称", recordName);
         AddRow(fields, "观察目录", watchRoot, Browse("ChooseWatchRoot", () => dialogs.ChooseWatchRoot(this), watchRoot));
-        AddRow(fields, "数据库位置", database, Browse("ChooseSaveDatabase", () => dialogs.ChooseSaveDatabase(this), database));
+        var saveRow = fields.RowCount++;
+        fields.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        fields.Controls.Add(saveLocation, 1, saveRow); fields.SetColumnSpan(saveLocation, 2);
         var modeRow = fields.RowCount++;
         fields.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         fields.Controls.Add(snapshot, 1, modeRow); fields.SetColumnSpan(snapshot, 2);
@@ -144,6 +165,17 @@ public sealed class InstallForm : Form
         var advancedRow = fields.RowCount++;
         fields.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         fields.Controls.Add(advanced, 0, advancedRow); fields.SetColumnSpan(advanced, 3);
+        AddAdvanced(advanced, "记录保存", customDatabase);
+        var customLocation = new TableLayoutPanel { Name = "CustomDatabaseLocation", AutoSize = true, Dock = DockStyle.Top, ColumnCount = 2, Visible = false };
+        customLocation.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        customLocation.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        customLocation.Controls.Add(database, 0, 0);
+        customLocation.Controls.Add(Browse("ChooseSaveDatabase", () => dialogs.ChooseSaveDatabase(this), database), 1, 0);
+        var customLabel = new Label { Text = "数据库位置", AutoSize = true, Anchor = AnchorStyles.Left, Visible = false };
+        var customRow = advanced.RowCount++;
+        advanced.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        advanced.Controls.Add(customLabel, 0, customRow); advanced.Controls.Add(customLocation, 1, customRow);
+        customDatabase.CheckedChanged += (_, _) => { customLabel.Visible = customLocation.Visible = customDatabase.Checked; };
         arguments.MinimumSize = new Size(0, 78);
         AddAdvanced(advanced, "逐行参数", arguments);
         var argumentNote = new Label { Name = "InstallerArgumentsNote", Dock = DockStyle.Top, Text = "每行是一个独立的原始参数；引号也是参数内容，无需 shell 转义。空白输入不传参数；中间空行表示空参数。", AutoSize = true };
@@ -155,7 +187,7 @@ public sealed class InstallForm : Form
         advancedToggle.CheckedChanged += (_, _) => advanced.Visible = advancedToggle.Checked;
         root.Controls.Add(scopePreview, 0, 2);
         var actions = new FlowLayoutPanel { Name = "InstallActions", Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Margin = Padding.Empty };
-        actions.Controls.Add(check); actions.Controls.Add(start); actions.Controls.Add(view); actions.Controls.Add(details); actions.Controls.Add(copySummary);
+        actions.Controls.Add(check); actions.Controls.Add(start); actions.Controls.Add(view); actions.Controls.Add(details); actions.Controls.Add(copySummary); actions.Controls.Add(changeSaveLocation);
         root.Controls.Add(actions, 0, 3);
         root.Controls.Add(status, 0, 4);
     }
@@ -168,15 +200,26 @@ public sealed class InstallForm : Form
             try { return Path.GetFullPath(value); }
             catch (Exception error) when (error is ArgumentException or NotSupportedException or PathTooLongException) { return value + "（待校验）"; }
         }
-        scopePreview.Text = $"开始前核对 · 实际观察目录：{Chosen(watchRoot.Text)}\r\n数据库：{Chosen(database.Text)}（必须位于观察范围之外）\r\n注册表：{(string.IsNullOrWhiteSpace(registryKey.Text) ? "未请求" : "请求 HKCU\\" + registryKey.Text)}；模式：{(snapshot.Checked ? "明确选择快照，不尝试 ETW" : "要求 ETW 来源可用")}\r\n安装目标由您在安装器中选择；安装包所在目录不等于观察范围。";
+        scopePreview.Text = $"开始前核对 · 实际观察目录：{Chosen(watchRoot.Text)}\r\n保存：{(customDatabase.Checked ? Chosen(database.Text) : "我的记录（无需选择数据库）")}（必须位于观察范围之外）\r\n注册表：{(string.IsNullOrWhiteSpace(registryKey.Text) ? "未请求" : "请求 HKCU\\" + registryKey.Text)}；模式：{(snapshot.Checked ? "明确选择快照，不尝试 ETW" : "要求 ETW 来源可用")}\r\n安装目标由您在安装器中选择；安装包所在目录不等于观察范围。";
+    }
+
+    private void SuggestRecordName()
+    {
+        if (nameEdited) return;
+        string suggestion;
+        try { suggestion = Path.GetFileNameWithoutExtension(installer.Text); }
+        catch (Exception error) when (error is ArgumentException or NotSupportedException) { return; }
+        suggestingName = true;
+        try { recordName.Text = suggestion; }
+        finally { suggestingName = false; }
     }
 
     private InstallRequest Request()
     {
         var lines = arguments.Text.Length == 0 ? Array.Empty<string>() : arguments.Text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
-        return new InstallRequest(installer.Text, recordName.Text, watchRoot.Text, database.Text, lines,
+        return new InstallRequest(installer.Text, recordName.Text, watchRoot.Text, SelectedDatabase, lines,
             string.IsNullOrWhiteSpace(registryKey.Text) ? null : registryKey.Text, snapshot.Checked,
-            (ulong)settle.Value, (ulong)maxDrain.Value).Validate();
+            (ulong)settle.Value, (ulong)maxDrain.Value).Validate(allowMissingDatabaseDirectory: !customDatabase.Checked);
     }
 
     private async Task CheckAsync()
@@ -202,7 +245,14 @@ public sealed class InstallForm : Form
             if (report.TryGetProperty("warnings", out var warnings)) foreach (var warning in warnings.EnumerateArray()) text.AppendLine("• " + warning.GetString());
             status.Text = text.ToString();
         }
-        catch (Exception error) { if (!IsDisposed && !Disposing) status.Text = "环境检查未完成：" + error.Message + "\r\n安装器未启动。"; }
+        catch (Exception error)
+        {
+            if (!IsDisposed && !Disposing)
+            {
+                changeSaveLocation.Visible = true;
+                status.Text = "环境检查未完成：" + error.Message + "\r\n安装器未启动。";
+            }
+        }
         finally { checking = false; if (!IsDisposed && !Disposing) UpdateEnabled(); }
     }
 
@@ -210,21 +260,25 @@ public sealed class InstallForm : Form
     {
         IsActive = true; UpdateEnabled();
         var taskGeneration = ++generation;
-        localFailure = null; closeRefused = false;
+        localFailure = null; localFailureDetails = null; closeRefused = false;
         try
         {
             var request = Request();
+            LastStatus = null; Result = null; lastStatusReceivedAt = 0; progressClock = new();
+            changeSaveLocation.Visible = false;
             consumed = true;
             taskClock.Restart(); displayTimer.Start();
             status.Text = "准备中。等待后端确认会话与被管理进程；本窗口将保留至采集进程退出。";
-            Result = await client.RunAsync(request, progress => QueueStatus(progress, taskGeneration));
+            Result = await client.RunAsync(request, progress => QueueStatus(progress, taskGeneration), records);
             if (IsDisposed || Disposing || taskGeneration != generation) return;
             displayTimer.Stop(); taskClock.Stop();
             var result = Result;
+            consumed = !result.CanRetryBeforeInstaller;
             if (result.LastStatus is not null) { LastStatus = result.LastStatus; RenderStatus(result.LastStatus, result.Succeeded); }
             else status.Text = "失败 / 未完成\r\n尚未收到可确认会话的结构化结果；安装器启动与数据保存均未确认。";
             if (!result.Succeeded)
             {
+                if (!consumed) changeSaveLocation.Visible = true;
                 localFailure = result.ProtocolError ?? result.LastStatus?.Error ?? "采集进程返回失败，未收到完整成功结果。";
                 if (LastStatus is not null) RenderStatus(LastStatus, false);
                 else status.AppendText("\r\n失败原因：" + Brief(localFailure));
@@ -242,7 +296,9 @@ public sealed class InstallForm : Form
         }
         catch (Exception error)
         {
-            localFailure = error.Message;
+            if (!client.CollectorStarted) consumed = false;
+            localFailure = error.Message; localFailureDetails = error.ToString();
+            if (!IsDisposed && !Disposing) changeSaveLocation.Visible = !consumed;
             if (!IsDisposed && !Disposing) status.AppendText("\r\n启动或记录失败：" + Brief(error.Message) + "\r\n已有记录保留，可查看任务详情。");
         }
         finally
@@ -335,7 +391,7 @@ public sealed class InstallForm : Form
     internal string TaskSummaryText => new StringBuilder()
         .AppendLine(Contain.Viewer.ProductVersion.Display).AppendLine(LastStatus is { } state ? FormatStatus(state, Result?.Succeeded) : status.Text)
         .AppendLine($"会话 ID：{LastStatus?.SessionId ?? "未确认"}")
-        .AppendLine($"数据库：{LastStatus?.Database ?? database.Text}")
+        .AppendLine($"数据库：{LastStatus?.Database ?? SelectedDatabase}")
         .AppendLine($"最后确认阶段：{Result?.LastConfirmedStage ?? LastStatus?.Stage ?? "未取得结构化状态"}")
         .AppendLine($"实际步骤：{LastStatus?.Step ?? "不可用"}")
         .AppendLine($"采集进程 PID：{Result?.CollectorPid?.ToString() ?? "未确认"}；退出码：{Result?.CollectorExitCode.ToString() ?? "尚未确认"}")
@@ -348,7 +404,7 @@ public sealed class InstallForm : Form
         .AppendLine($"ETW 实际来源：进程 {LastStatus?.EtwProcess ?? "未确认"} / 文件 {LastStatus?.EtwFile ?? "未确认"} / 注册表 {LastStatus?.EtwRegistry ?? "未确认"}")
         .AppendLine($"后端原始阶段 / 步骤：{LastStatus?.Stage ?? "未确认"} / {LastStatus?.Step ?? "不可用"}")
         .AppendLine($"结构化状态错误：{Result?.ProtocolError ?? "未报告"}")
-        .AppendLine($"错误原文：{localFailure ?? LastStatus?.Error ?? "未报告"}")
+        .AppendLine($"错误原文：{localFailureDetails ?? localFailure ?? LastStatus?.Error ?? "未报告"}")
         .AppendLine(string.Join("\r\n", LastStatus?.QualityReasons ?? []))
         .AppendLine($"采集进程诊断{(Result?.DiagnosticsTruncated == true ? "（长度超限，仅保留前段）" : "")}：")
         .AppendLine(Result?.Diagnostics ?? "未提供").ToString();

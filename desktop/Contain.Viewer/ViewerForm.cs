@@ -15,7 +15,9 @@ public sealed class ViewerForm : Form
     private readonly IViewerDialogs _dialogs;
     private readonly int _pageSize;
     private readonly IInstallDialogs? _installDialogs;
+    private readonly PersonalRecords _records;
     private readonly Button _newInstall = Button("NewInstall", "新建安装记录", true);
+    private readonly Button _myRecords = Button("MyRecords", "我的记录");
     private readonly Button _open = Button("OpenDatabase", "打开记录数据库", true);
     private readonly Button _export = Button("ExportReport", "导出本页报告");
     private readonly Label _databaseLabel = Label("DatabasePath", "尚未打开数据库", Muted);
@@ -67,7 +69,7 @@ public sealed class ViewerForm : Form
     public Task PendingOperation { get; private set; } = Task.CompletedTask;
     public InstallForm? ActiveInstallForm { get; private set; }
 
-    public ViewerForm(CoreClient client, IViewerDialogs? dialogs = null, int pageSize = 50, IInstallDialogs? installDialogs = null)
+    public ViewerForm(CoreClient client, IViewerDialogs? dialogs = null, int pageSize = 50, IInstallDialogs? installDialogs = null, PersonalRecords? records = null)
     {
         ArgumentNullException.ThrowIfNull(client);
         if (pageSize is < 1 or > 200) throw new ArgumentOutOfRangeException(nameof(pageSize));
@@ -75,6 +77,7 @@ public sealed class ViewerForm : Form
         _dialogs = dialogs ?? new ViewerDialogs();
         _pageSize = pageSize;
         _installDialogs = installDialogs;
+        _records = records ?? PersonalRecords.ForCurrentUser();
         Name = "ContainViewer";
         Text = Contain.Viewer.ProductVersion.Display + " · 安装记录";
         // These programmatic dimensions are logical pixels at 96 DPI. Without
@@ -110,7 +113,7 @@ public sealed class ViewerForm : Form
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         Controls.Add(viewport);
         AddScrollableContent(viewport, root);
-        var header = new TableLayoutPanel { Name = "ViewerHeader", Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 4, RowCount = 1, Margin = Padding.Empty };
+        var header = new TableLayoutPanel { Name = "ViewerHeader", Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 5, RowCount = 1, Margin = Padding.Empty };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -119,8 +122,10 @@ public sealed class ViewerForm : Form
         brand.Font = new Font(Font.FontFamily, 21F, FontStyle.Bold);
         header.Controls.Add(brand, 0, 0);
         header.Controls.Add(_newInstall, 1, 0);
-        header.Controls.Add(_open, 2, 0);
-        header.Controls.Add(_export, 3, 0);
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        header.Controls.Add(_myRecords, 2, 0);
+        header.Controls.Add(_open, 3, 0);
+        header.Controls.Add(_export, 4, 0);
         root.Controls.Add(header, 0, 0);
         _databaseLabel.AutoEllipsis = true;
         _databaseLabel.Padding = new Padding(4, 0, 4, 8);
@@ -142,7 +147,9 @@ public sealed class ViewerForm : Form
         var listHeading = Label("SessionsHeading", "已保存记录", Ink);
         listHeading.Font = new Font(Font.FontFamily, 12F, FontStyle.Bold);
         left.Controls.Add(listHeading, 0, 0);
-        _sessions.Columns.Add(Column("Name", "记录", 150));
+        var sessionName = Column("Name", "记录", 150);
+        sessionName.CellTemplate = new IdentityTextBoxCell();
+        _sessions.Columns.Add(sessionName);
         _sessions.Columns.Add(Column("State", "状态", 90));
         _sessions.Columns.Add(Column("Started", "开始时间", 120));
         _sessions.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
@@ -189,7 +196,9 @@ public sealed class ViewerForm : Form
         eventLayout.MinimumSize = new Size(0, 400);
         eventLayout.Controls.Add(_eventFilter, 0, 0);
         eventLayout.Controls.Add(Label("EventsScope", $"仅筛选当前页（最多 {_pageSize} 条），不会搜索其他页。报告包含：本记录全部状态变化、当前未筛选事件页、所选事件解释。", Muted), 0, 1);
-        _events.Columns.Add(Column("Time", "观测时间", 175));
+        var eventTime = Column("Time", "观测时间", 175);
+        eventTime.CellTemplate = new IdentityTextBoxCell();
+        _events.Columns.Add(eventTime);
         _events.Columns.Add(Column("Operation", "操作", 145));
         _events.Columns.Add(Column("Resource", "记录名称 / 资源", 250));
         _events.Columns.Add(Column("Confidence", "应用关联", 90));
@@ -245,7 +254,7 @@ public sealed class ViewerForm : Form
 
     private void WireEvents()
     {
-        Shown += (_, _) => FitWorkingArea();
+        Shown += (_, _) => { FitWorkingArea(); StartOperation(LoadPersonalRecordsAsync); };
         DpiChanged += (_, _) => FitWorkingArea();
         Resize += (_, _) => { if (IsHandleCreated) FitWorkingArea(); };
         _newInstall.Click += (_, _) =>
@@ -256,7 +265,7 @@ public sealed class ViewerForm : Form
                 ActiveInstallForm.Activate();
                 return;
             }
-            ActiveInstallForm = new InstallForm(new InstallClient(_client.ExecutablePath), OpenCapturedSessionAsync, _installDialogs);
+            ActiveInstallForm = new InstallForm(new InstallClient(_client.ExecutablePath), OpenCapturedSessionAsync, _installDialogs, _records);
             ActiveInstallForm.RecordingEnded += result =>
             {
                 var state = result.LastStatus;
@@ -271,6 +280,7 @@ public sealed class ViewerForm : Form
             UpdateEnabled();
         };
         _captureSummary.LinkClicked += (_, _) => ShowLastTaskDetails();
+        _myRecords.Click += (_, _) => StartOperation(LoadPersonalRecordsAsync);
         _open.Click += (_, _) =>
         {
             var path = _dialogs.ChooseDatabase(this);
@@ -354,6 +364,30 @@ public sealed class ViewerForm : Form
         if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
     }
 
+    private async Task LoadPersonalRecordsAsync(CancellationToken token)
+    {
+        _database = null;
+        ResetRecord();
+        _rendering = true;
+        try { _sessions.Rows.Clear(); }
+        finally { _rendering = false; }
+        _databaseLabel.Text = "我的记录";
+        _tips.SetToolTip(_databaseLabel, _records.DatabasePath);
+        if (_records.InspectExisting() == PersonalRecordState.Missing)
+        {
+            _database = null;
+            ResetRecord();
+            _rendering = true;
+            try { _sessions.Rows.Clear(); }
+            finally { _rendering = false; }
+            _sessionTitle.Text = "我的记录";
+            _overview.Text = "暂无安装记录。\r\n\r\n点击“新建安装记录”，选择安装器与已有观察目录后开始。记录会保存到我的记录，下一次打开 Contain 时自动列出。\r\n\r\n首次开始记录时才创建记录库；当前没有生成数据库或演示数据。";
+            SetStatus("我的记录 · 暂无已保存记录。", false);
+            return;
+        }
+        await OpenDatabaseAsync(_records.DatabasePath, token);
+    }
+
     private async Task OpenDatabaseAsync(string path, CancellationToken token)
     {
         _database = null;
@@ -366,7 +400,7 @@ public sealed class ViewerForm : Form
         var result = await _client.ListAsync(path, token);
         token.ThrowIfCancellationRequested();
         _database = Path.GetFullPath(path);
-        _databaseLabel.Text = "当前数据库：" + _database;
+        _databaseLabel.Text = _records.IsPersonalDatabase(_database) ? "我的记录" : "外部数据库（只读）：" + _database;
         _tips.SetToolTip(_databaseLabel, _database);
         _rendering = true;
         try
@@ -375,6 +409,7 @@ public sealed class ViewerForm : Form
             {
                 var index = _sessions.Rows.Add(FieldText(record, "name"), State(FieldText(record, "capture_state")), FieldText(record, "started_at"));
                 _sessions.Rows[index].Tag = record.Clone();
+                ((IdentityTextBoxCell)_sessions.Rows[index].Cells[0]).Identity = "session:" + FieldText(record, "id");
             }
             _sessions.ClearSelection();
             _sessions.CurrentCell = null;
@@ -395,6 +430,7 @@ public sealed class ViewerForm : Form
         var changes = await _client.DiffAsync(db, id, token);
         token.ThrowIfCancellationRequested();
         _recordId = id;
+        _sessionTitle.AccessibleDescription = "session:" + id;
         _sessionTitle.Text = FieldText(summary.Data, "name");
         _summaryStatus.Text = $"安装器退出：{FieldText(summary.Data, "exit_code")}  ·  记录：{State(FieldText(summary.Data, "capture_state"))}  ·  保存：已读取  ·  覆盖：{Quality(FieldText(Field(summary.Data, "quality"), "level"))}";
         _overview.Text = OverviewText(summary.Data);
@@ -443,6 +479,7 @@ public sealed class ViewerForm : Form
         if (FieldText(explanation.Data, "app_id") != _recordId || FieldText(explained, "id") != eventId || !JsonView.JsonEqual(item, explained))
             throw new InvalidDataException("事件详情与当前记录或当前页不一致；未展示可能误关联的依据。请重新打开记录。");
         _selectedEventId = eventId;
+        _eventDetails.AccessibleDescription = "event:" + eventId;
         _eventDetails.Text = ExplainText(explanation.Data);
         _rawDetails.Text = Pretty(explanation.Envelope);
         SetStatus("已读取此事件的生产 explain 结果。High 表示源证据关联，不表示安全删除。", false);
@@ -459,6 +496,7 @@ public sealed class ViewerForm : Form
             {
                 var index = _events.Rows.Add(FieldText(item, "timestamp"), FieldText(item, "operation"), FieldText(item, "resource"), Confidence(FieldText(item, "confidence")));
                 _events.Rows[index].Tag = item;
+                ((IdentityTextBoxCell)_events.Rows[index].Cells[0]).Identity = "event:" + FieldText(item, "id");
             }
             _events.ClearSelection();
             _events.CurrentCell = null;
@@ -500,6 +538,7 @@ public sealed class ViewerForm : Form
     private void ResetRecord()
     {
         _recordId = null;
+        _sessionTitle.AccessibleDescription = null;
         _eventOffset = 0;
         _changeOffset = 0;
         _moreEvents = false;
@@ -519,6 +558,7 @@ public sealed class ViewerForm : Form
     private void ClearExplanation()
     {
         _selectedEventId = null;
+        _eventDetails.AccessibleDescription = null;
         _eventDetails.Text = "选择当前页中的一条事件，查看操作、执行进程和名称来源的证据。\r\n\r\n未知不等于危险；High 不代表最终所有权或安全删除。";
         _rawDetails.Clear();
         _rawToggle.Checked = false;
@@ -544,7 +584,11 @@ public sealed class ViewerForm : Form
         {
             if (version == _operationVersion && !IsDisposed)
             {
-                if (_database is null) _databaseLabel.Text = "未打开数据库：" + _tips.GetToolTip(_databaseLabel);
+                if (_database is null)
+                {
+                    _databaseLabel.Text = "记录未能打开";
+                    _overview.Text = "读取记录未完成：" + error.Message + "\r\n\r\n原数据库和已有证据保留，未创建替代库。可检查权限或通过“打开记录数据库”查看其他已有记录。";
+                }
                 SetStatus("未完成：" + error.Message, true);
             }
         }
@@ -562,6 +606,7 @@ public sealed class ViewerForm : Form
     {
         _newInstall.Enabled = !IsBusy;
         _newInstall.Text = ActiveInstallForm is null ? "新建安装记录" : "本次任务状态";
+        _myRecords.Enabled = !IsBusy && ActiveInstallForm is not { IsActive: true };
         _sessions.Enabled = !IsBusy && _database is not null;
         // Keep tab-page ownership and visibility stable during read-only work.
         // Disabling the entire tab tree also disables inactive page windows;

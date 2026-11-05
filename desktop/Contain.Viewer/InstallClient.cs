@@ -8,7 +8,7 @@ public sealed record InstallRequest(string Installer, string Name, string WatchR
     IReadOnlyList<string> Arguments, string? RegistryKey = null, bool SnapshotOnly = false,
     ulong SettleMilliseconds = 1500, ulong MaxDrainMilliseconds = 10000)
 {
-    public InstallRequest Validate()
+    public InstallRequest Validate(bool allowMissingDatabaseDirectory = false)
     {
         if (!File.Exists(Installer) || !string.Equals(Path.GetExtension(Installer), ".exe", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("请选择已存在的 .exe 安装器。当前不支持直接启动 .msi、脚本或服务代理安装。");
@@ -19,7 +19,9 @@ public sealed record InstallRequest(string Installer, string Name, string WatchR
         var prefix = Path.EndsInDirectorySeparator(root) ? root : root + Path.DirectorySeparatorChar;
         if (string.Equals(root, database, StringComparison.OrdinalIgnoreCase) || database.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("数据库及 WAL/SHM 必须位于观察目录之外。");
-        if (!Directory.Exists(Path.GetDirectoryName(database)) || Directory.Exists(database)) throw new InvalidDataException("数据库父目录必须已存在，保存位置必须是文件。");
+        PersonalRecords.EnsureOutsideWatch(database, root);
+        if (!allowMissingDatabaseDirectory && !Directory.Exists(Path.GetDirectoryName(database)) || Directory.Exists(database))
+            throw new InvalidDataException("数据库父目录必须已存在，保存位置必须是文件。");
         if (Arguments.Any(x => x.Contains('\0'))) throw new InvalidDataException("安装器参数不能含 NUL 字符。");
         if (SettleMilliseconds > MaxDrainMilliseconds || MaxDrainMilliseconds > 600000) throw new InvalidDataException("高级等待参数无效；最长整理等待上限为 600000 毫秒。");
         return this with { Installer = Path.GetFullPath(Installer), WatchRoot = root, Database = database };
@@ -32,6 +34,7 @@ public sealed record InstallRunResult(InstallStatus? LastStatus, int CollectorEx
     public string? LastConfirmedStage { get; init; }
     public bool DiagnosticsTruncated { get; init; }
     public bool Succeeded => CollectorExitCode == 0 && ProtocolError is null && LastStatus is { Stage: "finished", CaptureFinished: true, DataSaved: true };
+    public bool CanRetryBeforeInstaller => ProtocolError is null && LastStatus is { Stage: "failed", InstallerStarted: false };
 }
 
 /// <summary>Explicit capture path, separate from the viewer's read-only query client.</summary>
@@ -39,7 +42,9 @@ public sealed class InstallClient(string executablePath)
 {
     private readonly string executable = Path.GetFullPath(executablePath);
     private int active;
+    private int collectorStarted;
     public bool IsActive => Volatile.Read(ref active) != 0;
+    public bool CollectorStarted => Volatile.Read(ref collectorStarted) != 0;
 
     public static IReadOnlyList<string> BuildArguments(InstallRequest request)
     {
@@ -77,23 +82,36 @@ public sealed class InstallClient(string executablePath)
         return data.Clone();
     }
 
-    public async Task<InstallRunResult> RunAsync(InstallRequest request, Action<InstallStatus> progress)
+    public async Task<InstallRunResult> RunAsync(InstallRequest request, Action<InstallStatus> progress, PersonalRecords? records = null)
     {
-        var valid = request.Validate();
         if (Interlocked.CompareExchange(ref active, 1, 0) != 0) throw new InvalidOperationException("已有一个活动记录任务。");
+        Volatile.Write(ref collectorStarted, 0);
         Semaphore? gate = null;
         var acquired = false;
         try
         {
+            var library = records ?? PersonalRecords.ForCurrentUser();
+            var valid = request.Validate(allowMissingDatabaseDirectory: library.IsPersonalDatabase(request.Database));
             gate = new Semaphore(1, 1, "Local\\Contain.InstallRecord.0.3.1");
             acquired = gate.WaitOne(0);
             if (!acquired) throw new InvalidOperationException("另一个 Contain 窗口正在记录安装；请等待该任务退出。");
             await VerifyVersionAsync(CancellationToken.None);
+            // Storage::open is writable and can initialize/migrate a SQLite file.
+            // Reject corrupt, future and unrelated files through the established
+            // production read-only path before any directory/probe/writer action.
+            if (PersonalRecords.InspectDatabase(valid.Database) == PersonalRecordState.Existing)
+            {
+                try { _ = await new CoreClient(executable).ListAsync(valid.Database); }
+                catch (Exception error) when (error is CoreClientException or InvalidDataException)
+                { throw new InvalidDataException("已有记录无法安全打开；未启动安装器，也未修改数据库。可查看详情或更改保存位置。", error); }
+            }
+            valid = library.PrepareForRecording(valid);
             using var process = NewProcess(BuildArguments(valid));
             var sequence = new InstallStatusSequence(valid.Database);
             string? protocolError = null;
             string? lastConfirmedStage = null;
             if (!process.Start()) throw new InvalidOperationException("无法启动采集进程；安装器未由桌面启动。");
+            Volatile.Write(ref collectorStarted, 1);
             var collectorPid = process.Id;
             var stderr = InstallDiagnosticOutput.ReadAsync(process.StandardError.BaseStream, 1024 * 1024);
             // Parse and drain independently of the WinForms synchronization context.

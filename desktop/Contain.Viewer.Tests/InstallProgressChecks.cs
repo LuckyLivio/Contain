@@ -49,6 +49,13 @@ internal static class InstallProgressChecks
         }
         Emit(1, "preparing", "database_open");
         await Task.Delay(60);
+        if (scenario == "prelaunch_missing") return 0;
+        if (scenario == "prelaunch_malformed") { Console.WriteLine("SYNTHETIC malformed status"); Console.Out.Flush(); return 2; }
+        if (scenario == "prelaunch_trusted_failure")
+        {
+            Console.WriteLine(Document(database, id, 2, "failed", false, false, false, false, "database_open",
+                (ulong)clock.ElapsedMilliseconds, null, "SYNTHETIC trusted prelaunch failure")); Console.Out.Flush(); return 7;
+        }
         Emit(2, "capturing", "installer_running");
         await Task.Delay(60);
         // A distinct actual installer-exit checkpoint is retained by the real bridge.
@@ -160,8 +167,10 @@ internal static class InstallProgressChecks
             Require(form.Result is { Succeeded: true, ProtocolError: null } && form.LastStatus is { Stage: "finished" }, "same-stage progress and bounded stderr cannot corrupt completion");
             Require(form.Result!.Diagnostics.StartsWith("SYNTHETIC diagnostic prefix 中文") && form.Result.Diagnostics.Length > 65536, "concurrent stderr exceeds pipe capacity and drains independently");
         }));
-        await Check(Plan[3], () => RunCase("failure", async (form, operation) =>
+        await Check(Plan[3], async () =>
         {
+            await RunCase("failure", async (form, operation) =>
+            {
             await operation.WaitAsync(TimeSpan.FromSeconds(15));
             Require(form.Result is { Succeeded: false, CollectorExitCode: 7 } && form.LastStatus is { Stage: "failed", DataSaved: true }, "structured failed result preserves partial-save meaning");
             Require(C<TextBox>(form, "InstallStatus").Text.Contains("失败") && !C<TextBox>(form, "InstallStatus").Text.Contains(new string('错', 1000)), "concise default failure summary");
@@ -172,12 +181,31 @@ internal static class InstallProgressChecks
             var details = form.OwnedForms.Single(window => window.Name == "InstallTaskDetails");
             Require(C<TextBox>(details, "InstallTaskDiagnostics").Text.Contains(new string('错', 1000)), "long error inspectable in native details window");
             details.Close();
-        }));
-        await Check(Plan[4], () => RunCase("early_exit", async (form, operation) =>
+            });
+            await RunCase("prelaunch_trusted_failure", async (form, operation) =>
+            {
+                await operation.WaitAsync(TimeSpan.FromSeconds(15));
+                Require(form.Result is { CanRetryBeforeInstaller: true, CollectorPid: > 0 }
+                    && C<Button>(form, "StartRecording").Enabled && C<Button>(form, "ChangeSaveLocation").Visible,
+                    "trusted terminal failure before installer launch enables explicit correction and retry");
+            });
+        });
+        await Check(Plan[4], async () =>
         {
+            await RunCase("early_exit", async (form, operation) =>
+            {
             await operation.WaitAsync(TimeSpan.FromSeconds(15));
             Require(form.Result is { Succeeded: false, CollectorExitCode: 0, LastStatus.Stage: "finalizing", ProtocolError: not null }, "zero collector exit without terminal result remains unfinished");
-        }));
+            });
+            foreach (var scenario in new[] { "prelaunch_missing", "prelaunch_malformed" })
+                await RunCase(scenario, async (form, operation) =>
+                {
+                    await operation.WaitAsync(TimeSpan.FromSeconds(15));
+                    Require(form.Result is { CanRetryBeforeInstaller: false, CollectorPid: > 0, ProtocolError: not null }
+                        && !C<Button>(form, "StartRecording").Enabled && !C<Button>(form, "ChangeSaveLocation").Visible,
+                        "spawned collector with missing/malformed protocol never silently re-enables start");
+                });
+        });
         await Check(Plan[5], () => RunCase("nonzero", async (form, operation) =>
         {
             await operation.WaitAsync(TimeSpan.FromSeconds(15));
@@ -229,19 +257,21 @@ internal static class InstallProgressChecks
             Directory.CreateDirectory(root);
             var watch = Path.Combine(root, "watched"); Directory.CreateDirectory(watch);
             Environment.SetEnvironmentVariable(ScenarioVariable, scenario);
-            using var form = new InstallForm(new InstallClient(Environment.ProcessPath!), (_, _) => Task.CompletedTask);
+            var bridge = new InstallClient(Environment.ProcessPath!);
+            using var form = new InstallForm(bridge, (_, _) => Task.CompletedTask);
             try
             {
                 form.Show(owner);
                 C<TextBox>(form, "InstallerPath").Text = Environment.ProcessPath!;
                 C<TextBox>(form, "RecordName").Text = "SYNTHETIC progress protocol fixture";
                 C<TextBox>(form, "WatchRoot").Text = watch;
-                C<TextBox>(form, "DatabaseSavePath").Text = Path.Combine(root, "not-created.db");
+                TestRecordIsolation.SelectCustomDatabase(form, Path.Combine(root, "not-created.db"));
                 C<CheckBox>(form, "SnapshotOnly").Checked = true;
                 C<Button>(form, "StartRecording").PerformClick();
                 var operation = form.PendingOperation;
                 try { await check(form, operation); }
                 finally { await operation.WaitAsync(TimeSpan.FromSeconds(15)); }
+                Require(bridge.CollectorStarted, "actual synthetic collector acquisition is retained after its exit");
             }
             finally { Environment.SetEnvironmentVariable(ScenarioVariable, previous); }
         }

@@ -117,7 +117,7 @@ internal sealed class LayoutVerification(Options options, bool viewerChecksPasse
             C<TextBox>(install, "RecordName").Text = "SYNTHETIC 布局检查 & 逐项范围";
             C<TextBox>(install, "WatchRoot").Text = watch;
             var destination = Path.Combine(parent, "layout-save-not-started.db");
-            C<TextBox>(install, "DatabaseSavePath").Text = destination;
+            TestRecordIsolation.SelectCustomDatabase(install, destination);
             C<CheckBox>(install, "AdvancedToggle").Checked = true;
             C<TextBox>(install, "RegistryKey").Text = @"Software\Contain\LayoutSynthetic";
             install.WindowState = FormWindowState.Normal;
