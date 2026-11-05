@@ -35,6 +35,7 @@ public sealed class ViewerForm : Form
     private readonly DataGridView _changes = Grid("Changes");
     private readonly DataGridView _events = Grid("Events");
     private readonly TextBox _overview = ReadText("Overview");
+    private OverviewPanel _overviewPanel = null!;
     private readonly TextBox _eventDetails = ReadText("EventDetails");
     private readonly TextBox _rawDetails = ReadText("RawDetails");
     private readonly TextBox _changeDetails = ReadText("ChangeDetails");
@@ -172,7 +173,10 @@ public sealed class ViewerForm : Form
         right.Controls.Add(_tabs, 0, 2);
         body.Controls.Add(right, 1, 0);
         var summary = new TabPage("记录概览") { Name = "OverviewTab", BackColor = Color.White, Padding = new Padding(16) };
-        summary.Controls.Add(_overview);
+        _overviewPanel = new OverviewPanel(_overview,
+            () => _tabs.SelectedTab = _tabs.TabPages["ChangesTab"],
+            () => _tabs.SelectedTab = _tabs.TabPages["EventsTab"], SetStatus);
+        summary.Controls.Add(_overviewPanel);
         _tabs.TabPages.Add(summary);
         var changeTab = new TabPage("状态变化") { Name = "ChangesTab", BackColor = Color.White, Padding = new Padding(12), AutoScroll = true };
         var changeLayout = Rows(0, 0, -75, -25, 0);
@@ -268,11 +272,8 @@ public sealed class ViewerForm : Form
             ActiveInstallForm = new InstallForm(new InstallClient(_client.ExecutablePath), OpenCapturedSessionAsync, _installDialogs, _records);
             ActiveInstallForm.RecordingEnded += result =>
             {
-                var state = result.LastStatus;
                 _lastRun = result;
-                _captureSummary.Text = $"最近任务：安装器退出 {(state?.InstallerExited == true ? state.InstallerExitCode?.ToString() ?? "未知" : "未确认")} · 记录{(result.Succeeded ? "已完成" : "失败或未完成")} · 保存{(state?.DataSaved == true ? "已确认" : "未确认")} · 覆盖 {state?.QualityLevel ?? "未确认"}。点击查看任务详情。";
-                _captureSummary.LinkArea = new LinkArea(0, _captureSummary.Text.Length);
-                _tips.SetToolTip(_captureSummary, "任务详情保留最后确认阶段、采集进程退出结果和诊断。安装器退出结果与记录完成分别判断。");
+                UpdateTaskSummary();
                 UpdateEnabled();
             };
             ActiveInstallForm.FormClosed += (_, _) => { ActiveInstallForm = null; UpdateEnabled(); };
@@ -426,22 +427,41 @@ public sealed class ViewerForm : Form
         var db = _database ?? throw new InvalidOperationException("请先打开数据库。");
         ResetRecord();
         var id = FieldText(record, "id");
-        var summary = await _client.SummaryAsync(db, id, token);
-        var changes = await _client.DiffAsync(db, id, token);
-        token.ThrowIfCancellationRequested();
-        _recordId = id;
-        _sessionTitle.AccessibleDescription = "session:" + id;
-        _sessionTitle.Text = FieldText(summary.Data, "name");
-        _summaryStatus.Text = $"安装器退出：{FieldText(summary.Data, "exit_code")}  ·  记录：{State(FieldText(summary.Data, "capture_state"))}  ·  保存：已读取  ·  覆盖：{Quality(FieldText(Field(summary.Data, "quality"), "level"))}";
-        _overview.Text = OverviewText(summary.Data);
-        _allChanges = [];
-        foreach (var item in Array(Field(changes.Data, "files"))) _allChanges.Add(("文件", item.Clone()));
-        foreach (var item in Array(Field(changes.Data, "registry"))) _allChanges.Add(("注册表", item.Clone()));
-        foreach (var item in Array(Field(changes.Data, "inventory"))) _allChanges.Add(("配置清单", item.Clone()));
-        RenderChanges();
-        await LoadEventsAsync(0, token);
-        token.ThrowIfCancellationRequested();
-        SetStatus("记录已加载。状态差异、源操作和最终所有权是不同判断；可在“事件与依据”中选择一条事件。", false);
+        _tabs.SelectedTab = _tabs.TabPages["OverviewTab"];
+        _sessionTitle.Text = "正在读取：" + FieldText(record, "name");
+        _summaryStatus.Text = "正在读取所选会话的已保存数据…";
+        _overview.Text = "正在读取当前记录的概览、状态变化和事件。\r\n\r\n加载完成前不显示其他会话的结果。";
+        try
+        {
+            // Commit the complete initial view together. A failing summary, diff
+            // or first page must not leave a different selection's results visible.
+            var summary = await _client.SummaryAsync(db, id, token);
+            var changes = await _client.DiffAsync(db, id, token);
+            var history = await _client.HistoryAsync(db, id, _pageSize + 1, 0, token);
+            token.ThrowIfCancellationRequested();
+            _recordId = id;
+            _sessionTitle.AccessibleDescription = "session:" + id;
+            _sessionTitle.Text = FieldText(summary.Data, "name");
+            _summaryStatus.Text = "当前会话的已保存证据 · 观察范围内的变化不代表最终所有权";
+            _overview.Text = OverviewText(summary.Data, changes.Data) + $"\r\n会话 ID：{id}\r\n数据库：{db}\r\n";
+            _overviewPanel.SetRecord(OverviewPresentation.Build(summary.Data, changes.Data), id);
+            _allChanges = [];
+            foreach (var item in Array(Field(changes.Data, "files"))) _allChanges.Add(("文件", item.Clone()));
+            foreach (var item in Array(Field(changes.Data, "registry"))) _allChanges.Add(("注册表", item.Clone()));
+            foreach (var item in Array(Field(changes.Data, "inventory"))) _allChanges.Add(("配置清单", item.Clone()));
+            RenderChanges();
+            ShowEvents(history, 0);
+            UpdateTaskSummary();
+            SetStatus("记录已加载。可查看状态变化、事件与依据，或展开技术详情。", false);
+        }
+        catch (Exception error) when (!token.IsCancellationRequested)
+        {
+            ResetRecord();
+            _sessionTitle.Text = "记录读取失败：" + FieldText(record, "name");
+            _summaryStatus.Text = "未取得当前会话的完整查询结果；原数据库保持不变。";
+            _overview.Text = $"无法读取所选会话：{id}\r\n\r\n{error.Message}\r\n\r\n未使用上一条记录的摘要替代。可重新选择记录重试。";
+            throw;
+        }
     }
 
     private void ChangeEventPage(long offset)
@@ -459,6 +479,11 @@ public sealed class ViewerForm : Form
     {
         var history = await _client.HistoryAsync(_database!, _recordId!, _pageSize + 1, offset, token);
         token.ThrowIfCancellationRequested();
+        ShowEvents(history, offset);
+    }
+
+    private void ShowEvents(CoreResponse history, long offset)
+    {
         var rows = Array(Field(history.Data, "events")).ToList();
         _eventOffset = offset;
         _moreEvents = rows.Count > _pageSize;
@@ -548,6 +573,8 @@ public sealed class ViewerForm : Form
         _sessionTitle.Text = "打开一份记录，了解它留下的证据";
         _summaryStatus.Text = "只读查看 · 不修改原数据库 · 不判断安全删除";
         _overview.Text = "打开已有 Contain 数据库，然后选择一条记录。\r\n\r\n记录列表、变化和事件均来自实际 CLI 查询。没有数据库时不会生成演示记录。";
+        _overviewPanel.SetMessage();
+        UpdateTaskSummary();
         _rendering = true;
         try { _eventFilter.Clear(); _changeFilter.Clear(); }
         finally { _rendering = false; }
@@ -622,6 +649,7 @@ public sealed class ViewerForm : Form
         _nextChanges.Enabled = !IsBusy && _recordId is not null && _moreChanges;
         _copyEvent.Enabled = !IsBusy && _selectedEventId is not null;
         _rawToggle.Enabled = !IsBusy && _selectedEventId is not null;
+        _overviewPanel.SetQueryEnabled(!IsBusy && _recordId is not null);
     }
 
     private void SetStatus(string message, bool error)
@@ -659,7 +687,7 @@ public sealed class ViewerForm : Form
 
     private void ShowLastTaskDetails()
     {
-        if (_lastRun is not { } result) return;
+        if (!LastTaskMatchesSelection() || _lastRun is not { } result) return;
         var state = result.LastStatus;
         var details = new StringBuilder()
             .AppendLine($"安装器退出结果：{(state?.InstallerExited == true ? state.InstallerExitCode?.ToString() ?? "未提供退出码" : "未确认退出")}")
@@ -700,7 +728,30 @@ public sealed class ViewerForm : Form
         window.ShowDialog(this);
     }
 
-    private static string OverviewText(JsonElement data)
+    private bool LastTaskMatchesSelection()
+    {
+        var state = _lastRun?.LastStatus;
+        if (_database is null || _recordId is null || state?.SessionId != _recordId || string.IsNullOrWhiteSpace(state.Database)) return false;
+        try { return string.Equals(Path.GetFullPath(state.Database), _database, StringComparison.OrdinalIgnoreCase); }
+        catch (Exception error) when (error is ArgumentException or NotSupportedException or PathTooLongException) { return false; }
+    }
+
+    private void UpdateTaskSummary()
+    {
+        if (!LastTaskMatchesSelection())
+        {
+            _captureSummary.Text = "新建记录会显式启动安装器；打开已有数据库始终只读。";
+            _captureSummary.LinkArea = new LinkArea(0, 0);
+            _tips.SetToolTip(_captureSummary, "概览仅使用当前数据库、当前会话的持久化记录。");
+            return;
+        }
+        var state = _lastRun!.LastStatus;
+        _captureSummary.Text = "此会话有本次运行的任务诊断，点击查看。下方概览以数据库中的保存内容为准。";
+        _captureSummary.LinkArea = new LinkArea(0, _captureSummary.Text.Length);
+        _tips.SetToolTip(_captureSummary, $"会话 {state!.SessionId}。任务诊断与已保存概览分别呈现；冷启动后仍可读取保存的记录。");
+    }
+
+    private static string OverviewText(JsonElement data, JsonElement changes)
     {
         var text = new StringBuilder();
         var counts = Field(data, "summary_counts");
@@ -714,29 +765,30 @@ public sealed class ViewerForm : Form
         text.AppendLine("本次记录结果")
             .AppendLine($"安装器退出结果：{exitResult}")
             .AppendLine($"记录完成：{(captureState == "finished" ? "已确认结束" : "未确认完整结束")}；数据保存：已从数据库读到记录。保存不代表安装成功或记录完整。")
-            .AppendLine($"观察到的状态变化：文件 {Count(Field(data, "files"))} 项 / 注册表值 {Count(Field(data, "registry"))} 项 / 配置清单 {Count(Field(data, "inventory"))} 项。")
+            .AppendLine($"已保存的状态变化：文件 {Count(Field(changes, "files"))} 项 / 注册表值 {Count(Field(changes, "registry"))} 项 / 配置清单 {Count(Field(changes, "inventory"))} 项。")
             .AppendLine($"覆盖质量：{Quality(FieldText(quality, "level"))}")
             .AppendLine(FieldText(quality, "level") == "Incomplete" ? "覆盖限制：证据不完整。数据库未确认结束时，不能仅凭当前阶段确定中断根因。" : "覆盖限制：仅观察所选范围；实际来源启用也不能证明完整软件足迹或最终文件归属。")
             .AppendLine().AppendLine("观察对象与范围").AppendLine($"程序：{FieldText(data, "name")}")
             .AppendLine($"安装程序：{FieldText(data, "installer")}")
             .AppendLine($"开始：{FieldText(data, "started_at")}")
             .AppendLine($"记录结束时间：{FieldText(data, "finished_at")}")
-            .AppendLine($"记录状态：{State(captureState)}")
+            .AppendLine($"记录状态：{State(captureState)}（持久化状态，不表示采集进程现在仍在运行）")
             .AppendLine($"观察目录：{Join(Field(data, "watch_roots"))}")
-            .AppendLine($"注册表范围：{FieldText(data, "registry_key")}").AppendLine()
+            .AppendLine($"注册表范围：{(FieldText(data, "registry_key") == Missing ? "未选择 / 未记录" : "HKEY_CURRENT_USER\\" + FieldText(data, "registry_key"))}").AppendLine()
             .AppendLine("高级诊断与原始依据")
             .AppendLine("实际来源（active 表示启用，不证明覆盖完整）")
             .AppendLine($"ETW 进程：{FieldText(backend, "etw_process")}  ·  文件：{FieldText(backend, "etw_file")}  ·  注册表：{FieldText(backend, "etw_registry")}").AppendLine()
             .AppendLine("记录内容（不同口径分别统计）")
             .AppendLine($"时间线观测：{FieldText(counts, "events_retained")}  ·  规范化源操作：{FieldText(counts, "events_normalized")}")
             .AppendLine($"源进程已知：{FieldText(counts, "known_actor_events")}  ·  未知：{FieldText(counts, "unknown_actor_events")}")
-            .AppendLine($"状态差异：文件 {Count(Field(data, "files"))} 项 / 注册表值 {Count(Field(data, "registry"))} 项 / 配置清单 {Count(Field(data, "inventory"))} 项").AppendLine()
+            .AppendLine($"已保存的状态差异：文件 {Count(Field(changes, "files"))} 项 / 注册表值 {Count(Field(changes, "registry"))} 项 / 配置清单 {Count(Field(changes, "inventory"))} 项")
+            .AppendLine("上述条目与状态变化视图采用相同查询口径；0 项不等于没有发生变化，缺失统计不作为 0。未结束时最终差异尚未确认。").AppendLine()
             .AppendLine("覆盖与缺失")
             .AppendLine($"覆盖质量：{Quality(FieldText(quality, "level"))}")
             .AppendLine($"ETW 丢失事件：{FieldText(backend, "etw_events_lost")}  ·  丢失缓冲区：{FieldText(backend, "etw_buffers_lost")}")
             .AppendLine($"应用丢弃：{FieldText(counts, "application_records_dropped")}  ·  解码错误：{FieldText(counts, "decode_errors")}")
             .AppendLine($"快照缺口：{FieldText(counts, "snapshot_gaps")}  ·  通知缺口：{FieldText(counts, "notification_gaps")}  ·  排空超时：{FieldText(counts, "drain_timed_out")}");
-        foreach (var reason in Array(Field(quality, "reasons")).Concat(Array(Field(data, "warnings"))).Concat(Array(Field(backend, "warnings"))).Select(Value).Distinct()) text.AppendLine("• " + reason);
+        foreach (var reason in OverviewPresentation.Diagnostics(data)) text.AppendLine("• " + reason);
         text.AppendLine().AppendLine("进程证据（身份由 PID 与创建时间共同标识）");
         var processes = Array(Field(data, "processes")).ToList();
         foreach (var process in processes.Take(20)) text.AppendLine($"• {FieldText(process, "image")} · PID {FieldText(process, "pid")} · 创建时间 {FieldText(process, "creation_time")} · {Confidence(FieldText(process, "confidence"))}");

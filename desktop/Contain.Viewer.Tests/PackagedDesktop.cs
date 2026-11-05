@@ -38,6 +38,21 @@ internal sealed class PackagedDesktop : IDisposable
     internal Task<bool> ExistsAsync(string id) => Ui(() => Find(id) is not null);
     internal Task<bool> EnabledAsync(string id) => Ui(() => Required(id).Current.IsEnabled);
     internal Task<string> TextAsync(string id) => Ui(() => Text(Required(id)));
+    internal Task<uint> DeviceDpiAsync() => Ui(() => { process.Refresh(); return GetDpiForWindow(process.MainWindowHandle); });
+    internal Task<bool> OnscreenAsync(string id) => Ui(() =>
+    {
+        var control = Required(id); process.Refresh();
+        if (control.Current.IsOffscreen || !GetWindowRect(process.MainWindowHandle, out var window)) return false;
+        var bounds = control.Current.BoundingRectangle;
+        return bounds.Width > 0 && bounds.Height > 0 && bounds.Left >= window.Left && bounds.Top >= window.Top
+            && bounds.Right <= window.Right && bounds.Bottom <= window.Bottom;
+    });
+    internal Task ResizeAsync(int width, int height) => Ui(() =>
+    {
+        process.Refresh();
+        if (!SetWindowPos(process.MainWindowHandle, IntPtr.Zero, 0, 0, width, height, 0x0002 | 0x0004))
+            throw new IOException("The actual overview window did not resize.");
+    });
     internal Task<string> DescriptionAsync(string id) => Ui(() =>
     {
         var element = Required(id);
@@ -244,6 +259,8 @@ internal sealed class PackagedDesktop : IDisposable
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out WindowBounds bounds);
     [DllImport("user32.dll")] private static extern bool PrintWindow(IntPtr window, IntPtr dc, uint flags);
     [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
     [DllImport("oleacc.dll")] private static extern int AccessibleObjectFromWindow(IntPtr window, uint objectId, ref Guid iid,
         [MarshalAs(UnmanagedType.Interface)] out global::Accessibility.IAccessible? accessible);
 }

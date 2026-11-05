@@ -26,6 +26,14 @@ INSTALL_VERIFICATION = "contain-desktop-install-verification-1"
 LAYOUT_VERIFICATION = "contain-desktop-layout-verification-1"
 PROGRESS_VERIFICATION = "contain-desktop-progress-verification-1"
 PERSONAL_RECORDS_VERIFICATION = "contain-desktop-personal-records-verification-1"
+OVERVIEW_VERIFICATION = "contain-desktop-overview-verification-1"
+OVERVIEW_REQUIRED_CHECKS = frozenset({
+    "frozen_overview_package_identity", "persisted_three_outcomes",
+    "missing_statistics_distinct_from_zero", "same_name_uuid_switch_and_details_navigation",
+    "external_legacy_and_default_library", "query_failure_clears_previous_summary",
+    "packaged_overview_three_outcomes", "packaged_overview_cold_restart_exact_session_event",
+    "overview_expand_resize_actions_and_long_text", "overview_databases_unchanged",
+})
 PERSONAL_RECORDS_REQUIRED_CHECKS = frozenset({
     "guarded_test_root_and_missing_library", "default_path_and_name_suggestion",
     "manual_name_and_advanced_custom_location", "external_database_read_only_new_record_default",
@@ -193,7 +201,9 @@ def usage(source, install=False, version=None):
 
 1. 解压整个 ZIP，双击 `Contain.Viewer.exe`。不要只复制单个 EXE。
 2. 默认打开“我的记录”：没有历史时显示空状态，不会创建数据库或填入演示记录。
-3. 在记录列表选择一条记录；查看概览、状态变化和分页事件。重启后仍可查看此前保存的记录。
+3. 在记录列表选择一条记录；概览分别显示安装器结果、记录状态、观察范围与覆盖、主要变化。
+   “查看变化”和“查看事件与依据”打开当前会话；展开“技术详情”查看来源、统计、缺口与进程证据。
+   重启后仍从数据库读取同一会话；未结束的历史记录不代表采集进程当前仍在运行。
 4. 点击事件查看依据，可复制事件 ID；点击导出保存本地 HTML 报告。
 
 无需 Rust、Visual Studio、Python 或另装 .NET。Windows x64 系统组件和随包
@@ -523,6 +533,47 @@ def personal_records_verification_matches(value, build, manifest_sha):
         and type(value.get("passed")) is int and value["passed"] == len(PERSONAL_RECORDS_REQUIRED_CHECKS)
         and all(type(value.get(key)) is int and value[key] == 0 for key in ("failed", "skipped", "not_run")))
 
+def overview_verification_matches(value, build, manifest_sha):
+    """Require the actual packaged EXE's persisted summary and exact-navigation evidence."""
+    if not isinstance(value, dict):
+        return False
+    checks, planned = value.get("checks"), value.get("planned_checks")
+    if not (isinstance(checks, list) and all(isinstance(check, dict) for check in checks)
+            and isinstance(planned, list) and all(isinstance(name, str) for name in planned)):
+        return False
+    names = [check.get("name") for check in checks]
+    if (not all(isinstance(name, str) for name in names)
+            or len(names) != len(set(names)) or set(names) != OVERVIEW_REQUIRED_CHECKS
+            or len(planned) != len(set(planned)) or set(planned) != OVERVIEW_REQUIRED_CHECKS):
+        return False
+    expected = {entry["path"]: entry["sha256"] for entry in build["files"]}
+    session, event = value.get("initial_session_id"), value.get("initial_event_id")
+    return (
+        type(value.get("schema_version")) is int and value["schema_version"] == 1
+        and value.get("protocol_revision") == OVERVIEW_VERIFICATION
+        and value.get("source_sha") == build["source_sha"]
+        and value.get("native_windows") is True and value.get("synthetic") is True
+        and value.get("real_etw_executed") is False
+        and value.get("completed") is True and value.get("accepted") is True
+        and value.get("actual_packaged_executable") is True and value.get("cold_restart_verified") is True
+        and value.get("working_directory_changed") is True
+        and value.get("real_user_records_accessed") is False
+        and type(value.get("retries")) is int and value["retries"] == 0
+        and value.get("package_manifest_sha256") == manifest_sha
+        and value.get("viewer_assembly_sha256") == expected["Contain.Viewer.dll"]
+        and value.get("viewer_launcher_sha256") == expected["Contain.Viewer.exe"]
+        and value.get("contain_sha256") == expected["contain.exe"]
+        and isinstance(session, str) and bool(session.strip())
+        and isinstance(event, str) and bool(event.strip())
+        and value.get("restart_session_id") == session and value.get("restart_event_id") == event
+        and all(type(value.get(key)) is int and value[key] > 0
+                for key in ("first_process_id", "restarted_process_id"))
+        and value["first_process_id"] != value["restarted_process_id"]
+        and type(value.get("first_process_exit_code")) is int and value["first_process_exit_code"] == 0
+        and all(check.get("status") == "passed" for check in checks)
+        and type(value.get("passed")) is int and value["passed"] == len(OVERVIEW_REQUIRED_CHECKS)
+        and all(type(value.get(key)) is int and value[key] == 0 for key in ("failed", "skipped", "not_run")))
+
 
 def finalize(args):
     package = args.package.resolve()
@@ -538,6 +589,8 @@ def finalize(args):
     progress = read(progress_path) if progress_path and progress_path.is_file() else {}
     personal_path = getattr(args, "personal_records_verification", None)
     personal = read(personal_path) if personal_path and personal_path.is_file() else {}
+    overview_path = getattr(args, "overview_verification", None)
+    overview = read(overview_path) if overview_path and overview_path.is_file() else {}
     install_requested = build.get("controlled_fixture") is not None or install_path is not None
     checks = {
         "frozen_package_unchanged": True,
@@ -549,6 +602,9 @@ def finalize(args):
         # Beta 3 cannot be called verified without its personal-library/cold-
         # restart evidence, even when a caller omits the diagnostic-friendly flag.
         "native_personal_records_and_cold_restart": personal_records_verification_matches(personal, build, manifest_sha),
+        # Beta 4's result page is mandatory even if the optional diagnostic flag
+        # is omitted. A passed older UI suite cannot stand in for these checks.
+        "native_persisted_overview_and_navigation": overview_verification_matches(overview, build, manifest_sha),
     }
     if install_requested:
         checks["native_gui_install_etw_and_exact_result"] = install_verification_matches(installation, build, manifest_sha)
@@ -579,6 +635,8 @@ def finalize(args):
         native_layout_verification=layout,
         native_progress_verification=progress,
         native_personal_records_verification=personal,
+        native_overview_verification=overview,
+        overview_verification_summary_sha256=sha(overview_path) if overview_path and overview_path.is_file() else None,
         personal_records_verification_summary_sha256=sha(personal_path) if personal_path and personal_path.is_file() else None,
         progress_verification_summary_sha256=sha(progress_path) if progress_path and progress_path.is_file() else None,
         layout_verification_summary_sha256=sha(layout_path) if layout_path and layout_path.is_file() else None,
@@ -630,6 +688,8 @@ def main():
         help="Require native synthetic process/progress/failure checks; these do not establish real ETW")
     finish.add_argument("--personal-records-verification", type=Path,
         help="Require the isolated personal-library and actual packaged EXE cold-restart checks")
+    finish.add_argument("--overview-verification", type=Path,
+        help="Require persisted overview outcomes, exact current-session navigation and cold restart")
     finish.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:

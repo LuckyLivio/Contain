@@ -170,7 +170,7 @@ internal sealed class LayoutVerification(Options options, bool viewerChecksPasse
             await Idle(viewer);
             Require(C<DataGridView>(viewer, "Changes").Visible == (index == 1), "only selected tab exposes state-change grid");
             Require(C<DataGridView>(viewer, "Events").Visible == (index == 2), "only selected tab exposes event grid");
-            Require(C<TextBox>(viewer, "Overview").Visible == (index == 0), "overview visibility follows selected tab");
+            Require(C<Control>(viewer, "OverviewPanel").Visible == (index == 0), "overview cards follow selected tab");
             ValidateText(viewer);
         }
         var events = C<DataGridView>(viewer, "Events");
