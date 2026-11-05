@@ -218,7 +218,7 @@ checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
 name = "contain-cli"
-version = "0.3.2-beta.3"
+version = "0.3.2-beta.4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -231,7 +231,7 @@ dependencies = [
 
 [[package]]
 name = "contain-core"
-version = "0.3.2-beta.3"
+version = "0.3.2-beta.4"
 dependencies = [
  "anyhow",
  "blake3",
@@ -252,7 +252,7 @@ dependencies = [
 
 [[package]]
 name = "contain-offline"
-version = "0.3.2-beta.3"
+version = "0.3.2-beta.4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -267,7 +267,7 @@ dependencies = [
 
 [[package]]
 name = "contain-test-installer"
-version = "0.3.2-beta.3"
+version = "0.3.2-beta.4"
 dependencies = [
  "anyhow",
  "clap",

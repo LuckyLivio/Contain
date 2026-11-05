@@ -31,12 +31,19 @@ internal static class Program
             return InstallProgressChecks.RunStandalone(Path.GetFullPath(args[1]));
         if (args.Length == 4 && args[0] == "--personal-records-checks-only")
             return PersonalRecordsVerification.RunStandalone(args[1], args[2], args[3]);
+        if (args.Length == 4 && args[0] == "--overview-checks-only")
+            return OverviewVerification.RunStandalone(args[1], args[2], args[3]);
         if (args.Length == 4 && args[0] == "--uia-dump-only")
             return PackagedDesktop.Diagnose(args[1], args[2], args[3]);
+        if (args.Length == 4 && args[0] == "--overview-selection-probe")
+            return PackagedDesktop.DiagnoseSelection(args[1], args[2], args[3]);
+        if (args.Length == 4 && args[0] == "--event-selection-probe")
+            return PackagedDesktop.DiagnoseSelection(args[1], args[2], args[3], events: true);
         var options = Options.Parse(args);
         var runner = new Runner(options);
         var progressAccepted = false;
         var personalAccepted = false;
+        var overviewAccepted = false;
         using var form = new ViewerForm(runner.Client, runner.Dialogs);
         form.Shown += async (_, _) =>
         {
@@ -44,16 +51,17 @@ internal static class Program
             {
                 await runner.RunAsync(form);
                 personalAccepted = await new PersonalRecordsVerification(options, runner.Success).RunAsync(form);
+                overviewAccepted = await new OverviewVerification(options, runner.Success && personalAccepted).RunAsync(form);
                 progressAccepted = await InstallProgressChecks.RunAsync(options.Output, options.Source, form, options.Package, options.PrivateOutput);
-                runner.LayoutAccepted = await new LayoutVerification(options, runner.Success && progressAccepted && personalAccepted).RunAsync();
+                runner.LayoutAccepted = await new LayoutVerification(options, runner.Success && progressAccepted && personalAccepted && overviewAccepted).RunAsync();
                 if (options.InstallFixture is not null)
-                    runner.InstallAccepted = await new InstallVerification(options, runner.Success && runner.LayoutAccepted && progressAccepted && personalAccepted).RunAsync();
+                    runner.InstallAccepted = await new InstallVerification(options, runner.Success && runner.LayoutAccepted && progressAccepted && personalAccepted && overviewAccepted).RunAsync();
             }
             catch (Exception error) { runner.RecordUnhandled(error); }
             finally { runner.Finish(); form.Close(); }
         };
         Application.Run(form);
-        return runner.Success && progressAccepted && personalAccepted && runner.LayoutAccepted && runner.InstallAccepted ? 0 : 1;
+        return runner.Success && progressAccepted && personalAccepted && overviewAccepted && runner.LayoutAccepted && runner.InstallAccepted ? 0 : 1;
     }
 }
 

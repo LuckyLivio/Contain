@@ -1,0 +1,241 @@
+{
+  "schema_version": 1,
+  "version": "0.3.2-beta.4",
+  "release_tag": "v0.3.2-beta.4",
+  "source_sha": "681aad7cfb938d6d6204b2c1cc9cbd7431f73674",
+  "pull_request_url": "https://github.com/LuckyLivio/Contain/pull/7",
+  "ci_run_url": "https://github.com/LuckyLivio/Contain/actions/runs/42063050676",
+  "main_relationship": "Normal PR merge includes this frozen source followed by delivery-only documentation; no rebuild or repack after acceptance.",
+  "package": {
+    "filename": "contain-0.3.2-beta.4-windows-x64.zip",
+    "bytes": 76522212,
+    "sha256": "0afacc6cbf163ce336484d7256a32b9c47d018960f7c52fd8e392b2c4064460f",
+    "origin": "Unmodified accepted Windows CI ZIP; all content entries and exact Git source independently verified."
+  },
+  "source_archive": {
+    "path": "SOURCE.zip",
+    "source_sha": "681aad7cfb938d6d6204b2c1cc9cbd7431f73674",
+    "sha256": "555fcce435383a83c80060e6c4d9daadb9aabd97e473df7b8dd083634c09f49f",
+    "format": "git archive zip; exact tracked HEAD snapshot; no repository history",
+    "exact_tracked_files": 390
+  },
+  "build_manifest_sha256": "5729987ff638ebe0233a004a2077a1d56fee03596a4b60fa71917dc527d47501",
+  "validation_manifest_sha256": "c403f5af81027c2bf34e030514ef87b54a623bd2d76e0b78682a3d5d9f436e18",
+  "build": {
+    "viewer_configuration": "Release",
+    "viewer_framework": "net8.0-windows",
+    "self_contained": true,
+    "core_profile": "debug",
+    "core_target": "x86_64-pc-windows-msvc",
+    "included_frameworks": [
+      {
+        "name": "Microsoft.NETCore.App",
+        "version": "8.0.33"
+      },
+      {
+        "name": "Microsoft.WindowsDesktop.App",
+        "version": "8.0.33"
+      }
+    ],
+    "toolchain": {
+      "dotnet": "10.0.403",
+      "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+      "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)"
+    },
+    "build_platform": {
+      "system": "Windows",
+      "release": "2025Server",
+      "version": "10.0.26100",
+      "architecture": "AMD64",
+      "runner_image": "win25-vs2026",
+      "runner_image_version": "20261030.294.1",
+      "ci_run_url": "https://github.com/LuckyLivio/Contain/actions/runs/42063050676"
+    },
+    "signed": false
+  },
+  "frozen_binaries": [
+    {
+      "path": "contain.exe",
+      "bytes": 12600832,
+      "sha256": "8dbb55aed84034ed56e670bab3b2537d8655ac213624c75cc3437f132bd12803"
+    },
+    {
+      "path": "Contain.Viewer.dll",
+      "bytes": 201728,
+      "sha256": "8044d9ffb77025b36a4e25ef355325250e82fa2e7ebc5cb16970fbd9f7fc9d33"
+    },
+    {
+      "path": "Contain.Viewer.exe",
+      "bytes": 152064,
+      "sha256": "34da6990e86a1f0e34d5e626f04c398065fe9f797eb62f5b5fef31cb6ab4773c"
+    }
+  ],
+  "validation": {
+    "status": "bounded_desktop_viewer_verified",
+    "checks": {
+      "frozen_package_unchanged": true,
+      "quality_complete": true,
+      "native_ui_cli_and_export": true,
+      "native_personal_records_and_cold_restart": true,
+      "native_persisted_overview_and_navigation": true,
+      "native_layout_and_simulated_scale": true,
+      "native_progress_and_failure_feedback": true
+    },
+    "required_quality_gates": 50,
+    "quality_summary_sha256": "a3d25b47033d39b61b5e7ec446ed143e0818e639664e714733db8e31a3001e71",
+    "nextest": {
+      "runner": "nextest",
+      "executed": 338,
+      "passed": 338,
+      "failed": 0,
+      "skipped": 7,
+      "leaky": 0
+    },
+    "python_suites": 24,
+    "python_tests": 383,
+    "coverage_floors": {
+      "lines_percent": 66.5,
+      "functions_percent": 70
+    },
+    "workspace_export_totals": [
+      {
+        "lines": {
+          "count": 19598,
+          "covered": 14836,
+          "percent": 75.70160220430655
+        },
+        "functions": {
+          "count": 1565,
+          "covered": 1207,
+          "percent": 77.12460063897764
+        },
+        "regions": {
+          "count": 32667,
+          "covered": 23927,
+          "percent": 73.24517096764319
+        },
+        "instantiations": {
+          "count": 2523,
+          "covered": 1346,
+          "percent": 53.3491874752279
+        },
+        "branches": {
+          "count": 0,
+          "covered": 0,
+          "percent": 0
+        }
+      }
+    ],
+    "original_package_export_totals": [
+      {
+        "lines": {
+          "count": 14208,
+          "covered": 10348,
+          "percent": 72.8322072072072
+        },
+        "functions": {
+          "count": 1117,
+          "covered": 845,
+          "percent": 75.6490599820949
+        },
+        "regions": {
+          "count": 23154,
+          "covered": 16455,
+          "percent": 71.06763410209899
+        },
+        "instantiations": {
+          "count": 2040,
+          "covered": 957,
+          "percent": 46.911764705882355
+        },
+        "branches": {
+          "count": 0,
+          "covered": 0,
+          "percent": 0
+        }
+      }
+    ],
+    "coverage_scope": "Rust inline tests and shared aliases included; not managed-code, branch or production-only coverage. No Rust production change, new fuzz campaign or performance claim.",
+    "ci_native_checks": {
+      "viewer": 22,
+      "layout": 4,
+      "progress": 8,
+      "personal_history": 8,
+      "overview": 10
+    },
+    "ci_overview": {
+      "source_sha": "681aad7cfb938d6d6204b2c1cc9cbd7431f73674",
+      "native_windows": true,
+      "architecture": "X64",
+      "windows_version": "10.0.26100.0",
+      "device_dpi": 96,
+      "synthetic": true,
+      "real_etw_executed": false,
+      "real_user_records_accessed": false,
+      "actual_packaged_executable": true,
+      "cold_restart_verified": true,
+      "first_process_id": 8860,
+      "restarted_process_id": 4188,
+      "first_process_exit_code": 0,
+      "initial_session_id": "synthetic-finished",
+      "restart_session_id": "synthetic-finished",
+      "initial_event_id": "synthetic-finished-event-0",
+      "restart_event_id": "synthetic-finished-event-0",
+      "working_directory_changed": true,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "not_run": 0,
+      "assertions": 121,
+      "retries": 0
+    },
+    "local_same_source_full_native_checks": {
+      "viewer": 22,
+      "layout": 4,
+      "progress": 8,
+      "personal_history": 8,
+      "overview": 10
+    },
+    "local_same_source_device_dpi": 144,
+    "final_ci_artifact_on_local_windows": {
+      "source_sha": "681aad7cfb938d6d6204b2c1cc9cbd7431f73674",
+      "native_windows": true,
+      "architecture": "X64",
+      "windows_version": "10.0.26300.0",
+      "device_dpi": 144,
+      "synthetic": true,
+      "real_etw_executed": false,
+      "real_user_records_accessed": false,
+      "actual_packaged_executable": true,
+      "cold_restart_verified": true,
+      "first_process_id": 41592,
+      "restarted_process_id": 51928,
+      "first_process_exit_code": 0,
+      "initial_session_id": "synthetic-finished",
+      "restart_session_id": "synthetic-finished",
+      "initial_event_id": "synthetic-finished-event-0",
+      "restart_event_id": "synthetic-finished-event-0",
+      "working_directory_changed": true,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "not_run": 0,
+      "assertions": 121,
+      "retries": 0
+    },
+    "simulated_scales": [
+      1.5,
+      2.0
+    ],
+    "system_dpi_transition_verified": false,
+    "new_installation_captures": 0,
+    "formal_scale_or_32_trial_acceptance": "not_run"
+  },
+  "known_limits": [
+    "Original Program Files / Parallels finalizing incident remains unconfirmed in Issue #5.",
+    "Synthetic stored outcomes validate display, not new live ETW or third-party installer behavior.",
+    "Degraded means limited coverage; Incomplete means incomplete evidence. Neither is ownership or deletion authorization.",
+    "Unsigned Windows x64 package. Windows 10, ARM64, Parallels and real monitor DPI transitions are not newly verified."
+  ],
+  "privacy": "Only reviewed synthetic screenshots and aggregate results are public. Real personal libraries were excluded; original databases, WAL/SHM, backups, traces and failed attempts remain local."
+}

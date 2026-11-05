@@ -1,0 +1,5 @@
+0afacc6cbf163ce336484d7256a32b9c47d018960f7c52fd8e392b2c4064460f  contain-0.3.2-beta.4-windows-x64.zip
+33e4b7abd3ac2b584f6be337ed6a9e891198fbfffbc30a6bccc8bd96ad6a9e94  BUILD-IDENTITY.json
+25e00f1ba368562b1e6481c979f0d1b064dc2e165900ae7c7018fd5ad9b1b79b  overview-success.png
+d67d4afc3b7a51a5b2043564d34e7c722c4bb5a4b636156e6e6803caeecafd76  overview-nonzero.png
+102d363cf305f8b70128952d6c6153f8f48feb83f1f334af53b5b0fcc75d85d5  overview-unfinished.png

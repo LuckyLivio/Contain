@@ -19,7 +19,7 @@ internal static class TestRecordIsolation
         }
         var option = Array.IndexOf(args, "--private-output");
         var output = option >= 0 && option + 1 < args.Length ? Path.GetFullPath(args[option + 1])
-            : args.Length == 4 && args[0] == "--personal-records-checks-only" ? Path.Combine(Path.GetFullPath(args[3]), "private")
+            : args.Length == 4 && args[0] is "--personal-records-checks-only" or "--overview-checks-only" ? Path.Combine(Path.GetFullPath(args[3]), "private")
             : args.Length == 2 && args[0].EndsWith("checks-only", StringComparison.Ordinal)
                 ? Path.GetFullPath(args[1]) : Path.GetTempPath();
         var root = Path.Combine(output, "contain-records-isolated-" + Guid.NewGuid().ToString("N"));

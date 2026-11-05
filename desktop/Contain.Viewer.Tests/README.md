@@ -1,5 +1,21 @@
 # Native desktop verification
 
+Beta 4 adds ten predeclared overview checks in `OverviewVerification.cs`, with
+`overview-summary.json` binding the source, frozen package, UI, launcher and CLI.
+Guarded copies of the existing synthetic sample exercise exit 0 with Degraded,
+exit 1603 with saved completed evidence, and an unfinished record with a long
+source error. The Windows built-in SQLite library changes only these marked test
+copies; production databases and the real personal library are never used.
+Exact category counts, unavailable versus zero, same names with different UUIDs,
+external versus personal databases sharing a UUID, failed-query clearing, and all
+three detail actions are checked. The actual packaged EXE supplies the three
+overview screenshots and cold-restarts from another working directory to open
+the same session and event. Expand/collapse, actual resize, clipboard and native
+DPI observations are distinct from the existing simulated 150%/200% layout plan.
+This read-only plan starts no installer or ETW session. A bounded preflight is
+`Contain.Viewer.Tests.exe --overview-checks-only <package> <fixtures> <output>`;
+release acceptance still requires the source-qualified complete harness.
+
 The ordinary harness also runs eight deterministic native progress checks before
 layout verification or the optional live install plan. They use the production
 `InstallClient` and `InstallForm` with a clearly marked synthetic child mode in
