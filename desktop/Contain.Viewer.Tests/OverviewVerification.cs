@@ -106,7 +106,7 @@ internal sealed class OverviewVerification(Options options, bool viewerChecksPas
                     else
                     {
                         var code = id == Sessions[0] ? "0" : "1603";
-                        Require(model.Installer.Contains(code, StringComparison.Ordinal), "actual persisted exit code shown");
+                        Require(model.Installer == "已记录退出码 " + code, "exact persisted exit code shown");
                         Require(!model.IsUnfinished && model.Record.Contains("结束", StringComparison.Ordinal), "completed session is distinct from exit result");
                         Require(model.Coverage.Contains("受限", StringComparison.Ordinal), "Degraded explained");
                     }
@@ -128,7 +128,7 @@ internal sealed class OverviewVerification(Options options, bool viewerChecksPas
                 Require(model.IsUnfinished, "legacy missing capture state not promoted by finished_at");
                 Require(model.Coverage.Contains("未", StringComparison.Ordinal) || model.Coverage.Contains("未知", StringComparison.Ordinal), "missing quality unavailable");
                 var zero = OverviewPresentation.Build(summaries[Sessions[2]].Data, diffs[Sessions[2]].Data);
-                Require(zero.Changes.Contains("0", StringComparison.Ordinal), "actual empty persisted state arrays are measured zero");
+                Require(zero.Changes == "文件 0 项 · 注册表值 0 项\n其他配置 0 项", "actual empty persisted state arrays are measured zero in each category");
                 var missingDiff = JsonNode.Parse(diffs[Sessions[2]].Data.GetRawText())!.AsObject(); missingDiff.Remove("files");
                 using var unavailable = JsonDocument.Parse(missingDiff.ToJsonString());
                 var unknownCounts = OverviewPresentation.Build(summaries[Sessions[2]].Data, unavailable.RootElement);
@@ -174,9 +174,13 @@ internal sealed class OverviewVerification(Options options, bool viewerChecksPas
                     dialogs.Database = old; C<Button>(form, "OpenDatabase").PerformClick(); await Idle(form);
                     await Select(form, Sessions[1]);
                     Require(C<Label>(form, "DatabasePath").Text.StartsWith("外部数据库（只读）", StringComparison.Ordinal), "manual existing external database remains readonly");
-                    Require(C<Label>(form, "OverviewInstaller").Text.Contains('0'), "external same UUID uses its database's exit code, not personal 1603");
+                    var externalSummary = await client.SummaryAsync(old, Sessions[1]);
+                    var externalDiff = await client.DiffAsync(old, Sessions[1]);
+                    Require(C<Label>(form, "OverviewInstaller").Text == OverviewPresentation.Build(externalSummary.Data, externalDiff.Data).Installer
+                        && C<Label>(form, "OverviewInstaller").Text == "已记录退出码 0", "external same UUID uses its database's exact exit code, not personal 1603");
                     C<Button>(form, "MyRecords").PerformClick(); await Idle(form); await Select(form, Sessions[1]);
-                    Require(C<Label>(form, "OverviewInstaller").Text.Contains("1603", StringComparison.Ordinal), "default same UUID restores its own persisted result");
+                    Require(C<Label>(form, "OverviewInstaller").Text == OverviewPresentation.Build(summaries[Sessions[1]].Data, diffs[Sessions[1]].Data).Installer
+                        && C<Label>(form, "OverviewInstaller").Text == "已记录退出码 1603", "default same UUID restores its own exact persisted result");
                     Require(C<Label>(form, "DatabasePath").Text == "我的记录", "explicit personal library navigation");
                 });
                 await Check(Plan[5], async () =>
@@ -248,7 +252,7 @@ internal sealed class OverviewVerification(Options options, bool viewerChecksPas
                         foreach (var expanded in new[] { true, false })
                         {
                             await desktop.InvokeAsync("ToggleTechnical");
-                            await PackagedDesktop.WaitAsync(async () => (await desktop.TextAsync("ToggleTechnical")).Contains(expanded ? "收起" : "技术详情", StringComparison.Ordinal), TimeSpan.FromSeconds(10));
+                            await PackagedDesktop.WaitAsync(async () => (await desktop.TextAsync("ToggleTechnical")) == (expanded ? "收起技术详情" : "技术详情"), TimeSpan.FromSeconds(10));
                             foreach (var action in new[] { "ViewChanges", "ViewEvents", "ToggleTechnical" })
                                 Require(await desktop.OnscreenAsync(action), "main overview actions visible after expansion and resize");
                             if (expanded)
@@ -264,6 +268,16 @@ internal sealed class OverviewVerification(Options options, bool viewerChecksPas
                     await desktop.SelectTabAsync("记录概览"); await desktop.InvokeAsync("ViewEvents");
                     Require((await desktop.NamesAsync("Events")).Any(name => name.EndsWith("event:" + Sessions[2] + "-event-0", StringComparison.Ordinal)), "actual event entry belongs to current UUID");
                     await desktop.CloseAsync();
+                    // The accessibility Invoke path above is a distinct regression.
+                    // Also validate the ordinary first mouse click in a new process.
+                    using var mouse = new PackagedDesktop(options.Package, cwd); await mouse.ReadyAsync();
+                    await mouse.ClickIdentityAsync("session:" + Sessions[2]);
+                    await PackagedDesktop.WaitAsync(async () => (await mouse.DescriptionAsync("SessionTitle")) == "session:" + Sessions[2], TimeSpan.FromSeconds(30));
+                    await PackagedDesktop.WaitAsync(() => mouse.EnabledAsync("ViewChanges"), TimeSpan.FromSeconds(30));
+                    var mouseModel = OverviewPresentation.Build(summaries[Sessions[2]].Data, diffs[Sessions[2]].Data);
+                    Require(await mouse.TextAsync("OverviewInstaller") == mouseModel.Installer
+                        && await mouse.TextAsync("OverviewRecord") == mouseModel.Record, "fresh native mouse click selects the intended nonfirst session");
+                    await mouse.CloseAsync();
                 });
             }
             await Check(Plan[9], () =>
@@ -320,7 +334,8 @@ internal sealed class OverviewVerification(Options options, bool viewerChecksPas
             var failure = "overview-selection-" + desktop.ProcessId + "-" + id;
             try
             {
-                File.WriteAllText(Path.Combine(options.PrivateOutput, failure + ".txt"), await desktop.DumpAsync());
+                File.WriteAllText(Path.Combine(options.PrivateOutput, failure + ".txt"),
+                    await desktop.SelectionStateAsync("Sessions") + "\r\n" + await desktop.DumpAsync());
                 await desktop.ScreenshotAsync(options.PrivateOutput, failure + ".png");
             }
             catch (Exception diagnostic) { errors.AppendLine("Selection diagnostic unavailable: " + diagnostic); }

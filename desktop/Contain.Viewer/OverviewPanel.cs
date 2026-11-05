@@ -80,14 +80,9 @@ internal sealed class OverviewPanel : TableLayoutPanel
         cards.Controls.Add(Card("InstallerCard", "安装器结果", installer, installerNote), 0, 0);
         cards.Controls.Add(Card("RecordCard", "记录状态", record, recordNote), 1, 0);
         var scopeCard = Card("ScopeCard", "观察范围与覆盖", coverage, scope);
-        scopeCard.RowCount = 5;
+        scopeCard.RowCount = 4;
         scopeCard.RowStyles.Add(new RowStyle(SizeType.Absolute, Font.Height * 2));
-        scopeCard.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        copyScope.Dock = DockStyle.None;
-        copyScope.Anchor = AnchorStyles.Left;
-        copyScope.Padding = new Padding(5, 1, 5, 1);
         scopeCard.Controls.Add(registryScope, 0, 3);
-        scopeCard.Controls.Add(copyScope, 0, 4);
         cards.Controls.Add(scopeCard, 0, 1);
         cards.Controls.Add(Card("ChangesCard", "主要变化", changes, changesNote), 1, 1);
         actions = new FlowLayoutPanel
@@ -98,6 +93,7 @@ internal sealed class OverviewPanel : TableLayoutPanel
         actions.Controls.Add(viewChanges);
         actions.Controls.Add(viewEvents);
         actions.Controls.Add(toggleTechnical);
+        actions.Controls.Add(copyScope);
         document.Controls.Add(cards, 0, 0);
         document.Controls.Add(details, 0, 2);
         viewport.Controls.Add(document);
@@ -203,7 +199,7 @@ internal sealed class OverviewPanel : TableLayoutPanel
             var heading = Font.Height + 14;
             var firstRow = Math.Max(Lines(installer) + Lines(installerNote), Lines(record) + Lines(recordNote)) + heading + 20;
             ((TableLayoutPanel)registryScope.Parent!).RowStyles[3].Height = Font.Height * 2 + registryScope.Margin.Vertical;
-            var secondRow = Math.Max(Lines(changes) + Lines(changesNote), Lines(coverage) + Font.Height * 5 + copyScope.GetPreferredSize(Size.Empty).Height) + heading + 24;
+            var secondRow = Math.Max(Lines(changes) + Lines(changesNote), Lines(coverage) + Font.Height * 5) + heading + 24;
             var cardHeight = firstRow + secondRow;
             cards.RowStyles[0].SizeType = SizeType.Absolute;
             cards.RowStyles[0].Height = firstRow;

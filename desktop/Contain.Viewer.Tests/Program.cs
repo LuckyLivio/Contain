@@ -35,6 +35,8 @@ internal static class Program
             return OverviewVerification.RunStandalone(args[1], args[2], args[3]);
         if (args.Length == 4 && args[0] == "--uia-dump-only")
             return PackagedDesktop.Diagnose(args[1], args[2], args[3]);
+        if (args.Length == 4 && args[0] == "--overview-selection-probe")
+            return PackagedDesktop.DiagnoseSelection(args[1], args[2], args[3]);
         var options = Options.Parse(args);
         var runner = new Runner(options);
         var progressAccepted = false;

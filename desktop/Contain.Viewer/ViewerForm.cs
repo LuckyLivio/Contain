@@ -56,6 +56,7 @@ public sealed class ViewerForm : Form
     private long _operationVersion;
     private bool _rendering;
     private bool _sessionSelectionQueued;
+    private bool _recordQuery;
     private string? _database;
     private string? _recordId;
     private string? _selectedEventId;
@@ -290,12 +291,14 @@ public sealed class ViewerForm : Form
         };
         _sessions.SelectionChanged += (_, _) =>
         {
-            if (_rendering || IsBusy || _sessions.SelectedRows.Count == 0) return;
+            if (_rendering || (IsBusy && !_recordQuery) || _sessions.SelectedRows.Count == 0) return;
             // Native focus can briefly select row zero before applying the row
             // the user actually invoked. Starting a query and disabling the grid
             // inside that first notification would discard the intended row.
-            // Clear old evidence immediately, then read the final selection after
-            // this native event sequence has completed.
+            // UIA can deliver its final selection across a later COM boundary,
+            // even after BeginInvoke. Keep record selection available during this
+            // query and cancel superseded reads so the final selection wins.
+            if (_recordQuery) _operationCancellation?.Cancel();
             if (_sessionSelectionQueued) return;
             var database = _database;
             ResetRecord();
@@ -305,9 +308,9 @@ public sealed class ViewerForm : Form
             BeginInvoke((Action)(() =>
             {
                 _sessionSelectionQueued = false;
-                if (IsDisposed || Disposing || _rendering || IsBusy || _database != database || _sessions.SelectedRows.Count == 0) return;
+                if (IsDisposed || Disposing || _rendering || (IsBusy && !_recordQuery) || _database != database || _sessions.SelectedRows.Count == 0) return;
                 var record = (JsonElement)_sessions.SelectedRows[0].Tag!;
-                StartOperation(token => OpenRecordAsync(record, token));
+                StartOperation(token => OpenRecordAsync(record, token), recordQuery: true);
             }));
         };
         _events.SelectionChanged += (_, _) =>
@@ -608,12 +611,13 @@ public sealed class ViewerForm : Form
         _rawToggle.Checked = false;
     }
 
-    private void StartOperation(Func<CancellationToken, Task> operation)
+    private void StartOperation(Func<CancellationToken, Task> operation, bool recordQuery = false)
     {
         _operationCancellation?.Cancel();
         _operationCancellation?.Dispose();
         _operationCancellation = new CancellationTokenSource();
         var version = ++_operationVersion;
+        _recordQuery = recordQuery;
         PendingOperation = RunOperationAsync(operation, _operationCancellation.Token, version);
     }
 
@@ -641,6 +645,7 @@ public sealed class ViewerForm : Form
             if (version == _operationVersion && !IsDisposed)
             {
                 IsBusy = false;
+                _recordQuery = false;
                 UpdateEnabled();
             }
         }
@@ -651,7 +656,7 @@ public sealed class ViewerForm : Form
         _newInstall.Enabled = !IsBusy;
         _newInstall.Text = ActiveInstallForm is null ? "新建安装记录" : "本次任务状态";
         _myRecords.Enabled = !IsBusy && ActiveInstallForm is not { IsActive: true };
-        _sessions.Enabled = !IsBusy && _database is not null;
+        _sessions.Enabled = (!IsBusy || _recordQuery) && _database is not null;
         // Keep tab-page ownership and visibility stable during read-only work.
         // Disabling the entire tab tree also disables inactive page windows;
         // only the controls that can start another query need to be gated.

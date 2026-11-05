@@ -99,6 +99,76 @@ internal sealed class PackagedDesktop : IDisposable
         else throw new InvalidOperationException("Exact UI identity cannot be selected: " + identity);
     });
 
+    internal Task ClickIdentityAsync(string identity) => Ui(() =>
+    {
+        var element = FindIdentity(identity) ?? throw new InvalidOperationException("Exact click identity absent.");
+        process.Refresh(); SetForegroundWindow(process.MainWindowHandle);
+        var rectangle = element.Current.BoundingRectangle;
+        var point = new NativePoint { X = (int)(rectangle.Left + rectangle.Width / 2), Y = (int)(rectangle.Top + rectangle.Height / 2) };
+        GetWindowThreadProcessId(WindowFromPoint(point), out var owner);
+        if (owner != process.Id || rectangle.Width <= 0 || rectangle.Height <= 0)
+            throw new InvalidOperationException("The exact test cell is not exposed on the actual process window.");
+        GetCursorPos(out var previous);
+        try { SetCursorPos(point.X, point.Y); mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero); mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero); }
+        finally { SetCursorPos(previous.X, previous.Y); }
+    });
+
+    internal Task<string> SelectionStateAsync(string gridId) => Ui(() =>
+    {
+        var grid = Required(gridId); var result = new System.Text.StringBuilder();
+        var iid = new Guid("618736e0-3c3d-11cf-810c-00aa00389b71");
+        if (AccessibleObjectFromWindow(new IntPtr(grid.Current.NativeWindowHandle), 0xfffffffc, ref iid, out var accessible) != 0 || accessible is null)
+            throw new InvalidOperationException("Native grid accessibility unavailable.");
+        try { Describe(accessible, 0, 0); }
+        finally { if (Marshal.IsComObject(accessible)) Marshal.ReleaseComObject(accessible); }
+        return result.ToString();
+        void Describe(global::Accessibility.IAccessible item, object childId, int depth)
+        {
+            var name = item.get_accName(childId);
+            result.AppendLine($"{new string(' ', depth)}{name} | state={item.get_accState(childId)} | role={item.get_accRole(childId)}");
+            if (depth >= 3 || !Equals(childId, 0)) return;
+            for (var index = 1; index <= item.accChildCount; index++)
+            {
+                var child = item.get_accChild(index) as global::Accessibility.IAccessible;
+                try { if (child is not null) Describe(child, 0, depth + 1); else Describe(item, index, depth + 1); }
+                finally { if (child is not null && Marshal.IsComObject(child)) Marshal.ReleaseComObject(child); }
+            }
+        }
+    });
+
+    internal static int DiagnoseSelection(string package, string root, string output)
+    {
+        using var isolation = TestRecordIsolation.Use(root);
+        using var owner = new Form { ShowInTaskbar = false };
+        var passed = false;
+        owner.Shown += async (_, _) =>
+        {
+            try
+            {
+                Directory.CreateDirectory(output);
+                foreach (var method in new[] { "invoke", "mouse" })
+                {
+                    using var desktop = new PackagedDesktop(package, root); await desktop.ReadyAsync();
+                    var log = new System.Text.StringBuilder();
+                    log.AppendLine("before").AppendLine(await desktop.SelectionStateAsync("Sessions"));
+                    if (method == "invoke") await desktop.SelectIdentityAsync("session:synthetic-interrupted");
+                    else await desktop.ClickIdentityAsync("session:synthetic-interrupted");
+                    await Task.Delay(1200);
+                    log.AppendLine("after").AppendLine(await desktop.SelectionStateAsync("Sessions"));
+                    log.AppendLine("bound=" + await desktop.DescriptionAsync("SessionTitle"));
+                    log.AppendLine(await desktop.DumpAsync());
+                    File.WriteAllText(Path.Combine(output, method + ".txt"), log.ToString());
+                    await desktop.ScreenshotAsync(output, method + ".png");
+                    await desktop.CloseAsync();
+                }
+                passed = true;
+            }
+            catch (Exception error) { File.WriteAllText(Path.Combine(output, "probe-error.txt"), error.ToString()); }
+            finally { owner.Close(); }
+        };
+        Application.Run(owner); return passed ? 0 : 1;
+    }
+
     internal Task SelectTabAsync(string caption) => Ui(() =>
     {
         var element = Find(null, caption);
@@ -256,11 +326,18 @@ internal sealed class PackagedDesktop : IDisposable
     }
 
     [StructLayout(LayoutKind.Sequential)] private struct WindowBounds { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] private struct NativePoint { public int X, Y; }
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out WindowBounds bounds);
     [DllImport("user32.dll")] private static extern bool PrintWindow(IntPtr window, IntPtr dc, uint flags);
     [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr window);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(NativePoint point);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out int processId);
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out NativePoint point);
+    [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
     [DllImport("oleacc.dll")] private static extern int AccessibleObjectFromWindow(IntPtr window, uint objectId, ref Guid iid,
         [MarshalAs(UnmanagedType.Interface)] out global::Accessibility.IAccessible? accessible);
 }

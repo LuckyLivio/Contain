@@ -61,9 +61,14 @@ notice below the viewport; the corrective layout reserves scrollbar space and
 keeps the notice with the actions. An initial direct selection of a non-first
 session exposed a native focus/selection ordering defect: transient row-zero
 selection started a query before the intended selection completed. The corrected
-handler clears old results immediately and queries the final row after that native
-event sequence. The original failure and explicit non-first-selection regression
-are retained; no retry or alternate-row workaround replaces acceptance.
+handler clears old results immediately. Candidate `0247e8b` showed that merely
+deferring the query was insufficient: accessibility selection can cross another
+native boundary while the first read is pending. Native selected/focused state
+confirmed the intended row, while a separate mouse probe distinguished its event
+sequence. The final handler keeps selection available during record reads and
+immediately cancels superseded reads; other operations retain their existing
+guards. Both failures and the explicit non-first-selection regression are
+retained; no retry or alternate-row workaround replaces acceptance.
 
 The original whole-Program-Files / Parallels finalizing incident remains
 unconfirmed and tracked independently in [Issue #5](https://github.com/LuckyLivio/Contain/issues/5).
