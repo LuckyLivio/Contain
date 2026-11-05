@@ -7,8 +7,8 @@ Graphical recording is a separate [implementation and validation milestone](../d
 
 ## Current download
 
-Use the [Beta 2 release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.2).
-Its [fixes, validation scope and known issues](../docs/progress-beta2.md) distinguish
+Use the [Beta 3 release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.3).
+Its [personal library, validation scope and known issues](../docs/personal-records-beta3.md) distinguish
 native Windows results, simulated layout stress and user-reported trials.
 The entries below retain historical evidence rather than additional current downloads.
 
@@ -33,9 +33,14 @@ viewing needs no Rust, Visual Studio, Python, PowerShell or separately installed
 .NET runtime. The package contains the Windows x64 .NET runtime and the required
 non-system runtime for the exact `contain.exe` sidecar.
 
-1. Choose **打开记录数据库** and select an existing database. For an explicitly
-   synthetic example, choose the packaged `samples/viewer-demo.db`. Opening a
-   normal empty database never inserts demonstrations.
+1. Startup loads **我的记录** from the current user's Windows LocalApplicationData
+   folder, `Contain\Records\contain.db`. It is independent of the ZIP location
+   and working directory. A first empty startup creates neither directories nor
+   a database; only explicit recording Start creates the default library.
+   **打开记录数据库** still opens an existing external database read-only; for
+   an explicitly synthetic example choose `samples/viewer-demo.db`. **我的记录**
+   returns to the personal library. External selection never changes the next
+   new record's default destination.
 2. Select a record on the left. **记录概览** separates recording state from
    coverage quality and shows scope, sources, counts, missing measurements and
    limitations. All example names and warnings identify their synthetic origin.
@@ -96,12 +101,19 @@ A successful check does not guarantee later startup.
 1. Choose **新建安装记录**, then select an existing native `.exe` installer.
    Current acceptance uses the controlled `contain-test-installer.exe` fixture.
    MSI, updater and service-agent installation coverage is not promised.
-2. Enter a record name, an **existing** observation directory and a database
-   path outside the observation scope. The application does not infer all software
+2. The EXE filename suggests a record name; an edited name is preserved, and
+   duplicate names are allowed. Choose an **existing** observation directory.
+   **保存到我的记录** uses the stable personal library without asking for a
+   database path. Restarting the application loads its saved sessions again.
+   The application does not infer all software
    destinations from the installer directory, scan all drives or create the
    software destination to make validation pass. For the packaged fixture,
    a developer/tester prepares a marked isolated fixture directory first.
-3. Open advanced settings only if needed. Arguments are one literal argument per
+3. Open advanced settings only if needed. A custom database location is optional
+   and does not replace the next new record's personal default. Database and
+   WAL/SHM must remain outside the observation scope; unavailable, corrupt or
+   incompatible files are reported and preserved. Prelaunch errors offer
+   **更改保存位置**. Arguments are one literal argument per
    line, without shell quoting or expansion. Spaces, Chinese and special characters
    remain part of their argument. The registry option is a selected HKCU key;
    defaults preserve the existing backend limits.

@@ -147,6 +147,11 @@ class ViewerPackageTests(unittest.TestCase):
             capture_state='finished', quality_level='Degraded', providers_active=True, real_source_event_count=1,
             independent_truth_verified=True, session_id='aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
             event_id='bbbbbbbb-cccc-dddd-eeee-ffffffffffff', report_generated=True, report_sha256='f'*64,
+            actual_packaged_executable_capture=True, default_database_used_without_path_interaction=True,
+            cold_restart_verified=True, working_directory_changed=True,
+            first_process_id=1234, restarted_process_id=5678, first_process_exit_code=0,
+            restart_session_id='aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+            restart_event_id='bbbbbbbb-cccc-dddd-eeee-ffffffffffff',
             manual_checks=[dict(name='system_picker_navigation', status='not_run')])
 
     def test_install_acceptance_requires_exact_frozen_gui_etw_result(self):
@@ -160,7 +165,15 @@ class ViewerPackageTests(unittest.TestCase):
             lambda d:d.update(installer_started=False),lambda d:d.update(installer_exit_code=None),
             lambda d:d.update(independent_truth_verified=False),lambda d:d.update(real_source_event_count=0),
             lambda d:d['checks'].pop(),lambda d:d['checks'].append(d['checks'][0]),
-            lambda d:d['checks'][0].update(status='not_run'),lambda d:d.update(not_run=1)]
+            lambda d:d['checks'][0].update(status='not_run'),lambda d:d.update(not_run=1),
+            lambda d:d.update(actual_packaged_executable_capture=False),
+            lambda d:d.update(default_database_used_without_path_interaction=False),
+            lambda d:d.update(cold_restart_verified=False), lambda d:d.update(working_directory_changed=False),
+            lambda d:d.update(restart_session_id='another-session'), lambda d:d.update(restart_event_id='another-event'),
+            lambda d:d.update(first_process_id=0), lambda d:d.update(first_process_id=False),
+            lambda d:d.update(restarted_process_id=1234), lambda d:d.update(restarted_process_id=None),
+            lambda d:d.update(first_process_exit_code=1), lambda d:d.update(first_process_exit_code=False),
+            lambda d:d.pop('first_process_id'), lambda d:d.pop('first_process_exit_code')]
         for mutate in mutations:
             bad=copy.deepcopy(good);mutate(bad)
             self.assertFalse(VIEWER.install_verification_matches(bad,build,manifest))
@@ -172,7 +185,8 @@ class ViewerPackageTests(unittest.TestCase):
             current_required_gates_passed=True,all_recorded_invocations_passed=True,
             coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
         verification=self.root/'verification.json';verification.write_text(json.dumps(self.valid_verification(build)))
-        args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,output=self.root/'diagnostic.zip')
+        args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+            personal_records_verification=self.personal_verification_file(build),output=self.root/'diagnostic.zip')
         self.assertEqual(VIEWER.finalize(args),2)
         with zipfile.ZipFile(args.output) as archive:
             result=json.loads(archive.read('VALIDATION.json'))
@@ -188,6 +202,7 @@ class ViewerPackageTests(unittest.TestCase):
         verification=self.root/'verification.json';verification.write_text(json.dumps(self.valid_verification(build)))
         install=self.root/'install.json';install.write_text(json.dumps(self.valid_install_verification(build)))
         args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+            personal_records_verification=self.personal_verification_file(build),
             install_verification=install,output=self.root/'install.zip')
         self.assertEqual(VIEWER.finalize(args),0)
         with zipfile.ZipFile(args.output) as archive:
@@ -217,6 +232,7 @@ class ViewerPackageTests(unittest.TestCase):
         result['manual_checks']=[dict(name='native_picker_navigation_and_cancel',status='passed')]
         install=self.root/'install.json';install.write_text(json.dumps(result))
         args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+            personal_records_verification=self.personal_verification_file(build),
             install_verification=install,output=self.root/'install.zip')
         self.assertEqual(VIEWER.finalize(args),0)
         with zipfile.ZipFile(args.output) as archive:
@@ -235,6 +251,7 @@ class ViewerPackageTests(unittest.TestCase):
         result['manual_checks']=[dict(name='native_picker_navigation_and_cancel',status='failed',reason='wrong_selection')]
         install=self.root/'install.json';install.write_text(json.dumps(result))
         args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+            personal_records_verification=self.personal_verification_file(build),
             install_verification=install,output=self.root/'install-failed.zip')
         self.assertEqual(VIEWER.finalize(args),2)
         with zipfile.ZipFile(args.output) as archive:
@@ -290,6 +307,7 @@ class ViewerPackageTests(unittest.TestCase):
             current_required_gates_passed=True,all_recorded_invocations_passed=True,
             coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
         args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+            personal_records_verification=self.personal_verification_file(build),
             layout_verification=self.root/'layout-missing.json',output=self.root/'layout-diagnostic.zip')
         self.assertEqual(VIEWER.finalize(args),2)
         with zipfile.ZipFile(args.output) as archive:
@@ -306,6 +324,7 @@ class ViewerPackageTests(unittest.TestCase):
             coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
         evidence=self.valid_layout_verification(build);layout=self.root/'layout.json';layout.write_text(json.dumps(evidence))
         args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+            personal_records_verification=self.personal_verification_file(build),
             layout_verification=layout,output=self.root/'layout-verified.zip')
         self.assertEqual(VIEWER.finalize(args),0)
         with zipfile.ZipFile(args.output) as archive:
@@ -366,11 +385,12 @@ class ViewerPackageTests(unittest.TestCase):
             self.assertFalse(VIEWER.verification_matches(bad,build,manifest))
 
     def test_missing_native_verification_produces_diagnostic_zip_but_fails(self):
-        self.prepare()
+        build=self.prepare()
         quality=self.root/'quality.json';quality.write_text(json.dumps(dict(source_revision=self.source,
             current_required_gates_passed=True,all_recorded_invocations_passed=True,
             coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
-        args=argparse.Namespace(package=self.package,quality_summary=quality,verification=self.root/'missing.json',output=self.root/'diagnostic.zip')
+        args=argparse.Namespace(package=self.package,quality_summary=quality,verification=self.root/'missing.json',
+            personal_records_verification=self.personal_verification_file(build),output=self.root/'diagnostic.zip')
         self.assertEqual(VIEWER.finalize(args),2)
         with zipfile.ZipFile(args.output) as archive:
             validation=json.loads(archive.read('VALIDATION.json'))
@@ -385,7 +405,8 @@ class ViewerPackageTests(unittest.TestCase):
         quality=self.root/'quality.json';quality.write_text(json.dumps(dict(source_revision=self.source,
             current_required_gates_passed=True,all_recorded_invocations_passed=True,
             coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
-        args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,output=self.root/'viewer.zip')
+        args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+            personal_records_verification=self.personal_verification_file(build),output=self.root/'viewer.zip')
         self.assertEqual(VIEWER.finalize(args),0)
         with zipfile.ZipFile(args.output) as archive:
             self.assertTrue(json.loads(archive.read('VALIDATION.json'))['viewer_verified'])
@@ -438,6 +459,126 @@ class ViewerPackageTests(unittest.TestCase):
         source=(Path(__file__).parent.parent/'desktop/Contain.Viewer.Tests/InstallProgressChecks.cs').read_text(encoding='utf-8')
         section=source.split('Plan =',1)[1].split('];',1)[0]
         self.assertEqual(set(VIEWER.re.findall(r'"([a-z_]+)"',section)),VIEWER.PROGRESS_REQUIRED_CHECKS)
+
+
+    def valid_personal_records_verification(self, build):
+        expected = {entry['path']: entry['sha256'] for entry in build['files']}
+        return dict(schema_version=1, protocol_revision=VIEWER.PERSONAL_RECORDS_VERIFICATION,
+            source_sha=self.source, native_windows=True, synthetic=True, real_etw_executed=False,
+            completed=True, accepted=True, actual_packaged_executable=True, cold_restart_verified=True,
+            working_directory_changed=True, real_user_records_accessed=False, retries=0,
+            initial_session_id='synthetic-finished', initial_event_id='synthetic-finished-event-0',
+            restart_session_id='synthetic-finished', restart_event_id='synthetic-finished-event-0',
+            first_process_id=1234, restarted_process_id=5678, first_process_exit_code=0,
+            package_manifest_sha256=VIEWER.sha(self.package/'BUILD.json'),
+            viewer_assembly_sha256=expected['Contain.Viewer.dll'], viewer_launcher_sha256=expected['Contain.Viewer.exe'],
+            contain_sha256=expected['contain.exe'], planned_checks=sorted(VIEWER.PERSONAL_RECORDS_REQUIRED_CHECKS),
+            checks=[dict(name=name,status='passed') for name in sorted(VIEWER.PERSONAL_RECORDS_REQUIRED_CHECKS)],
+            passed=8, failed=0, skipped=0, not_run=0)
+
+    def personal_verification_file(self, build):
+        path=self.root/(self.package.name+'-personal-verification.json')
+        path.write_text(json.dumps(self.valid_personal_records_verification(build)))
+        return path
+
+    def test_personal_records_evidence_requires_exact_native_restart_and_package(self):
+        build=self.prepare();good=self.valid_personal_records_verification(build);manifest=VIEWER.sha(self.package/'BUILD.json')
+        self.assertTrue(VIEWER.personal_records_verification_matches(good,build,manifest))
+        # Offline identities are exact opaque IDs, not necessarily UUIDs.
+        self.assertEqual(good['initial_session_id'],'synthetic-finished')
+        mutations = [
+            ('schema_version', True), ('protocol_revision', VIEWER.VERIFICATION),
+            ('source_sha','0'*40), ('native_windows',False), ('synthetic',False), ('real_etw_executed',True),
+            ('completed',False), ('accepted',False), ('actual_packaged_executable',False),
+            ('cold_restart_verified',False), ('working_directory_changed',False),
+            ('real_user_records_accessed',True), ('retries',1), ('retries',False),
+            ('package_manifest_sha256','0'*64), ('viewer_assembly_sha256','0'*64),
+            ('viewer_launcher_sha256','0'*64), ('contain_sha256','0'*64),
+            ('initial_session_id',''), ('initial_event_id',' '), ('initial_session_id',None),
+            ('restart_session_id','wrong-session'), ('restart_event_id','wrong-event'),
+            ('first_process_id',0), ('first_process_id',True), ('restarted_process_id',-1),
+            ('restarted_process_id',good['first_process_id']), ('first_process_exit_code',1),
+            ('first_process_exit_code',False), ('passed',7), ('passed',True),
+            ('failed',1), ('skipped',1), ('not_run',1), ('failed',False),
+            ('checks',None), ('checks',[None]), ('checks',[dict(name=[],status='passed')]),
+            ('planned_checks',None), ('planned_checks',[{}]),
+        ]
+        for field,wrong in mutations:
+            with self.subTest(field=field,wrong=wrong):
+                changed=copy.deepcopy(good);changed[field]=wrong
+                self.assertFalse(VIEWER.personal_records_verification_matches(changed,build,manifest))
+        for field in good:
+            with self.subTest(missing=field):
+                changed=copy.deepcopy(good);changed.pop(field)
+                self.assertFalse(VIEWER.personal_records_verification_matches(changed,build,manifest))
+        for mutate in [lambda x:x['checks'].pop(), lambda x:x['checks'].append(x['checks'][0]),
+                       lambda x:x['checks'][0].update(status='failed'), lambda x:x['checks'][0].update(status='not_run'),
+                       lambda x:x['planned_checks'].pop(), lambda x:x['planned_checks'].append(x['planned_checks'][0])]:
+            changed=copy.deepcopy(good);mutate(changed)
+            self.assertFalse(VIEWER.personal_records_verification_matches(changed,build,manifest))
+
+    def test_personal_records_required_plan_matches_actual_harness(self):
+        source=(Path(__file__).parent.parent/'desktop/Contain.Viewer.Tests/PersonalRecordsVerification.cs').read_text(encoding='utf-8')
+        section=source.split('Plan =',1)[1].split('];',1)[0]
+        names=VIEWER.re.findall(r'"([a-z_]+)"',section)
+        self.assertEqual(len(names),8)
+        self.assertEqual(len(names),len(set(names)))
+        self.assertEqual(set(names),VIEWER.PERSONAL_RECORDS_REQUIRED_CHECKS)
+
+    def test_personal_records_gate_requires_valid_evidence_and_retains_failure(self):
+        for mode in ('passed','missing','failed'):
+            with self.subTest(mode=mode):
+                # Each frozen fixture gets its own directory; finalization never overwrites.
+                self.package=self.root/('personal-package-'+mode)
+                build=self.prepare();manifest=VIEWER.sha(self.package/'BUILD.json')
+                verification=self.root/(mode+'-viewer.json');verification.write_text(json.dumps(self.valid_verification(build)))
+                quality=self.root/(mode+'-quality.json');quality.write_text(json.dumps(dict(source_revision=self.source,
+                    current_required_gates_passed=True,all_recorded_invocations_passed=True,
+                    coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
+                personal=self.root/(mode+'-personal.json')
+                evidence=self.valid_personal_records_verification(build)
+                if mode=='failed': evidence['cold_restart_verified']=False
+                if mode!='missing': personal.write_text(json.dumps(evidence))
+                args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+                    personal_records_verification=personal,output=self.root/(mode+'-personal.zip'))
+                self.assertEqual(VIEWER.finalize(args),0 if mode=='passed' else 2)
+                with zipfile.ZipFile(args.output) as archive:
+                    result=json.loads(archive.read('VALIDATION.json'))
+                    self.assertEqual(result['checks']['native_personal_records_and_cold_restart'],mode=='passed')
+                    self.assertEqual(result['native_personal_records_verification'],evidence if mode!='missing' else {})
+                    self.assertEqual(result['personal_records_verification_summary_sha256'],VIEWER.sha(personal) if mode!='missing' else None)
+                    self.assertEqual(result['build_manifest_sha256'],manifest)
+
+    def test_omitted_personal_verification_argument_fails_closed_and_keeps_diagnostic_zip(self):
+        build=self.prepare()
+        verification=self.root/'viewer.json';verification.write_text(json.dumps(self.valid_verification(build)))
+        quality=self.root/'quality.json';quality.write_text(json.dumps(dict(source_revision=self.source,
+            current_required_gates_passed=True,all_recorded_invocations_passed=True,
+            coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
+        # Even a valid unused file cannot satisfy an omitted command-line handoff.
+        personal=self.personal_verification_file(build)
+        self.assertTrue(VIEWER.personal_records_verification_matches(
+            VIEWER.read(personal),build,VIEWER.sha(self.package/'BUILD.json')))
+        args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+            output=self.root/'personal-argument-omitted.zip')
+        self.assertFalse(hasattr(args,'personal_records_verification'))
+        self.assertEqual(VIEWER.finalize(args),2)
+        with zipfile.ZipFile(args.output) as archive:
+            result=json.loads(archive.read('VALIDATION.json'))
+            self.assertTrue(result['checks']['native_ui_cli_and_export'])
+            self.assertFalse(result['checks']['native_personal_records_and_cold_restart'])
+            self.assertFalse(result['viewer_verified'])
+            self.assertEqual(result['status'],'diagnostic_unverified')
+            self.assertEqual(result['native_personal_records_verification'],{})
+            self.assertIsNone(result['personal_records_verification_summary_sha256'])
+            self.assertIn('samples/viewer-demo.db',archive.namelist())
+
+    def test_try_guidance_uses_personal_history_and_explicit_advanced_location(self):
+        usage=VIEWER.usage(self.source,install=True)
+        for required in ('我的记录','无需选择数据库','重新打开程序','%LOCALAPPDATA%',
+                         '使用自定义保存位置','打开外部数据库不会改变新记录的默认保存位置'):
+            self.assertIn(required,usage)
+        self.assertNotIn('数据库选择观察目录',usage)
 
 
 if __name__=='__main__': unittest.main()

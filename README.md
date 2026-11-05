@@ -8,19 +8,27 @@ Rust、Visual Studio、Python、PowerShell 7 或独立 .NET 运行库。
 
 ## 下载与使用
 
-**[直接下载 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.2/contain-0.3.2-beta.2-windows-x64.zip)** · [Beta Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.2) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.2/SHA256SUMS.txt)
+**[直接下载 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.3/contain-0.3.2-beta.3-windows-x64.zip)** · [Beta Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.3) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.3/SHA256SUMS.txt)
 
-版本 **0.3.2-beta.2**，已验证源码 `b79622901355e53964752bf21993094d76e782f4`。
-[本版改进、实际验证和已知问题](docs/progress-beta2.md)。
+版本 **0.3.2-beta.3**，冻结源码 `3c2d3706d05dcf0a969dfdde2cc92213c6734e83`。
+[本版个人记录、实际验证和已知问题](docs/personal-records-beta3.md)。
 
 1. 下载并完整解压 ZIP，双击 `Contain.Viewer.exe`。
-2. 选择“新建安装记录”，填写名称、安装器、**已有观察目录**和范围外的数据库位置。
+2. 选择“新建安装记录”，选择 EXE 和**已有观察目录**。文件名会建议记录名称，可修改。
+   默认“保存到我的记录”，无需选择数据库；高级设置可自定义保存位置。
    安装目标由安装器界面选择；安装包所在目录不等于软件安装目标或完整观察范围。
 3. “检查环境”查看当前可用能力，确认实际范围后点击“开始记录”。只有这一步启动安装器。
 4. 等待收尾和保存，自动打开本次准确会话。选择事件查看依据，使用“导出本页报告”。
-   打开已有数据库始终只读；旧数据库兼容读取不迁移原文件。
+5. 完全退出后重新打开，从“我的记录”选择刚才的记录。更新或移动解压目录不影响历史。
+   “打开记录数据库”继续只读查看外部旧库，不改变下一次新记录的默认位置。
 
-本版显示实际执行步骤、任务/阶段/步骤耗时、已处理数量及最近实际进展；总量未知时不显示百分比或预计时间。失败后可查看详情、复制任务摘要，并重开已经保存的准确会话。界面计时、状态接收和后端实际工作分别报告。
+个人记录库位于当前用户 Windows LocalApplicationData 下的 `Contain\Records\contain.db`
+（通常为 `%LOCALAPPDATA%\Contain\Records\contain.db`）。首次空启动不建库，明确开始记录时
+才按需创建。名称可重复，按会话 UUID 关联；位置冲突、不可写、损坏或不兼容时保留原文件，
+在启动安装器前说明原因并提供“更改保存位置”。旧数据库兼容读取不迁移原文件。
+
+沿用 Beta.2 的实际步骤、耗时、已处理数量及最近实际进展；未知总量不显示百分比或预计时间。
+失败后可查看详情、复制任务摘要并重开准确会话。界面计时、状态接收和实际工作分别报告。
 
 包内 `TRY.md` 包含无需终端的受控夹具步骤。`BUILD.json`、`CONTENTS.json`、
 `VALIDATION.json` 和 `SOURCE.zip` 记录源码、配置、运行库、检查结果及哈希。
@@ -51,7 +59,7 @@ Rust、Visual Studio、Python、PowerShell 7 或独立 .NET 运行库。
 没有通过禁止目录或全盘性能实验掩盖它；继续跟踪于 [Issue #5](https://github.com/LuckyLivio/Contain/issues/5)。
 
 原生 Windows CI、模拟缩放压力、用户手工反馈和未验证条件在
-[当前交付记录](docs/progress-beta2.md)中分别列出。此前四个里程碑保持关闭；
+[当前交付记录](docs/personal-records-beta3.md)中分别列出。此前四个里程碑保持关闭；
 [历史交付与失败证据索引](docs/delivery-history.md)保留原始记录，旧包不再并列为当前下载。
 
 ## 开发与参考

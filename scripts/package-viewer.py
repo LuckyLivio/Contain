@@ -25,6 +25,13 @@ VERIFICATION = "contain-desktop-verification-1"
 INSTALL_VERIFICATION = "contain-desktop-install-verification-1"
 LAYOUT_VERIFICATION = "contain-desktop-layout-verification-1"
 PROGRESS_VERIFICATION = "contain-desktop-progress-verification-1"
+PERSONAL_RECORDS_VERIFICATION = "contain-desktop-personal-records-verification-1"
+PERSONAL_RECORDS_REQUIRED_CHECKS = frozenset({
+    "guarded_test_root_and_missing_library", "default_path_and_name_suggestion",
+    "manual_name_and_advanced_custom_location", "external_database_read_only_new_record_default",
+    "scope_conflict_before_library_creation", "future_corrupt_unwritable_records_preserved",
+    "packaged_executable_default_history", "packaged_executable_cold_restart_exact_session_event",
+})
 PROGRESS_REQUIRED_CHECKS = frozenset({
     "additive_measurements_and_missing_values", "repeated_finalizing_and_stale_identity",
     "slow_finalizing_real_pipes_ui_timer_and_close_guard", "structured_failure_details_and_clipboard",
@@ -154,11 +161,14 @@ def usage(source, install=False, version=None):
 新建受控安装记录：
 
 1. 点击“新建安装记录”，选择已知受支持的独立 EXE 安装器。
-2. 填写记录名称、已存在的观察目录及观察范围之外的数据库位置。
+2. 名称默认来自安装器文件名，可直接修改。选择已存在的观察目录；记录默认保存到“我的记录”，无需选择数据库。
    安装器所在目录不代表软件全部安装位置；程序不会扫描全盘或创建软件目标目录。
 3. 点击“检查环境”，阅读当前权限与 ETW 能力；检查成功不能保证实际启动成功。
 4. 点击“开始记录”才会启动安装器。等待采集及整理结束，再自动打开本次准确会话。
-5. 浏览事件并点击查看依据，导出本地 HTML 报告。
+5. 浏览事件并点击查看依据，导出本地 HTML 报告。关闭后重新打开程序，“我的记录”会显示已保存的历史记录。
+
+如默认保存位置与观察范围冲突或不可写，使用“更改保存位置”；高级参数中可明确启用
+“使用自定义保存位置”，选择观察范围之外的数据库。打开外部数据库不会改变新记录的默认保存位置。
 
 高级参数按界面说明逐项传递，不是 shell 命令。默认 ETW 模式不可用时不会自动提权；
 可明确选择快照模式，但其观察范围及覆盖能力不同。记录结束、安装器退出、数据保存
@@ -171,8 +181,7 @@ def usage(source, install=False, version=None):
 
 无需终端的受控夹具试用：在资源管理器地址栏输入 `%TEMP%`，手动新建一个唯一的
 `contain-demo-<唯一名称>` 文件夹，仅将它用于本夹具。新建记录时选择本包根目录的
-`contain-test-installer.exe`，观察目录选择刚创建的现有文件夹，数据库选择观察目录
-之外的新位置（例如“文档”中的 `contain-trial-<唯一名称>.db`）。展开高级参数，
+`contain-test-installer.exe`，观察目录选择刚创建的现有文件夹，保持“保存到我的记录”。展开高级参数，
 每行一个参数：第一行 `--root`，第二行填写该文件夹的绝对路径（不要加引号）。
 如需观察夹具的注册表状态差异，可填写 `Software\\Contain\\Demo\\<文件夹名>`。
 完成环境检查后点击开始，等待整理结束，选择真实事件查看依据并导出。
@@ -183,13 +192,16 @@ def usage(source, install=False, version=None):
 源码：{source}
 
 1. 解压整个 ZIP，双击 `Contain.Viewer.exe`。不要只复制单个 EXE。
-2. 点击“打开记录数据库”，选择自己的已有 Contain 数据库。
-3. 在记录列表选择一条记录；查看概览、状态变化和分页事件。
+2. 默认打开“我的记录”：没有历史时显示空状态，不会创建数据库或填入演示记录。
+3. 在记录列表选择一条记录；查看概览、状态变化和分页事件。重启后仍可查看此前保存的记录。
 4. 点击事件查看依据，可复制事件 ID；点击导出保存本地 HTML 报告。
 
 无需 Rust、Visual Studio、Python 或另装 .NET。Windows x64 系统组件和随包
 .NET 8 / MSVC 运行库用于运行程序；不自动申请管理员权限。
 打开已有记录保留只读保护，不启动 ETW 或安装器。
+个人记录使用 Windows 当前用户的数据目录，保存在 `%LOCALAPPDATA%\\Contain\\Records\\contain.db`；
+不随解压目录或工作目录改变。只有明确点击“开始记录”才会创建缺失的个人库目录。
+“打开记录数据库”仍可只读查看外部记录；“我的记录”返回个人历史，不迁移外部数据库。
 {recording}
 
 `samples/viewer-demo.db` 是明确标记 SYNTHETIC 的演示数据库，含正常、历史名称/
@@ -357,6 +369,13 @@ def install_verification_matches(value, build, manifest_sha):
         value.get("schema_version") == 1 and value.get("protocol_revision") == INSTALL_VERIFICATION
         and value.get("source_sha") == build["source_sha"] and value.get("native_windows") is True
         and value.get("gui_initiated") is True and value.get("real_etw_executed") is True
+        and value.get("actual_packaged_executable_capture") is True
+        and value.get("default_database_used_without_path_interaction") is True
+        and value.get("cold_restart_verified") is True and value.get("working_directory_changed") is True
+        and all(type(value.get(key)) is int and value[key] > 0
+                for key in ("first_process_id", "restarted_process_id"))
+        and value["first_process_id"] != value["restarted_process_id"]
+        and type(value.get("first_process_exit_code")) is int and value["first_process_exit_code"] == 0
         and value.get("completed") is True and value.get("accepted") is True
         and value.get("package_manifest_sha256") == manifest_sha
         and value.get("viewer_assembly_sha256") == expected["Contain.Viewer.dll"]
@@ -373,8 +392,10 @@ def install_verification_matches(value, build, manifest_sha):
         and value.get("capture_state") == "finished" and value.get("quality_level") in {"Degraded", "Incomplete"}
         and value.get("providers_active") is True and type(value.get("real_source_event_count")) is int
         and value["real_source_event_count"] > 0 and value.get("independent_truth_verified") is True
-        and re.fullmatch(uuid, value.get("session_id", "")) is not None
-        and re.fullmatch(uuid, value.get("event_id", "")) is not None
+        and isinstance(value.get("session_id"), str) and re.fullmatch(uuid, value["session_id"]) is not None
+        and isinstance(value.get("event_id"), str) and re.fullmatch(uuid, value["event_id"]) is not None
+        and value.get("restart_session_id") == value["session_id"]
+        and value.get("restart_event_id") == value["event_id"]
         and value.get("report_generated") is True
         and re.fullmatch(r"[0-9a-f]{64}", value.get("report_sha256", "")) is not None)
 
@@ -461,6 +482,48 @@ def progress_verification_matches(value, build, manifest_sha):
         and all(type(value.get(key)) is int and value[key] == 0 for key in ("failed", "skipped", "not_run")))
 
 
+def personal_records_verification_matches(value, build, manifest_sha):
+    """Require the actual packaged EXE's isolated read-only cold-restart evidence."""
+    if not isinstance(value, dict):
+        return False
+    checks, planned = value.get("checks"), value.get("planned_checks")
+    if not (isinstance(checks, list) and all(isinstance(check, dict) for check in checks)
+            and isinstance(planned, list) and all(isinstance(name, str) for name in planned)):
+        return False
+    names = [check.get("name") for check in checks]
+    if (not all(isinstance(name, str) for name in names)
+            or len(names) != len(set(names)) or set(names) != PERSONAL_RECORDS_REQUIRED_CHECKS
+            or len(planned) != len(set(planned)) or set(planned) != PERSONAL_RECORDS_REQUIRED_CHECKS):
+        return False
+    expected = {entry["path"]: entry["sha256"] for entry in build["files"]}
+    session, event = value.get("initial_session_id"), value.get("initial_event_id")
+    return (
+        type(value.get("schema_version")) is int and value["schema_version"] == 1
+        and value.get("protocol_revision") == PERSONAL_RECORDS_VERIFICATION
+        and value.get("source_sha") == build["source_sha"]
+        and value.get("native_windows") is True and value.get("synthetic") is True
+        and value.get("real_etw_executed") is False
+        and value.get("completed") is True and value.get("accepted") is True
+        and value.get("actual_packaged_executable") is True and value.get("cold_restart_verified") is True
+        and value.get("working_directory_changed") is True
+        and value.get("real_user_records_accessed") is False
+        and type(value.get("retries")) is int and value["retries"] == 0
+        and value.get("package_manifest_sha256") == manifest_sha
+        and value.get("viewer_assembly_sha256") == expected["Contain.Viewer.dll"]
+        and value.get("viewer_launcher_sha256") == expected["Contain.Viewer.exe"]
+        and value.get("contain_sha256") == expected["contain.exe"]
+        and isinstance(session, str) and bool(session.strip())
+        and isinstance(event, str) and bool(event.strip())
+        and value.get("restart_session_id") == session and value.get("restart_event_id") == event
+        and all(type(value.get(key)) is int and value[key] > 0
+                for key in ("first_process_id", "restarted_process_id"))
+        and value["first_process_id"] != value["restarted_process_id"]
+        and type(value.get("first_process_exit_code")) is int and value["first_process_exit_code"] == 0
+        and all(check.get("status") == "passed" for check in checks)
+        and type(value.get("passed")) is int and value["passed"] == len(PERSONAL_RECORDS_REQUIRED_CHECKS)
+        and all(type(value.get(key)) is int and value[key] == 0 for key in ("failed", "skipped", "not_run")))
+
+
 def finalize(args):
     package = args.package.resolve()
     build = verify_package(package)
@@ -473,6 +536,8 @@ def finalize(args):
     layout = read(layout_path) if layout_path and layout_path.is_file() else {}
     progress_path = getattr(args, "progress_verification", None)
     progress = read(progress_path) if progress_path and progress_path.is_file() else {}
+    personal_path = getattr(args, "personal_records_verification", None)
+    personal = read(personal_path) if personal_path and personal_path.is_file() else {}
     install_requested = build.get("controlled_fixture") is not None or install_path is not None
     checks = {
         "frozen_package_unchanged": True,
@@ -481,6 +546,9 @@ def finalize(args):
             and quality.get("all_recorded_invocations_passed") is True
             and quality.get("coverage_floors") == {"lines_percent": 66.5, "functions_percent": 70},
         "native_ui_cli_and_export": verification_matches(verification, build, manifest_sha),
+        # Beta 3 cannot be called verified without its personal-library/cold-
+        # restart evidence, even when a caller omits the diagnostic-friendly flag.
+        "native_personal_records_and_cold_restart": personal_records_verification_matches(personal, build, manifest_sha),
     }
     if install_requested:
         checks["native_gui_install_etw_and_exact_result"] = install_verification_matches(installation, build, manifest_sha)
@@ -510,6 +578,8 @@ def finalize(args):
         install_verification_summary_sha256=sha(install_path) if install_path and install_path.is_file() else None,
         native_layout_verification=layout,
         native_progress_verification=progress,
+        native_personal_records_verification=personal,
+        personal_records_verification_summary_sha256=sha(personal_path) if personal_path and personal_path.is_file() else None,
         progress_verification_summary_sha256=sha(progress_path) if progress_path and progress_path.is_file() else None,
         layout_verification_summary_sha256=sha(layout_path) if layout_path and layout_path.is_file() else None,
         system_high_dpi_verified=False if layout_path is not None else None,
@@ -558,6 +628,8 @@ def main():
         help="Require default native layout and explicitly simulated 150/200%% scale checks")
     finish.add_argument("--progress-verification", type=Path,
         help="Require native synthetic process/progress/failure checks; these do not establish real ETW")
+    finish.add_argument("--personal-records-verification", type=Path,
+        help="Require the isolated personal-library and actual packaged EXE cold-restart checks")
     finish.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
