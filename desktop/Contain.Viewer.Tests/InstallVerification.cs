@@ -62,6 +62,7 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
     private bool coldRestartVerified;
     private string? restartedSession;
     private string? restartedEvent;
+    private string? initialOutcomeText;
 
     public async Task<bool> RunAsync()
     {
@@ -228,6 +229,7 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         initialWorkingDirectory = Path.Combine(personalRoot, "initial-working-directory"); Directory.CreateDirectory(initialWorkingDirectory);
         actualDesktop = new PackagedDesktop(options.Package, initialWorkingDirectory); actualFirstPid = actualDesktop.ProcessId;
         await actualDesktop.ReadyAsync();
+        initialOutcomeText = await actualDesktop.TextAsync("CaptureOutcome");
         await actualDesktop.InvokeAsync("NewInstall");
         await PackagedDesktop.WaitAsync(() => actualDesktop.ExistsAsync("InstallerPath"), TimeSpan.FromSeconds(20));
         await actualDesktop.SetTextAsync("InstallerPath", options.InstallFixture!);
@@ -294,6 +296,9 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         }
         Require(session is not null, "actual GUI returned an exact UUID; no name/latest lookup");
         Require(closeChecked, "active close gesture checked");
+        await PackagedDesktop.WaitAsync(async () => await actualDesktop!.TextAsync("CaptureOutcome") != initialOutcomeText,
+            TimeSpan.FromSeconds(30));
+        await PackagedDesktop.WaitAsync(() => actualDesktop!.EnabledAsync("NewInstall"), TimeSpan.FromSeconds(30));
         await actualDesktop!.InvokeAsync("NewInstall");
         await actualDesktop.InvokeAsync("TaskDetails");
         var taskDetails = await actualDesktop.TextAsync("InstallTaskDiagnostics");

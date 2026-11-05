@@ -32,6 +32,7 @@ internal sealed class PackagedDesktop : IDisposable
     internal async Task ReadyAsync()
     {
         await WaitAsync(async () => !process.HasExited && await ExistsAsync("NewInstall"), TimeSpan.FromSeconds(40));
+        await WaitAsync(() => EnabledAsync("NewInstall"), TimeSpan.FromSeconds(40));
     }
 
     internal Task<bool> ExistsAsync(string id) => Ui(() => Find(id) is not null);

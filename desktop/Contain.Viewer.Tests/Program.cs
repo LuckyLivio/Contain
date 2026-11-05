@@ -329,7 +329,7 @@ internal sealed class Runner
             Require(AllText(form).Contains("Synthetic finished", StringComparison.Ordinal), "real record name visible");
             Require(AllText(form).Contains("Degraded", StringComparison.Ordinal), "coverage remains Degraded");
             var databaseLabel = Control<Label>(form, "DatabasePath");
-            Require(databaseLabel.Text == "当前数据库：" + databases["finished"], "exact selected database path shown");
+            Require(databaseLabel.Text == "外部数据库（只读）：" + databases["finished"], "exact selected external database path and read-only scope shown");
             Require(databaseLabel.Text.Contains('&'), "special-character fixture includes literal ampersand");
             foreach (var name in new[] { "DatabasePath", "SessionTitle", "Status" })
                 Require(!Control<Label>(form, name).UseMnemonic, "dynamic label preserves literal ampersands: " + name);
@@ -532,6 +532,7 @@ internal sealed class Runner
             var failureDialogs = new TestDialogs { Database = databases["finished"] };
             using var failedCoreForm = new ViewerForm(new CoreClient(Path.Combine(options.PrivateOutput, "absent-contain.exe")), failureDialogs);
             failedCoreForm.Show();
+            await WaitIdle(failedCoreForm);
             Control<Button>(failedCoreForm, "OpenDatabase").PerformClick();
             await WaitIdle(failedCoreForm);
             Require(Control<Label>(failedCoreForm, "Status").Text.Contains("contain.exe", StringComparison.Ordinal), "missing core error actionable in UI");

@@ -255,21 +255,27 @@ internal sealed class PersonalRecordsVerification(Options options, bool viewerCh
     internal static async Task<CoreResponse> VerifyExactUi(PackagedDesktop desktop, string session, string eventId, int page = 0)
     {
         await PackagedDesktop.WaitAsync(async () => (await desktop.NamesAsync("Sessions")).Any(name => name == "session:" + session || name.EndsWith("；session:" + session, StringComparison.Ordinal)), TimeSpan.FromSeconds(30));
+        await PackagedDesktop.WaitAsync(() => desktop.EnabledAsync("NewInstall"), TimeSpan.FromSeconds(30));
         await desktop.SelectIdentityAsync("session:" + session);
         await PackagedDesktop.WaitAsync(async () => (await desktop.DescriptionAsync("SessionTitle")).Contains("session:" + session, StringComparison.Ordinal), TimeSpan.FromSeconds(30));
+        await PackagedDesktop.WaitAsync(() => desktop.EnabledAsync("NewInstall"), TimeSpan.FromSeconds(30));
         await desktop.SelectTabAsync("事件与依据");
+        await PackagedDesktop.WaitAsync(() => desktop.EnabledAsync("NewInstall"), TimeSpan.FromSeconds(30));
         for (var index = 0; index < page; index++)
         {
             await PackagedDesktop.WaitAsync(() => desktop.EnabledAsync("NextEvents"), TimeSpan.FromSeconds(30));
             await desktop.InvokeAsync("NextEvents");
             var offset = (index + 1) * 50;
             await PackagedDesktop.WaitAsync(async () => (await desktop.TextAsync("EventsPage")).Contains("偏移 " + offset, StringComparison.Ordinal), TimeSpan.FromSeconds(30));
+            await PackagedDesktop.WaitAsync(() => desktop.EnabledAsync("NewInstall"), TimeSpan.FromSeconds(30));
         }
         await desktop.SetTextAsync("EventFilter", eventId);
         await PackagedDesktop.WaitAsync(async () => (await desktop.NamesAsync("Events")).Any(name => name == "event:" + eventId || name.EndsWith("；event:" + eventId, StringComparison.Ordinal)), TimeSpan.FromSeconds(30));
         await desktop.SelectIdentityAsync("event:" + eventId);
         await PackagedDesktop.WaitAsync(async () => (await desktop.TextAsync("EventDetails")).Contains(eventId, StringComparison.Ordinal), TimeSpan.FromSeconds(30));
+        await PackagedDesktop.WaitAsync(() => desktop.EnabledAsync("NewInstall"), TimeSpan.FromSeconds(30));
         await desktop.ToggleAsync("RawToggle", true);
+        await PackagedDesktop.WaitAsync(async () => (await desktop.TextAsync("RawDetails")).Contains(eventId, StringComparison.Ordinal), TimeSpan.FromSeconds(30));
         var explanation = CoreResponse.Parse(await desktop.TextAsync("RawDetails"), "explain");
         if (explanation.Data.GetProperty("app_id").GetString() != session || explanation.Data.GetProperty("event").GetProperty("id").GetString() != eventId)
             throw new TestFailureException("Actual cold-restarted EXE explanation has the wrong record or event identity.");
