@@ -10,7 +10,8 @@ Rust、Visual Studio、Python、PowerShell 7 或独立 .NET 运行库。
 
 **[直接下载 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.4/contain-0.3.2-beta.4-windows-x64.zip)** · [Beta Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.4) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.4/SHA256SUMS.txt)
 
-版本 **0.3.2-beta.4**；准确源码及二进制身份见发布包 `BUILD.json`。
+版本 **0.3.2-beta.4**，冻结源码 `681aad7cfb938d6d6204b2c1cc9cbd7431f73674`。
+Windows CI 的 50 项质量门槛、52 项原生桌面检查通过；最终下载包在 Windows 11 / 144 DPI 下通过 10 项概览复验。
 [本版记录概览、实际验证和已知问题](docs/record-overview-beta4.md)。
 
 1. 下载并完整解压 ZIP，双击 `Contain.Viewer.exe`。

@@ -1,6 +1,7 @@
 # Windows Beta 4: a readable saved-record overview
 
-Version **0.3.2-beta.4**.
+Version **0.3.2-beta.4**, frozen source
+`681aad7cfb938d6d6204b2c1cc9cbd7431f73674`.
 [Windows x64 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.4/contain-0.3.2-beta.4-windows-x64.zip) ·
 [Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.4) ·
 [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.4/SHA256SUMS.txt).
@@ -49,8 +50,79 @@ Only guarded isolated databases and explicitly synthetic fixtures are used.
 This result-display iteration requests zero new captures using the existing
 desktop-only acceptance path. Previous real-ETW acceptance remains historical;
 it is not counted as a new Beta 4 measurement. Native DPI and simulated 150%/200%
-control scaling are reported separately. Actual results and immutable delivery
-identity are recorded after the final candidate passes.
+control scaling are reported separately.
+
+## Actual Windows acceptance
+
+[Push CI 42063050676](https://github.com/LuckyLivio/Contain/actions/runs/42063050676)
+and [PR CI 42063061641](https://github.com/LuckyLivio/Contain/actions/runs/42063061641)
+passed on the final runtime source / identical PR merge tree. All **50 quality
+gates** and **52 native checks** passed: viewer 22, layout 4, progress/failure 8,
+personal history 8 and overview 10. Failed, skipped and unexecuted native checks
+were zero. CI used Windows Server 2025 x64 build 26100, actual DeviceDpi **96**.
+Check, Coverage, CoverageOriginal, Dependencies and Companion retained their gates.
+nextest passed **338**, with seven existing skipped executions and zero retries;
+Companion separately ran its ignored spool regression. The other six skipped
+executions are three storage-performance experiments imported twice. The 24 Python
+suites passed **383 tests**, including 35 packaging-contract tests.
+
+Workspace Rust line/function coverage was **14836/19598 (75.701602%)** /
+**1207/1565 (77.124601%)**; original-package coverage was
+**10348/14208 (72.832207%)** / **845/1117 (75.649060%)**. Floors remain 66.5% / 70%.
+These denominators include inline tests and shared aliases; they do not measure
+managed code, branches or production-only coverage. No Rust production behavior,
+parser or hot path changed, so no new fuzz campaign or throughput claim is made.
+
+The same-source local candidate passed all **52 native checks** on Windows 11 Pro
+x64 build 26300 at actual DeviceDpi **144**. The **unmodified downloaded final CI
+package** then passed its ten focused overview checks on that machine, with 121
+assertions and no failures, skips or unexecuted checks. Its exact UI DLL, launcher,
+CLI and manifest hashes matched the accepted package. The local harness was built
+from the same source and loaded the delivered UI DLL. This final-package run
+reused isolated data and performed no installation capture.
+
+The packaged EXE fully exited (process 41592, exit 0), restarted from another
+working directory (process 51928), and opened the same explicitly synthetic
+session `synthetic-finished` and event `synthetic-finished-event-0`; summary and
+production explanation identities remained consistent. CI independently recorded
+process 8860, exit 0, followed by process 4188. These are synthetic persisted-record
+tests, not new real-ETW acceptance.
+
+| Persisted fixture | Default result | Verified detail behavior |
+| --- | --- | --- |
+| Exit 0, finished, Degraded | Exit code 0; session ended; saved record readable; coverage limited | Counts match diff; current-session changes/events and full diagnostic open |
+| Exit 1603, finished, Degraded | Actual nonzero exit, without inventing a cause; saved record still readable | Same-name UUID selection and external/default databases with different exit values stay separate |
+| No exit/end confirmation, Incomplete | Exit unrecorded; session incomplete; partial saved evidence readable | No claim of a currently running collector; full long source error retained |
+
+Missing versus zero, failed-query clearing, cancelled late errors, the first
+non-first-row accessibility selection, an independent mouse selection, scope
+copy, cold restart, paging, explanation and report behavior passed. External-view
+tests use an existing-format historical-name fixture; schema migration/read
+compatibility remains covered by the existing core regressions rather than a new
+claim of native old-schema GUI acceptance. Simulated 150% and 200% control/font
+scaling both passed; they are separate from actual 96/144 DPI and do not certify
+real monitor transitions.
+
+Actual final-package screenshots on Windows 11 / 144 DPI use reviewed synthetic
+data: [exit 0](delivery/v0.3.2-beta.4/overview-success.png),
+[nonzero exit](delivery/v0.3.2-beta.4/overview-nonzero.png),
+[unfinished](delivery/v0.3.2-beta.4/overview-unfinished.png).
+
+## Immutable artifact
+
+The unmodified accepted ZIP is **76,522,212 bytes**, SHA-256
+`0afacc6cbf163ce336484d7256a32b9c47d018960f7c52fd8e392b2c4064460f`.
+All **476 members**, **475 content-manifest entries** and **390 tracked source
+files** inside `SOURCE.zip` were checked against exact Git source. Release
+WinForms and the MSVC debug CLI are version **0.3.2-beta.4**; the bundled
+self-contained .NET runtime is **8.0.33**. CI used SDK 10.0.403 and Rust/Cargo
+1.99.1. The package is unsigned and carries no release-performance claim.
+
+[PR #7](https://github.com/LuckyLivio/Contain/pull/7) adds delivery-only documentation
+after the frozen runtime source. The tag and ZIP retain that exact tested revision;
+no rebuild or repack follows acceptance. Beta 3 and earlier tags/assets, local
+backups and history remain preserved.
+[Build identity and reviewed aggregates](delivery/v0.3.2-beta.4/BUILD-IDENTITY.json).
 
 ## Known limits
 
