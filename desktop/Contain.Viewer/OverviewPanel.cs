@@ -194,12 +194,26 @@ internal sealed class OverviewPanel : TableLayoutPanel
             // and obscure the last line at a real high-DPI working-area limit.
             var gutter = (int)Math.Ceiling(SystemInformation.VerticalScrollBarWidth * DeviceDpi / 96.0);
             var width = Math.Max(1, viewport.ClientSize.Width - gutter);
-            var cardWidth = Math.Max(100, width / 2 - 30);
-            int Lines(Control value) => value.GetPreferredSize(new Size(cardWidth, 0)).Height + value.Margin.Vertical;
-            var heading = Font.Height + 14;
-            var firstRow = Math.Max(Lines(installer) + Lines(installerNote), Lines(record) + Lines(recordNote)) + heading + 20;
-            ((TableLayoutPanel)registryScope.Parent!).RowStyles[3].Height = Font.Height * 2 + registryScope.Margin.Vertical;
-            var secondRow = Math.Max(Lines(changes) + Lines(changesNote), Lines(coverage) + Font.Height * 5) + heading + 24;
+            ((TableLayoutPanel)registryScope.Parent!).RowStyles[3].Height = registryScope.Font.Height * 2 + registryScope.Margin.Vertical;
+            // Measure the actual scaled padding, margins and each child's own
+            // font. Logical-pixel allowances undercount enlarged control fonts
+            // and can clip a label even when the outer viewport can scroll.
+            int CardHeight(Control card)
+            {
+                var innerWidth = Math.Max(1, width / 2 - card.Margin.Horizontal - card.Padding.Horizontal);
+                var height = card.Margin.Vertical + card.Padding.Vertical;
+                foreach (Control child in card.Controls)
+                {
+                    var available = Math.Max(1, innerWidth - child.Margin.Horizontal);
+                    var contentHeight = child == scope ? scope.Font.Height * 3
+                        : child == registryScope ? registryScope.Font.Height * 2
+                        : child.GetPreferredSize(new Size(available, 0)).Height;
+                    height += contentHeight + child.Margin.Vertical;
+                }
+                return height;
+            }
+            var firstRow = Math.Max(CardHeight(installer.Parent!), CardHeight(record.Parent!));
+            var secondRow = Math.Max(CardHeight(coverage.Parent!), CardHeight(changes.Parent!));
             var cardHeight = firstRow + secondRow;
             cards.RowStyles[0].SizeType = SizeType.Absolute;
             cards.RowStyles[0].Height = firstRow;

@@ -201,6 +201,25 @@ internal sealed class OverviewVerification(Options options, bool viewerChecksPas
                     }
                     await Select(form, Sessions[2]);
                     Require(C<Label>(form, "OverviewRecord").Text.Contains("未", StringComparison.Ordinal), "successful subsequent query recovers selected result");
+                    // Force a generic read error after cancellation but before a newer
+                    // operation version exists. A stale IOException must not replace
+                    // the selected record with an error during the queued-selection gap.
+                    var completion = new TaskCompletionSource();
+                    var threwAfterCancellation = false;
+                    Func<CancellationToken, Task> cancelledRead = async _ =>
+                    { await completion.Task; threwAfterCancellation = true; throw new IOException("SYNTHETIC superseded read failure"); };
+                    var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                    typeof(ViewerForm).GetMethod("StartOperation", flags)!.Invoke(form, [cancelledRead, true]);
+                    var operationVersion = typeof(ViewerForm).GetField("_operationVersion", flags)!.GetValue(form);
+                    var cancellation = (CancellationTokenSource)typeof(ViewerForm).GetField("_operationCancellation", flags)!.GetValue(form)!;
+                    cancellation.Cancel(); completion.SetResult(); await form.PendingOperation;
+                    Require(threwAfterCancellation && cancellation.IsCancellationRequested
+                        && Equals(operationVersion, typeof(ViewerForm).GetField("_operationVersion", flags)!.GetValue(form)),
+                        "generic failure occurs after cancellation with no newer operation version");
+                    Require(!C<Label>(form, "Status").Text.Contains("SYNTHETIC superseded read failure", StringComparison.Ordinal),
+                        "cancelled generic error cannot overwrite current status before next operation starts");
+                    Require(C<Label>(form, "SessionTitle").AccessibleDescription == "session:" + Sessions[2],
+                        "cancelled read failure preserves current persisted identity");
                 });
                 form.Close();
 

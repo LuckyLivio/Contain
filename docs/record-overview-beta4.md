@@ -70,6 +70,14 @@ immediately cancels superseded reads; other operations retain their existing
 guards. Both failures and the explicit non-first-selection regression are
 retained; no retry or alternate-row workaround replaces acceptance.
 
+Candidate `9aae663` passed all ten overview checks, the original viewer/progress/
+personal-history checks, native 144-DPI layout and simulated 150% scaling.
+Simulated 200% exposed clipped note text; the final layout measures each actual
+font, padding and margin rather than fixed logical-pixel allowances. An additional
+regression rejects late generic errors from cancelled reads. A bounded actual EXE
+probe selected a non-first event through the overview action and explained that
+exact event; no event-handler change or new capture was required.
+
 The original whole-Program-Files / Parallels finalizing incident remains
 unconfirmed and tracked independently in [Issue #5](https://github.com/LuckyLivio/Contain/issues/5).
 No new full-history search, complete export, automatic install-directory discovery,

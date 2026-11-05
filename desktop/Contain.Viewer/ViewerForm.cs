@@ -630,7 +630,7 @@ public sealed class ViewerForm : Form
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception error)
         {
-            if (version == _operationVersion && !IsDisposed)
+            if (version == _operationVersion && !IsDisposed && !token.IsCancellationRequested)
             {
                 if (_database is null)
                 {

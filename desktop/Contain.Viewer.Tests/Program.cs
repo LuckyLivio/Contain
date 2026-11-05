@@ -37,6 +37,8 @@ internal static class Program
             return PackagedDesktop.Diagnose(args[1], args[2], args[3]);
         if (args.Length == 4 && args[0] == "--overview-selection-probe")
             return PackagedDesktop.DiagnoseSelection(args[1], args[2], args[3]);
+        if (args.Length == 4 && args[0] == "--event-selection-probe")
+            return PackagedDesktop.DiagnoseSelection(args[1], args[2], args[3], events: true);
         var options = Options.Parse(args);
         var runner = new Runner(options);
         var progressAccepted = false;

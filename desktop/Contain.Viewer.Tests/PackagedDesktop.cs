@@ -136,7 +136,7 @@ internal sealed class PackagedDesktop : IDisposable
         }
     });
 
-    internal static int DiagnoseSelection(string package, string root, string output)
+    internal static int DiagnoseSelection(string package, string root, string output, bool events = false)
     {
         using var isolation = TestRecordIsolation.Use(root);
         using var owner = new Form { ShowInTaskbar = false };
@@ -146,16 +146,26 @@ internal sealed class PackagedDesktop : IDisposable
             try
             {
                 Directory.CreateDirectory(output);
-                foreach (var method in new[] { "invoke", "mouse" })
+                foreach (var method in events ? new[] { "event-invoke" } : new[] { "invoke", "mouse" })
                 {
                     using var desktop = new PackagedDesktop(package, root); await desktop.ReadyAsync();
                     var log = new System.Text.StringBuilder();
-                    log.AppendLine("before").AppendLine(await desktop.SelectionStateAsync("Sessions"));
-                    if (method == "invoke") await desktop.SelectIdentityAsync("session:synthetic-interrupted");
+                    var grid = events ? "Events" : "Sessions";
+                    if (events)
+                    {
+                        await desktop.SelectIdentityAsync("session:synthetic-interrupted");
+                        await WaitAsync(async () => await desktop.DescriptionAsync("SessionTitle") == "session:synthetic-interrupted", TimeSpan.FromSeconds(30));
+                        await WaitAsync(() => desktop.EnabledAsync("ViewEvents"), TimeSpan.FromSeconds(30));
+                        await desktop.InvokeAsync("ViewEvents");
+                        await WaitAsync(() => desktop.EnabledAsync("NewInstall"), TimeSpan.FromSeconds(30));
+                    }
+                    log.AppendLine("before").AppendLine(await desktop.SelectionStateAsync(grid));
+                    if (events) await desktop.SelectIdentityAsync("event:synthetic-interrupted-event-2");
+                    else if (method == "invoke") await desktop.SelectIdentityAsync("session:synthetic-interrupted");
                     else await desktop.ClickIdentityAsync("session:synthetic-interrupted");
                     await Task.Delay(1200);
-                    log.AppendLine("after").AppendLine(await desktop.SelectionStateAsync("Sessions"));
-                    log.AppendLine("bound=" + await desktop.DescriptionAsync("SessionTitle"));
+                    log.AppendLine("after").AppendLine(await desktop.SelectionStateAsync(grid));
+                    log.AppendLine("bound=" + await desktop.DescriptionAsync(events ? "EventDetails" : "SessionTitle"));
                     log.AppendLine(await desktop.DumpAsync());
                     File.WriteAllText(Path.Combine(output, method + ".txt"), log.ToString());
                     await desktop.ScreenshotAsync(output, method + ".png");
