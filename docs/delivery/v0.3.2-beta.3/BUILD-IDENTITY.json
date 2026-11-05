@@ -1,0 +1,252 @@
+{
+  "schema_version": 1,
+  "product": "Contain Windows installation recording and evidence viewer Beta",
+  "version": "0.3.2-beta.3",
+  "release_tag": "v0.3.2-beta.3",
+  "source_sha": "3c2d3706d05dcf0a969dfdde2cc92213c6734e83",
+  "ci_run_url": "https://github.com/LuckyLivio/Contain/actions/runs/41940121546",
+  "pull_request_url": "https://github.com/LuckyLivio/Contain/pull/6",
+  "main_relationship": "Normal PR #6 merge retains this frozen source as an ancestor; delivery-only documentation does not rebuild or repack the accepted ZIP.",
+  "package": {
+    "filename": "contain-0.3.2-beta.3-windows-x64.zip",
+    "bytes": 77218385,
+    "sha256": "8a5063d979278235554482835080358c5d56d3011caaf46de7f34bc206acefa6",
+    "source": "Unmodified accepted Windows CI ZIP, downloaded and verified against every content entry and exact Git source."
+  },
+  "source_archive": {
+    "path": "SOURCE.zip",
+    "source_sha": "3c2d3706d05dcf0a969dfdde2cc92213c6734e83",
+    "sha256": "de3cc547cfb137e40dfa7f1a6d60e311733be11b8098d5903a1c6630c90ff719",
+    "format": "git archive zip; exact tracked HEAD snapshot; no repository history",
+    "exact_tracked_files": 383
+  },
+  "build_manifest_sha256": "d67a50760e2cd9fab13600714c4b76fcd73b81d36feb46891b16d3bd8a01b8c5",
+  "validation_manifest_sha256": "9717f643e2fb0851b6efc7f1fcdea416809b815f5136ee0c85afd9d730eac274",
+  "build": {
+    "viewer_configuration": "Release",
+    "viewer_framework": "net8.0-windows",
+    "self_contained": true,
+    "core_profile": "debug",
+    "core_target": "x86_64-pc-windows-msvc",
+    "included_frameworks": [
+      {
+        "name": "Microsoft.NETCore.App",
+        "version": "8.0.33"
+      },
+      {
+        "name": "Microsoft.WindowsDesktop.App",
+        "version": "8.0.33"
+      }
+    ],
+    "toolchain": {
+      "dotnet": "10.0.403",
+      "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+      "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)"
+    },
+    "build_platform": {
+      "system": "Windows",
+      "release": "2025Server",
+      "version": "10.0.26100",
+      "architecture": "AMD64",
+      "runner_image": "win25-vs2026",
+      "runner_image_version": "20261103.298.1",
+      "ci_run_url": "https://github.com/LuckyLivio/Contain/actions/runs/41940121546"
+    },
+    "signed": false
+  },
+  "frozen_binaries": [
+    {
+      "path": "contain-test-installer.exe",
+      "bytes": 2180608,
+      "sha256": "5f8c1813d4771083200018b716a6c40d2f1074a5a18b0f21ff159fbb9b992c8d"
+    },
+    {
+      "path": "contain.exe",
+      "bytes": 12600832,
+      "sha256": "c90c8c972844c77324c205a4001f68499b3eb01f9db6fa2a46859ae49c08f50c"
+    },
+    {
+      "path": "Contain.Viewer.dll",
+      "bytes": 184320,
+      "sha256": "2fbcd8349bdccbaacec6cbfdeac770d85ed3c2a75bc2967b91219195e25b18a5"
+    },
+    {
+      "path": "Contain.Viewer.exe",
+      "bytes": 152064,
+      "sha256": "050a19d5b951874e8e8ba60b9d8efc03df193eae41d22e0a41f79ead1bc902a8"
+    }
+  ],
+  "validation": {
+    "status": "bounded_graphical_install_verified",
+    "checks": {
+      "frozen_package_unchanged": true,
+      "quality_complete": true,
+      "native_ui_cli_and_export": true,
+      "native_personal_records_and_cold_restart": true,
+      "native_gui_install_etw_and_exact_result": true,
+      "native_layout_and_simulated_scale": true,
+      "native_progress_and_failure_feedback": true
+    },
+    "quality_source_sha": "3c2d3706d05dcf0a969dfdde2cc92213c6734e83",
+    "quality_summary_sha256": "b2822ff742edfba558e9fc766aec995678bf5fe06a23392cd1bc044d9777dd07",
+    "nextest": {
+      "passed": 338,
+      "skipped_executions": 7,
+      "retries": 0,
+      "separate_companion_regression_passed": 1
+    },
+    "ci_native_checks": {
+      "viewer": 22,
+      "layout": 4,
+      "progress_and_failure": 8,
+      "personal_history": 8,
+      "gui_install": 6,
+      "failed": 0,
+      "not_run": 0,
+      "device_dpi": 96,
+      "simulated_scales": [
+        1.5,
+        2.0
+      ]
+    },
+    "ci_session": {
+      "session_id": "ab15f3b0-09eb-455f-88fb-e5292a1969c7",
+      "event_id": "46b35a7b-bb6c-47b7-81ae-3f86203e9b8d",
+      "restart_session_id": "ab15f3b0-09eb-455f-88fb-e5292a1969c7",
+      "restart_event_id": "46b35a7b-bb6c-47b7-81ae-3f86203e9b8d",
+      "actual_packaged_executable_capture": true,
+      "default_database_used_without_path_interaction": true,
+      "cold_restart_verified": true,
+      "working_directory_changed": true,
+      "first_process_id": 2800,
+      "restarted_process_id": 3980,
+      "first_process_exit_code": 0,
+      "installer_exit_code": 0,
+      "collection_finished": true,
+      "data_saved": true,
+      "capture_state": "finished",
+      "quality_level": "Degraded",
+      "real_source_event_count": 219,
+      "independent_truth_verified": true,
+      "capture_accounting": {
+        "etw_events_lost": 0,
+        "etw_buffers_lost": 0,
+        "dropped_events": 0,
+        "context_losses": 0,
+        "decode_errors": 0,
+        "events_received": 590,
+        "events_retained": 316,
+        "snapshot_gaps": 0,
+        "notification_gaps": 0,
+        "drain_timed_out": false
+      },
+      "real_event": {
+        "id": "46b35a7b-bb6c-47b7-81ae-3f86203e9b8d",
+        "operation": "write_requested",
+        "confidence": "High",
+        "source": "EtwFile",
+        "timestamp_ticks": "134383119274845188",
+        "pid": "2680",
+        "creation_time": "134383119274631455"
+      },
+      "report_generated": true,
+      "report_sha256": "6a8994609f1dde4b2de8a7d40b4a55d42d9b60077b1de60690dc5328f3b03c1a"
+    },
+    "final_package_local_windows11": {
+      "source_sha": "3c2d3706d05dcf0a969dfdde2cc92213c6734e83",
+      "checks": {
+        "viewer": 22,
+        "layout": 4,
+        "progress": 8,
+        "personal": 8
+      },
+      "failed": 0,
+      "device_dpi": 144,
+      "real_etw_executed": false,
+      "actual_packaged_executable": true,
+      "cold_restart_verified": true,
+      "scope": "Actual downloaded final CI UI DLL and packaged CLI with the same-source native harness; reused synthetic fixtures in guarded isolated roots, no additional installer capture.",
+      "platform": {
+        "system": "Windows",
+        "version": "10.0.26300",
+        "architecture": "AMD64"
+      }
+    },
+    "coverage_scope": "Rust inline tests and shared aliases included; unchanged 66.5% line / 70% function floors. No branch, managed-code or production-only coverage claim.",
+    "system_dpi_transition_verified": false,
+    "formal_scale_or_32_trial_acceptance": "not_run",
+    "required_quality_gates": 50,
+    "quality_aggregate": {
+      "current_required_gates_passed": true,
+      "all_recorded_invocations_passed": true,
+      "coverage_floors": {
+        "lines_percent": 66.5,
+        "functions_percent": 70
+      },
+      "workspace_export_totals": [
+        {
+          "lines": {
+            "count": 19598,
+            "covered": 14836,
+            "percent": 75.70160220430655
+          },
+          "functions": {
+            "count": 1565,
+            "covered": 1207,
+            "percent": 77.12460063897764
+          },
+          "regions": {
+            "count": 32667,
+            "covered": 23927,
+            "percent": 73.24517096764319
+          },
+          "instantiations": {
+            "count": 2523,
+            "covered": 1346,
+            "percent": 53.3491874752279
+          },
+          "branches": {
+            "count": 0,
+            "covered": 0,
+            "percent": 0
+          }
+        }
+      ],
+      "original_package_export_totals": [
+        {
+          "lines": {
+            "count": 14208,
+            "covered": 10347,
+            "percent": 72.8251689189189
+          },
+          "functions": {
+            "count": 1117,
+            "covered": 845,
+            "percent": 75.6490599820949
+          },
+          "regions": {
+            "count": 23154,
+            "covered": 16453,
+            "percent": 71.05899628573896
+          },
+          "instantiations": {
+            "count": 2040,
+            "covered": 957,
+            "percent": 46.911764705882355
+          },
+          "branches": {
+            "count": 0,
+            "covered": 0,
+            "percent": 0
+          }
+        }
+      ]
+    }
+  },
+  "known_limits": [
+    "Original whole-Program-Files / Parallels finalizing incident remains unconfirmed and separately tracked in issue #5.",
+    "Degraded describes coverage; no ownership, safe uninstall or deletion conclusion.",
+    "Unsigned Windows x64 package; no new third-party installer, Windows 10, ARM64 or Parallels acceptance."
+  ],
+  "privacy": "Only reviewed controlled-fixture aggregate evidence is published. Real personal record libraries were excluded. Original local databases, WAL/SHM, full traces, private logs and host inventories remain local."
+}

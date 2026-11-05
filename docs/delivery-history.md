@@ -1,6 +1,6 @@
 # Delivery history
 
-The current download entry is Beta 2 in the [README](../README.md).
+The current download entry is Beta 3 in the [README](../README.md).
 This index preserves earlier bounded deliveries and their failures; it does not
 turn historical packages into current Beta recommendations.
 
@@ -10,7 +10,8 @@ turn historical packages into current Beta recommendations.
 | Desktop record viewer MVP | Closed | [Historical desktop evidence](examples/windows-desktop-viewer-41122708670.json), source `4b4d38764ed417e6754b5db798488227ec147e21` |
 | Graphical installation recording MVP | Closed | [Delivery and all retained failures](graphical-install-record.md), source `15f214442d69baa0ebd91f5ad12edc5661281779` |
 | Phase-one Beta delivery | Closed | [Historical work and evidence provenance](stage-one-beta.md) |
-| Task progress and failure feedback, Beta 2 | Current Beta | [Changes, verified artifact and limitations](progress-beta2.md) |
+| Task progress and failure feedback, Beta 2 | Closed | [Changes, verified artifact and limitations](progress-beta2.md) |
+| Personal record library and cold startup history, Beta 3 | Current Beta | [Changes, verified artifact and limitations](personal-records-beta3.md) |
 
 [Architecture](architecture.md), [JSON contract](json-contract.md),
 [measured performance limits](performance.md) and [formal unexecuted stabilization
@@ -21,5 +22,6 @@ safe uninstall or rollback.
 Before cleanup the retained remote refs were main, feat/desktop-record-viewer and
 feat/desktop-install-record. All are ancestors of the new Beta task branch. The
 historical branch cleanup audit is [retained here](examples/desktop-install-branch-cleanup.json).
-This round will recheck ancestry and unique work after the authorized normal PR
-merge; it does not force or rewrite history.
+Beta 3 preserves the existing branches, worktrees, backups and historical data.
+It adds no cleanup or history rewrite; normal PR synchronization is separate
+from that historical audit.
