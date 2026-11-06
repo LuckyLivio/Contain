@@ -37,6 +37,9 @@ struct Decoder {
     pending: HashMap<String, (String, u64)>,
     registry_context: super::registry_context::RegistryContext,
     roots: Vec<String>,
+    follow_installer: bool,
+    excluded_self_io: u64,
+    excluded_paths: Vec<String>,
     registry_root: Option<String>,
     devices: Vec<(String, String)>,
     tx: SyncSender<(SystemEvent, Instant)>,
@@ -170,11 +173,28 @@ impl EtwSource {
     pub(crate) fn final_report(&mut self) -> BackendReport {
         self.stop_with(|_| {})
     }
+    pub(crate) fn excluded_self_io(&self) -> u64 {
+        self.decoder
+            .as_ref()
+            .map_or(0, |d| d.lock().map_or(0, |d| d.excluded_self_io))
+    }
     pub fn lifecycle_active(&self) -> bool {
         self.report.etw_process == "active"
     }
 
     pub fn start(roots: &[String], registry_root: Option<String>, enabled: bool) -> Self {
+        Self::start_scoped(roots, registry_root, enabled, false, Vec::new())
+    }
+    pub(crate) fn start_follow_installer(enabled: bool, excluded_paths: Vec<String>) -> Self {
+        Self::start_scoped(&[], None, enabled, true, excluded_paths)
+    }
+    fn start_scoped(
+        roots: &[String],
+        registry_root: Option<String>,
+        enabled: bool,
+        follow_installer: bool,
+        excluded_paths: Vec<String>,
+    ) -> Self {
         let (tx, rx) = mpsc::sync_channel(QUEUE_CAPACITY);
         let dropped = Arc::new(AtomicU64::new(0));
         let errors = Arc::new(AtomicU64::new(0));
@@ -265,6 +285,9 @@ impl EtwSource {
             pending: HashMap::new(),
             registry_context: Default::default(),
             roots,
+            follow_installer,
+            excluded_self_io: 0,
+            excluded_paths,
             registry_root,
             devices,
             tx,
@@ -857,6 +880,9 @@ mod tests {
             pending: HashMap::new(),
             registry_context: Default::default(),
             roots: vec![],
+            follow_installer: false,
+            excluded_self_io: 0,
+            excluded_paths: vec![],
             registry_root: None,
             devices: vec![],
             tx,

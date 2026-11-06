@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "kind": "actual_existing_page_before_redesign",
+  "baseline_main": "a1f9876f4976c2e35b443d9634bbb06fa19f1927",
+  "capture_source": "ec8d1134ead49adaaed60ee6847c4ea6664fbd75",
+  "identical_git_tree": "4f9858621e490a97f0b7cba6aab00a5e706a876f",
+  "ci_run_url": "https://github.com/LuckyLivio/Contain/actions/runs/42177319075",
+  "windows_version": "10.0.26100.0",
+  "actual_device_dpi": 96,
+  "screenshot_method": "Actual production Windows controls rendered by DrawToBitmap; synthetic fixture/configuration only. Simulated scale/font images are explicitly named and are not actual high-DPI monitor evidence.",
+  "conditions": [
+    {
+      "name": "native_default_layout_resize_maximize",
+      "device_dpi": 96,
+      "requested_scale": 1,
+      "test_method": "native_default",
+      "system_high_dpi_verified": false,
+      "working_area_width": 1024,
+      "working_area_height": 720,
+      "assertions": 984,
+      "last_phase": "install_validation_error",
+      "explanation": "Actual Windows DeviceDpi; real resize, maximize, tab, paging and explain actions."
+    }
+  ],
+  "images": [
+    {
+      "name": "follow-installer-before.png",
+      "width": 740,
+      "height": 620,
+      "sha256": "7ef700437b685550fae05f5a4ea1aa58f874adb443dcd7caab2f44850330e2c7"
+    }
+  ],
+  "boundary": "Byte-identical retained Windows native production-form screenshots of isolated synthetic saved-record/configuration samples; not a browser/mockup or new capture. Native actual DPI and simulated Control.Scale stress remain separate."
+}

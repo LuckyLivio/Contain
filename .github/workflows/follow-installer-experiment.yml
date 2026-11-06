@@ -1,0 +1,46 @@
+name: Follow installer controlled experiment
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/follow-installer-recording
+permissions:
+  contents: read
+concurrency:
+  group: contain-follow-installer-experiment
+  cancel-in-progress: false
+jobs:
+  experiment:
+    if: ${{ github.repository == 'LuckyLivio/Contain' && github.run_attempt == 1 && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[follow-experiment]')) }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Build exact frozen experiment source
+        shell: pwsh
+        run: |
+          cargo build --workspace --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Experiment build failed' }
+          $out = Join-Path $env:RUNNER_TEMP ('contain-follow-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+          "CONTAIN_FOLLOW_OUTPUT=$out" >> $env:GITHUB_ENV
+          $tokens = $null; $parseErrors = $null
+          $null = [System.Management.Automation.Language.Parser]::ParseFile([IO.Path]::GetFullPath('scripts/follow-installer-experiment.ps1'), [ref]$tokens, [ref]$parseErrors)
+          if ($parseErrors.Count) { throw 'Experiment script syntax failed before capture' }
+          python scripts/test-verify-follow-installer-experiment.py
+          if ($LASTEXITCODE -ne 0) { throw 'Independent oracle regression failed before capture' }
+      - name: One bounded capture with independent root child and unrelated writes
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          ./scripts/follow-installer-experiment.ps1 -ContainExecutable target/debug/contain.exe -FixtureExecutable target/debug/contain-test-installer.exe -OutputDirectory $env:CONTAIN_FOLLOW_OUTPUT -Source $env:GITHUB_SHA
+      - name: Publish reviewed synthetic-fixture aggregate including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: follow-installer-experiment-evidence
+          path: ${{ env.CONTAIN_FOLLOW_OUTPUT }}/public/*.json
+          if-no-files-found: warn

@@ -21,6 +21,7 @@ pub struct InstallOptions {
     pub installer: PathBuf,
     pub args: Vec<String>,
     pub watch_roots: Vec<PathBuf>,
+    pub follow_installer: bool,
     pub registry_key: Option<String>,
     pub settle_ms: u64,
     pub etw: bool,
@@ -117,9 +118,20 @@ fn install_inner(
     if !installer.is_file() {
         anyhow::bail!("installer is not a file: {}", installer.display());
     }
+    let follow = options.follow_installer;
+    anyhow::ensure!(
+        !follow || options.etw && options.watch_roots.is_empty() && options.registry_key.is_none(),
+        "Follow-installer mode requires ETW and does not accept predefined watch roots or registry scope"
+    );
+    anyhow::ensure!(
+        !follow || options.max_drain_ms <= 10000,
+        "Follow-installer mode has a maximum 10000-ms descendant drain budget"
+    );
     let id = status.session_id.clone();
     tracing::info!(session_id = %id, etw_requested = options.etw, "capture starting");
-    let roots = if options.watch_roots.is_empty() {
+    let roots = if follow {
+        Vec::new()
+    } else if options.watch_roots.is_empty() {
         vec![
             installer
                 .parent()
@@ -145,19 +157,27 @@ fn install_inner(
     }
     let mut warnings = Vec::new();
     status.begin_step("baseline_inventory", notify);
-    let before_inventory = inventory::snapshot();
+    let before_inventory = if follow {
+        Default::default()
+    } else {
+        inventory::snapshot()
+    };
     let before_registry = options
         .registry_key
         .as_deref()
         .map(registry::snapshot)
         .transpose()?;
-    let observer = match filesystem::FileObserver::start(&roots) {
-        Ok(observer) => Some(observer),
-        Err(error) => {
-            warnings.push(format!(
+    let observer = if follow {
+        None
+    } else {
+        match filesystem::FileObserver::start(&roots) {
+            Ok(observer) => Some(observer),
+            Err(error) => {
+                warnings.push(format!(
                 "Directory notifications unavailable: {error}. Snapshot fallback remains active."
             ));
-            None
+                None
+            }
         }
     };
     let nt_root = options.registry_key.as_ref().and_then(|key| {
@@ -189,14 +209,24 @@ fn install_inner(
         },
         ..Default::default()
     };
-    let mut journal = RawBuffer::with_policy(db, &initial, options.evidence_quota_bytes, policy)?;
+    let quota = if follow {
+        options.evidence_quota_bytes.min(64 * 1024 * 1024)
+    } else {
+        options.evidence_quota_bytes
+    };
+    let mut journal = RawBuffer::with_policy(db, &initial, quota, policy)?;
     status.data_saved = true;
     status.begin_step("provider_start", notify);
-    let mut source = EtwSource::start(&watch_roots, nt_root.clone(), options.etw);
+    let mut source = if follow {
+        EtwSource::start_follow_installer(options.etw, db.capture_self_io_paths())
+    } else {
+        EtwSource::start(&watch_roots, nt_root.clone(), options.etw)
+    };
     status.backend(source.provider_status());
     status.publish(notify);
     anyhow::ensure!(
-        !require_etw || providers_ready(source.provider_status(), options.registry_key.is_some()),
+        !(require_etw || follow)
+            || providers_ready(source.provider_status(), options.registry_key.is_some()),
         "Required ETW providers are unavailable; installer was not launched. Check existing trace permissions or explicitly select snapshot mode. {:?}",
         source.provider_status().warnings
     );
@@ -205,14 +235,30 @@ fn install_inner(
         "provider_readiness".into(),
         ready_clock.elapsed().as_millis() as u64,
     );
-    source.initialize_identities(|page| journal.append(db, page));
+    source.initialize_identities(|mut page| {
+        if follow {
+            page.retain(|e| e.event_type == "lifecycle");
+        }
+        journal.append(db, page)
+    });
     let initial_identities = source.take_initial_identities();
     let initial_threads = source.take_initial_threads();
     let lifecycle_receiver =
         crate::hotpath::Variant::from_env().lifecycle_receiver() && source.lifecycle_active();
     let receive_clock = Instant::now();
-    let (observations, mut backend, stream) =
-        crate::ingest::record_while(&mut source, db, journal, |live| {
+    let record = if follow {
+        crate::ingest::record_while_follow
+    } else {
+        crate::ingest::record_while
+    };
+    let (observations, mut backend, stream) = record(
+        &mut source,
+        db,
+        journal,
+        |live: &crate::ingest::LiveCapture| {
+            if follow {
+                live.seed_follow_initial(&initial_identities, &initial_threads);
+            }
             // Baseline reads now occur inside the active trace, before launch.
             // The dedicated receiver remains active during both snapshots.
             status.begin_step("baseline_files", notify);
@@ -256,6 +302,9 @@ fn install_inner(
             let capture_received_start = live.received();
             let mut progress_at = Instant::now();
             let mut process_observer = ProcessObserver::new(identity, &id);
+            if follow {
+                live.bind_follow_root(process_observer.records()[0].clone(), &id);
+            }
             let mut poll_at = Instant::now();
             let exit_code = loop {
                 if Instant::now() >= progress_at {
@@ -367,7 +416,8 @@ fn install_inner(
                 started_at,
                 drain_timed_out,
             ))
-        })?;
+        },
+    )?;
     status.stage = "finalizing".into();
     status.capture_finished = true;
     status.backend(&backend);
@@ -482,6 +532,9 @@ fn install_inner(
             .filter(|p| matches!(p.confidence, Confidence::Certain | Confidence::High))
             .cloned()
             .collect();
+    }
+    if follow {
+        processes.retain(|p| crate::follow::is_direct_actor(p, (root_pid, root_birth)));
     }
     let source_intact = backend.source_intact();
     status.begin_step("evidence_normalization", notify);
@@ -598,7 +651,11 @@ fn install_inner(
         .as_ref()
         .map(|o| o.seen_paths())
         .unwrap_or_default();
-    let notification_gaps = observer.as_ref().map(|o| o.gaps()).unwrap_or(1);
+    let notification_gaps =
+        observer
+            .as_ref()
+            .map(|o| o.gaps())
+            .unwrap_or(if follow { 0 } else { 1 });
     if let Some(observer) = &observer {
         let gaps = observer.gaps();
         if gaps > 0 {
@@ -695,7 +752,11 @@ fn install_inner(
     drop(state_association_timer);
     let inventory_clock = Instant::now();
     status.begin_step("final_inventory", notify);
-    let after_inventory = inventory::snapshot();
+    let after_inventory = if follow {
+        Default::default()
+    } else {
+        inventory::snapshot()
+    };
     let inventory = inventory::diff(&before_inventory, &after_inventory, &processes, &id);
     phases.insert(
         "after_inventory".into(),
@@ -711,6 +772,10 @@ fn install_inner(
         warnings.push("Process lifecycle evidence was unavailable or incomplete. Sampling can miss short-lived/detached children; unresolved actors remain Unknown.".into());
     }
     warnings.push("File ETW operation requests and snapshot state changes are separate evidence; failed operations never validate state changes.".into());
+    if follow {
+        warnings.push("Follow-installer mode records verified source operations only; no installation-before baseline or final-file ownership is established.".into());
+        warnings.push("Follow-installer capture is limited to the owned EXE and verified direct children. Unresolved or unrelated candidates can be excluded; absence from this session does not prove absence of filesystem activity. Historical cached file names are not verified current paths.".into());
+    }
     let skipped = before_files.unreadable.len() + after_files.unreadable.len();
     if skipped > 0 {
         warnings.push(format!(
@@ -865,6 +930,7 @@ mod tests {
             installer: directory.join("missing.exe"),
             args: vec![],
             watch_roots: vec![directory.clone()],
+            follow_installer: false,
             registry_key: None,
             settle_ms: 1,
             etw: false,

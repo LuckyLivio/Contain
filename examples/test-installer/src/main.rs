@@ -1,3 +1,4 @@
+mod follow_experiment;
 mod root_input;
 mod truth;
 use anyhow::{Context, Result};
@@ -24,6 +25,9 @@ enum Role {
     Worker,
     Noise,
     Burst,
+    FollowParent,
+    FollowChild,
+    FollowUnrelated,
 }
 
 #[derive(Parser)]
@@ -123,6 +127,9 @@ fn run() -> Result<()> {
         }
         fs::remove_dir_all(&root)?;
         println!("Fixture cleaned: {} and HKCU\\{}", root.display(), key_path);
+        return Ok(());
+    }
+    if follow_experiment::run(args.role, &root)? {
         return Ok(());
     }
     let truth = truth::Truth::new(&root, &format!("{:?}", args.role).to_lowercase())?;
@@ -309,7 +316,9 @@ fn run() -> Result<()> {
             }
             return Ok(());
         }
-        Role::Unrelated => unreachable!(),
+        Role::Unrelated | Role::FollowParent | Role::FollowChild | Role::FollowUnrelated => {
+            unreachable!()
+        }
     }
     hold_for_observation();
     Ok(())
