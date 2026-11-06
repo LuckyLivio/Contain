@@ -13,6 +13,7 @@ Use the [README](../README.md) for the current Windows download and quick start.
 | Saved-record overview, Beta 4 | Closed | [Overview and Windows verification](record-overview-beta4.md) |
 | Search events in one session, Beta 5 | Closed | [Search and pagination verification](session-event-search-beta5.md) |
 | Export all matching events, Beta 6 | Released | [Export and release verification](search-export-beta6.md) |
+| One-page new installation record, Beta 7 | Released | [First-use flow and Windows verification](simple-install-beta7.md) |
 
 [Architecture](architecture.md), [JSON contract](json-contract.md),
 [measured performance limits](performance.md) and [formal unexecuted stabilization

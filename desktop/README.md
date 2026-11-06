@@ -7,8 +7,8 @@ Graphical recording is a separate [implementation and validation milestone](../d
 
 ## Current download
 
-Use the [Beta 6 release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.6).
-Its [complete search export, validation scope and known issues](../docs/search-export-beta6.md) distinguish
+Use the [Beta 7 release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.7).
+Its [new-record flow, validation scope and known issues](../docs/simple-install-beta7.md) distinguish
 native Windows results, simulated layout stress and user-reported trials.
 The entries below retain historical evidence rather than additional current downloads.
 
@@ -111,38 +111,38 @@ A successful check does not guarantee later startup.
 
 ## New installation record
 
-1. Choose **新建安装记录**, then select an existing native `.exe` installer.
-   Current acceptance uses the controlled `contain-test-installer.exe` fixture.
-   MSI, updater and service-agent installation coverage is not promised.
-2. The EXE filename suggests a record name; an edited name is preserved, and
-   duplicate names are allowed. Choose an **existing** observation directory.
-   **保存到我的记录** uses the stable personal library without asking for a
-   database path. Restarting the application loads its saved sessions again.
-   The application does not infer all software
-   destinations from the installer directory, scan all drives or create the
-   software destination to make validation pass. For the packaged fixture,
-   a developer/tester prepares a marked isolated fixture directory first.
-3. Open advanced settings only if needed. A custom database location is optional
-   and does not replace the next new record's personal default. Database and
-   WAL/SHM must remain outside the observation scope; unavailable, corrupt or
-   incompatible files are reported and preserved. Prelaunch errors offer
-   **更改保存位置**. Arguments are one literal argument per
-   line, without shell quoting or expansion. Spaces, Chinese and special characters
-   remain part of their argument. The registry option is a selected HKCU key;
-   defaults preserve the existing backend limits.
-4. Click **检查环境**. ETW availability, current permissions, warnings and the
-   explicitly selected snapshot mode are reported separately. The default recording
-   path requires ETW readiness at actual launch. A user can select snapshot mode
-   knowing that its observations and attribution are limited.
-5. Click **开始记录** once. Configuration and checking never start the installer.
-   The interface remains responsive, accepts only one active task and reports
-   actual preparing/capturing/finalizing/finished/failed backend stages without
-   a fabricated percentage. Installer exit, capture completion, saved data and
-   coverage quality are separate facts.
-6. After finalization choose the exact returned session automatically in the existing
-   viewer. Select a source event to read explain, then export a local report.
-   Failed or interrupted saved sessions can also be inspected; no evidence is
-   deleted and the latest database row is never used to identify the task.
+1. Click **新建安装记录**. The native EXE picker opens immediately; cancelling
+   returns to the current history selection. Choosing an EXE opens one configuration
+   page and moves focus to the observation folder. An existing task instead opens
+   its current status window.
+2. Choose **要观察哪个文件夹？**. Contain records changes inside this existing
+   folder. To observe files in the installation target, select its corresponding
+   existing folder. The installer still controls its own installation destination;
+   Contain does not create it, infer it from the EXE directory, reuse a previous
+   scope or expand the range. View/copy/change the selected paths as needed.
+3. Click **开始记录** once. The EXE filename suggests the record name and the
+   destination defaults to **我的记录**. An absent or invalidated folder explains
+   why Start cannot proceed. Permission/source and database checks still precede
+   launching the installer; conflicts offer **更改保存位置**. Selection and
+   configuration never start the installer or create a recording session.
+4. Open **高级设置** only when needed: record name, custom database, registry,
+   one literal argument per line, wait settings, explicit snapshot mode and
+   **检查环境**. Changed options remain summarized when collapsed. Environment
+   checking is optional, actively probes sources and does not guarantee later
+   startup. An unavailable ETW source is explained; users decide whether to view
+   details, correct their environment or explicitly choose limited snapshot mode.
+   The program neither silently changes mode nor automatically elevates.
+5. Recording uses the existing real preparing/capturing/finalizing/finished/failed
+   stages. Installer exit, capture completion, saved data and quality are separate
+   facts. After finalization, the exact returned session opens in the viewer;
+   searching, explaining and exporting its events retain their previous behavior.
+
+A custom database remains outside the observation scope and does not replace the
+next new record's personal default. Existing incompatible or corrupt files are
+preserved. Literal arguments are not shell-expanded. MSI, updater and service-agent
+coverage is not added by this layout change. Native acceptance uses the existing
+controlled EXE with a guarded, fixture-only zero-argument target; ordinary product
+code never injects or infers an installer's target path.
 
 There is no force-cancel button. Closing an active recording window is refused
 with a visible explanation that the task continues; leave it open until the
@@ -183,10 +183,10 @@ production `Storage`/`RawBuffer`, never frontend objects. A second process launc
 the packaged desktop executable and verifies its native window and normal exit.
 The harness checks that its production UI assembly is identical to the frozen
 package and records screenshots rendered by the actual Windows controls.
-The harness supplies file-selection paths through the dialog interface, then
-operates the production buttons, tables, tabs and clipboard. It does not automate
-the operating system's file-picker navigation or establish manual Windows 10/11
-compatibility. The packaged executable also has a separate native launch/close
+Offline form regressions supply file-selection paths through the dialog interface.
+The separate packaged-EXE acceptance operates native EXE/folder pickers and the
+ordinary two-input recording flow. Actual screenshots and measured DPI are retained;
+this does not establish a manual Windows 10/11 compatibility matrix. The packaged executable also has a separate native launch/close
 check; screenshots are not browser previews.
 
 The existing CI uses `[stage1-beta]` for this bounded Beta validation,

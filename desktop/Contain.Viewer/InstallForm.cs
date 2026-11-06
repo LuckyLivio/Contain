@@ -11,8 +11,15 @@ public sealed class InstallForm : Form
     private readonly PersonalRecords records;
     private readonly Func<string, string, Task> openSession;
     private readonly TextBox installer = Input("InstallerPath");
+    private readonly Label installerName = new() { Name = "InstallerFileName", Text = "尚未选择安装器", UseMnemonic = false, AutoSize = true, Dock = DockStyle.Top };
+    private readonly CheckBox showInstallerPath = new() { Name = "ShowInstallerPath", Text = "查看完整路径", AutoSize = true };
+    private readonly Button chooseInstaller = Action("ChooseInstaller", "更换…");
     private readonly TextBox recordName = Input("RecordName");
     private readonly TextBox watchRoot = Input("WatchRoot");
+    private readonly Button chooseWatchRoot = Action("ChooseWatchRoot", "选择文件夹…");
+    private readonly Button copyWatchRoot = Action("CopyWatchRoot", "复制路径");
+    private readonly Label watchHint = new() { Name = "WatchRootHint", AutoSize = true, Dock = DockStyle.Top, ForeColor = Color.FromArgb(122, 75, 19) };
+    private readonly Label correctionHint = new() { Name = "InstallCorrectionHint", AutoSize = true, Dock = DockStyle.Top, ForeColor = Color.FromArgb(150, 45, 35), Visible = false };
     private readonly TextBox database = Input("DatabaseSavePath");
     private readonly TextBox arguments = new() { Name = "InstallerArguments", Multiline = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill };
     private readonly TextBox registryKey = Input("RegistryKey");
@@ -22,7 +29,8 @@ public sealed class InstallForm : Form
     private readonly CheckBox customDatabase = new() { Name = "CustomDatabaseToggle", Text = "使用自定义保存位置", AutoSize = true };
     private readonly Label saveLocation = new() { Name = "DefaultSaveLocation", Text = "保存到我的记录", AutoSize = true, Dock = DockStyle.Top };
     private readonly Button changeSaveLocation = Action("ChangeSaveLocation", "更改保存位置");
-    private readonly CheckBox advancedToggle = new() { Name = "AdvancedToggle", Text = "高级参数", AutoSize = true };
+    private readonly CheckBox advancedToggle = new() { Name = "AdvancedToggle", Text = "高级设置", AutoSize = true };
+    private readonly Button reviewCaptureMode = Action("ReviewCaptureMode", "查看记录方式");
     private readonly Button check = Action("CheckEnvironment", "检查环境");
     private readonly Button start = Action("StartRecording", "开始记录");
     private readonly Button view = Action("ViewRecordedSession", "查看本次记录");
@@ -38,10 +46,13 @@ public sealed class InstallForm : Form
     private long lastStatusReceivedAt;
     private string? localFailure;
     private string? localFailureDetails;
+    private Control? correctionTarget;
     private bool closeRefused;
     private readonly TextBox status = new() { Name = "InstallStatus", Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BackColor = Color.White };
-    private readonly TextBox scopePreview = new() { Name = "CaptureConfigurationPreview", Multiline = true, ReadOnly = true, WordWrap = false, ScrollBars = ScrollBars.Both, Dock = DockStyle.Fill, BackColor = SystemColors.Control, BorderStyle = BorderStyle.FixedSingle, MinimumSize = new Size(0, 100) };
+    private readonly TextBox scopePreview = new() { Name = "CaptureConfigurationPreview", Multiline = true, ReadOnly = true, WordWrap = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Top, BackColor = SystemColors.Control, BorderStyle = BorderStyle.None, Height = 72, Visible = false, TabStop = true };
     private readonly Panel configuration = new() { Dock = DockStyle.Fill, AutoScroll = true };
+    private readonly ToolTip tips = new();
+    private TableLayoutPanel layoutRoot = null!;
     private bool checking;
     private bool consumed;
     private bool nameEdited;
@@ -57,7 +68,7 @@ public sealed class InstallForm : Form
     public string Database => Path.GetFullPath(SelectedDatabase);
     public InstallRunResult? Result { get; private set; }
 
-    public InstallForm(InstallClient client, Func<string, string, Task> openSession, IInstallDialogs? dialogs = null, PersonalRecords? records = null)
+    public InstallForm(InstallClient client, Func<string, string, Task> openSession, IInstallDialogs? dialogs = null, PersonalRecords? records = null, string? initialInstaller = null)
     {
         this.client = client;
         this.openSession = openSession;
@@ -69,14 +80,17 @@ public sealed class InstallForm : Form
         Font = new Font("Microsoft YaHei UI", 9.5F);
         AutoScaleDimensions = new SizeF(96F, 96F);
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(900, 820);
-        MinimumSize = new Size(640, 560);
+        ClientSize = new Size(800, 620);
+        MinimumSize = new Size(640, 520);
         StartPosition = FormStartPosition.CenterParent;
         Build();
-        foreach (var input in new[] { installer, watchRoot, database, registryKey }) input.TextChanged += (_, _) => UpdateScopePreview();
+        foreach (var input in new[] { installer, watchRoot, database, registryKey, arguments }) input.TextChanged += (_, _) => { UpdateScopePreview(); UpdateEnabled(); };
         snapshot.CheckedChanged += (_, _) => UpdateScopePreview();
-        recordName.TextChanged += (_, _) => { if (!suggestingName) nameEdited = true; };
-        installer.TextChanged += (_, _) => SuggestRecordName();
+        settle.ValueChanged += (_, _) => UpdateScopePreview();
+        maxDrain.ValueChanged += (_, _) => UpdateScopePreview();
+        recordName.TextChanged += (_, _) => { if (!suggestingName) nameEdited = true; UpdateScopePreview(); };
+        installer.TextChanged += (_, _) => { SuggestRecordName(); UpdateScopePreview(); };
+        watchRoot.TextChanged += (_, _) => { watchHint.Text = string.IsNullOrWhiteSpace(watchRoot.Text) ? "还需选择观察文件夹，才能确定要记录哪里的变化。" : ""; correctionHint.Visible = false; };
         customDatabase.CheckedChanged += (_, _) => { saveLocation.Text = customDatabase.Checked ? "保存到自定义位置" : "保存到我的记录"; UpdateScopePreview(); };
         changeSaveLocation.Visible = false;
         changeSaveLocation.Click += (_, _) =>
@@ -84,8 +98,37 @@ public sealed class InstallForm : Form
             advancedToggle.Checked = true; customDatabase.Checked = true;
             configuration.ScrollControlIntoView(database); database.Focus(); database.SelectAll();
         };
+        reviewCaptureMode.Visible = false;
+        reviewCaptureMode.Click += (_, _) =>
+        {
+            advancedToggle.Checked = true;
+            configuration.ScrollControlIntoView(snapshot); snapshot.Focus();
+        };
+        chooseInstaller.Click += (_, _) =>
+        {
+            var selected = this.dialogs.ChooseInstaller(this);
+            if (selected is not null) { installer.Text = selected; chooseWatchRoot.Focus(); }
+        };
+        chooseWatchRoot.Click += (_, _) =>
+        {
+            var selected = this.dialogs.ChooseWatchRoot(this);
+            if (selected is not null) { watchRoot.Text = selected; start.Focus(); }
+        };
+        copyWatchRoot.Click += (_, _) =>
+        {
+            try { Clipboard.SetText(watchRoot.Text); }
+            catch (System.Runtime.InteropServices.ExternalException) { watchHint.Text = "剪贴板暂不可用，可选中上方路径后复制。"; }
+        };
+        showInstallerPath.CheckedChanged += (_, _) =>
+        {
+            installer.Visible = showInstallerPath.Checked;
+            if (installer.Visible) { installer.Focus(); installer.SelectAll(); }
+        };
+        if (initialInstaller is not null) installer.Text = initialInstaller;
         UpdateScopePreview();
-        status.Text = "准备配置。仅点击“开始记录”才会启动所选安装器。\r\n当前支持可直接启动的 EXE；未承诺 MSI、更新器或服务代理完整支持。";
+        watchHint.Text = "还需选择观察文件夹，才能确定要记录哪里的变化。";
+        status.Text = "仅点击“开始记录”才会启动所选安装器。";
+        status.Visible = false;
         start.Click += (_, _) => { if (!IsActive && !checking && !consumed) PendingOperation = StartAsync(); };
         check.Click += (_, _) => { if (!IsActive && !checking && !consumed) PendingOperation = CheckAsync(); };
         view.Click += (_, _) => { if (!IsActive && LastStatus is not null) PendingOperation = OpenAsync(); };
@@ -121,50 +164,71 @@ public sealed class InstallForm : Form
                 Location = new Point(working.Left + Math.Max(0, (working.Width - Width) / 2), working.Top + Math.Max(0, (working.Height - Height) / 2));
             }
         };
+        Shown += (_, _) => { if (!string.IsNullOrWhiteSpace(installer.Text)) chooseWatchRoot.Focus(); else chooseInstaller.Focus(); };
         view.Enabled = false;
+        UpdateEnabled();
     }
 
     private void Build()
     {
         var viewport = new Panel { Name = "InstallViewport", Dock = DockStyle.Fill, AutoScroll = true };
-        var root = new TableLayoutPanel { Dock = DockStyle.Top, Padding = new Padding(14), ColumnCount = 1, RowCount = 5, MinimumSize = new Size(0, 560), Height = 560 };
+        var root = new TableLayoutPanel { Dock = DockStyle.Top, Padding = new Padding(18), ColumnCount = 1, RowCount = 5, MinimumSize = new Size(0, 480), Height = 480 };
+        layoutRoot = root;
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
         Controls.Add(viewport);
         viewport.Controls.Add(root);
         viewport.ClientSizeChanged += (_, _) => root.Height = Math.Max(root.MinimumSize.Height, viewport.ClientSize.Height);
         root.Height = Math.Max(root.MinimumSize.Height, viewport.ClientSize.Height);
-        var scopeNote = new Label { Name = "CaptureScopeNote", AutoSize = true, Dock = DockStyle.Top, Margin = new Padding(3, 0, 3, 10), Text = "新建安装记录 · 当前支持可直接启动的 EXE\r\n安装包位置与实际安装目标不同。请先选定一个已存在的观察目录，并在安装器中将目标设在该范围内；范围之外的变化可能无法观察。不会自动创建目标目录或扩大范围。" };
-        root.Controls.Add(scopeNote, 0, 0);
-        root.SizeChanged += (_, _) => scopeNote.MaximumSize = new Size(Math.Max(1, root.ClientSize.Width - root.Padding.Horizontal - scopeNote.Margin.Horizontal), 0);
-        var fields = new TableLayoutPanel { Name = "InstallConfigurationFields", Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 3, Padding = new Padding(0, 0, 6, 0) };
-        fields.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var heading = new Label { Name = "CaptureScopeNote", Text = "新建安装记录", AutoSize = true, Dock = DockStyle.Top,
+            Font = new Font(Font, FontStyle.Bold), Margin = new Padding(3, 0, 3, 14) };
+        root.Controls.Add(heading, 0, 0);
+        var fields = new TableLayoutPanel { Name = "InstallConfigurationFields", Dock = DockStyle.Top, AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, Padding = new Padding(0, 0, 6, 0), TabIndex = 0 };
         fields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        fields.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         configuration.Controls.Add(fields);
+        configuration.TabIndex = 0;
         root.Controls.Add(configuration, 0, 1);
-        AddRow(fields, "安装器 EXE", installer, Browse("ChooseInstaller", () => dialogs.ChooseInstaller(this), installer));
-        AddRow(fields, "记录名称", recordName);
-        AddRow(fields, "观察目录", watchRoot, Browse("ChooseWatchRoot", () => dialogs.ChooseWatchRoot(this), watchRoot));
-        var saveRow = fields.RowCount++;
-        fields.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        fields.Controls.Add(saveLocation, 1, saveRow); fields.SetColumnSpan(saveLocation, 2);
-        var modeRow = fields.RowCount++;
-        fields.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        fields.Controls.Add(snapshot, 1, modeRow); fields.SetColumnSpan(snapshot, 2);
-        var toggleRow = fields.RowCount++;
-        fields.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        fields.Controls.Add(advancedToggle, 1, toggleRow);
-        var advanced = new TableLayoutPanel { Name = "AdvancedParameters", Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, Visible = false };
+        var installerRow = new TableLayoutPanel { Name = "InstallerSelection", Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, TabIndex = 0 };
+        installerRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        installerRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        installerName.Margin = new Padding(3, 12, 3, 6);
+        installerName.AccessibleName = "安装器文件名";
+        installerRow.Controls.Add(installerName, 0, 0);
+        installerRow.Controls.Add(chooseInstaller, 1, 0);
+        chooseInstaller.TabIndex = 0;
+        AddSection(fields, installerRow);
+        showInstallerPath.TabIndex = 1;
+        AddSection(fields, showInstallerPath);
+        installer.ReadOnly = true; installer.Visible = false; installer.TabIndex = 2;
+        installer.AccessibleName = "安装器完整路径";
+        AddSection(fields, installer);
+        var watchLabel = new Label { Name = "WatchRootLabel", Text = "要观察哪个文件夹？", AutoSize = true, Dock = DockStyle.Top, Margin = new Padding(3, 18, 3, 4) };
+        AddSection(fields, watchLabel);
+        var scopeNote = new Label { Name = "WatchRootNote", Text = "Contain 会记录这个文件夹里的变化。要查看安装目标里的文件，请选择对应的已有文件夹。",
+            AutoSize = true, Dock = DockStyle.Top, Margin = new Padding(3, 0, 3, 8) };
+        AddSection(fields, scopeNote);
+        watchRoot.ReadOnly = true; watchRoot.TabIndex = 3; watchRoot.PlaceholderText = "请选择一个已有文件夹";
+        watchRoot.AccessibleName = "实际观察文件夹路径";
+        AddSection(fields, watchRoot);
+        var folderActions = new FlowLayoutPanel { Name = "WatchRootActions", AutoSize = true, Dock = DockStyle.Top, WrapContents = true, TabIndex = 4 };
+        chooseWatchRoot.TabIndex = 0; copyWatchRoot.TabIndex = 1;
+        folderActions.Controls.Add(chooseWatchRoot); folderActions.Controls.Add(copyWatchRoot);
+        AddSection(fields, folderActions);
+        watchHint.Margin = new Padding(3, 0, 3, 10);
+        AddSection(fields, watchHint);
+        advancedToggle.TabIndex = 5;
+        AddSection(fields, advancedToggle);
+        var advanced = new TableLayoutPanel { Name = "AdvancedParameters", Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, Visible = false, TabIndex = 6 };
         advanced.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         advanced.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        var advancedRow = fields.RowCount++;
-        fields.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        fields.Controls.Add(advanced, 0, advancedRow); fields.SetColumnSpan(advanced, 3);
+        AddSection(fields, advanced);
+        AddAdvanced(advanced, "记录名称", recordName);
+        AddAdvanced(advanced, "默认保存", saveLocation);
         AddAdvanced(advanced, "记录保存", customDatabase);
         var customLocation = new TableLayoutPanel { Name = "CustomDatabaseLocation", AutoSize = true, Dock = DockStyle.Top, ColumnCount = 2, Visible = false };
         customLocation.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -176,31 +240,87 @@ public sealed class InstallForm : Form
         advanced.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         advanced.Controls.Add(customLabel, 0, customRow); advanced.Controls.Add(customLocation, 1, customRow);
         customDatabase.CheckedChanged += (_, _) => { customLabel.Visible = customLocation.Visible = customDatabase.Checked; };
+        AddAdvanced(advanced, "记录方式", snapshot);
         arguments.MinimumSize = new Size(0, 78);
         AddAdvanced(advanced, "逐行参数", arguments);
-        var argumentNote = new Label { Name = "InstallerArgumentsNote", Dock = DockStyle.Top, Text = "每行是一个独立的原始参数；引号也是参数内容，无需 shell 转义。空白输入不传参数；中间空行表示空参数。", AutoSize = true };
+        var argumentNote = new Label { Name = "InstallerArgumentsNote", Dock = DockStyle.Top, Text = "每行一个原始参数；无需 shell 转义。中间空行表示空参数。", AutoSize = true };
         AddAdvanced(advanced, "参数说明", argumentNote);
         advanced.SizeChanged += (_, _) => argumentNote.MaximumSize = new Size(Math.Max(1, advanced.ClientSize.Width - advanced.GetColumnWidths().FirstOrDefault() - argumentNote.Margin.Horizontal), 0);
         AddAdvanced(advanced, "HKCU 注册表键", registryKey);
         AddAdvanced(advanced, "静默等待 ms", settle);
         AddAdvanced(advanced, "最长排空 ms", maxDrain);
+        AddAdvanced(advanced, "可选诊断", check);
         advancedToggle.CheckedChanged += (_, _) => advanced.Visible = advancedToggle.Checked;
-        root.Controls.Add(scopePreview, 0, 2);
-        var actions = new FlowLayoutPanel { Name = "InstallActions", Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Margin = Padding.Empty };
-        actions.Controls.Add(check); actions.Controls.Add(start); actions.Controls.Add(view); actions.Controls.Add(details); actions.Controls.Add(copySummary); actions.Controls.Add(changeSaveLocation);
+        var notices = new TableLayoutPanel { Name = "InstallActionNotices", Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1, TabIndex = 1 };
+        notices.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        AddSection(notices, scopePreview); AddSection(notices, correctionHint);
+        root.Controls.Add(notices, 0, 2);
+        var actions = new FlowLayoutPanel { Name = "InstallActions", Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            WrapContents = true, Margin = Padding.Empty, TabIndex = 2 };
+        start.BackColor = Color.FromArgb(22, 105, 117); start.ForeColor = Color.White; start.FlatStyle = FlatStyle.Flat; start.TabIndex = 0;
+        actions.Controls.Add(start); actions.Controls.Add(view); actions.Controls.Add(details); actions.Controls.Add(copySummary);
+        actions.Controls.Add(changeSaveLocation); actions.Controls.Add(reviewCaptureMode);
+        var startNote = new Label { Name = "InstallStartNote", Text = "保存到我的记录；点击“开始记录”才会运行安装器。", AutoSize = true,
+            Anchor = AnchorStyles.Left, Margin = new Padding(3, 12, 3, 6) };
+        actions.Controls.Add(startNote);
+        customDatabase.CheckedChanged += (_, _) => startNote.Text = customDatabase.Checked
+            ? "保存到自定义位置；点击“开始记录”才会运行安装器。" : "保存到我的记录；点击“开始记录”才会运行安装器。";
         root.Controls.Add(actions, 0, 3);
+        status.TabIndex = 3;
         root.Controls.Add(status, 0, 4);
+        fields.SizeChanged += (_, _) =>
+        {
+            var width = Math.Max(1, fields.ClientSize.Width - fields.Padding.Horizontal - 10);
+            scopeNote.MaximumSize = watchHint.MaximumSize = new Size(width, 0);
+            installerName.MaximumSize = new Size(Math.Max(1, width - chooseInstaller.PreferredSize.Width - 20), 0);
+        };
+        root.SizeChanged += (_, _) => correctionHint.MaximumSize = new Size(Math.Max(1, root.ClientSize.Width - root.Padding.Horizontal - 10), 0);
+    }
+
+    private static void AddSection(TableLayoutPanel layout, Control control)
+    {
+        var row = layout.RowCount++;
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        control.Dock = DockStyle.Top;
+        layout.Controls.Add(control, 0, row);
     }
 
     private void UpdateScopePreview()
     {
-        static string Chosen(string value)
+        string filename;
+        try { filename = Path.GetFileName(installer.Text); }
+        catch (Exception error) when (error is ArgumentException or NotSupportedException) { filename = installer.Text; }
+        installerName.Text = string.IsNullOrWhiteSpace(filename) ? "尚未选择安装器" : filename;
+        tips.SetToolTip(installerName, installer.Text);
+        tips.SetToolTip(watchRoot, watchRoot.Text);
+        chooseWatchRoot.Text = string.IsNullOrWhiteSpace(watchRoot.Text) ? "选择文件夹…" : "更换文件夹…";
+        copyWatchRoot.Enabled = !string.IsNullOrWhiteSpace(watchRoot.Text);
+        copyWatchRoot.Visible = copyWatchRoot.Enabled;
+        // Put the selected mode first, so long names or paths cannot conceal
+        // it when advanced settings are collapsed. Exact values remain selectable.
+        var selected = new List<string>();
+        var values = new List<string>();
+        if (snapshot.Checked) selected.Add("快照模式（不启用 ETW，证据受限）");
+        if (customDatabase.Checked) { selected.Add("自定义保存位置"); values.Add("保存位置：" + database.Text); }
+        if (nameEdited) { selected.Add("自定义名称"); values.Add("记录名称：" + recordName.Text); }
+        if (!string.IsNullOrWhiteSpace(registryKey.Text)) { selected.Add("观察注册表"); values.Add("注册表：HKCU\\" + registryKey.Text); }
+        if (arguments.Text.Length != 0)
         {
-            if (string.IsNullOrWhiteSpace(value)) return "未选择";
-            try { return Path.GetFullPath(value); }
-            catch (Exception error) when (error is ArgumentException or NotSupportedException or PathTooLongException) { return value + "（待校验）"; }
+            var items = arguments.Text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+            selected.Add($"参数 {items.Length} 项");
+            values.Add("参数：" + string.Join(" · ", items.Select(value => value.Length == 0 ? "（空参数）" : value)));
         }
-        scopePreview.Text = $"开始前核对 · 实际观察目录：{Chosen(watchRoot.Text)}\r\n保存：{(customDatabase.Checked ? Chosen(database.Text) : "我的记录（无需选择数据库）")}（必须位于观察范围之外）\r\n注册表：{(string.IsNullOrWhiteSpace(registryKey.Text) ? "未请求" : "请求 HKCU\\" + registryKey.Text)}；模式：{(snapshot.Checked ? "明确选择快照，不尝试 ETW" : "要求 ETW 来源可用")}\r\n安装目标由您在安装器中选择；安装包所在目录不等于观察范围。";
+        if (settle.Value != 1500 || maxDrain.Value != 10000) selected.Add($"等待：静默 {settle.Value} ms / 最长排空 {maxDrain.Value} ms");
+        scopePreview.Text = selected.Count == 0 ? "" : "本次生效：" + string.Join("；", selected) + (values.Count == 0 ? "" : "\r\n" + string.Join("；", values));
+        scopePreview.Visible = selected.Count != 0;
+        tips.SetToolTip(scopePreview, scopePreview.Text);
+    }
+
+    private void ShowStatus()
+    {
+        status.Visible = true;
+        layoutRoot.RowStyles[1] = new RowStyle(SizeType.Percent, 45);
+        layoutRoot.RowStyles[4] = new RowStyle(SizeType.Percent, 55);
     }
 
     private void SuggestRecordName()
@@ -224,6 +344,10 @@ public sealed class InstallForm : Form
 
     private async Task CheckAsync()
     {
+        ShowStatus();
+        correctionHint.Visible = changeSaveLocation.Visible = reviewCaptureMode.Visible = false;
+        correctionTarget = null;
+        localFailure = localFailureDetails = null;
         checking = true; UpdateEnabled();
         var checkGeneration = ++generation;
         try
@@ -244,20 +368,30 @@ public sealed class InstallForm : Form
             else text.AppendLine("ETW 来源当前可用。实际记录仍可能发生来源丢失或降级，将按真实结果报告。");
             if (report.TryGetProperty("warnings", out var warnings)) foreach (var warning in warnings.EnumerateArray()) text.AppendLine("• " + warning.GetString());
             status.Text = text.ToString();
+            if (!request.SnapshotOnly && (request.RegistryKey is null ? new[] { "etw_process", "etw_file" } : new[] { "etw_process", "etw_file", "etw_registry" }).Any(x => report.GetProperty(x).GetString() != "active"))
+            {
+                localFailure = "环境检查：所需 ETW 来源当前不可用。";
+                localFailureDetails = report.GetRawText();
+                ShowSourceCorrection(IsPermissionFailure(report.GetRawText()) || new[] { "etw_process", "etw_file", "etw_registry" }.Any(x => report.GetProperty(x).GetString() == "permission_denied"));
+            }
         }
         catch (Exception error)
         {
             if (!IsDisposed && !Disposing)
             {
-                changeSaveLocation.Visible = true;
+                localFailure = error.Message; localFailureDetails = error.ToString();
+                ShowCorrection(error.Message);
                 status.Text = "环境检查未完成：" + error.Message + "\r\n安装器未启动。";
             }
         }
-        finally { checking = false; if (!IsDisposed && !Disposing) UpdateEnabled(); }
+        finally { checking = false; if (!IsDisposed && !Disposing) { UpdateEnabled(); FocusCorrection(); } }
     }
 
     private async Task StartAsync()
     {
+        ShowStatus();
+        correctionHint.Visible = changeSaveLocation.Visible = reviewCaptureMode.Visible = false;
+        correctionTarget = null;
         IsActive = true; UpdateEnabled();
         var taskGeneration = ++generation;
         localFailure = null; localFailureDetails = null; closeRefused = false;
@@ -278,8 +412,14 @@ public sealed class InstallForm : Form
             else status.Text = "失败 / 未完成\r\n尚未收到可确认会话的结构化结果；安装器启动与数据保存均未确认。";
             if (!result.Succeeded)
             {
-                if (!consumed) changeSaveLocation.Visible = true;
                 localFailure = result.ProtocolError ?? result.LastStatus?.Error ?? "采集进程返回失败，未收到完整成功结果。";
+                if (!consumed)
+                {
+                    if (result.LastStatus is { EtwRequested: true } failed &&
+                        (failed.EtwProcess is not (null or "active") || failed.EtwFile is not (null or "active") || failed.EtwRegistry is not (null or "active" or "not_requested")))
+                        ShowSourceCorrection(new[] { failed.EtwProcess, failed.EtwFile, failed.EtwRegistry }.Any(x => x == "permission_denied") || IsPermissionFailure(localFailure));
+                    else ShowCorrection(localFailure, result.LastStatus?.Step == "database_open");
+                }
                 if (LastStatus is not null) RenderStatus(LastStatus, false);
                 else status.AppendText("\r\n失败原因：" + Brief(localFailure));
                 status.AppendText("\r\n已保存的证据保留；错误详情和任务摘要可通过上方按钮查看、复制。");
@@ -287,7 +427,7 @@ public sealed class InstallForm : Form
             if (result.ProtocolError is not null || LastStatus is { InstallerStarted: true, InstallerExited: false })
                 status.AppendText("\r\n安装器退出结果未确认，可能仍在运行。请自行确认其状态。");
             // Exact backend-issued ID is queried even for an unfinished saved journal.
-            if (LastStatus is not null && File.Exists(request.Database))
+            if (LastStatus is not null && File.Exists(request.Database) && !result.CanRetryBeforeInstaller)
             {
                 try { await openSession(request.Database, LastStatus.SessionId); if (!IsDisposed && !Disposing) Hide(); }
                 catch (Exception error) { if (!IsDisposed && !Disposing) status.AppendText("\r\n自动打开本次会话未完成：" + Brief(error.Message) + "。可重新打开数据库查看。"); }
@@ -298,7 +438,7 @@ public sealed class InstallForm : Form
         {
             if (!client.CollectorStarted) consumed = false;
             localFailure = error.Message; localFailureDetails = error.ToString();
-            if (!IsDisposed && !Disposing) changeSaveLocation.Visible = !consumed;
+            if (!IsDisposed && !Disposing && !consumed) ShowCorrection(error.Message);
             if (!IsDisposed && !Disposing) status.AppendText("\r\n启动或记录失败：" + Brief(error.Message) + "\r\n已有记录保留，可查看任务详情。");
         }
         finally
@@ -307,7 +447,7 @@ public sealed class InstallForm : Form
             ++generation;
             lock (progressGate) { pendingProgress = null; dispatchScheduled = false; }
             taskClock.Stop();
-            if (!IsDisposed && !Disposing) { displayTimer.Stop(); UpdateEnabled(); }
+            if (!IsDisposed && !Disposing) { displayTimer.Stop(); UpdateEnabled(); FocusCorrection(); }
         }
     }
 
@@ -351,6 +491,66 @@ public sealed class InstallForm : Form
         if (localFailure is not null && value.Error != localFailure) status.AppendText("\r\n失败原因：" + Brief(localFailure));
         if (closeRefused && IsActive) status.AppendText("\r\n窗口保持打开：任务仍在运行，请等待任务退出。");
         details.Enabled = copySummary.Enabled = true;
+        details.Visible = copySummary.Visible = true;
+    }
+
+    private void ShowSourceCorrection(bool permissionDenied)
+    {
+        correctionHint.Text = permissionDenied
+            ? "当前权限不足以使用所需的 ETW 来源，安装器未启动。可查看详情，或在高级设置中自行选择证据受限的快照模式。"
+            : "所需的 ETW 来源当前不可用，安装器未启动。可查看详情后重试，或在高级设置中自行选择证据受限的快照模式。";
+        correctionHint.Visible = reviewCaptureMode.Visible = true;
+        changeSaveLocation.Visible = false;
+        correctionTarget = reviewCaptureMode;
+    }
+
+    private static bool IsPermissionFailure(string text) => text.Contains("PermissionDenied", StringComparison.OrdinalIgnoreCase)
+        || text.Contains("AccessDenied", StringComparison.OrdinalIgnoreCase)
+        || text.Contains("Access is denied", StringComparison.OrdinalIgnoreCase)
+        || text.Contains("权限", StringComparison.Ordinal)
+        || System.Text.RegularExpressions.Regex.IsMatch(text, @"\b(?:Win32|code:)\s*5\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    private void ShowCorrection(string error, bool storageFailure = false)
+    {
+        changeSaveLocation.Visible = reviewCaptureMode.Visible = false;
+        correctionTarget = details;
+        if (!File.Exists(installer.Text) || !string.Equals(Path.GetExtension(installer.Text), ".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            correctionHint.Text = "安装器已不可用，请点击“更换”重新选择已有的 EXE；安装器未启动。";
+            correctionTarget = chooseInstaller;
+        }
+        else if (!Directory.Exists(watchRoot.Text))
+        {
+            watchHint.Text = "观察文件夹已不存在，请重新选择已有文件夹。";
+            correctionHint.Text = "请先重新选择观察文件夹；安装器未启动。";
+            correctionTarget = chooseWatchRoot;
+        }
+        else if (storageFailure || error.Contains("数据库", StringComparison.Ordinal) || error.Contains("保存位置", StringComparison.Ordinal) || error.Contains("记录目录", StringComparison.Ordinal) || error.Contains("WAL", StringComparison.Ordinal)
+            || error.Contains("database", StringComparison.OrdinalIgnoreCase) || error.Contains("SQLite", StringComparison.OrdinalIgnoreCase))
+        {
+            correctionHint.Text = "记录保存位置不可用或与观察范围冲突，请点击“更改保存位置”；已有记录保留，安装器未启动。";
+            changeSaveLocation.Visible = true;
+            correctionTarget = changeSaveLocation;
+        }
+        else if (error.Contains("记录名称", StringComparison.Ordinal))
+        {
+            correctionHint.Text = "请展开高级设置，填写记录名称后重试；安装器未启动。";
+            correctionTarget = advancedToggle;
+        }
+        else if (error.Contains("等待参数", StringComparison.Ordinal) || error.Contains("参数不能", StringComparison.Ordinal))
+        {
+            correctionHint.Text = "请展开高级设置，修正参数后重试；安装器未启动。";
+            correctionTarget = advancedToggle;
+        }
+        else correctionHint.Text = "本次记录未能开始，请查看任务详情后重试。";
+        correctionHint.Visible = true;
+    }
+
+    private void FocusCorrection()
+    {
+        if (correctionTarget is null || !correctionTarget.Visible || !correctionTarget.Enabled) return;
+        if (configuration.Contains(correctionTarget)) configuration.ScrollControlIntoView(correctionTarget);
+        correctionTarget.Focus();
     }
 
     internal static string FormatStatus(InstallStatus value, bool? completed = null, ulong localAdvanceMilliseconds = 0, ulong? receivedAgoMilliseconds = null, InstallDisplayTimes? display = null)
@@ -426,6 +626,7 @@ public sealed class InstallForm : Form
             ++generation;
             lock (progressGate) { pendingProgress = null; dispatchScheduled = false; }
             displayTimer.Stop(); displayTimer.Dispose();
+            tips.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -433,10 +634,12 @@ public sealed class InstallForm : Form
     private void UpdateEnabled()
     {
         configuration.Enabled = !IsActive && !checking && !consumed;
-        start.Enabled = !IsActive && !checking && !consumed;
+        start.Enabled = !IsActive && !checking && !consumed && !string.IsNullOrWhiteSpace(installer.Text) && !string.IsNullOrWhiteSpace(watchRoot.Text);
         check.Enabled = !IsActive && !checking && !consumed;
+        changeSaveLocation.Enabled = reviewCaptureMode.Enabled = !IsActive && !checking && !consumed;
         view.Enabled = !IsActive && !checking && LastStatus is not null && File.Exists(LastStatus.Database);
         details.Enabled = copySummary.Enabled = consumed || LastStatus is not null || localFailure is not null;
+        details.Visible = details.Enabled; copySummary.Visible = copySummary.Enabled; view.Visible = view.Enabled;
     }
 
     private static TextBox Input(string name) => new() { Name = name, Dock = DockStyle.Fill };
@@ -446,15 +649,6 @@ public sealed class InstallForm : Form
         var button = Action(name, "选择…"); button.Anchor = AnchorStyles.Left;
         button.Click += (_, _) => { var path = choose(); if (path is not null) target.Text = path; };
         return button;
-    }
-    private static void AddRow(TableLayoutPanel layout, string title, Control field, Control? browse = null)
-    {
-        var row = layout.RowCount++;
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.Controls.Add(new Label { Text = title, AutoSize = true, Anchor = AnchorStyles.Left, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(3, 6, 10, 6) }, 0, row);
-        field.Dock = DockStyle.None; field.Anchor = AnchorStyles.Left | AnchorStyles.Right;
-        field.Margin = new Padding(4, 6, 4, 6); layout.Controls.Add(field, 1, row);
-        if (browse is not null) layout.Controls.Add(browse, 2, row); else layout.SetColumnSpan(field, 2);
     }
     private static void AddAdvanced(TableLayoutPanel layout, string title, Control field)
     {

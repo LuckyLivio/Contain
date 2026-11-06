@@ -114,11 +114,20 @@ internal sealed class LayoutVerification(Options options, bool viewerChecksPasse
             Directory.CreateDirectory(watch); // Explicit disposable test setup, never product target creation.
             C<TextBox>(install, "InstallerPath").Text = options.InstallFixture ?? Path.Combine(options.Package, "contain.exe");
             Require(C<TextBox>(install, "WatchRoot").Text.Length == 0, "choosing installer location does not infer observation scope");
-            C<TextBox>(install, "RecordName").Text = "SYNTHETIC 布局检查 & 逐项范围";
+            install.WindowState = FormWindowState.Normal;
+            install.Bounds = new Rectangle(area.Left + 12, area.Top + 12, Math.Min(area.Width - 24, (int)(740 * scale)), Math.Min(area.Height - 24, (int)(620 * scale)));
+            await Settle(install);
+            currentPhase = "install_missing_observation";
+            await VerifyOrdinaryInstall(install, null);
             C<TextBox>(install, "WatchRoot").Text = watch;
+            currentPhase = "install_ordinary";
+            await VerifyOrdinaryInstall(install, watch);
+            Screenshot(install, name + "-install-ordinary.png");
+            C<TextBox>(install, "RecordName").Text = "SYNTHETIC 布局检查 & 逐项范围";
             var destination = Path.Combine(parent, "layout-save-not-started.db");
             TestRecordIsolation.SelectCustomDatabase(install, destination);
             C<CheckBox>(install, "AdvancedToggle").Checked = true;
+            C<CheckBox>(install, "ShowInstallerPath").Checked = true;
             C<TextBox>(install, "RegistryKey").Text = @"Software\Contain\LayoutSynthetic";
             install.WindowState = FormWindowState.Normal;
             install.Bounds = new Rectangle(area.Left + 12, area.Top + 12, Math.Min(area.Width - 24, (int)(880 * scale)), Math.Min(area.Height - 24, (int)(790 * scale)));
@@ -130,6 +139,20 @@ internal sealed class LayoutVerification(Options options, bool viewerChecksPasse
             currentPhase = "install_maximized";
             await VerifyInstall(install, watch, destination);
             Screenshot(install, name + "-install.png");
+            C<CheckBox>(install, "AdvancedToggle").Checked = false;
+            C<CheckBox>(install, "ShowInstallerPath").Checked = false;
+            currentPhase = "install_collapsed_effective_settings";
+            await VerifyOrdinaryInstall(install, watch);
+            await Reach(C<Control>(install, "CaptureConfigurationPreview"));
+            // Exercise error-only controls without any collector or installation:
+            // validation refuses the nonexistent scope before process startup.
+            C<TextBox>(install, "WatchRoot").Text = Path.Combine(parent, "missing-layout-scope");
+            C<Button>(install, "StartRecording").PerformClick(); await install.PendingOperation.WaitAsync(TimeSpan.FromSeconds(20));
+            currentPhase = "install_validation_error";
+            foreach (var action in new[] { "TaskDetails", "CopyTaskSummary", "InstallStatus", "ChooseWatchRoot" })
+                await Reach(C<Control>(install, action));
+            Require(!C<Button>(install, "ViewRecordedSession").Visible && install.LastStatus is null,
+                "missing-scope validation cannot offer a fabricated recorded session");
             Require(!install.IsActive && !install.IsChecking && !File.Exists(destination), "layout and configuration never launch installer or create database");
             install.Close();
             conditionCompleted = true;
@@ -211,14 +234,49 @@ internal sealed class LayoutVerification(Options options, bool viewerChecksPasse
     private async Task VerifyInstall(InstallForm install, string watch, string destination)
     {
         var preview = install.Controls.Find("CaptureConfigurationPreview", true).Single();
-        Require(preview.Text.Contains(watch, StringComparison.Ordinal) && preview.Text.Contains(destination, StringComparison.Ordinal)
-            && preview.Text.Contains(@"Software\Contain\LayoutSynthetic", StringComparison.Ordinal), "pre-start preview displays exact observation, registry and database choices");
-        foreach (var name in new[] { "InstallerPath", "RecordName", "WatchRoot", "DatabaseSavePath", "InstallerArguments", "RegistryKey", "SettleMilliseconds", "MaxDrainMilliseconds", "SnapshotOnly", "AdvancedToggle", "ChooseInstaller", "ChooseWatchRoot", "ChooseSaveDatabase", "CheckEnvironment", "StartRecording", "ViewRecordedSession", "TaskDetails", "CopyTaskSummary", "InstallStatus" })
+        Require(C<TextBox>(install, "WatchRoot").Text == watch && preview.Text.Contains(destination, StringComparison.Ordinal)
+            && preview.Text.Contains(@"Software\Contain\LayoutSynthetic", StringComparison.Ordinal), "exact observation path and changed advanced choices remain inspectable");
+        foreach (var name in new[] { "InstallerPath", "ShowInstallerPath", "RecordName", "WatchRoot", "DatabaseSavePath", "InstallerArguments", "RegistryKey", "SettleMilliseconds", "MaxDrainMilliseconds", "SnapshotOnly", "AdvancedToggle", "ChooseInstaller", "ChooseWatchRoot", "CopyWatchRoot", "ChooseSaveDatabase", "CheckEnvironment", "StartRecording" })
         {
             var control = install.Controls.Find(name, true).Single();
             await Reach(control);
             if (control is ButtonBase button) ValidateCaption(button);
         }
+        ValidateText(install);
+    }
+
+    private async Task VerifyOrdinaryInstall(InstallForm install, string? watch)
+    {
+        Require(!C<CheckBox>(install, "AdvancedToggle").Checked, "ordinary configuration starts and remains one collapsed page");
+        foreach (var name in new[] { "RecordName", "DatabaseSavePath", "ChooseSaveDatabase", "InstallerArguments", "RegistryKey", "SettleMilliseconds", "MaxDrainMilliseconds", "SnapshotOnly", "CheckEnvironment" })
+            Require(!C<Control>(install, name).Visible, "optional setting is absent from ordinary flow: " + name);
+        foreach (var name in new[] { "InstallerFileName", "ShowInstallerPath", "ChooseInstaller", "WatchRoot", "ChooseWatchRoot", "StartRecording", "AdvancedToggle" })
+            await Reach(C<Control>(install, name));
+        Require(C<Button>(install, "StartRecording").Enabled == (watch is not null), "missing scope visibly prevents Start without optional diagnostic steps");
+        if (watch is null)
+        {
+            await Reach(C<Label>(install, "WatchRootHint"));
+            Require(C<Label>(install, "WatchRootHint").Text.Contains("还需选择观察文件夹", StringComparison.Ordinal), "missing-folder reason is readable in ordinary layout");
+        }
+        else
+        {
+            Require(C<TextBox>(install, "WatchRoot").Text == watch && C<TextBox>(install, "WatchRoot").ReadOnly,
+                "chosen path is exact, selectable and protected against accidental editing");
+            await Reach(C<Button>(install, "CopyWatchRoot"));
+            C<Button>(install, "ChooseWatchRoot").Focus();
+            var keyboardReachedStart = false;
+            for (var step = 0; step < 40; step++)
+            {
+                if (C<Button>(install, "StartRecording").Focused) { keyboardReachedStart = true; break; }
+                install.SelectNextControl(install.ActiveControl, true, true, true, true);
+            }
+            Require(keyboardReachedStart, "keyboard tab navigation reaches the sole ordinary Start action");
+        }
+        C<CheckBox>(install, "ShowInstallerPath").Checked = true;
+        await Reach(C<TextBox>(install, "InstallerPath"));
+        Require(C<TextBox>(install, "InstallerPath").ReadOnly && C<TextBox>(install, "InstallerPath").Text.EndsWith(".exe", StringComparison.OrdinalIgnoreCase),
+            "full installer path remains readable on request without duplicate ordinary previews");
+        C<CheckBox>(install, "ShowInstallerPath").Checked = false;
         ValidateText(install);
     }
 
@@ -268,6 +326,12 @@ internal sealed class LayoutVerification(Options options, bool viewerChecksPasse
         }
         foreach (var scroll in ancestors)
             Require(ReachContains(control, scroll), "scrolling makes complete control reachable: " + SafeName(control));
+        if (control.FindForm() is InstallForm window)
+        {
+            var viewport = window.ClientRectangle; viewport.Inflate(3, 3);
+            var bounds = window.RectangleToClient(control.RectangleToScreen(control.ClientRectangle));
+            Require(viewport.Contains(bounds), "the complete reachable control stays inside the actual form viewport: " + SafeName(control));
+        }
     }
 
     private static bool ReachContains(System.Windows.Forms.Control control, ScrollableControl scroll)

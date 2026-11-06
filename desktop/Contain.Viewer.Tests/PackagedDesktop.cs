@@ -20,6 +20,13 @@ internal sealed class PackagedDesktop : IDisposable
     internal int DatabasePathInteractions { get; private set; }
     internal int ReportDialogInteractions { get; private set; }
     internal int ReportDialogSaves { get; private set; }
+    internal int InstallerPickerCancels { get; private set; }
+    internal int InstallerPickerSelections { get; private set; }
+    internal int WatchPickerSelections { get; private set; }
+    internal int AdvancedInteractions { get; private set; }
+    internal int EnvironmentCheckInteractions { get; private set; }
+    internal string ConfigurationDialogStage { get; private set; } = "not_started";
+    internal Action? ConfigurationProgress { get; set; }
     internal string ReportDialogStage { get; private set; } = "not_started";
     internal string ReportDialogDiagnostic { get; private set; } = string.Empty;
     internal Action? ReportDialogProgress { get; set; }
@@ -69,7 +76,7 @@ internal sealed class PackagedDesktop : IDisposable
         var window = new IntPtr(control.Current.NativeWindowHandle);
         if (control.Current.IsOffscreen || window == IntPtr.Zero || !GetWindowRect(window, out var bounds)
             || bounds.Right <= bounds.Left || bounds.Bottom <= bounds.Top) return false;
-        process.Refresh();
+        var root = GetAncestor(window, 2);
         for (var parent = GetParent(window); parent != IntPtr.Zero; parent = GetParent(parent))
         {
             if (!GetClientRect(parent, out var client)) return false;
@@ -77,7 +84,7 @@ internal sealed class PackagedDesktop : IDisposable
             if (!ClientToScreen(parent, ref origin)) return false;
             if (bounds.Left < origin.X || bounds.Top < origin.Y
                 || bounds.Right > origin.X + client.Right || bounds.Bottom > origin.Y + client.Bottom) return false;
-            if (parent == process.MainWindowHandle) return true;
+            if (parent == root) return true;
         }
         return false;
     });
@@ -110,7 +117,125 @@ internal sealed class PackagedDesktop : IDisposable
             throw new InvalidOperationException("The actual editable control lacks ValuePattern: " + id);
         ((Automation.ValuePattern)pattern).SetValue(text);
     });
-    internal Task InvokeAsync(string id) => Ui(() => Invoke(Required(id)));
+    internal Task InvokeAsync(string id) => Ui(() =>
+    {
+        if (id == "CheckEnvironment") EnvironmentCheckInteractions++;
+        Invoke(Required(id));
+    });
+
+    internal Task<bool> FocusedAsync(string id) => Ui(() => Required(id).Current.HasKeyboardFocus);
+
+    internal async Task KeyboardActivateAsync(string id, bool focus = true)
+    {
+        var root = await Ui(() =>
+        {
+            var element = Required(id);
+            var window = new IntPtr(element.Current.NativeWindowHandle);
+            var owner = GetAncestor(window, 2);
+            SetForegroundWindow(owner);
+            SetWindowPos(owner, IntPtr.Zero, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040);
+            if (focus) element.SetFocus();
+            return owner;
+        });
+        await WaitAsync(async () => GetForegroundWindow() == root && await FocusedAsync(id), TimeSpan.FromSeconds(5));
+        if (id == "CheckEnvironment") EnvironmentCheckInteractions++;
+        SendKeys.SendWait(" ");
+    }
+
+    internal async Task TabToAsync(string id)
+    {
+        for (var index = 0; index < 25; index++)
+        {
+            if (await FocusedAsync(id)) return;
+            SendKeys.SendWait("{TAB}");
+            await Task.Delay(40);
+        }
+        throw new InvalidOperationException("The ordinary keyboard tab order did not reach " + id + ".");
+    }
+
+    internal async Task ClickTwiceAsync(string id)
+    {
+        var window = await Ui(() => new IntPtr(Required(id).Current.NativeWindowHandle));
+        ClickNativeButton(window); ClickNativeButton(window);
+    }
+
+    internal Task<uint> ControlWindowDpiAsync(string id) => Ui(() => GetDpiForWindow(ControlRoot(id)));
+
+    internal Task<ImageResult> ScreenshotControlWindowAsync(string id, string directory, string name) => Ui(() =>
+        ScreenshotWindow(ControlRoot(id), directory, name));
+
+    private IntPtr ControlRoot(string id)
+    {
+        var root = GetAncestor(new IntPtr(Required(id).Current.NativeWindowHandle), 2);
+        GetWindowThreadProcessId(root, out var owner);
+        if (root == IntPtr.Zero || owner != process.Id) throw new InvalidOperationException("The configuration window is not owned by the actual test process.");
+        return root;
+    }
+
+    internal Task ChooseInstallerAsync(string? path) => ChooseConfigurationPathAsync("NewInstall", path, false);
+    internal Task ChooseWatchRootAsync(string path) => ChooseConfigurationPathAsync("ChooseWatchRoot", path, true);
+
+    private async Task ChooseConfigurationPathAsync(string action, string? path, bool folder)
+    {
+        IntPtr dialog = IntPtr.Zero;
+        try
+        {
+            Stage("activate_" + action);
+            await KeyboardActivateAsync(action, focus: action == "NewInstall");
+            Stage("wait_dialog");
+            await WaitAsync(() => { dialog = FindReportDialog(); return Task.FromResult(dialog != IntPtr.Zero); }, TimeSpan.FromSeconds(15));
+            SetForegroundWindow(dialog);
+            if (path is null)
+            {
+                Stage("cancel"); SendKeys.SendWait("{ESC}");
+            }
+            else
+            {
+                path = Path.GetFullPath(path);
+                if (folder ? !Directory.Exists(path) : !File.Exists(path)) throw new IOException("The native picker target must already exist.");
+                Stage("enter_path");
+                var controls = ReportControls(dialog);
+                var edits = controls.Where(control => IsWindowVisible(control.Window) && control.Class.Equals("Edit", StringComparison.OrdinalIgnoreCase)
+                    && control.Id is 1001 or 1148 or 1152).ToArray();
+                if (edits.Length != 1) throw new InvalidOperationException("The native configuration picker has no unique path entry.");
+                // Focus the actual native edit, then type literal keys. As with
+                // the report dialog, WM_SETTEXT alone is not an accepted path.
+                await Ui(() => Automation.AutomationElement.FromHandle(edits[0].Window).SetFocus());
+                await WaitAsync(() => Task.FromResult(HasNativeFocus(dialog, edits[0].Window)), TimeSpan.FromSeconds(5));
+                SendKeys.SendWait("^a"); SendKeys.SendWait(KeysLiteral(path));
+                await WaitAsync(() =>
+                {
+                    var value = new System.Text.StringBuilder(path.Length + 2);
+                    return Task.FromResult(SendMessageTimeoutBuffer(edits[0].Window, 0x000D, new IntPtr(value.Capacity), value,
+                        0x0003, 2000, out _) != IntPtr.Zero && value.ToString() == path);
+                }, TimeSpan.FromSeconds(5));
+                Stage("accept_path");
+                var accept = GetDlgItem(dialog, 1);
+                if (accept == IntPtr.Zero || !IsWindowVisible(accept))
+                    accept = controls.Single(control => control.Id == 1 && IsWindowVisible(control.Window)
+                        && control.Class.Equals("Button", StringComparison.OrdinalIgnoreCase)).Window;
+                for (var index = 0; index < 20 && !HasNativeFocus(dialog, accept); index++)
+                {
+                    if (GetForegroundWindow() != dialog) throw new InvalidOperationException("Native picker lost foreground ownership before acceptance.");
+                    SendKeys.SendWait("{TAB}"); await Task.Delay(40);
+                }
+                if (!HasNativeFocus(dialog, accept)) throw new InvalidOperationException("The native picker accept action is not keyboard reachable.");
+                SendKeys.SendWait(" ");
+            }
+            await WaitAsync(() => Task.FromResult(!IsWindowVisible(dialog)), TimeSpan.FromSeconds(15));
+            if (folder) WatchPickerSelections++;
+            else if (path is null) InstallerPickerCancels++;
+            else InstallerPickerSelections++;
+            Stage(path is null ? "cancelled" : "selected");
+        }
+        catch
+        {
+            Stage("failed_" + ConfigurationDialogStage);
+            if (dialog != IntPtr.Zero) PostMessage(dialog, 0x0010, IntPtr.Zero, IntPtr.Zero);
+            throw;
+        }
+        void Stage(string stage) { ConfigurationDialogStage = stage; ConfigurationProgress?.Invoke(); }
+    }
 
     /// <summary>Operate the real process's native SaveFileDialog, including cancel.</summary>
     internal async Task ExportReportAsync(string? outputPath)
@@ -289,6 +414,7 @@ internal sealed class PackagedDesktop : IDisposable
     internal Task ToggleAsync(string id, bool value) => Ui(() =>
     {
         if (id == "CustomDatabaseToggle") DatabasePathInteractions++;
+        if (id == "AdvancedToggle") AdvancedInteractions++;
         var element = Required(id);
         var toggle = (Automation.TogglePattern)element.GetCurrentPattern(Automation.TogglePattern.Pattern);
         if ((toggle.Current.ToggleState == Automation.ToggleState.On) != value) toggle.Toggle();
@@ -472,7 +598,11 @@ internal sealed class PackagedDesktop : IDisposable
     internal Task<ImageResult> ScreenshotAsync(string directory, string name) => Ui(() =>
     {
         process.Refresh();
-        var window = process.MainWindowHandle;
+        return ScreenshotWindow(process.MainWindowHandle, directory, name);
+    });
+
+    private static ImageResult ScreenshotWindow(IntPtr window, string directory, string name)
+    {
         if (window == IntPtr.Zero || !GetWindowRect(window, out var bounds)) throw new IOException("The actual process window has no bounds.");
         using var image = new Bitmap(bounds.Right - bounds.Left, bounds.Bottom - bounds.Top);
         using (var graphics = Graphics.FromImage(image))
@@ -485,7 +615,7 @@ internal sealed class PackagedDesktop : IDisposable
         var path = Path.Combine(directory, name);
         image.Save(path, ImageFormat.Png);
         return new ImageResult(name, Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant(), image.Width, image.Height);
-    });
+    }
 
     internal static async Task WaitAsync(Func<Task<bool>> condition, TimeSpan timeout)
     {

@@ -5,6 +5,8 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import struct
+import zlib
 import unittest
 from unittest import mock
 import zipfile
@@ -152,7 +154,47 @@ class ViewerPackageTests(unittest.TestCase):
             first_process_id=1234, restarted_process_id=5678, first_process_exit_code=0,
             restart_session_id='aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
             restart_event_id='bbbbbbbb-cccc-dddd-eeee-ffffffffffff',
-            manual_checks=[dict(name='system_picker_navigation', status='not_run')])
+            first_use=self.valid_first_use(build),
+            manual_checks=[dict(name='native_picker_navigation_and_cancel', status='passed')])
+
+    def valid_first_use(self, build):
+        directory = self.root / 'screenshots'; directory.mkdir(exist_ok=True)
+        images = []
+        for index, name in enumerate(sorted(VIEWER.FIRST_USE_SCREENSHOTS)):
+            # Unit-test image bytes are synthetic, never claims about native UI.
+            width, height = 16, 12
+            def chunk(kind, data):
+                return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+            data = (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+                + chunk(b'IDAT', zlib.compress((b'\x00' + bytes([index, 0, 0]) * width) * height)) + chunk(b'IEND', b''))
+            path = directory / name; path.write_bytes(data)
+            images.append(dict(name=name, sha256=VIEWER.sha(path), width=width, height=height))
+        return dict(protocol_revision='contain-first-install-flow-1', actual_packaged_executable=True,
+            windows_version='10.0.26100.0', actual_device_dpi=96, installer_picker_cancels=1,
+            installer_picker_selections=1, observation_picker_selections=1, cancel_preserved_record_selection=True,
+            missing_scope_blocks_start=True, configuration_created_no_session=True, ordinary_input_count=2,
+            advanced_interactions=0, environment_check_interactions=0, database_path_interactions=0,
+            keyboard_flow_verified=True, default_name_matches_exe=True, default_database=True,
+            selected_scope_sha256='a'*64, persisted_scope_sha256='a'*64, scope_exact_match=True,
+            saved_scope_count=1, session_id='aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+            main_entry_kept_active_task=True, duplicate_start_created_one_session=True, invalid_scope_blocked=True,
+            database_conflict_blocked=True, corrections_preserved_configuration=True, screenshots=images)
+
+    def valid_configuration_verification(self, build):
+        expected = {entry['path']: entry['sha256'] for entry in build['files']}
+        return dict(schema_version=1, protocol_revision=VIEWER.FIRST_USE_CONFIGURATION_VERIFICATION,
+            source_sha=self.source, native_windows=True, synthetic=True, real_etw_executed=False,
+            real_user_records_accessed=False, completed=True, accepted=True, retries=0, assertions=15,
+            package_manifest_sha256=VIEWER.sha(self.package/'BUILD.json'),
+            viewer_assembly_sha256=expected['Contain.Viewer.dll'], viewer_launcher_sha256=expected['Contain.Viewer.exe'],
+            contain_sha256=expected['contain.exe'], planned_checks=sorted(VIEWER.FIRST_USE_CONFIGURATION_REQUIRED_CHECKS),
+            checks=[dict(name=name,status='passed') for name in sorted(VIEWER.FIRST_USE_CONFIGURATION_REQUIRED_CHECKS)],
+            passed=5, failed=0, skipped=0, not_run=0)
+
+    def configuration_verification_file(self, build):
+        path = self.root / (self.package.name + '-first-use-configuration.json')
+        path.write_text(json.dumps(self.valid_configuration_verification(build)))
+        return path
 
     def test_install_acceptance_requires_exact_frozen_gui_etw_result(self):
         fixture=self.root/'fixture.exe';fixture.write_bytes(TRIAL_TESTS.synthetic_pe())
@@ -185,7 +227,7 @@ class ViewerPackageTests(unittest.TestCase):
             current_required_gates_passed=True,all_recorded_invocations_passed=True,
             coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
         verification=self.root/'verification.json';verification.write_text(json.dumps(self.valid_verification(build)))
-        args=argparse.Namespace(package=self.package,search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
+        args=argparse.Namespace(package=self.package,first_use_configuration_verification=self.configuration_verification_file(build),search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
             overview_verification=self.overview_verification_file(build),
             personal_records_verification=self.personal_verification_file(build),output=self.root/'diagnostic.zip')
         self.assertEqual(VIEWER.finalize(args),2)
@@ -201,18 +243,22 @@ class ViewerPackageTests(unittest.TestCase):
             current_required_gates_passed=True,all_recorded_invocations_passed=True,
             coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
         verification=self.root/'verification.json';verification.write_text(json.dumps(self.valid_verification(build)))
-        install=self.root/'install.json';install.write_text(json.dumps(self.valid_install_verification(build)))
-        args=argparse.Namespace(package=self.package,search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
+        installation=self.valid_install_verification(build)
+        installation['manual_checks']=[dict(name='native_picker_navigation_and_cancel',status='not_run')]
+        install=self.root/'install.json';install.write_text(json.dumps(installation))
+        args=argparse.Namespace(package=self.package,first_use_configuration_verification=self.configuration_verification_file(build),search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
             overview_verification=self.overview_verification_file(build),
             personal_records_verification=self.personal_verification_file(build),
             install_verification=install,output=self.root/'install.zip')
-        self.assertEqual(VIEWER.finalize(args),0)
+        self.assertEqual(VIEWER.finalize(args),2)
         with zipfile.ZipFile(args.output) as archive:
             result=json.loads(archive.read('VALIDATION.json'))
-            self.assertTrue(result['graphical_install_automated_verified'])
+            self.assertFalse(result['graphical_install_automated_verified'])
+            self.assertTrue(result['checks']['native_gui_install_etw_and_exact_result'])
+            self.assertFalse(result['checks']['native_first_use_install_flow'])
             self.assertFalse(result['graphical_install_verified'])
             self.assertFalse(result['graphical_install_milestone_closed'])
-            self.assertEqual(result['status'],'graphical_install_automated_verified_manual_pending')
+            self.assertEqual(result['status'],'diagnostic_unverified')
             self.assertEqual(result['native_install_verification']['manual_checks'][0]['status'],'not_run')
 
     def test_milestone_requires_actual_native_picker_navigation_and_cancel(self):
@@ -233,7 +279,7 @@ class ViewerPackageTests(unittest.TestCase):
         result=self.valid_install_verification(build)
         result['manual_checks']=[dict(name='native_picker_navigation_and_cancel',status='passed')]
         install=self.root/'install.json';install.write_text(json.dumps(result))
-        args=argparse.Namespace(package=self.package,search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
+        args=argparse.Namespace(package=self.package,first_use_configuration_verification=self.configuration_verification_file(build),search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
             overview_verification=self.overview_verification_file(build),
             personal_records_verification=self.personal_verification_file(build),
             install_verification=install,output=self.root/'install.zip')
@@ -253,14 +299,16 @@ class ViewerPackageTests(unittest.TestCase):
         result=self.valid_install_verification(build)
         result['manual_checks']=[dict(name='native_picker_navigation_and_cancel',status='failed',reason='wrong_selection')]
         install=self.root/'install.json';install.write_text(json.dumps(result))
-        args=argparse.Namespace(package=self.package,search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
+        args=argparse.Namespace(package=self.package,first_use_configuration_verification=self.configuration_verification_file(build),search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
             overview_verification=self.overview_verification_file(build),
             personal_records_verification=self.personal_verification_file(build),
             install_verification=install,output=self.root/'install-failed.zip')
         self.assertEqual(VIEWER.finalize(args),2)
         with zipfile.ZipFile(args.output) as archive:
             result=json.loads(archive.read('VALIDATION.json'))
-            self.assertTrue(result['graphical_install_automated_verified'])
+            self.assertFalse(result['graphical_install_automated_verified'])
+            self.assertTrue(result['checks']['native_gui_install_etw_and_exact_result'])
+            self.assertFalse(result['checks']['native_first_use_install_flow'])
             self.assertFalse(result['graphical_install_milestone_closed'])
             self.assertEqual(result['status'],'diagnostic_native_picker_failed')
             self.assertEqual(result['native_install_verification']['manual_checks'][0]['status'],'failed')
@@ -310,7 +358,7 @@ class ViewerPackageTests(unittest.TestCase):
         quality=self.root/'quality.json';quality.write_text(json.dumps(dict(source_revision=self.source,
             current_required_gates_passed=True,all_recorded_invocations_passed=True,
             coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
-        args=argparse.Namespace(package=self.package,search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
+        args=argparse.Namespace(package=self.package,first_use_configuration_verification=self.configuration_verification_file(build),search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
             overview_verification=self.overview_verification_file(build),
             personal_records_verification=self.personal_verification_file(build),
             layout_verification=self.root/'layout-missing.json',output=self.root/'layout-diagnostic.zip')
@@ -328,7 +376,7 @@ class ViewerPackageTests(unittest.TestCase):
             current_required_gates_passed=True,all_recorded_invocations_passed=True,
             coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
         evidence=self.valid_layout_verification(build);layout=self.root/'layout.json';layout.write_text(json.dumps(evidence))
-        args=argparse.Namespace(package=self.package,search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
+        args=argparse.Namespace(package=self.package,first_use_configuration_verification=self.configuration_verification_file(build),search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
             overview_verification=self.overview_verification_file(build),
             personal_records_verification=self.personal_verification_file(build),
             layout_verification=layout,output=self.root/'layout-verified.zip')
@@ -395,7 +443,7 @@ class ViewerPackageTests(unittest.TestCase):
         quality=self.root/'quality.json';quality.write_text(json.dumps(dict(source_revision=self.source,
             current_required_gates_passed=True,all_recorded_invocations_passed=True,
             coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
-        args=argparse.Namespace(package=self.package,search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=self.root/'missing.json',
+        args=argparse.Namespace(package=self.package,first_use_configuration_verification=self.configuration_verification_file(build),search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=self.root/'missing.json',
             overview_verification=self.overview_verification_file(build),
             personal_records_verification=self.personal_verification_file(build),output=self.root/'diagnostic.zip')
         self.assertEqual(VIEWER.finalize(args),2)
@@ -412,7 +460,7 @@ class ViewerPackageTests(unittest.TestCase):
         quality=self.root/'quality.json';quality.write_text(json.dumps(dict(source_revision=self.source,
             current_required_gates_passed=True,all_recorded_invocations_passed=True,
             coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
-        args=argparse.Namespace(package=self.package,search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
+        args=argparse.Namespace(package=self.package,first_use_configuration_verification=self.configuration_verification_file(build),search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
             overview_verification=self.overview_verification_file(build),
             personal_records_verification=self.personal_verification_file(build),output=self.root/'viewer.zip')
         self.assertEqual(VIEWER.finalize(args),0)
@@ -547,7 +595,7 @@ class ViewerPackageTests(unittest.TestCase):
                 evidence=self.valid_personal_records_verification(build)
                 if mode=='failed': evidence['cold_restart_verified']=False
                 if mode!='missing': personal.write_text(json.dumps(evidence))
-                args=argparse.Namespace(package=self.package,search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
+                args=argparse.Namespace(package=self.package,first_use_configuration_verification=self.configuration_verification_file(build),search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
                     overview_verification=self.overview_verification_file(build),
                     personal_records_verification=personal,output=self.root/(mode+'-personal.zip'))
                 self.assertEqual(VIEWER.finalize(args),0 if mode=='passed' else 2)
@@ -568,7 +616,7 @@ class ViewerPackageTests(unittest.TestCase):
         personal=self.personal_verification_file(build)
         self.assertTrue(VIEWER.personal_records_verification_matches(
             VIEWER.read(personal),build,VIEWER.sha(self.package/'BUILD.json')))
-        args=argparse.Namespace(package=self.package,search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
+        args=argparse.Namespace(package=self.package,first_use_configuration_verification=self.configuration_verification_file(build),search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
             overview_verification=self.overview_verification_file(build),
             output=self.root/'personal-argument-omitted.zip')
         self.assertFalse(hasattr(args,'personal_records_verification'))
@@ -659,7 +707,7 @@ class ViewerPackageTests(unittest.TestCase):
                 evidence=self.valid_overview_verification(build)
                 if mode=='failed': evidence['cold_restart_verified']=False
                 if mode!='missing': overview.write_text(json.dumps(evidence))
-                args=argparse.Namespace(package=self.package,search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
+                args=argparse.Namespace(package=self.package,first_use_configuration_verification=self.configuration_verification_file(build),search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
                     personal_records_verification=self.personal_verification_file(build),
                     overview_verification=overview,output=self.root/(mode+'-overview.zip'))
                 self.assertEqual(VIEWER.finalize(args),0 if mode=='passed' else 2)
@@ -681,7 +729,7 @@ class ViewerPackageTests(unittest.TestCase):
         overview=self.overview_verification_file(build)
         self.assertTrue(VIEWER.overview_verification_matches(
             VIEWER.read(overview),build,VIEWER.sha(self.package/'BUILD.json')))
-        args=argparse.Namespace(package=self.package,search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
+        args=argparse.Namespace(package=self.package,first_use_configuration_verification=self.configuration_verification_file(build),search_export_verification=self.export_verification_file(build),search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
             personal_records_verification=self.personal_verification_file(build),
             output=self.root/'overview-argument-omitted.zip')
         self.assertFalse(hasattr(args,'overview_verification'))
@@ -773,7 +821,7 @@ class ViewerPackageTests(unittest.TestCase):
                 evidence=self.valid_search_verification(build)
                 if mode=='failed': evidence['explain_event_id']='synthetic-search-other-event-120'
                 if mode!='missing': search.write_text(json.dumps(evidence))
-                args=argparse.Namespace(package=self.package,search_export_verification=self.export_verification_file(build),quality_summary=quality,verification=verification,
+                args=argparse.Namespace(package=self.package,first_use_configuration_verification=self.configuration_verification_file(build),search_export_verification=self.export_verification_file(build),quality_summary=quality,verification=verification,
                     personal_records_verification=self.personal_verification_file(build),
                     overview_verification=self.overview_verification_file(build),output=self.root/(mode+'-search.zip'))
                 if mode!='omitted': args.search_verification=search
@@ -886,7 +934,7 @@ class ViewerPackageTests(unittest.TestCase):
                 if mode=='failed': evidence['native_save_dialog']=False;exported.write_text(json.dumps(evidence))
                 if mode=='missing': exported.unlink()
                 if mode=='report_missing': (exported.parent/evidence['report']['path']).unlink()
-                args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+                args=argparse.Namespace(package=self.package,first_use_configuration_verification=self.configuration_verification_file(build),quality_summary=quality,verification=verification,
                     personal_records_verification=self.personal_verification_file(build),
                     overview_verification=self.overview_verification_file(build),search_verification=self.search_verification_file(build),
                     output=self.root/(mode+'-export.zip'))
@@ -897,6 +945,128 @@ class ViewerPackageTests(unittest.TestCase):
                     self.assertEqual(result['checks']['native_search_export'],mode=='passed')
                     self.assertEqual(result['native_search_export_verification'],evidence if mode not in ('omitted','missing') else {})
                     self.assertEqual(result['search_export_verification_summary_sha256'],VIEWER.sha(exported) if mode not in ('omitted','missing') else None)
+                    self.assertEqual(result['viewer_verified'],mode=='passed')
+
+    def test_first_use_configuration_requires_complete_frozen_controls_evidence(self):
+        build=self.prepare(); good=self.valid_configuration_verification(build); manifest=VIEWER.sha(self.package/'BUILD.json')
+        self.assertTrue(VIEWER.first_use_configuration_verification_matches(good,build,manifest))
+        for field, wrong in [('source_sha','b'*40),('native_windows',False),('synthetic',False),
+                ('real_etw_executed',True),('real_user_records_accessed',True),('accepted',False),('completed',False),
+                ('package_manifest_sha256','0'*64),('viewer_assembly_sha256','0'*64),('contain_sha256','0'*64),
+                ('viewer_launcher_sha256','0'*64),('schema_version',True),('retries',1),('retries',False),
+                ('assertions',0),('assertions',True),('passed',4),('failed',1),('skipped',1),('not_run',1),
+                ('checks',[None]),('checks',[]),('planned_checks',[None]),('planned_checks',[])]:
+            with self.subTest(field=field):
+                bad=copy.deepcopy(good);bad[field]=wrong
+                self.assertFalse(VIEWER.first_use_configuration_verification_matches(bad,build,manifest))
+        for field in good:
+            bad=copy.deepcopy(good);bad.pop(field)
+            self.assertFalse(VIEWER.first_use_configuration_verification_matches(bad,build,manifest),field)
+        for mutate in [lambda x:x['checks'].append(x['checks'][0]), lambda x:x['checks'][0].update(status='failed'),
+                lambda x:x['planned_checks'].append(x['planned_checks'][0])]:
+            bad=copy.deepcopy(good);mutate(bad)
+            self.assertFalse(VIEWER.first_use_configuration_verification_matches(bad,build,manifest))
+
+    def test_first_use_configuration_required_plan_matches_actual_harness(self):
+        source=(Path(__file__).parent.parent/'desktop/Contain.Viewer.Tests/FirstUseConfigurationChecks.cs').read_text(encoding='utf-8')
+        section=source.split('Plan =',1)[1].split('];',1)[0]
+        names=VIEWER.re.findall(r'"([a-z_]+)"',section)
+        self.assertEqual(len(names),5)
+        self.assertEqual(len(names),len(set(names)))
+        self.assertEqual(set(names),VIEWER.FIRST_USE_CONFIGURATION_REQUIRED_CHECKS)
+
+    def test_first_use_capture_requires_two_inputs_native_actions_and_exact_saved_scope(self):
+        fixture=self.root/'fixture.exe'; fixture.write_bytes(TRIAL_TESTS.synthetic_pe())
+        build=self.prepare(fixture); good=self.valid_install_verification(build); manifest=VIEWER.sha(self.package/'BUILD.json')
+        path=self.root/'install-summary.json'
+        self.assertTrue(VIEWER.first_use_install_verification_matches(good,build,manifest,path))
+        for field,wrong in [('protocol_revision','old'),('actual_packaged_executable',False),('windows_version',' '),
+                ('actual_device_dpi',0),('actual_device_dpi',True),('installer_picker_cancels',0),
+                ('installer_picker_selections',0),('observation_picker_selections',0),('ordinary_input_count',3),
+                ('advanced_interactions',1),('environment_check_interactions',1),('database_path_interactions',1),
+                ('saved_scope_count',2),('selected_scope_sha256','private path'),('persisted_scope_sha256','b'*64),
+                ('session_id','another-session'),('screenshots',[]),('screenshots',[None])]:
+            with self.subTest(field=field):
+                bad=copy.deepcopy(good);bad['first_use'][field]=wrong
+                self.assertFalse(VIEWER.first_use_install_verification_matches(bad,build,manifest,path))
+        for field in good['first_use']:
+            bad=copy.deepcopy(good);bad['first_use'].pop(field)
+            self.assertFalse(VIEWER.first_use_install_verification_matches(bad,build,manifest,path),field)
+        for field,value in good['first_use'].items():
+            if value is True:
+                bad=copy.deepcopy(good);bad['first_use'][field]=False
+                self.assertFalse(VIEWER.first_use_install_verification_matches(bad,build,manifest,path),field)
+        bad=copy.deepcopy(good);bad.pop('first_use')
+        self.assertFalse(VIEWER.first_use_install_verification_matches(bad,build,manifest,path))
+        self.assertFalse(VIEWER.first_use_install_verification_matches(good,build,manifest,None))
+
+    def test_first_use_screenshots_require_actual_distinct_png_bytes(self):
+        fixture=self.root/'fixture.exe'; fixture.write_bytes(TRIAL_TESTS.synthetic_pe())
+        build=self.prepare(fixture); good=self.valid_install_verification(build); path=self.root/'install-summary.json'
+        first=good['first_use']; image=self.root/'screenshots'/first['screenshots'][0]['name']; original=image.read_bytes()
+        self.assertTrue(VIEWER.first_use_screenshots_match(first,path))
+        for broken in [b'not a PNG', original+b'garbage', original[:30], original[:40]+b'X'+original[41:]]:
+            image.write_bytes(broken);bad=copy.deepcopy(first);bad['screenshots'][0]['sha256']=VIEWER.sha(image)
+            self.assertFalse(VIEWER.first_use_screenshots_match(bad,path))
+        image.write_bytes(original)
+        for field,wrong in [('name','../outside.png'),('sha256','0'*64),('width',True),('height',13)]:
+            bad=copy.deepcopy(first);bad['screenshots'][0][field]=wrong
+            self.assertFalse(VIEWER.first_use_screenshots_match(bad,path))
+        second=self.root/'screenshots'/first['screenshots'][1]['name'];second.write_bytes(original)
+        bad=copy.deepcopy(first);bad['screenshots'][1]['sha256']=VIEWER.sha(second)
+        self.assertFalse(VIEWER.first_use_screenshots_match(bad,path))
+        image.unlink()
+        self.assertFalse(VIEWER.first_use_screenshots_match(first,path))
+
+    def test_first_use_configuration_gate_cannot_be_omitted_from_viewer_package(self):
+        for mode in ('passed','omitted','missing','failed'):
+            with self.subTest(mode=mode):
+                self.package=self.root/('first-use-configuration-'+mode);build=self.prepare()
+                verification=self.root/(mode+'-viewer.json');verification.write_text(json.dumps(self.valid_verification(build)))
+                quality=self.root/(mode+'-quality.json');quality.write_text(json.dumps(dict(source_revision=self.source,
+                    current_required_gates_passed=True,all_recorded_invocations_passed=True,
+                    coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
+                configuration=self.configuration_verification_file(build);evidence=VIEWER.read(configuration)
+                if mode=='failed': evidence['checks'][0]['status']='failed';configuration.write_text(json.dumps(evidence))
+                if mode=='missing': configuration.unlink()
+                args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+                    personal_records_verification=self.personal_verification_file(build),
+                    overview_verification=self.overview_verification_file(build),search_verification=self.search_verification_file(build),
+                    search_export_verification=self.export_verification_file(build),output=self.root/(mode+'-configuration.zip'))
+                if mode!='omitted': args.first_use_configuration_verification=configuration
+                self.assertEqual(VIEWER.finalize(args),0 if mode=='passed' else 2)
+                with zipfile.ZipFile(args.output) as archive:
+                    result=json.loads(archive.read('VALIDATION.json'))
+                    self.assertEqual(result['checks']['native_first_use_configuration'],mode=='passed')
+                    self.assertEqual(result['native_first_use_configuration_verification'],evidence if mode not in ('omitted','missing') else {})
+                    self.assertEqual(result['first_use_configuration_summary_sha256'],VIEWER.sha(configuration) if mode not in ('omitted','missing') else None)
+                    self.assertEqual(result['viewer_verified'],mode=='passed')
+
+    def test_first_use_capture_gate_cannot_reuse_older_install_success(self):
+        for mode in ('passed','omitted','wrong_scope','missing_screenshot'):
+            with self.subTest(mode=mode):
+                self.package=self.root/('first-use-install-'+mode)
+                fixture=self.root/(mode+'-fixture.exe');fixture.write_bytes(TRIAL_TESTS.synthetic_pe());build=self.prepare(fixture)
+                verification=self.root/(mode+'-viewer.json');verification.write_text(json.dumps(self.valid_verification(build)))
+                quality=self.root/(mode+'-quality.json');quality.write_text(json.dumps(dict(source_revision=self.source,
+                    current_required_gates_passed=True,all_recorded_invocations_passed=True,
+                    coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
+                installation=self.valid_install_verification(build)
+                if mode=='omitted': installation.pop('first_use')
+                if mode=='wrong_scope': installation['first_use']['persisted_scope_sha256']='b'*64
+                if mode=='missing_screenshot': (self.root/'screenshots'/next(iter(VIEWER.FIRST_USE_SCREENSHOTS))).unlink()
+                install=self.root/(mode+'-install.json');install.write_text(json.dumps(installation))
+                args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+                    personal_records_verification=self.personal_verification_file(build),
+                    overview_verification=self.overview_verification_file(build),search_verification=self.search_verification_file(build),
+                    search_export_verification=self.export_verification_file(build),
+                    first_use_configuration_verification=self.configuration_verification_file(build),
+                    install_verification=install,output=self.root/(mode+'-first-use.zip'))
+                self.assertEqual(VIEWER.finalize(args),0 if mode=='passed' else 2)
+                with zipfile.ZipFile(args.output) as archive:
+                    result=json.loads(archive.read('VALIDATION.json'))
+                    self.assertTrue(result['checks']['native_gui_install_etw_and_exact_result'])
+                    self.assertEqual(result['checks']['native_first_use_install_flow'],mode=='passed')
                     self.assertEqual(result['viewer_verified'],mode=='passed')
 
     def test_try_guidance_defines_current_session_search_and_report_boundary(self):
@@ -913,6 +1083,9 @@ class ViewerPackageTests(unittest.TestCase):
                          '使用自定义保存位置','打开外部数据库不会改变新记录的默认保存位置'):
             self.assertIn(required,usage)
         self.assertNotIn('数据库选择观察目录',usage)
+        self.assertIn('普通流程只需 EXE 和已有观察文件夹',usage)
+        self.assertIn('检查环境不是开始前的额外步骤',usage)
+        self.assertNotIn('完成环境检查后点击开始',usage)
 
 
 if __name__=='__main__': unittest.main()

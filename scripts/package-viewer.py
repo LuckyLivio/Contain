@@ -12,8 +12,10 @@ import os
 from pathlib import Path
 import re
 import shutil
+import struct
 import subprocess
 import zipfile
+import zlib
 import xml.etree.ElementTree as ET
 
 SPEC = importlib.util.spec_from_file_location("viewer_trial_helpers", Path(__file__).with_name("package-trial.py"))
@@ -27,6 +29,13 @@ INSTALL_VERIFICATION = "contain-desktop-install-verification-1"
 LAYOUT_VERIFICATION = "contain-desktop-layout-verification-1"
 PROGRESS_VERIFICATION = "contain-desktop-progress-verification-1"
 PERSONAL_RECORDS_VERIFICATION = "contain-desktop-personal-records-verification-1"
+FIRST_USE_CONFIGURATION_VERIFICATION = "contain-desktop-first-use-configuration-verification-1"
+FIRST_USE_CONFIGURATION_REQUIRED_CHECKS = frozenset({
+    "picker_cancel_and_existing_selection", "missing_and_invalidated_observation_directory",
+    "personal_library_conflict_and_correction", "advanced_options_retained_when_collapsed",
+    "synthetic_permission_refusal_explicit_retry_and_single_start",
+})
+FIRST_USE_SCREENSHOTS = frozenset({"install-first-use-configured.png", "install-first-use-missing-folder.png"})
 SEARCH_EXPORT_VERIFICATION = "contain-desktop-search-export-verification-1"
 SEARCH_EXPORT_REQUIRED_CHECKS = frozenset({
     "frozen_export_package_identity", "actual_packaged_search_export_all_ids",
@@ -185,11 +194,15 @@ def usage(source, install=False, version=None):
 新建受控安装记录：
 
 1. 点击“新建安装记录”，选择已知受支持的独立 EXE 安装器。
-2. 名称默认来自安装器文件名，可直接修改。选择已存在的观察目录；记录默认保存到“我的记录”，无需选择数据库。
-   安装器所在目录不代表软件全部安装位置；程序不会扫描全盘或创建软件目标目录。
-3. 点击“检查环境”，阅读当前权限与 ETW 能力；检查成功不能保证实际启动成功。
-4. 点击“开始记录”才会启动安装器。等待采集及整理结束，再自动打开本次准确会话。
-5. 浏览事件并点击查看依据，导出本地 HTML 报告。关闭后重新打开程序，“我的记录”会显示已保存的历史记录。
+2. 选择想观察的已有文件夹。Contain 会记录这个文件夹里的变化；要查看安装目标里的文件，请选择对应的已有文件夹。
+   名称默认来自 EXE 文件名，记录保存到“我的记录”，无需选择数据库。仅选 EXE 还不能开始。
+3. 点击“开始记录”才会启动安装器。等待记录及整理结束，再自动打开本次准确会话。
+4. 浏览事件并点击查看依据，导出本地 HTML 报告。关闭后重新打开程序，“我的记录”会显示已保存的历史记录。
+
+普通流程只需 EXE 和已有观察文件夹。取消 EXE 选择器会回到原界面。
+名称、自定义保存位置、参数、注册表、等待时间、快照模式和可选“检查环境”在默认折叠的高级设置中。
+修改高级选项后，主操作旁会显示实际生效设置。检查环境不是开始前的额外步骤。
+安装器所在目录不代表软件安装目标；程序不会替你选择范围、扫描全盘或创建软件目标目录。
 
 如默认保存位置与观察范围冲突或不可写，使用“更改保存位置”；高级参数中可明确启用
 “使用自定义保存位置”，选择观察范围之外的数据库。打开外部数据库不会改变新记录的默认保存位置。
@@ -208,7 +221,7 @@ def usage(source, install=False, version=None):
 `contain-test-installer.exe`，观察目录选择刚创建的现有文件夹，保持“保存到我的记录”。展开高级参数，
 每行一个参数：第一行 `--root`，第二行填写该文件夹的绝对路径（不要加引号）。
 如需观察夹具的注册表状态差异，可填写 `Software\\Contain\\Demo\\<文件夹名>`。
-完成环境检查后点击开始，等待整理结束，选择真实事件查看依据并导出。
+点击开始，等待整理结束，选择真实事件查看依据并导出。“检查环境”仅在需要诊断时主动使用。
 以上步骤是使用说明；是否完成原生人工验证以 VALIDATION.json 为准。
 """ if install else ""
     return f"""# Contain {version} · Windows 安装记录与证据查看 Beta
@@ -759,6 +772,110 @@ def search_export_verification_matches(value, build, manifest_sha, summary_path)
         and search_export_report_matches(value, summary_path))
 
 
+def first_use_configuration_verification_matches(value, build, manifest_sha):
+    """Configuration/failure regressions use real controls, with explicit synthetic failures."""
+    if not isinstance(value, dict):
+        return False
+    checks, planned = value.get("checks"), value.get("planned_checks")
+    if not (isinstance(checks, list) and all(isinstance(check, dict) for check in checks)
+            and isinstance(planned, list) and all(isinstance(name, str) for name in planned)):
+        return False
+    names = [check.get("name") for check in checks]
+    if (not all(isinstance(name, str) for name in names)
+            or len(names) != len(set(names)) or set(names) != FIRST_USE_CONFIGURATION_REQUIRED_CHECKS
+            or len(planned) != len(set(planned)) or set(planned) != FIRST_USE_CONFIGURATION_REQUIRED_CHECKS):
+        return False
+    expected = {entry["path"]: entry["sha256"] for entry in build["files"]}
+    return (
+        type(value.get("schema_version")) is int and value["schema_version"] == 1
+        and value.get("protocol_revision") == FIRST_USE_CONFIGURATION_VERIFICATION
+        and value.get("source_sha") == build["source_sha"]
+        and value.get("native_windows") is True and value.get("synthetic") is True
+        and value.get("real_etw_executed") is False and value.get("real_user_records_accessed") is False
+        and value.get("completed") is True and value.get("accepted") is True
+        and value.get("package_manifest_sha256") == manifest_sha
+        and value.get("viewer_assembly_sha256") == expected["Contain.Viewer.dll"]
+        and value.get("viewer_launcher_sha256") == expected["Contain.Viewer.exe"]
+        and value.get("contain_sha256") == expected["contain.exe"]
+        and all(check.get("status") == "passed" for check in checks)
+        and type(value.get("assertions")) is int and value["assertions"] > 0
+        and type(value.get("passed")) is int and value["passed"] == len(FIRST_USE_CONFIGURATION_REQUIRED_CHECKS)
+        and all(type(value.get(key)) is int and value[key] == 0 for key in ("failed", "skipped", "not_run", "retries")))
+
+
+def first_use_screenshots_match(value, summary_path):
+    """Read the exact native PNG bytes; metadata alone cannot supply the release examples."""
+    if not isinstance(value, dict) or summary_path is None:
+        return False
+    screenshots = value.get("screenshots")
+    if (not isinstance(screenshots, list) or len(screenshots) != len(FIRST_USE_SCREENSHOTS)
+            or not all(isinstance(item, dict) and isinstance(item.get("name"), str) for item in screenshots)
+            or {item["name"] for item in screenshots} != FIRST_USE_SCREENSHOTS):
+        return False
+    try:
+        digests = set()
+        for item in screenshots:
+            if (not isinstance(item.get("sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", item["sha256"])
+                    or any(type(item.get(key)) is not int or not 0 < item[key] <= 16384 for key in ("width", "height"))):
+                return False
+            path = safe_file(summary_path.parent / "screenshots" / item["name"])
+            if not 0 < path.stat().st_size <= 16 * 1024 * 1024 or sha(path) != item["sha256"]:
+                return False
+            data = path.read_bytes()
+            if (data[:8] != b"\x89PNG\r\n\x1a\n" or data[8:16] != b"\x00\x00\x00\rIHDR"
+                    or len(data) < 33 or struct.unpack(">II", data[16:24]) != (item["width"], item["height"])):
+                return False
+            offset, has_image, ended = 8, False, False
+            while offset + 12 <= len(data):
+                size = struct.unpack(">I", data[offset:offset + 4])[0]
+                end = offset + size + 12
+                if end > len(data):
+                    return False
+                kind = data[offset + 4:offset + 8]
+                if zlib.crc32(data[offset + 4:end - 4]) != struct.unpack(">I", data[end - 4:end])[0]:
+                    return False
+                has_image |= kind == b"IDAT"
+                offset = end
+                if kind == b"IEND":
+                    ended = size == 0 and offset == len(data)
+                    break
+            if not has_image or not ended:
+                return False
+            digests.add(item["sha256"])
+        return len(digests) == len(FIRST_USE_SCREENSHOTS)
+    except (OSError, ValueError, struct.error):
+        return False
+
+
+def first_use_install_verification_matches(value, build, manifest_sha, summary_path):
+    """One ordinary two-input flow must be the existing, exact GUI-started capture."""
+    if not install_verification_matches(value, build, manifest_sha) or not native_picker_verified(value):
+        return False
+    first = value.get("first_use")
+    if not isinstance(first, dict):
+        return False
+    positive = ("actual_packaged_executable", "cancel_preserved_record_selection", "missing_scope_blocks_start",
+        "configuration_created_no_session", "keyboard_flow_verified", "default_name_matches_exe", "default_database",
+        "scope_exact_match", "main_entry_kept_active_task", "duplicate_start_created_one_session",
+        "invalid_scope_blocked", "database_conflict_blocked", "corrections_preserved_configuration")
+    return (
+        first.get("protocol_revision") == "contain-first-install-flow-1"
+        and all(first.get(key) is True for key in positive)
+        and isinstance(first.get("windows_version"), str) and bool(first["windows_version"].strip())
+        and type(first.get("actual_device_dpi")) is int and first["actual_device_dpi"] > 0
+        and all(type(first.get(key)) is int and first[key] == 1 for key in
+            ("installer_picker_cancels", "installer_picker_selections", "saved_scope_count"))
+        and type(first.get("observation_picker_selections")) is int and first["observation_picker_selections"] >= 1
+        and type(first.get("ordinary_input_count")) is int and first["ordinary_input_count"] == 2
+        and all(type(first.get(key)) is int and first[key] == 0 for key in
+            ("advanced_interactions", "environment_check_interactions", "database_path_interactions"))
+        and isinstance(first.get("selected_scope_sha256"), str)
+        and re.fullmatch(r"[0-9a-f]{64}", first["selected_scope_sha256"]) is not None
+        and first.get("persisted_scope_sha256") == first["selected_scope_sha256"]
+        and first.get("session_id") == value["session_id"]
+        and first_use_screenshots_match(first, summary_path))
+
+
 def finalize(args):
     package = args.package.resolve()
     build = verify_package(package)
@@ -779,6 +896,8 @@ def finalize(args):
     search = read(search_path) if search_path and search_path.is_file() else {}
     export_path = getattr(args, "search_export_verification", None)
     exported = read(export_path) if export_path and export_path.is_file() else {}
+    configuration_path = getattr(args, "first_use_configuration_verification", None)
+    configuration = read(configuration_path) if configuration_path and configuration_path.is_file() else {}
     install_requested = build.get("controlled_fixture") is not None or install_path is not None
     checks = {
         "frozen_package_unchanged": True,
@@ -797,9 +916,12 @@ def finalize(args):
         "native_session_event_search": search_verification_matches(search, build, manifest_sha),
         # Beta 6 requires actual EXE export plus independently parsed report bytes.
         "native_search_export": search_export_verification_matches(exported, build, manifest_sha, export_path),
+        # Beta 7's offline controls/errors checks run before any bounded install.
+        "native_first_use_configuration": first_use_configuration_verification_matches(configuration, build, manifest_sha),
     }
     if install_requested:
         checks["native_gui_install_etw_and_exact_result"] = install_verification_matches(installation, build, manifest_sha)
+        checks["native_first_use_install_flow"] = first_use_install_verification_matches(installation, build, manifest_sha, install_path)
     if layout_path is not None:
         checks["native_layout_and_simulated_scale"] = layout_verification_matches(layout, build, manifest_sha)
     if progress_path is not None:
@@ -830,6 +952,8 @@ def finalize(args):
         native_overview_verification=overview,
         native_search_verification=search,
         native_search_export_verification=exported,
+        native_first_use_configuration_verification=configuration,
+        first_use_configuration_summary_sha256=sha(configuration_path) if configuration_path and configuration_path.is_file() else None,
         search_export_verification_summary_sha256=sha(export_path) if export_path and export_path.is_file() else None,
         search_verification_summary_sha256=sha(search_path) if search_path and search_path.is_file() else None,
         overview_verification_summary_sha256=sha(overview_path) if overview_path and overview_path.is_file() else None,
@@ -890,6 +1014,8 @@ def main():
         help="Require current-session cross-page search and original event identity in the actual packaged EXE")
     finish.add_argument("--search-export-verification", type=Path,
         help="Require actual packaged EXE full-search export, fixed ordered HTML IDs and retained current page")
+    finish.add_argument("--first-use-configuration-verification", type=Path,
+        help="Require native two-input configuration, cancellation, correctable errors and explicit advanced choices")
     finish.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:

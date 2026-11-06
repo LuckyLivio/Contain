@@ -14,7 +14,7 @@ public sealed class ViewerForm : Form
     private readonly CoreClient _client;
     private readonly IViewerDialogs _dialogs;
     private readonly int _pageSize;
-    private readonly IInstallDialogs? _installDialogs;
+    private readonly IInstallDialogs _installDialogs;
     private readonly PersonalRecords _records;
     private readonly Button _newInstall = Button("NewInstall", "新建安装记录", true);
     private readonly Button _myRecords = Button("MyRecords", "我的记录");
@@ -86,7 +86,7 @@ public sealed class ViewerForm : Form
         _client = client;
         _dialogs = dialogs ?? new ViewerDialogs();
         _pageSize = pageSize;
-        _installDialogs = installDialogs;
+        _installDialogs = installDialogs ?? new InstallDialogs();
         _records = records ?? PersonalRecords.ForCurrentUser();
         Name = "ContainViewer";
         Text = Contain.Viewer.ProductVersion.Display + " · 安装记录";
@@ -292,7 +292,17 @@ public sealed class ViewerForm : Form
                 ActiveInstallForm.Activate();
                 return;
             }
-            ActiveInstallForm = new InstallForm(new InstallClient(_client.ExecutablePath), OpenCapturedSessionAsync, _installDialogs, _records);
+            // Choosing an EXE is configuration only. Cancellation leaves the
+            // existing record, page and selected event untouched.
+            string? installer;
+            try { installer = _installDialogs.ChooseInstaller(this); }
+            catch (Exception error)
+            {
+                SetStatus("无法选择安装器，请重新选择已有的 EXE。" + error.Message, true);
+                return;
+            }
+            if (installer is null) return;
+            ActiveInstallForm = new InstallForm(new InstallClient(_client.ExecutablePath), OpenCapturedSessionAsync, _installDialogs, _records, installer);
             ActiveInstallForm.RecordingEnded += result =>
             {
                 _lastRun = result;
