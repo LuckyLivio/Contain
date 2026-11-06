@@ -1,0 +1,65 @@
+name: Bounded capture receiver diagnosis
+on:
+  push:
+    branches:
+      - fix/beta10-capture-loss
+permissions:
+  contents: read
+jobs:
+  diagnosis:
+    if: ${{ github.repository == 'LuckyLivio/Contain' && github.run_attempt == 1 && contains(github.event.head_commit.message, '[capture-diagnosis]') }}
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check diagnostics and build unchanged admission algorithm
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($script in @('scripts/follow-installer-experiment.ps1')) {
+            $tokens=$null; $errors=$null
+            $null=[Management.Automation.Language.Parser]::ParseFile([IO.Path]::GetFullPath($script),[ref]$tokens,[ref]$errors)
+            if ($errors.Count) { throw 'Diagnostic script syntax failed before capture' }
+          }
+          cargo test -p contain-core --example follow-identity-diagnostic --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Actual production identity replay regressions failed' }
+          cargo test -p contain-core profile::tests --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Bounded diagnostic regressions failed' }
+          cargo build --workspace --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Diagnostic core build failed' }
+          cargo build -p contain-core --example follow-identity-diagnostic --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Diagnostic example build failed' }
+          python scripts/test-summarize-receiver-profile.py
+          if ($LASTEXITCODE -ne 0) { throw 'Safe profile report regressions failed' }
+      - name: Two predeclared diagnostic captures without retries
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out=Join-Path $env:RUNNER_TEMP ('contain-capture-diagnosis-'+$env:GITHUB_RUN_ID+'-'+$env:GITHUB_RUN_ATTEMPT)
+          New-Item -ItemType Directory -Path $out | Out-Null
+          "CAPTURE_DIAG_OUTPUT=$out" >> $env:GITHUB_ENV
+          $core=[IO.Path]::GetFullPath('target/debug/contain.exe')
+          $fixture=[IO.Path]::GetFullPath('target/debug/contain-test-installer.exe')
+          $identity=[IO.Path]::GetFullPath('target/debug/examples/follow-identity-diagnostic.exe')
+          [ordered]@{schema_version=1;source_sha=$env:GITHUB_SHA;order=@('profile-off','profile-on');maximum_native_captures=2;retries=0;background_files=12000;independent_background_operations=36000;queue_capacity=4096;handoff_records=4096;handoff_bytes=16777216;candidate_records=2048;candidate_bytes=8388608;journal_quota=67108864;core_sha256=(Get-FileHash $core -Algorithm SHA256).Hash.ToLowerInvariant();fixture_sha256=(Get-FileHash $fixture -Algorithm SHA256).Hash.ToLowerInvariant();algorithm_change=$false;release_acceptance=$false} | ConvertTo-Json | Set-Content (Join-Path $out 'diagnosis-plan.json') -Encoding utf8
+          foreach($case in @('profile-off','profile-on')) {
+            try {
+              $arguments=@{ContainExecutable=$core;FixtureExecutable=$fixture;IdentityDiagnosticExe=$identity;OutputDirectory=(Join-Path $out $case);Source=$env:GITHUB_SHA;BackgroundFiles=12000;Profile=($case -eq 'profile-on')}
+              ./scripts/follow-installer-experiment.ps1 @arguments
+            } catch { Write-Host ('Retained diagnostic capture/oracle failure: '+$case) }
+            $termination=Join-Path $out ($case+'/private/worker-termination.json')
+            if (-not (Test-Path $termination) -or (Get-Content $termination -Raw | ConvertFrom-Json).all_owned_processes_exited -ne $true) { Write-Host 'Stop plan: prior owned process termination unconfirmed'; break }
+          }
+          python scripts/summarize-capture-diagnosis.py --directory $out
+          if ($LASTEXITCODE -ne 0) { throw 'Safe diagnostic summary failed' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: capture-receiver-diagnosis
+          path: |
+            ${{ env.CAPTURE_DIAG_OUTPUT }}/public/*.json
+            ${{ env.CAPTURE_DIAG_OUTPUT }}/profile-off/public/*.json
+            ${{ env.CAPTURE_DIAG_OUTPUT }}/profile-on/public/*.json
+          if-no-files-found: warn

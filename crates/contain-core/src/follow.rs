@@ -1,6 +1,6 @@
 //! Bounded provisional admission for follow-installer capture. No path or PID
 //! alone is an actor proof; all retained candidates are re-resolved after STOP.
-use crate::{lifetime::LifetimeCache, model::*};
+use crate::{lifetime::LifetimeCache, model::*, profile};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 pub(crate) const CANDIDATE_RECORDS: usize = 2048;
@@ -23,6 +23,7 @@ pub(crate) struct FollowBuffer {
     selection_generation: u64,
     last_retry_generation: u64,
     cache_dirty: bool,
+    diagnostics: Option<FollowDiagnostics>,
     #[cfg(test)]
     retry_visits: u64,
     pub stats: FollowInstallerStats,
@@ -41,6 +42,7 @@ impl Default for FollowBuffer {
             selection_generation: 0,
             last_retry_generation: 0,
             cache_dirty: false,
+            diagnostics: None,
             #[cfg(test)]
             retry_visits: 0,
             stats: FollowInstallerStats {
@@ -60,21 +62,112 @@ enum Selection {
     Pending,
 }
 
+#[derive(Clone, Copy)]
+enum Change {
+    Bind,
+    Cache,
+    Resource,
+    Request,
+    Completion,
+    RelatedRemoved,
+    Flush,
+}
+#[derive(Clone, Copy)]
+enum DropReason {
+    Serialization,
+    RecordBytes,
+    PendingRecords,
+    PendingBytes,
+    Resources,
+    Requests,
+}
+#[derive(Default)]
+struct FollowDiagnostics {
+    changes: [u64; 7],
+    drops: [u64; 6],
+    pending_before_bind: u64,
+    pending_no_identity: u64,
+    pending_unverified_actor: u64,
+    last_pending_reason: usize,
+    pending_drops: [u64; 3],
+}
+impl FollowDiagnostics {
+    fn finish(self) {
+        let [bind, cache, resource, request, completion, removed, flush] = self.changes;
+        let [before_bind, no_identity, unverified_actor] = self.pending_drops;
+        let [
+            serialization,
+            record_bytes,
+            pending_records,
+            pending_bytes,
+            resources,
+            requests,
+        ] = self.drops;
+        profile::counters([
+            ("follow_dirty_bind", bind),
+            ("follow_dirty_cache", cache),
+            ("follow_dirty_resource", resource),
+            ("follow_dirty_request", request),
+            ("follow_dirty_completion", completion),
+            ("follow_dirty_related_removed", removed),
+            ("follow_dirty_flush", flush),
+            ("follow_drop_serialization", serialization),
+            ("follow_drop_record_bytes", record_bytes),
+            ("follow_drop_pending_records", pending_records),
+            ("follow_drop_pending_bytes", pending_bytes),
+            ("follow_drop_resources", resources),
+            ("follow_drop_requests", requests),
+            ("follow_drop_pending_before_bind", before_bind),
+            ("follow_drop_pending_no_identity", no_identity),
+            ("follow_drop_pending_unverified_actor", unverified_actor),
+            // Attempts, including retries, rather than distinct lost records.
+            (
+                "follow_pending_before_bind_attempts",
+                self.pending_before_bind,
+            ),
+            (
+                "follow_pending_no_identity_attempts",
+                self.pending_no_identity,
+            ),
+            (
+                "follow_pending_unverified_actor_attempts",
+                self.pending_unverified_actor,
+            ),
+        ]);
+    }
+}
+
 impl FollowBuffer {
     pub fn bind(&mut self, root: (u32, u64), session: &str) {
         if self.root.is_none() && root.1 != 0 {
             self.root = Some(root);
             self.session = session.into();
             self.cache_dirty = true;
-            self.changed();
+            self.changed(Change::Bind);
+            profile::counters([("follow_dirty_bind", 1)]);
         }
     }
-    fn changed(&mut self) {
+    fn changed(&mut self, reason: Change) {
         self.selection_generation = self.selection_generation.wrapping_add(1);
+        if let Some(diagnostics) = &mut self.diagnostics {
+            diagnostics.changes[reason as usize] += 1;
+        }
+    }
+    fn dropped(&mut self, reason: DropReason) {
+        self.stats.candidate_dropped += 1;
+        if let Some(diagnostics) = &mut self.diagnostics {
+            diagnostics.drops[reason as usize] += 1;
+        }
+    }
+    fn dropped_pending(&mut self, reason: DropReason) {
+        self.dropped(reason);
+        if let Some(diagnostics) = &mut self.diagnostics {
+            diagnostics.pending_drops[diagnostics.last_pending_reason] += 1;
+        }
     }
     fn request_candidate_removed(&mut self, id: &str) {
         if self.pending_completion_requests.contains_key(id) {
-            self.changed();
+            self.changed(Change::RelatedRemoved);
         }
     }
     fn track_pending(&mut self, event: SystemEvent, size: usize) {
@@ -125,15 +218,21 @@ impl FollowBuffer {
     }
     fn buffer(&mut self, event: SystemEvent) {
         let Some(size) = Self::serialized_size(&event) else {
-            self.stats.candidate_dropped += 1;
+            self.dropped_pending(DropReason::Serialization);
             self.request_candidate_removed(&event.id);
             return;
         };
-        if size > CANDIDATE_RECORD_BYTES
-            || self.pending.len() >= CANDIDATE_RECORDS
-            || self.bytes.saturating_add(size) > CANDIDATE_BYTES
-        {
-            self.stats.candidate_dropped += 1;
+        let reason = if size > CANDIDATE_RECORD_BYTES {
+            Some(DropReason::RecordBytes)
+        } else if self.pending.len() >= CANDIDATE_RECORDS {
+            Some(DropReason::PendingRecords)
+        } else if self.bytes.saturating_add(size) > CANDIDATE_BYTES {
+            Some(DropReason::PendingBytes)
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            self.dropped_pending(reason);
             self.request_candidate_removed(&event.id);
             return;
         }
@@ -154,30 +253,42 @@ impl FollowBuffer {
         cache: &mut LifetimeCache,
         cache_updated: bool,
     ) -> Vec<SystemEvent> {
+        self.diagnostics = profile::enabled().then(FollowDiagnostics::default);
+        profile::counters([
+            ("follow_receive_pages", 1),
+            ("follow_incoming_records", incoming.len() as u64),
+        ]);
         self.cache_dirty |= cache_updated;
         if self.cache_dirty {
+            let _span = profile::queue_span("receiver_follow_cache_attach");
             if let Some(root) = self.root {
                 cache.attach(root, &self.session);
             }
             self.cache_dirty = false;
-            self.changed();
+            self.changed(Change::Cache);
         }
         // A completion can precede its request in this page. Register all IDs
         // before classification, just as when the whole page was buffered first.
-        for event in &incoming {
-            self.pending_ids.insert(event.id.clone());
+        {
+            let _span = profile::queue_span("receiver_follow_register").units(incoming.len());
+            for event in &incoming {
+                self.pending_ids.insert(event.id.clone());
+            }
         }
         let mut admitted = self.retry_changed(cache);
-        for event in incoming {
-            self.stats.candidates += 1;
-            self.pending_ids.remove(&event.id);
-            match self.select(&event, cache, false, false) {
-                Selection::Admit => {
-                    self.request_candidate_removed(&event.id);
-                    admitted.push(event);
+        {
+            let _span = profile::queue_span("receiver_follow_classify").units(incoming.len());
+            for event in incoming {
+                self.stats.candidates += 1;
+                self.pending_ids.remove(&event.id);
+                match self.select(&event, cache, false, false) {
+                    Selection::Admit => {
+                        self.request_candidate_removed(&event.id);
+                        admitted.push(event);
+                    }
+                    Selection::Discard => self.request_candidate_removed(&event.id),
+                    Selection::Pending => self.buffer(event),
                 }
-                Selection::Discard => self.request_candidate_removed(&event.id),
-                Selection::Pending => self.buffer(event),
             }
         }
         // A current request can release a historical completion, and a newly
@@ -185,6 +296,9 @@ impl FollowBuffer {
         // receive performs at most two bounded scans. Changes during the last
         // scan remain dirty for the next page or the forced STOP passes.
         admitted.extend(self.retry_changed(cache));
+        if let Some(diagnostics) = self.diagnostics.take() {
+            diagnostics.finish();
+        }
         admitted
     }
     fn retry_changed(&mut self, cache: &LifetimeCache) -> Vec<SystemEvent> {
@@ -198,19 +312,37 @@ impl FollowBuffer {
         admitted
     }
     pub fn flush(&mut self, cache: &mut LifetimeCache, final_pass: bool) -> Vec<SystemEvent> {
+        self.diagnostics = profile::enabled().then(FollowDiagnostics::default);
         // STOP always rechecks the complete retained context, even if no live
         // notification marked it dirty. This is not an attribution cache.
-        if let Some(root) = self.root {
-            cache.attach(root, &self.session);
+        {
+            let _span = profile::queue_span("receiver_follow_cache_attach_stop");
+            if let Some(root) = self.root {
+                cache.attach(root, &self.session);
+            }
         }
         self.cache_dirty = false;
-        self.changed();
+        self.changed(Change::Flush);
         self.last_retry_generation = self.selection_generation;
-        self.scan_pending(cache, final_pass)
+        let admitted = self.scan_pending(cache, final_pass);
+        if let Some(diagnostics) = self.diagnostics.take() {
+            diagnostics.finish();
+        }
+        admitted
     }
     fn scan_pending(&mut self, cache: &LifetimeCache, final_pass: bool) -> Vec<SystemEvent> {
         let mut admitted = Vec::new();
         let count = self.pending.len();
+        let stage = if final_pass {
+            "receiver_follow_pending_final"
+        } else {
+            "receiver_follow_pending_scan"
+        };
+        let _span = profile::queue_span(stage).units(count);
+        profile::counters([
+            ("follow_scan_calls", 1),
+            ("follow_scan_visits", count as u64),
+        ]);
         for _ in 0..count {
             #[cfg(test)]
             {
@@ -240,6 +372,10 @@ impl FollowBuffer {
             if final_pass {
                 self.stats.unresolved += 1;
                 return Selection::Discard;
+            }
+            if let Some(diagnostics) = &mut self.diagnostics {
+                diagnostics.pending_before_bind += 1;
+                diagnostics.last_pending_reason = 0;
             }
             return Selection::Pending;
         };
@@ -271,7 +407,7 @@ impl FollowBuffer {
         let related = event.raw.related_event.as_ref();
         let completion_match = completion && related.is_some_and(|id| self.requests.remove(id));
         if completion_match {
-            self.changed();
+            self.changed(Change::Completion);
         }
         let unrelated_completion = completion
             && !completion_match
@@ -282,19 +418,24 @@ impl FollowBuffer {
         {
             // Preserve the per-record guard before cloning a selected resource
             // or request ID. Pending records have already passed this check.
-            if !size_checked
-                && Self::serialized_size(event).is_none_or(|size| size > CANDIDATE_RECORD_BYTES)
-            {
-                self.stats.candidate_dropped += 1;
-                return Selection::Discard;
+            if !size_checked {
+                let dropped = match Self::serialized_size(event) {
+                    None => Some(DropReason::Serialization),
+                    Some(size) if size > CANDIDATE_RECORD_BYTES => Some(DropReason::RecordBytes),
+                    Some(_) => None,
+                };
+                if let Some(reason) = dropped {
+                    self.dropped(reason);
+                    return Selection::Discard;
+                }
             }
             if matches && !self.resources.contains(&event.resource) {
                 if self.resources.len() >= RESOURCE_LIMIT {
-                    self.stats.candidate_dropped += 1;
+                    self.dropped(DropReason::Resources);
                     return Selection::Discard;
                 }
                 self.resources.insert(event.resource.clone());
-                self.changed();
+                self.changed(Change::Resource);
             }
             if !completion
                 && event.raw.irp.is_some()
@@ -304,11 +445,11 @@ impl FollowBuffer {
                 )
             {
                 if self.requests.len() >= REQUEST_LIMIT {
-                    self.stats.candidate_dropped += 1;
+                    self.dropped(DropReason::Requests);
                     return Selection::Discard;
                 }
                 if self.requests.insert(event.id.clone()) {
-                    self.changed();
+                    self.changed(Change::Request);
                 }
             }
             self.stats.admitted += 1;
@@ -321,6 +462,15 @@ impl FollowBuffer {
             }
             Selection::Discard
         } else {
+            if let Some(diagnostics) = &mut self.diagnostics {
+                if identity.is_none() {
+                    diagnostics.pending_no_identity += 1;
+                    diagnostics.last_pending_reason = 1;
+                } else {
+                    diagnostics.pending_unverified_actor += 1;
+                    diagnostics.last_pending_reason = 2;
+                }
+            }
             Selection::Pending
         }
     }
@@ -400,6 +550,54 @@ mod tests {
         let mut cache = LifetimeCache::default();
         cache.seed(root());
         cache
+    }
+    #[test]
+    fn diagnostics_separate_pending_capacity_loss_from_normal_filtering() {
+        let mut follow = FollowBuffer::default();
+        let mut cache = cache();
+        cache.ingest(&lifecycle(
+            "process_start",
+            4,
+            Some(120),
+            Some(99),
+            None,
+            120,
+        ));
+        cache.ingest(&lifecycle("thread_start", 4, None, None, Some(10), 121));
+        let report = profile::test_profile(|| {
+            profile::observe_queue(profile::QueueSnapshot::default);
+            follow.bind((1, 100), "s");
+            let incoming = (0..CANDIDATE_RECORDS + 1)
+                .map(|index| file(&format!("unresolved-{index}"), 999))
+                .collect();
+            assert!(follow.receive(incoming, &mut cache, true).is_empty());
+            assert!(
+                follow
+                    .receive(vec![file("other", 10)], &mut cache, false)
+                    .is_empty()
+            );
+            assert!(follow.flush(&mut cache, true).is_empty());
+        });
+        assert_eq!(follow.stats.candidate_dropped, 1);
+        assert_eq!(follow.stats.excluded_other, 1);
+        let counters = &report["counters"];
+        assert_eq!(counters["follow_drop_pending_records"], 1);
+        assert_eq!(counters["follow_drop_pending_bytes"], 0);
+        assert_eq!(counters["follow_drop_pending_no_identity"], 1);
+        assert_eq!(counters["follow_drop_pending_before_bind"], 0);
+        assert_eq!(counters["follow_drop_pending_unverified_actor"], 0);
+        assert_eq!(counters["follow_drop_record_bytes"], 0);
+        assert_eq!(counters["follow_dirty_bind"], 1);
+        assert_eq!(
+            counters["follow_pending_no_identity_attempts"],
+            (CANDIDATE_RECORDS + 1) as u64
+        );
+        assert_eq!(counters["follow_scan_visits"], CANDIDATE_RECORDS as u64);
+        assert_eq!(
+            report["queue_stage_totals"]["receiver_follow_pending_final"]["units"],
+            CANDIDATE_RECORDS as u64
+        );
+        assert!(follow.diagnostics.is_none());
     }
     #[test]
     fn registration_and_late_thread_delivery_do_not_drop_an_early_root_write() {

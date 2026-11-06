@@ -25,6 +25,7 @@ def load(name, filename):
 
 DESKTOP = load("beta10_preserved_desktop_guards", "upload-beta9-assets.py")
 PAIR = load("beta10_pair_guards", "summarize-capture-loss-pair.py")
+MATRIX = load("beta10_matrix_guards", "summarize-capture-loss-matrix.py")
 REPO = DESKTOP.REPO
 TAG = "v0.3.2-beta.10"
 VERSION = "0.3.2-beta.10"
@@ -117,7 +118,88 @@ def true_fields(value, fields, reason):
     require(all(value.get(key) is True for key in fields), reason)
 
 
+def verify_loss_capture(value, oracle, revision, *, candidate=False):
+    """Preserved per-capture bounds and evidence checks, shared by both protocols."""
+    true_fields(value, ("available", "all_owned_processes_exited", "cold_query_exact_session", "capture_finished", "workload_complete"),
+                "Loss pair capture, cold readback or full workload is unconfirmed")
+    require(value.get("capture_exit_code") == 0 and type(value.get("capture_exit_code")) is int
+            and value.get("independent_exit_code") == 0 and type(value.get("independent_exit_code")) is int,
+            "Loss pair collector or independent fixture did not exit normally")
+    terminal = value.get("terminal", {})
+    require(terminal.get("stage") == "finished" and type(terminal.get("installer_exit_code")) is int
+            and terminal["installer_exit_code"] == 0, "Loss pair installer did not exit normally")
+    true_fields(terminal, ("installer_exited", "capture_finished", "data_saved"), "Loss pair did not finish and save")
+    true_fields(value.get("providers_active", {}), ("etw_process", "etw_file"), "Loss pair real ETW providers were unavailable")
+    require(value.get("stats", {}).get("drain_timed_out") is False, "Loss pair descendant drain timed out")
+    p, h, s, f = (value.get(key, {}) for key in ("pipeline", "handoff", "stream", "follow_installer"))
+    require(h.get("record_capacity") == 4096 and h.get("byte_capacity") == 16777216
+            and s.get("quota_bytes") == 67108864 and s.get("error_present") is False
+            and f.get("candidate_record_limit") == 2048 and f.get("candidate_byte_limit") == 8388608
+            and f.get("resource_limit") == 4096 and f.get("direct_children_only") is True and f.get("baseline_available") is False,
+            "Loss pair memory, storage or follow evidence boundaries differ")
+    for item, maximum in ((p.get("queue_high_water"), 4096), (h.get("high_water_records"), 4096),
+            (h.get("high_water_bytes"), 16777216), (s.get("committed_bytes"), 67108864),
+            (f.get("candidate_high_water_records"), 2048), (f.get("candidate_high_water_bytes"), 8388608)):
+        require(number(item) and item <= maximum, "Loss pair exceeded an existing resource bound")
+    computed = PAIR.accounting(value)
+    require(value.get("accounting") == computed and all(computed.values())
+            and all(item is True for item in value["accounting"].values()),
+            "Loss pair accounting does not conserve records")
+    require(all(number(f.get(k)) for k in ("candidates", "admitted", "excluded_other", "unresolved", "candidate_dropped"))
+            and f["candidates"] == sum(f[k] for k in ("admitted", "excluded_other", "unresolved", "candidate_dropped")),
+            "Loss pair follow filtering and candidate losses do not conserve records")
+    background = value.get("background", {})
+    require(type(background.get("files")) is int and background["files"] == 12000
+            and background.get("successful_operations") == dict(write_requested=12000, rename_requested=12000, delete_requested=12000)
+            and background.get("complete") is True and type(background.get("exit_code")) is int and background["exit_code"] == 0
+            and type(background.get("signal_exit_code")) is int and background["signal_exit_code"] == 0
+            and type(background.get("falsely_attributed_events")) is int and background["falsely_attributed_events"] == 0,
+            "Loss pair background truth is incomplete or wrongly attributed")
+    true_fields(background.get("window", {}), ("all_noise_within_root_lifetime", "all_noise_within_capture", "spans_parent_write", "spans_child_write"),
+                "Loss pair background and target capture windows do not overlap")
+    targets = value.get("targets", [])
+    require(isinstance(targets, list) and [row.get("label") for row in targets] == ["parent", "child", "unrelated"], "Loss pair fixed target set differs")
+    for target in targets:
+        require(type(target.get("independent_successful_writes")) is int and target["independent_successful_writes"] == 1
+                and target.get("content_verified") is True and number(target.get("retained_write_requests"))
+                and number(target.get("promoted_write_requests"))
+                and target["promoted_write_requests"] <= target["retained_write_requests"], "Loss pair independent target write truth differs")
+    require(targets[2]["promoted_write_requests"] == 0, "Loss pair unrelated target was attributed to installer")
+    require(oracle.get("schema_version") == 1 and oracle.get("protocol") == "contain-follow-installer-experiment-1"
+            and oracle.get("source_sha") == revision and oracle.get("synthetic") is False
+            and oracle.get("controlled_fixture") is True and value.get("experiment_accepted") is oracle.get("accepted"),
+            "Loss pair independent oracle source or outcome differs")
+    checks = oracle.get("checks", [])
+    require([row.get("name") for row in checks] == PAIR.ORACLE.PLAN
+            and all(row.get("status") in ("passed", "failed", "not_run") for row in checks)
+            and all(type(oracle.get(key)) is int and oracle[key] == sum(row["status"] == status for row in checks)
+                for key, status in (("passed", "passed"), ("failed", "failed"), ("not_run", "not_run")))
+            and oracle.get("accepted") is all(row["status"] == "passed" for row in checks),
+            "Loss pair independent oracle checks are incomplete")
+    require(oracle.get("follow_counters") == f and all(oracle.get("storage_counters", {}).get(k) == s.get(k)
+            for k in ("quota_bytes", "committed_bytes", "persisted", "failed", "quota_dropped")),
+            "Loss pair oracle counters differ from the measured capture")
+    if candidate:
+        true_fields(value, ("accepted", "experiment_accepted"), "Loss pair candidate did not pass unchanged evidence gates")
+        require(all(type(value["counters"].get(k)) is int and value["counters"][k] == 0
+                    for k in ("dropped_events", "etw_events_lost", "etw_buffers_lost", "decode_errors", "context_losses"))
+                and value["follow_installer"]["candidate_dropped"] == 0
+                and value["stream"]["failed"] == value["stream"]["quota_dropped"] == 0,
+                "Loss pair candidate retains source, candidate or raw-record losses")
+        for target, rule in zip(value["targets"][:2], ("InstallerPid", "DescendantProcess")):
+            require(target.get("verified_actor_and_interval") is True and target["retained_write_requests"] > 0
+                    and target["promoted_write_requests"] > 0, "Loss pair target write is not retained with verified actor evidence")
+            observations = [row for row in oracle.get("observations", []) if row.get("label") == target["label"]]
+            require(len(observations) == 1 and observations[0].get("source") == "EtwFile"
+                    and observations[0].get("confidence") == observations[0].get("actor_confidence") == "High"
+                    and observations[0].get("rule") == rule and observations[0].get("operation") == "write_requested"
+                    and observations[0].get("state_validated") is False and observations[0].get("current_path_verified") is False
+                    and observations[0].get("event_id") in target.get("event_ids", []),
+                    "Loss pair independent target event evidence differs")
+
+
 def verify_loss_pair(directory, source, zip_sha, fixture_sha):
+    """Read historical pair evidence only; formal releases require the matrix."""
     paths = ("public/capture-loss-pair.json", "beta9/public/follow-experiment-summary.json",
              "candidate/public/follow-experiment-summary.json")
     pair, baseline_oracle, candidate_oracle = [read(directory / name) for name in paths]
@@ -133,89 +215,56 @@ def verify_loss_pair(directory, source, zip_sha, fixture_sha):
             and identity.get("baseline") == dict(version="0.3.2-beta.9", source_sha=BASELINE_SOURCE, zip_sha256=BASELINE_ZIP_SHA)
             and identity.get("fixture_source") == source and identity.get("same_fixture_sha256") == fixture_sha
             and re.fullmatch(r"[0-9a-f]{64}", fixture_sha), "Loss pair source, ZIP, fixture or immutable Beta 9 identity differs")
-    for name, oracle, revision in (("baseline", baseline_oracle, BASELINE_SOURCE), ("candidate", candidate_oracle, source)):
-        value = pair.get(name, {})
-        true_fields(value, ("available", "all_owned_processes_exited", "cold_query_exact_session", "capture_finished", "workload_complete"),
-                    "Loss pair capture, cold readback or full workload is unconfirmed")
-        require(value.get("capture_exit_code") == 0 and type(value.get("capture_exit_code")) is int
-                and value.get("independent_exit_code") == 0 and type(value.get("independent_exit_code")) is int,
-                "Loss pair collector or independent fixture did not exit normally")
-        terminal = value.get("terminal", {})
-        require(terminal.get("stage") == "finished" and type(terminal.get("installer_exit_code")) is int
-                and terminal["installer_exit_code"] == 0, "Loss pair installer did not exit normally")
-        true_fields(terminal, ("installer_exited", "capture_finished", "data_saved"), "Loss pair did not finish and save")
-        true_fields(value.get("providers_active", {}), ("etw_process", "etw_file"), "Loss pair real ETW providers were unavailable")
-        require(value.get("stats", {}).get("drain_timed_out") is False, "Loss pair descendant drain timed out")
-        p, h, s, f = (value.get(key, {}) for key in ("pipeline", "handoff", "stream", "follow_installer"))
-        require(h.get("record_capacity") == 4096 and h.get("byte_capacity") == 16777216
-                and s.get("quota_bytes") == 67108864 and s.get("error_present") is False
-                and f.get("candidate_record_limit") == 2048 and f.get("candidate_byte_limit") == 8388608
-                and f.get("resource_limit") == 4096 and f.get("direct_children_only") is True and f.get("baseline_available") is False,
-                "Loss pair memory, storage or follow evidence boundaries differ")
-        for item, maximum in ((p.get("queue_high_water"), 4096), (h.get("high_water_records"), 4096),
-                (h.get("high_water_bytes"), 16777216), (s.get("committed_bytes"), 67108864),
-                (f.get("candidate_high_water_records"), 2048), (f.get("candidate_high_water_bytes"), 8388608)):
-            require(number(item) and item <= maximum, "Loss pair exceeded an existing resource bound")
-        computed = PAIR.accounting(value)
-        require(value.get("accounting") == computed and all(computed.values())
-                and all(item is True for item in value["accounting"].values()),
-                "Loss pair accounting does not conserve records")
-        require(all(number(f.get(k)) for k in ("candidates", "admitted", "excluded_other", "unresolved", "candidate_dropped"))
-                and f["candidates"] == sum(f[k] for k in ("admitted", "excluded_other", "unresolved", "candidate_dropped")),
-                "Loss pair follow filtering and candidate losses do not conserve records")
-        background = value.get("background", {})
-        require(type(background.get("files")) is int and background["files"] == 12000
-                and background.get("successful_operations") == dict(write_requested=12000, rename_requested=12000, delete_requested=12000)
-                and background.get("complete") is True and type(background.get("exit_code")) is int and background["exit_code"] == 0
-                and type(background.get("signal_exit_code")) is int and background["signal_exit_code"] == 0
-                and type(background.get("falsely_attributed_events")) is int and background["falsely_attributed_events"] == 0,
-                "Loss pair background truth is incomplete or wrongly attributed")
-        true_fields(background.get("window", {}), ("all_noise_within_root_lifetime", "all_noise_within_capture", "spans_parent_write", "spans_child_write"),
-                    "Loss pair background and target capture windows do not overlap")
-        targets = value.get("targets", [])
-        require(isinstance(targets, list) and [row.get("label") for row in targets] == ["parent", "child", "unrelated"], "Loss pair fixed target set differs")
-        for target in targets:
-            require(type(target.get("independent_successful_writes")) is int and target["independent_successful_writes"] == 1
-                    and target.get("content_verified") is True and number(target.get("retained_write_requests"))
-                    and number(target.get("promoted_write_requests"))
-                    and target["promoted_write_requests"] <= target["retained_write_requests"], "Loss pair independent target write truth differs")
-        require(targets[2]["promoted_write_requests"] == 0, "Loss pair unrelated target was attributed to installer")
-        require(oracle.get("schema_version") == 1 and oracle.get("protocol") == "contain-follow-installer-experiment-1"
-                and oracle.get("source_sha") == revision and oracle.get("synthetic") is False
-                and oracle.get("controlled_fixture") is True and value.get("experiment_accepted") is oracle.get("accepted"),
-                "Loss pair independent oracle source or outcome differs")
-        checks = oracle.get("checks", [])
-        require([row.get("name") for row in checks] == PAIR.ORACLE.PLAN
-                and all(row.get("status") in ("passed", "failed", "not_run") for row in checks)
-                and all(type(oracle.get(key)) is int and oracle[key] == sum(row["status"] == status for row in checks)
-                    for key, status in (("passed", "passed"), ("failed", "failed"), ("not_run", "not_run")))
-                and oracle.get("accepted") is all(row["status"] == "passed" for row in checks),
-                "Loss pair independent oracle checks are incomplete")
-        require(oracle.get("follow_counters") == f and all(oracle.get("storage_counters", {}).get(k) == s.get(k)
-                for k in ("quota_bytes", "committed_bytes", "persisted", "failed", "quota_dropped")),
-                "Loss pair oracle counters differ from the measured capture")
-    candidate = pair["candidate"]
-    true_fields(candidate, ("accepted", "experiment_accepted"), "Loss pair candidate did not pass unchanged evidence gates")
-    require(all(type(candidate["counters"].get(k)) is int and candidate["counters"][k] == 0
-                for k in ("dropped_events", "etw_events_lost", "etw_buffers_lost", "decode_errors", "context_losses"))
-            and candidate["follow_installer"]["candidate_dropped"] == 0
-            and candidate["stream"]["failed"] == candidate["stream"]["quota_dropped"] == 0,
-            "Loss pair candidate retains source, candidate or raw-record losses")
-    for target, rule in zip(candidate["targets"][:2], ("InstallerPid", "DescendantProcess")):
-        require(target.get("verified_actor_and_interval") is True and target["retained_write_requests"] > 0
-                and target["promoted_write_requests"] > 0, "Loss pair target write is not retained with verified actor evidence")
-        observations = [row for row in candidate_oracle.get("observations", []) if row.get("label") == target["label"]]
-        require(len(observations) == 1 and observations[0].get("source") == "EtwFile"
-                and observations[0].get("confidence") == observations[0].get("actor_confidence") == "High"
-                and observations[0].get("rule") == rule and observations[0].get("operation") == "write_requested"
-                and observations[0].get("state_validated") is False and observations[0].get("current_path_verified") is False
-                and observations[0].get("event_id") in target.get("event_ids", []),
-                "Loss pair independent target event evidence differs")
+    verify_loss_capture(pair.get("baseline", {}), baseline_oracle, BASELINE_SOURCE)
+    verify_loss_capture(pair.get("candidate", {}), candidate_oracle, source, candidate=True)
     before, after = (pair[name]["counters"]["dropped_events"] for name in ("baseline", "candidate"))
     require(number(before) and before > after and after == 0
             and pair.get("application_loss_change") == dict(before=before, after=0, reduction=before, reduction_percent=100.0),
             "Loss pair improvement is not a reproducible zero-loss candidate result")
     return dict(files=[dict(path=name, sha256=digest(directory / name)) for name in paths], summary=pair)
+
+
+def verify_loss_matrix(directory, source, zip_sha, fixture_sha):
+    """Require every fixed attempt, including both strict candidate captures."""
+    paths = ["public/run-plan.json", "public/execution.json", "public/capture-loss-matrix.json"]
+    require(all((directory / name).is_file() for name in paths),
+            "Formal Beta 10 delivery requires the complete six-capture matrix; historical pairs are diagnostic only")
+    plan, execution, matrix = [read(directory / name) for name in paths]
+    require(all(isinstance(value, dict) for value in (plan, execution, matrix))
+            and MATRIX.plan_valid(plan), "Loss matrix immutable package plan differs")
+    identity = plan.get("package_identity", {})
+    require(identity.get("candidate") == dict(version=VERSION, source_sha=source, zip_sha256=zip_sha)
+            and identity.get("fixture_source") == source and identity.get("same_fixture_sha256") == fixture_sha
+            and re.fullmatch(r"[0-9a-f]{64}", fixture_sha), "Loss matrix accepted source, ZIP or fixture differs")
+    require(execution == dict(attempted=MATRIX.ORDER, not_run=[], stop_reason=None),
+            "Loss matrix has missing, duplicate, retried or uncompleted predeclared attempts")
+    require(matrix.get("order") == MATRIX.ORDER and isinstance(matrix.get("cases"), list)
+            and [case.get("id") for case in matrix["cases"]] == MATRIX.ORDER,
+            "Loss matrix attempt order or complete case set differs")
+    for case in matrix["cases"]:
+        name = case["id"]
+        package = name.split("/")[1]
+        revision = identity["baseline" if package == "beta9" else package]["source_sha"]
+        require(case.get("package") == package and case.get("source_sha") == revision
+                and case.get("attempted") is True and case.get("identity_replay_available") is True,
+                "Loss matrix case source or actual diagnostic attempt is unconfirmed")
+        oracle_path = name + "/public/follow-experiment-summary.json"
+        replay_path = name + "/public/follow-identity-diagnostic.json"
+        require(all((directory / path).is_file() for path in (oracle_path, replay_path)),
+                "Loss matrix per-attempt oracle or identity replay is missing")
+        oracle, replay = read(directory / oracle_path), read(directory / replay_path)
+        require(isinstance(replay, dict) and replay.get("complete") is True,
+                "Loss matrix identity replay did not read the saved session completely")
+        verify_loss_capture(case.get("summary", {}), oracle, revision, candidate=package == "candidate")
+        paths.extend((oracle_path, replay_path))
+    computed = MATRIX.aggregate(plan, execution, matrix["cases"], digest(directory / paths[0]))
+    # JSON equality distinguishes true from 1. A cached true flag or selected
+    # first green candidate cannot substitute for the complete recomputation.
+    encode = lambda value: json.dumps(value, sort_keys=True, allow_nan=False, separators=(",", ":"))
+    require(encode(matrix) == encode(computed), "Loss matrix claims, comparisons or plan hash differ from all six attempts")
+    true_fields(matrix, ("same_runner", "completed", "comparable", "identity_replays_complete", "candidates_passed",
+                         "accepted", "improvement_claim"), "Both fixed candidate captures must pass unchanged evidence gates")
+    return dict(files=[dict(path=name, sha256=digest(directory / name)) for name in paths], summary=matrix)
 
 
 def verify_artifacts(directory, source, run, zip_sha, extended_run):
@@ -224,10 +273,12 @@ def verify_artifacts(directory, source, run, zip_sha, extended_run):
     with zipfile.ZipFile(files[ZIP]) as archive:
         build = json.loads(archive.read("BUILD.json"))
     fixture_sha = build["controlled_fixture"]["sha256"]
-    identity["capture_loss_pair"] = verify_loss_pair(directory / LOSS_NAME, source, zip_sha, fixture_sha)
-    identity["capture_loss_pair"]["ci_run_url"] = f"https://github.com/{REPO}/actions/runs/{run}"
-    identity["scope"] += " Same-runner immutable Beta 9 / candidate bounded real-ETW loss comparison with unchanged evidence gates."
-    files["CAPTURE-LOSS-PAIR.json"] = directory / LOSS_NAME / "public/capture-loss-pair.json"
+    identity["capture_loss_matrix"] = verify_loss_matrix(directory / LOSS_NAME, source, zip_sha, fixture_sha)
+    identity["capture_loss_matrix"]["ci_run_url"] = f"https://github.com/{REPO}/actions/runs/{run}"
+    identity["scope"] += " Same-runner immutable Beta 9 / previous diagnostic / candidate real-ETW comparison; all six fixed attempts retained and both candidate captures passed unchanged evidence gates."
+    files["CAPTURE-LOSS-MATRIX.json"] = directory / LOSS_NAME / "public/capture-loss-matrix.json"
+    files["CAPTURE-LOSS-PLAN.json"] = directory / LOSS_NAME / "public/run-plan.json"
+    files["CAPTURE-LOSS-EXECUTION.json"] = directory / LOSS_NAME / "public/execution.json"
     return identity, files
 
 

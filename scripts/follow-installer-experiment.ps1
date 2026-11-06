@@ -3,7 +3,9 @@ param(
     [Parameter(Mandatory)][string]$FixtureExecutable,
     [Parameter(Mandatory)][string]$OutputDirectory,
     [Parameter(Mandatory)][string]$Source,
-    [ValidateRange(0,30000)][int]$BackgroundFiles = 0
+    [ValidateRange(0,30000)][int]$BackgroundFiles = 0,
+    [string]$IdentityDiagnosticExe,
+    [switch]$Profile
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -20,6 +22,8 @@ $phase = 'preflight'
 $captureExit = $null
 $lastStatus = $null
 $previousTruth = $env:CONTAIN_FIXTURE_TRUTH
+$previousProfile = $env:CONTAIN_PROFILE_PATH
+$previousProfileCpu = $env:CONTAIN_PROFILE_THREAD_CPU
 $previousBackgroundWait = $env:CONTAIN_FIXTURE_BACKGROUND_WAIT
 $unrelated = $null
 $background = $null
@@ -93,6 +97,11 @@ try {
         $null = $backgroundSignal.Handle
         $ownedProcesses.Add($backgroundSignal)
     }
+    if ($IdentityDiagnosticExe -and -not (Test-Path -LiteralPath $IdentityDiagnosticExe -PathType Leaf)) { throw 'Identity diagnostic executable missing' }
+    # Explicitly keep all acceptance runs unprofiled. The two diagnostic runs
+    # use the same binary; only this opt-in instrumentation changes.
+    $env:CONTAIN_PROFILE_PATH = if ($Profile) { Join-Path $private 'receiver-profile.json' } else { $null }
+    $env:CONTAIN_PROFILE_THREAD_CPU = if ($Profile) { '1' } else { $null }
     $phase = 'one_follow_capture'
     # Answer paths are fixture arguments only. There is deliberately no --watch,
     # root inference or broad snapshot path in this product invocation.
@@ -132,6 +141,15 @@ try {
     python "$PSScriptRoot/verify-follow-installer-experiment.py" --capture $captureJson --truth $truth --expected $expectedPath --select-only --output $selectionPath --source $Source
     if ($LASTEXITCODE -ne 0) { throw 'Candidate selection failed' }
     $selection = Get-Content -LiteralPath $selectionPath -Raw | ConvertFrom-Json
+    if ($IdentityDiagnosticExe) {
+        $identityExit = Start-Owned ([IO.Path]::GetFullPath($IdentityDiagnosticExe)) @('--db',$database,'--session',$session,'--capture',$captureJson,'--expected',$expectedPath,'--truth',$truth,'--selection',$selectionPath) 'identity-diagnostic' 30000
+        Copy-Item -LiteralPath (Join-Path $private 'identity-diagnostic.stdout') -Destination (Join-Path $public 'follow-identity-diagnostic.json')
+        if ($identityExit -ne 0) { throw 'Read-only identity replay failed; fixed diagnostic reason retained' }
+    }
+    if ($Profile) {
+        python "$PSScriptRoot/summarize-receiver-profile.py" --profile (Join-Path $private 'receiver-profile.json') --capture $captureJson --output (Join-Path $public 'receiver-profile-summary.json')
+        if ($LASTEXITCODE -ne 0) { throw 'Bounded receiver profile summary failed' }
+    }
     $explanations = Join-Path $private 'explanations'
     New-Item -ItemType Directory -Path $explanations | Out-Null
     foreach ($eventId in $selection.candidate_event_ids) {
@@ -153,6 +171,8 @@ try {
     throw "Follow-installer experiment failed at $phase; safe evidence retained; no looser attribution accepted."
 } finally {
     $env:CONTAIN_FIXTURE_TRUTH = $previousTruth
+    $env:CONTAIN_PROFILE_PATH = $previousProfile
+    $env:CONTAIN_PROFILE_THREAD_CPU = $previousProfileCpu
     $env:CONTAIN_FIXTURE_BACKGROUND_WAIT = $previousBackgroundWait
     if ($BackgroundFiles -gt 0) {
         # Never begin the paired candidate while a prior owned collector or

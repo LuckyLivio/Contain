@@ -305,7 +305,8 @@ fn record_while_mode<T>(
 ) -> Result<(T, BackendReport, StreamStats)> {
     let receiver = source.take_receiver();
     let probe = source.queue_probe();
-    let epoch = profile::epoch();
+    let receiver_probe = probe.clone();
+    let worker_context = profile::worker_context();
     let queue = Arc::new(Queue::new(RECORDS, BYTES));
     let done = Arc::new(AtomicBool::new(false));
     let live = LiveCapture(Arc::new(Mutex::new(LiveState {
@@ -323,7 +324,7 @@ fn record_while_mode<T>(
             .name("contain-writer".into())
             .spawn_scoped(scope, move || {
                 let _close = QueueCloser(writer_queue.clone());
-                profile::worker_start(epoch);
+                profile::worker_start(worker_context);
                 profile::observe_queue(probe);
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     while let Some(page) = writer_queue.page() {
@@ -355,43 +356,70 @@ fn record_while_mode<T>(
             .name("contain-receiver".into())
             .spawn_scoped(scope, move || {
                 let _close = QueueCloser(receiver_queue.clone());
-                profile::worker_start(epoch);
+                profile::worker_start(worker_context);
+                profile::observe_queue(receiver_probe);
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     loop {
-                        let page = receiver.drain();
+                        let page = {
+                            let _span = profile::queue_span("receiver_drain");
+                            receiver.drain()
+                        };
                         if page.is_empty() {
                             if receiver_done.load(Ordering::Acquire) {
                                 break;
                             }
+                            let _span = profile::queue_span("receiver_idle_wait");
                             thread::sleep(Duration::from_millis(1));
                             continue;
                         }
                         let mut accepted = Vec::new();
                         {
                             let _timer = profile::timer("receiver_lifetime_update");
-                            let mut live = receiver_live.lock().unwrap();
+                            let mut live = {
+                                let _span = profile::queue_span("receiver_lock_wait");
+                                receiver_live.lock().unwrap()
+                            };
                             live.received = live.received.saturating_add(page.len() as u64);
                             // Resolve the page against all lifecycle facts received in
                             // it, including thread starts delivered after file records.
-                            for event in &page {
-                                live.follow_cache_updated |=
-                                    event.evidence.source == EvidenceSource::EtwProcess;
-                                live.cache.ingest(event);
+                            {
+                                let _span = profile::queue_span("receiver_lifecycle_ingest")
+                                    .units(page.len());
+                                let mut lifecycle_events = 0;
+                                for event in &page {
+                                    let lifecycle =
+                                        event.evidence.source == EvidenceSource::EtwProcess;
+                                    lifecycle_events += u64::from(lifecycle);
+                                    live.follow_cache_updated |= lifecycle;
+                                    live.cache.ingest(event);
+                                }
+                                profile::counters([
+                                    ("receiver_pages", 1),
+                                    ("receiver_page_records", page.len() as u64),
+                                    ("receiver_lifecycle_records", lifecycle_events),
+                                ]);
                             }
                             let mut follow_candidates = Vec::new();
-                            for event in page {
-                                if live.follow.is_some()
-                                    && matches!(event.event_type.as_str(), "file" | "completion")
-                                {
-                                    follow_candidates.push(event);
-                                } else {
-                                    if event.event_type == "file"
-                                        || (event.event_type == "registry"
-                                            && event.raw.resource_resolved)
+                            {
+                                let _span =
+                                    profile::queue_span("receiver_page_split").units(page.len());
+                                for event in page {
+                                    if live.follow.is_some()
+                                        && matches!(
+                                            event.event_type.as_str(),
+                                            "file" | "completion"
+                                        )
                                     {
-                                        live.last_activity = Instant::now();
+                                        follow_candidates.push(event);
+                                    } else {
+                                        if event.event_type == "file"
+                                            || (event.event_type == "registry"
+                                                && event.raw.resource_resolved)
+                                        {
+                                            live.last_activity = Instant::now();
+                                        }
+                                        accepted.push(event);
                                     }
-                                    accepted.push(event);
                                 }
                             }
                             if let Some(mut follow) = live.follow.take() {
@@ -408,8 +436,12 @@ fn record_while_mode<T>(
                                 live.follow = Some(follow);
                             }
                         }
-                        for event in accepted {
-                            receiver_queue.push(event);
+                        {
+                            let _span =
+                                profile::queue_span("receiver_handoff").units(accepted.len());
+                            for event in accepted {
+                                receiver_queue.push(event);
+                            }
                         }
                     }
                     let mut live = receiver_live.lock().unwrap();

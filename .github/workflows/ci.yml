@@ -19,6 +19,7 @@ jobs:
     timeout-minutes: 90
     permissions:
       contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -64,8 +65,11 @@ jobs:
           New-Item -ItemType Directory -Path "$runDir/quality-public" | Out-Null
           [ordered]@{
             schema_version=1; source_sha=$env:GITHUB_SHA; requested=($requested -or $install)
-            configurations=$(if($install){@('gui-controlled-exe')}elseif($requested){@('default','dual-clock')}else{@()}); maximum_native_captures=$(if($lossPair){3}elseif($install){1}elseif($requested){2}else{0}); retries=0
+            configurations=$(if($install){@('gui-controlled-exe')}elseif($requested){@('default','dual-clock')}else{@()}); maximum_native_captures=$(if($lossPair){7}elseif($install){1}elseif($requested){2}else{0}); retries=0
             capture_loss_pair=$lossPair; loss_pair_baseline='8e68ccfe63389e1533235e253eb59329f15be898'
+            loss_matrix_order=$(if($lossPair){@('r1/beta9','r1/previous','r1/candidate','r2/candidate','r2/previous','r2/beta9')}else{@()})
+            loss_matrix_previous_source='3c2e06871d28acd199ba1813605afecc9074738d'
+            loss_matrix_previous_zip_sha256='41a3e4e3e8dc0b75e245eb3306ed8e5c6294d04c5fc72d4cc9110d3512ef99e7'
             desktop_viewer=$desktop; desktop_install=$install; stage_one_beta=$beta
             beta_layout=$(if($desktop){@('native_default_resize_maximize_tabs_paging','simulated_150_percent_layout_stress_not_system_dpi','simulated_200_percent_layout_stress_not_system_dpi','readonly_database_identity_after_layout')}else{@()})
             install_plan=$(if($install){@('offline_protocol_arguments_and_read_only_regressions','first_use_configuration_and_layout_before_capture','native_exe_picker_default_follow_without_watch_roots','default_follow_single_input_without_directory_advanced_or_doctor','one_gui_started_controlled_fixture_real_etw','duplicate_start_and_conservative_close','verified_root_and_direct_child_source_writes_exact_session_autoopen','source_event_explain_and_export','native_picker_navigation_and_cancel')}else{@()})
@@ -243,28 +247,48 @@ jobs:
           $finalArgs += @('--first-use-configuration-verification',"$env:CONTAIN_RUN_DIR/viewer-public/first-use-configuration-summary.json")
           python @finalArgs
           if ($LASTEXITCODE -ne 0) { throw 'Desktop milestone unverified; diagnostic package retains the actual failed or unexecuted checks' }
-      - name: Same-runner Beta 9 and candidate capture loss comparison
-        if: ${{ !cancelled() && steps.trial_plan.outputs.loss_pair == 'true' && steps.viewer_package.outcome == 'success' }}
-        timeout-minutes: 12
+      - name: Predeclared six-capture Beta 9, prior diagnostic and candidate comparison
+        if: ${{ !cancelled() && steps.trial_plan.outputs.loss_pair == 'true' && steps.viewer_verify.outcome == 'success' && steps.viewer_finalize.outcome == 'success' }}
+        timeout-minutes: 36
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $baseline = Join-Path $env:CONTAIN_RUN_DIR 'beta9-windows-x64.zip'
           Invoke-WebRequest -Uri 'https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.9/contain-0.3.2-beta.9-windows-x64.zip' -OutFile $baseline
-          foreach ($script in @('scripts/capture-loss-pair.ps1','scripts/follow-installer-experiment.ps1')) {
+          # Fetch the original failed diagnostic's artifact, never rebuild it.
+          # A failed historical gate is a retained measurement, not a substitute
+          # for either of the new candidate's strict acceptance runs.
+          $prior = gh api repos/LuckyLivio/Contain/actions/artifacts/13501998007 | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $prior.id -ne 13501998007 -or $prior.name -ne 'contain-windows-x64-viewer' -or $prior.expired -ne $false -or $prior.workflow_run.id -ne 42216843544 -or $prior.workflow_run.head_sha -ne '3c2e06871d28acd199ba1813605afecc9074738d') { throw 'Previous diagnostic artifact identity differs or has expired' }
+          $priorArtifact = Join-Path $env:CONTAIN_RUN_DIR 'previous-diagnostic-artifact.zip'
+          python -c 'import pathlib,subprocess,sys; out=pathlib.Path(sys.argv[1]); f=out.open("wb"); subprocess.run(["gh","api","repos/LuckyLivio/Contain/actions/artifacts/13501998007/zip"],stdout=f,check=True); f.close()' $priorArtifact
+          if ($LASTEXITCODE -ne 0) { throw 'Previous diagnostic artifact download failed' }
+          $priorDirectory = Join-Path $env:CONTAIN_RUN_DIR 'previous-diagnostic-original'
+          Expand-Archive -LiteralPath $priorArtifact -DestinationPath $priorDirectory
+          $previous = @(Get-ChildItem -LiteralPath $priorDirectory -Recurse -File | Where-Object { $_.Name -eq 'contain-0.3.2-beta.10-windows-x64.zip' })
+          if ($previous.Count -ne 1 -or (Get-FileHash -LiteralPath $previous[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne '41a3e4e3e8dc0b75e245eb3306ed8e5c6294d04c5fc72d4cc9110d3512ef99e7') { throw 'Previous diagnostic original ZIP differs' }
+          foreach ($script in @('scripts/capture-loss-matrix.ps1','scripts/follow-installer-experiment.ps1')) {
             $tokens = $null; $parseErrors = $null
             $null = [Management.Automation.Language.Parser]::ParseFile([IO.Path]::GetFullPath($script), [ref]$tokens, [ref]$parseErrors)
             if ($parseErrors.Count) { throw 'Loss comparison script syntax failed before any comparison capture' }
           }
+          cargo build -p contain-core --example follow-identity-diagnostic --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Current-source offline identity diagnostic build failed before any matrix capture' }
           $candidateHash = (Get-FileHash -LiteralPath $env:CONTAIN_PACKAGE -Algorithm SHA256).Hash.ToLowerInvariant()
-          ./scripts/capture-loss-pair.ps1 -BaselineZip $baseline -BaselineSha256 'dee47046f01c6a2c31c5bda3a3a3bcf3fc2a1603eb18b35464f68cde04ec7612' -CandidateZip $env:CONTAIN_PACKAGE -CandidateSha256 $candidateHash -CandidateSource $env:GITHUB_SHA -OutputDirectory "$env:CONTAIN_RUN_DIR/loss-pair" -BackgroundFiles 12000
+          ./scripts/capture-loss-matrix.ps1 -BaselineZip $baseline -PreviousZip $previous[0].FullName -CandidateZip $env:CONTAIN_PACKAGE -CandidateSha256 $candidateHash -CandidateSource $env:GITHUB_SHA -IdentityDiagnosticExe 'target/debug/examples/follow-identity-diagnostic.exe' -OutputDirectory "$env:CONTAIN_RUN_DIR/loss-matrix"
       - uses: actions/upload-artifact@v4
         if: ${{ always() && steps.trial_plan.outputs.loss_pair == 'true' }}
         with:
           name: capture-loss-pair-evidence
           path: |
-            ${{ env.CONTAIN_RUN_DIR }}/loss-pair/public/*.json
-            ${{ env.CONTAIN_RUN_DIR }}/loss-pair/beta9/public/*.json
-            ${{ env.CONTAIN_RUN_DIR }}/loss-pair/candidate/public/*.json
+            ${{ env.CONTAIN_RUN_DIR }}/loss-matrix/public/*.json
+            ${{ env.CONTAIN_RUN_DIR }}/loss-matrix/r1/beta9/public/*.json
+            ${{ env.CONTAIN_RUN_DIR }}/loss-matrix/r1/previous/public/*.json
+            ${{ env.CONTAIN_RUN_DIR }}/loss-matrix/r1/candidate/public/*.json
+            ${{ env.CONTAIN_RUN_DIR }}/loss-matrix/r2/candidate/public/*.json
+            ${{ env.CONTAIN_RUN_DIR }}/loss-matrix/r2/previous/public/*.json
+            ${{ env.CONTAIN_RUN_DIR }}/loss-matrix/r2/beta9/public/*.json
           if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         if: ${{ always() && steps.viewer_package.outcome == 'success' }}

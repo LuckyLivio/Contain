@@ -104,6 +104,18 @@ def oracle(source, value, baseline=False):
         unresolved=[name for name in ORACLE.PLAN if name in failed | skipped])
 
 
+def matrix_plan(source, zip_sha, fixture_sha):
+    return dict(schema_version=1, protocol=UPLOAD.MATRIX.PROTOCOL, maximum_native_captures=6,
+        retries=0, order=copy.deepcopy(UPLOAD.MATRIX.ORDER), package_identity=dict(
+            baseline=dict(version="0.3.2-beta.9", source_sha=BASELINE_SOURCE, zip_sha256=BASELINE_ZIP_SHA256),
+            previous=dict(version="0.3.2-beta.10", source_sha=UPLOAD.MATRIX.PREVIOUS_SOURCE,
+                          zip_sha256=UPLOAD.MATRIX.PREVIOUS_ZIP_SHA),
+            candidate=dict(version="0.3.2-beta.10", source_sha=source, zip_sha256=zip_sha),
+            fixture_source=source, same_fixture_sha256=fixture_sha,
+            identity_diagnostic=dict(source_sha=source, sha256="d"*64), background_files=12000,
+            resource_policy=UPLOAD.MATRIX.RESOURCE_POLICY))
+
+
 class Beta10DeliveryTests(unittest.TestCase):
     def setUp(self):
         # Reuse the existing desktop fixture without modifying the Beta 9 tests
@@ -127,6 +139,15 @@ class Beta10DeliveryTests(unittest.TestCase):
         self.loss = self.inputs / LOSS_NAME
         self.loss_value = pair(self.source, UPLOAD.digest(self.package), self.fixture_sha)
         self.save_loss()
+        self.matrix_plan = matrix_plan(self.source, UPLOAD.digest(self.package), self.fixture_sha)
+        self.execution = dict(attempted=copy.deepcopy(UPLOAD.MATRIX.ORDER), not_run=[], stop_reason=None)
+        self.matrix_cases = []
+        for name in UPLOAD.MATRIX.ORDER:
+            package = name.split("/")[1]
+            revision = self.matrix_plan["package_identity"]["baseline" if package == "beta9" else package]["source_sha"]
+            self.matrix_cases.append(dict(id=name, package=package, source_sha=revision, attempted=True,
+                identity_replay_available=True, summary=phase(package != "candidate")))
+        self.save_matrix()
 
     def write(self, relative, value):
         path = self.loss / relative
@@ -141,6 +162,21 @@ class Beta10DeliveryTests(unittest.TestCase):
     def verify_loss(self):
         return UPLOAD.verify_loss_pair(self.loss, self.source, UPLOAD.digest(self.package), self.fixture_sha)
 
+    def save_matrix(self, recompute=True):
+        self.write("public/run-plan.json", self.matrix_plan)
+        self.write("public/execution.json", self.execution)
+        if recompute:
+            self.matrix_value = UPLOAD.MATRIX.aggregate(self.matrix_plan, self.execution, self.matrix_cases,
+                UPLOAD.digest(self.loss / "public/run-plan.json"))
+        self.write("public/capture-loss-matrix.json", self.matrix_value)
+        for case in self.matrix_cases:
+            self.write(case["id"] + "/public/follow-experiment-summary.json",
+                       oracle(case["source_sha"], case["summary"], case["package"] != "candidate"))
+            self.write(case["id"] + "/public/follow-identity-diagnostic.json", dict(complete=True))
+
+    def verify_matrix(self):
+        return UPLOAD.verify_loss_matrix(self.loss, self.source, UPLOAD.digest(self.package), self.fixture_sha)
+
     def verify(self):
         return UPLOAD.verify_artifacts(self.inputs, self.source, 12345, UPLOAD.digest(self.package), 12346)
 
@@ -148,9 +184,125 @@ class Beta10DeliveryTests(unittest.TestCase):
         identity, files = self.verify()
         self.assertEqual(identity["release_tag"], "v0.3.2-beta.10")
         self.assertEqual(identity["source_sha"], self.source)
-        self.assertEqual(identity["capture_loss_pair"]["summary"], self.loss_value)
-        self.assertIn("CAPTURE-LOSS-PAIR.json", files)
+        self.assertEqual(identity["capture_loss_matrix"]["summary"], self.matrix_value)
+        self.assertIn("CAPTURE-LOSS-MATRIX.json", files)
+        self.assertIn("CAPTURE-LOSS-PLAN.json", files)
+        self.assertIn("CAPTURE-LOSS-EXECUTION.json", files)
         self.assertEqual(files[UPLOAD.ZIP].read_bytes(), self.package.read_bytes())
+
+    def test_historical_pair_can_be_read_but_cannot_authorize_formal_delivery(self):
+        self.assertEqual(self.verify_loss()["summary"], self.loss_value)
+        (self.loss / "public/capture-loss-matrix.json").unlink()
+        with self.assertRaisesRegex(ValueError, "six-capture matrix"):
+            self.verify()
+
+    def test_second_candidate_failure_cannot_be_replaced_by_first_green(self):
+        case = next(case for case in self.matrix_cases if case["id"] == "r2/candidate")
+        case["summary"] = phase(True)
+        self.save_matrix()
+        self.assertTrue(next(case for case in self.matrix_cases if case["id"] == "r1/candidate")["summary"]["accepted"])
+        self.matrix_value.update(accepted=True, candidates_passed=True, improvement_claim=True)
+        self.save_matrix(recompute=False)
+        with self.assertRaises(ValueError):
+            self.verify_matrix()
+
+    def test_all_six_original_oracles_and_identity_replays_are_required(self):
+        for name in UPLOAD.MATRIX.ORDER:
+            for filename in ("follow-experiment-summary.json", "follow-identity-diagnostic.json"):
+                path = self.loss / name / "public" / filename
+                original = path.read_bytes(); path.unlink()
+                with self.subTest(case=name, filename=filename), self.assertRaises(ValueError):
+                    self.verify_matrix()
+                path.write_bytes(original)
+
+    def test_incomplete_or_non_boolean_identity_replay_cannot_pass(self):
+        path = self.loss / "r1/previous/public/follow-identity-diagnostic.json"
+        for value in (dict(complete=False), dict(complete=1), {}, []):
+            path.write_text(json.dumps(value))
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.verify_matrix()
+
+    def test_matrix_execution_rejects_missing_duplicate_reordered_or_retried_attempt(self):
+        original = copy.deepcopy(self.execution)
+        changes = [lambda d: d["attempted"].pop(),
+                   lambda d: d["attempted"].append("r1/candidate"),
+                   lambda d: d["attempted"].reverse(),
+                   lambda d: d["not_run"].append("r2/candidate"),
+                   lambda d: d.update(stop_reason="owned_process_termination_unverified")]
+        for index, change in enumerate(changes):
+            self.execution = copy.deepcopy(original); change(self.execution); self.save_matrix()
+            with self.subTest(change=index), self.assertRaises(ValueError):
+                self.verify_matrix()
+
+    def test_matrix_case_set_cannot_omit_duplicate_or_substitute_an_attempt(self):
+        original = copy.deepcopy(self.matrix_cases)
+        changes = [lambda d: d.pop(), lambda d: d.append(copy.deepcopy(d[0])),
+                   lambda d: d.reverse(), lambda d: d[3].update(id="r1/candidate"),
+                   lambda d: d[3].update(source_sha="f"*40), lambda d: d[1].update(package="candidate"),
+                   lambda d: d[0].update(attempted=1), lambda d: d[4].update(identity_replay_available=1)]
+        for index, change in enumerate(changes):
+            self.matrix_cases = copy.deepcopy(original); change(self.matrix_cases); self.save_matrix()
+            with self.subTest(change=index), self.assertRaises(ValueError):
+                self.verify_matrix()
+
+    def test_matrix_plan_binds_previous_diagnostic_original_zip_and_current_package(self):
+        original = copy.deepcopy(self.matrix_plan)
+        changes = [lambda d: d["package_identity"]["previous"].update(source_sha="f"*40),
+                   lambda d: d["package_identity"]["previous"].update(zip_sha256="f"*64),
+                   lambda d: d["package_identity"]["candidate"].update(source_sha="f"*40),
+                   lambda d: d["package_identity"]["candidate"].update(zip_sha256="f"*64),
+                   lambda d: d["package_identity"].update(same_fixture_sha256="f"*64),
+                   lambda d: d["package_identity"]["identity_diagnostic"].update(source_sha="f"*40),
+                   lambda d: d["package_identity"].update(background_files=6000),
+                   lambda d: d.update(retries=1), lambda d: d.update(maximum_native_captures=7),
+                   lambda d: d.update(schema_version=True)]
+        for index, change in enumerate(changes):
+            self.matrix_plan = copy.deepcopy(original); change(self.matrix_plan); self.save_matrix()
+            with self.subTest(change=index), self.assertRaises(ValueError):
+                self.verify_matrix()
+
+    def test_every_historical_attempt_needs_independent_workload_and_original_bounds(self):
+        original = copy.deepcopy(self.matrix_cases)
+        for name in ("r1/beta9", "r1/previous", "r2/previous", "r2/beta9"):
+            for field in ("truth", "capacity", "accounting", "exit", "cold_read"):
+                self.matrix_cases = copy.deepcopy(original)
+                value = next(case for case in self.matrix_cases if case["id"] == name)["summary"]
+                if field == "truth":
+                    value["background"]["successful_operations"]["write_requested"] -= 1
+                elif field == "capacity":
+                    value["follow_installer"]["candidate_record_limit"] *= 2
+                elif field == "accounting":
+                    value["handoff"]["submitted"] += 1
+                elif field == "exit":
+                    value["all_owned_processes_exited"] = False
+                else:
+                    value["cold_query_exact_session"] = False
+                self.save_matrix()
+                with self.subTest(case=name, field=field), self.assertRaises(ValueError):
+                    self.verify_matrix()
+
+    def test_matrix_recomputes_every_comparison_plan_hash_and_acceptance_flag(self):
+        original = copy.deepcopy(self.matrix_value)
+        changes = [lambda d: d.update(plan_sha256="f"*64), lambda d: d.update(same_runner=1),
+                   lambda d: d.update(completed=1), lambda d: d.update(candidates_passed=1),
+                   lambda d: d.update(accepted=1),
+                   lambda d: d["comparisons"][1]["beta9_to_candidate"]["application_loss_change"].update(before=1)]
+        for index, change in enumerate(changes):
+            self.matrix_value = copy.deepcopy(original); change(self.matrix_value); self.save_matrix(recompute=False)
+            with self.subTest(change=index), self.assertRaises(ValueError):
+                self.verify_matrix()
+
+    def test_second_candidate_oracle_identity_and_target_evidence_cannot_be_forged(self):
+        path = self.loss / "r2/candidate/public/follow-experiment-summary.json"
+        original = json.loads(path.read_text())
+        changes = [lambda d: d.update(source_sha="f"*40), lambda d: d["checks"][0].update(status="failed"),
+                   lambda d: d["observations"][0].update(event_id="r1-selected-instead"),
+                   lambda d: d["observations"][1].update(rule="InstallerPid"),
+                   lambda d: d["observations"][0].update(confidence="Unknown")]
+        for index, change in enumerate(changes):
+            value = copy.deepcopy(original); change(value); path.write_text(json.dumps(value))
+            with self.subTest(change=index), self.assertRaises(ValueError):
+                self.verify_matrix()
 
     def test_pilot_source_zip_or_fixture_cannot_replace_accepted_package(self):
         original = copy.deepcopy(self.loss_value)
