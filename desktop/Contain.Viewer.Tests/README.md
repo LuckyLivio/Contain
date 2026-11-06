@@ -14,7 +14,12 @@ the report hash and complete ordered ID list. No new installation capture runs.
 `export-progress.json` is updated at each check and native save-dialog stage;
 it contains only fixed stage names, control classes/IDs, counts and error types.
 Native Save/Cancel uses verified mouse input so no synchronous UIA Invoke remains
-inside the modal dialog. The saved-record export plan has opt-in bounded cleanup
+inside the modal dialog. The filename is entered through the focused native edit
+using literal keyboard input, committed by leaving the field, and read back
+before Save. Post-save evidence records only success/cancelled/failed/pending,
+known error categories, and target-path equality/existence booleans; final
+cancellation, failure or an unexpected output path fails immediately.
+The saved-record export plan has opt-in bounded cleanup
 of its own launched viewer if normal close fails; it never terminates a process
 tree, and live installer verification does not opt into that cleanup.
 

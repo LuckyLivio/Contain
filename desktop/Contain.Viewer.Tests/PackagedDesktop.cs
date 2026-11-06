@@ -154,16 +154,29 @@ internal sealed class PackagedDesktop : IDisposable
                     && control.Id is 1001 or 1148 or 1152).ToArray();
                 if (editable.Length != 1)
                     throw new InvalidOperationException("The native save dialog has no unambiguous filename Edit control.");
-                Stage("set_filename");
-                // WM_SETTEXT is Unicode and literal; no SendKeys interpolation or
-                // shell parsing can alter Chinese, spaces, %, _ or ampersands.
-                if (SendMessageTimeoutText(editable[0].Window, 0x000C, IntPtr.Zero, outputPath,
-                        0x0003, 2000, out var setResult) == IntPtr.Zero || setResult == UIntPtr.Zero)
-                    throw new IOException("The native filename edit did not accept bounded WM_SETTEXT.");
-                var readback = new System.Text.StringBuilder(outputPath.Length + 2);
-                if (SendMessageTimeoutBuffer(editable[0].Window, 0x000D, new IntPtr(readback.Capacity), readback,
-                        0x0003, 2000, out _) == IntPtr.Zero || readback.ToString() != outputPath)
-                    throw new IOException("The native filename edit did not preserve the exact path.");
+                Stage("focus_filename");
+                ClickNativeButton(editable[0].Window);
+                await WaitAsync(() => Task.FromResult(HasNativeFocus(dialog, editable[0].Window)), TimeSpan.FromSeconds(5));
+                Stage("type_filename");
+                // The shell's IFileDialog tracks typed input separately from
+                // the Edit HWND text. WM_SETTEXT readback alone does not prove
+                // its accepted filename changed. Exercise real keyboard input,
+                // then leave the edit to commit it before clicking Save.
+                SendKeys.SendWait("^a");
+                SendKeys.SendWait(KeysLiteral(outputPath));
+                SendKeys.SendWait("{TAB}");
+                Stage("verify_typed_filename");
+                // SendInput-backed SendKeys may return before a different
+                // process drains its keyboard queue. Poll only the readback;
+                // input is never repeated or accepted under another window.
+                await WaitAsync(() =>
+                {
+                    if (GetForegroundWindow() != dialog) return Task.FromResult(false);
+                    var readback = new System.Text.StringBuilder(outputPath.Length + 2);
+                    return Task.FromResult(SendMessageTimeoutBuffer(editable[0].Window, 0x000D,
+                        new IntPtr(readback.Capacity), readback, 0x0003, 2000, out _) != IntPtr.Zero
+                        && readback.ToString() == outputPath);
+                }, TimeSpan.FromSeconds(5));
             }
             var command = outputPath is null ? 2 : 1;
             var button = GetDlgItem(dialog, command);
@@ -201,6 +214,17 @@ internal sealed class PackagedDesktop : IDisposable
             ReportDialogProgress?.Invoke();
         }
     }
+
+    private bool HasNativeFocus(IntPtr dialog, IntPtr control)
+    {
+        var thread = GetWindowThreadProcessId(control, out var owner);
+        var info = new GuiThreadInfo { Size = (uint)Marshal.SizeOf<GuiThreadInfo>() };
+        return owner == process.Id && GetForegroundWindow() == dialog
+            && GetGUIThreadInfo(thread, ref info) && info.Focus == control;
+    }
+
+    private static string KeysLiteral(string value) => string.Concat(value.Select(character =>
+        "+^%~(){}[]".Contains(character) ? "{" + character + "}" : character.ToString()));
 
     private void ClickNativeButton(IntPtr button)
     {
@@ -545,6 +569,12 @@ internal sealed class PackagedDesktop : IDisposable
 
     [StructLayout(LayoutKind.Sequential)] private struct WindowBounds { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] private struct NativePoint { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] private struct GuiThreadInfo
+    {
+        public uint Size, Flags;
+        public IntPtr Active, Focus, Capture, MenuOwner, MoveSize, Caret;
+        public WindowBounds CaretBounds;
+    }
     [DllImport("user32.dll")] private static extern IntPtr GetParent(IntPtr window);
     [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr window, uint flags);
     [DllImport("user32.dll")] private static extern bool IsChild(IntPtr parent, IntPtr child);
@@ -552,9 +582,9 @@ internal sealed class PackagedDesktop : IDisposable
     [DllImport("user32.dll")] private static extern int GetDlgCtrlID(IntPtr window);
     [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, WindowCallback callback, IntPtr parameter);
     [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern IntPtr SendMessageTimeoutText(IntPtr window, uint message, IntPtr wParam, string text, uint flags, uint timeout, out UIntPtr result);
-    [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern IntPtr SendMessageTimeoutBuffer(IntPtr window, uint message, IntPtr wParam, System.Text.StringBuilder text, uint flags, uint timeout, out UIntPtr result);
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo info);
     private delegate bool WindowCallback(IntPtr window, IntPtr parameter);
     [DllImport("user32.dll")] private static extern bool EnumWindows(WindowCallback callback, IntPtr parameter);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, System.Text.StringBuilder name, int maximum);

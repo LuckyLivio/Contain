@@ -38,6 +38,7 @@ internal sealed class SearchExportVerification(Options options, bool priorChecks
     private readonly List<object> progress = [];
     private string currentCheck = "startup", currentStage = "setup";
     private PackagedDesktop? actualDesktop;
+    private SaveStatus? lastSaveStatus;
 
     internal async Task<bool> RunAsync(Form owner)
     {
@@ -86,12 +87,13 @@ internal sealed class SearchExportVerification(Options options, bool priorChecks
                     Require(await desktop.TextAsync("ExportReport") == "导出全部 53 条匹配结果", "search export action states its full range");
                     Require(await desktop.FullyVisibleAsync("ExportReport"), "full search-export action is inside every native client viewport");
                     screenshots.Add(await desktop.ScreenshotAsync(Path.Combine(options.Output, "screenshots"), "search-export-before-save.png"));
+                    lastSaveStatus = null;
                     Stage("native_search_save");
                     await desktop.ExportReportAsync(reportPath);
                     nativeSaveDialog = desktop.ReportDialogInteractions == 1 && desktop.ReportDialogSaves == 1;
                     Require(nativeSaveDialog, "actual packaged EXE native save dialog operated");
                     Stage("search_report_completion");
-                    await PackagedDesktop.WaitAsync(async () => File.Exists(reportPath) && await desktop.EnabledAsync("NewInstall"), TimeSpan.FromSeconds(90));
+                    await WaitForReportAsync(desktop, reportPath);
                     Stage("search_report_all_ids");
                     var html = await File.ReadAllTextAsync(reportPath, Encoding.UTF8);
                     reportIds = EventIds(html);
@@ -116,9 +118,12 @@ internal sealed class SearchExportVerification(Options options, bool priorChecks
                     Require(explainId == Selected && (await desktop.TextAsync("EventDetails")).Contains(Selected, StringComparison.Ordinal), "selected explanation remains exact event120 after export");
                     await desktop.InvokeAsync("CopyEventId"); copiedId = Clipboard.GetText();
                     Require(copiedId == Selected, "copied ID still matches selected event and explanation");
+                    lastSaveStatus = null;
                     Stage("native_save_cancel");
                     await desktop.ExportReportAsync(null);
                     Require(desktop.ReportDialogInteractions == 2 && desktop.ReportDialogSaves == 1, "actual native save dialog cancellation exercised");
+                    await PackagedDesktop.WaitAsync(async () => (await desktop.TextAsync("Status")).StartsWith("已取消保存", StringComparison.Ordinal), TimeSpan.FromSeconds(5));
+                    Require((await desktop.TextAsync("Status")).StartsWith("已取消保存", StringComparison.Ordinal), "actual native Cancel returns the product cancellation outcome");
                     Require(await desktop.TextAsync("EventFilter") == "needle" && await desktop.TextAsync("EventsPage") == "共 53 条，显示第 51–53 条" && await desktop.DescriptionAsync("EventDetails") == "event:" + Selected, "cancel preserves query page and explanation");
                 });
                 await Check(Plan[3], async () =>
@@ -127,10 +132,11 @@ internal sealed class SearchExportVerification(Options options, bool priorChecks
                     await PackagedDesktop.WaitAsync(async () => (await desktop.TextAsync("EventsPage")).StartsWith("偏移 0", StringComparison.Ordinal) && await desktop.EnabledAsync("ExportReport"), TimeSpan.FromSeconds(30));
                     Require(await desktop.TextAsync("ExportReport") == "导出本页报告", "clear restores ordinary report action");
                     var ordinaryPath = Path.Combine(root, "ordinary-after-search.html");
+                    lastSaveStatus = null;
                     Stage("native_ordinary_save");
                     await desktop.ExportReportAsync(ordinaryPath);
                     Stage("ordinary_report_completion");
-                    await PackagedDesktop.WaitAsync(async () => File.Exists(ordinaryPath) && await desktop.EnabledAsync("NewInstall"), TimeSpan.FromSeconds(90));
+                    await WaitForReportAsync(desktop, ordinaryPath);
                     var ordinary = await File.ReadAllTextAsync(ordinaryPath, Encoding.UTF8);
                     var history = Regex.Match(ordinary, "<pre data-kind=\"history\">(.*?)</pre>", RegexOptions.Singleline | RegexOptions.CultureInvariant);
                     Require(history.Success, "ordinary report retains original CLI history document");
@@ -257,6 +263,7 @@ internal sealed class SearchExportVerification(Options options, bool priorChecks
             native_dialog_stage = actualDesktop?.ReportDialogStage, native_dialog_diagnostic = actualDesktop?.ReportDialogDiagnostic,
             native_dialog_interactions = actualDesktop?.ReportDialogInteractions, native_dialog_saves = actualDesktop?.ReportDialogSaves,
             saved_record_viewer_cleanup = actualDesktop?.CleanupState,
+            post_save_status = lastSaveStatus,
             package_manifest_sha256 = Hash(Path.Combine(options.Package, "BUILD.json")), viewer_assembly_sha256 = Hash(typeof(ViewerForm).Assembly.Location),
             viewer_launcher_sha256 = Hash(Path.Combine(options.Package, "Contain.Viewer.exe")), contain_sha256 = Hash(client.ExecutablePath),
             report = File.Exists(reportPath) ? new { path = "reports/search-export-synthetic.html", bytes = new FileInfo(reportPath).Length, sha256 = Hash(reportPath) } : null,
@@ -307,6 +314,44 @@ internal sealed class SearchExportVerification(Options options, bool priorChecks
         }
     }
     private void Stage(string name) { currentStage = name; Progress("stage"); }
+    private async Task WaitForReportAsync(PackagedDesktop desktop, string target)
+    {
+        var clock = Stopwatch.StartNew();
+        var expectedPath = Path.GetFullPath(target);
+        while (clock.Elapsed < TimeSpan.FromSeconds(90))
+        {
+            var status = await desktop.TextAsync("Status");
+            var state = status.StartsWith("已导出全部", StringComparison.Ordinal) || status.StartsWith("已导出本地报告", StringComparison.Ordinal) ? "success"
+                : status.StartsWith("已取消保存", StringComparison.Ordinal) ? "cancelled"
+                : status.StartsWith("未完成", StringComparison.Ordinal) ? "failed" : "pending";
+            string? code = null;
+            if (state == "failed")
+                code = status.Contains("报告目标已存在", StringComparison.Ordinal) ? "export_exists"
+                    : status.Contains("请选择 .html", StringComparison.Ordinal) ? "export_extension"
+                    : status.Contains("报告目录不存在", StringComparison.Ordinal) ? "export_directory"
+                    : status.Contains("备用数据流", StringComparison.Ordinal) ? "export_path"
+                    : status.Contains("搜索结果已变化", StringComparison.Ordinal) ? "export_record_changed"
+                    : status.Contains("64 MiB", StringComparison.Ordinal) ? "export_limit"
+                    : status.Contains("超时", StringComparison.Ordinal) ? "timeout" : "unclassified_failure";
+            var snapshot = new SaveStatus(state, code, status.Contains(expectedPath, StringComparison.OrdinalIgnoreCase),
+                File.Exists(target), await desktop.EnabledAsync("NewInstall"));
+            if (lastSaveStatus != snapshot) { lastSaveStatus = snapshot; Progress("post_save_status"); }
+            if (state is "cancelled" or "failed")
+            {
+                errors.AppendLine(currentCheck).AppendLine("Actual post-save status (private): " + status);
+                throw new TestFailureException("Actual native save ended as " + state + "; code=" + (code ?? "none") + ".");
+            }
+            if (state == "success")
+            {
+                if (!snapshot.ExpectedPathContained) errors.AppendLine(currentCheck).AppendLine("Actual post-save status (private): " + status);
+                Require(snapshot.ExpectedPathContained, "actual native save completion names the exact selected target path");
+                Require(snapshot.TargetExists, "actual native save success has a committed file at the selected target");
+                if (snapshot.ViewerIdle) return;
+            }
+            await Task.Delay(100);
+        }
+        throw new TimeoutException("Actual report did not reach a final save outcome.");
+    }
     private void Progress(string status, string? errorType = null)
     {
         // Public progress contains only declared stage names, safe type names
@@ -316,18 +361,19 @@ internal sealed class SearchExportVerification(Options options, bool priorChecks
             elapsed_ms = elapsed.ElapsedMilliseconds, check = currentCheck, stage = currentStage, status, error_type = errorType,
             dialog_stage = actualDesktop?.ReportDialogStage, dialog_diagnostic = actualDesktop?.ReportDialogDiagnostic,
             dialog_interactions = actualDesktop?.ReportDialogInteractions, dialog_saves = actualDesktop?.ReportDialogSaves,
-            saved_record_viewer_cleanup = actualDesktop?.CleanupState
+            saved_record_viewer_cleanup = actualDesktop?.CleanupState, post_save_status = lastSaveStatus
         });
         Directory.CreateDirectory(options.Output);
         File.WriteAllText(Path.Combine(options.Output, "export-progress.json"), JsonSerializer.Serialize(new
         {
             schema_version = 1, synthetic = true, source_sha = options.Source, entries = progress
-        }, new JsonSerializerOptions { WriteIndented = true }));
+        }, new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower }));
         Console.WriteLine($"search-export {currentCheck} {currentStage} {status}");
         Console.Out.Flush();
     }
     private void Require(bool condition, string reason) { if (!condition) throw new TestFailureException(reason); assertions++; }
     private static string Hash(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
+    private sealed record SaveStatus(string State, string? ErrorCode, bool ExpectedPathContained, bool TargetExists, bool ViewerIdle);
 
     private sealed class CancelAfterWritesStream(CancellationTokenSource cancellation, int maximumWrites) : Stream
     {
