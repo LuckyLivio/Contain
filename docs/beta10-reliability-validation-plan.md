@@ -107,6 +107,41 @@ Windows runners; compare D3 with prior diagnostics only as supporting observatio
 The same-runner six-case matrix is the acceptance comparison. Run same-source
 Bench/Fuzz explicitly; no reruns to select a green outcome.
 
+### C1 desktop failure / frozen-ZIP diagnostic D4, declared before execution
+
+C1 push CI 42227112910 failed `packaged_executable_default_history` with a
+`TimeoutException`, before `PackagedDesktop.ReadyAsync()` returned. Its later
+independent seeded-history cold-restart case passed; that does not replace the
+failed empty-history startup. The real GUI installation and six-case matrix were
+not run, as planned. Preserve the rejected ZIP unchanged: source `b0d2510`,
+artifact 13506927140, SHA-256
+`a7ef3faed3c42aada77fe5619b732fe092b8787f89311047105ff6082b132656`.
+The original safe artifact cannot distinguish the 40-second discovery wait,
+40-second enabled wait and nested 20-second UIA call deadline. Its private stack
+and first-launch image are unavailable. Do not infer the old timeout's cause.
+
+D4 uses that exact original ZIP with a new test-only bounded readiness diagnostic.
+Run the existing personal-records-only harness once: no ETW capture, no retry,
+three actual viewer launches. Retain static phases, elapsed times, probe counts,
+owned-process/window state and timeout category only. Do not upload stack traces,
+window captions, UIA trees, databases or private paths. Keep every existing
+assertion/deadline and the original product assembly bytes; record harness source
+separately from frozen product source. Copy the original production DLL into the
+new harness, build synthetic fixtures/identity replay from the frozen product
+source, and verify the ZIP hash again after diagnosis.
+
+If all owned read-only viewer/core processes are confirmed exited, run the same
+frozen ZIP in the predeclared six-case matrix below, once, no retries. This supplies
+the missing same-package capture comparison without relabeling the earlier desktop
+failure. Stop before any capture if owned termination is unconfirmed. All six
+captures remain diagnostic: D4's top-level `release_accepted` is always false.
+Even a green capture matrix cannot clear the unexplained C1 desktop failure or
+replace the complete final same-ZIP desktop gates. Select any further fix only
+after the new readiness evidence; do not rerun C1 merely to choose a green result.
+The 45-minute diagnostic job starts the at-most-30-minute matrix only when no
+more than ten minutes have elapsed since plan creation, reserving time to retain
+artifacts; otherwise record the matrix as not run without starting partial rounds.
+
 ## Final immutable ZIP acceptance
 
 Freeze one candidate ZIP after the existing checks. Keep its exact source SHA and

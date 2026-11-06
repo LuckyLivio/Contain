@@ -1,0 +1,255 @@
+name: Frozen Beta 10 package diagnosis only
+on:
+  push:
+    branches:
+      - fix/beta10-capture-loss
+permissions:
+  contents: read
+  actions: read
+jobs:
+  frozen-diagnosis:
+    if: ${{ github.repository == 'LuckyLivio/Contain' && github.ref == 'refs/heads/fix/beta10-capture-loss' && github.run_attempt == 1 && contains(github.event.head_commit.message, '[frozen-capture-diagnosis]') }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Declare the immutable diagnostic plan before running tools or viewers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP ('contain-frozen-beta10-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+          if (Test-Path -LiteralPath $out) { throw 'Diagnostic output already exists; previous attempts are never replaced' }
+          New-Item -ItemType Directory -Path $out,(Join-Path $out 'public'),(Join-Path $out 'private') | Out-Null
+          "FROZEN_DIAG_OUTPUT=$out" >> $env:GITHUB_ENV
+          [ordered]@{
+            schema_version=1;protocol='contain-frozen-beta10-diagnosis-plan-1';declared_at_utc=[DateTime]::UtcNow.ToString('o');harness_source_sha=$env:GITHUB_SHA;script_source_sha=$env:GITHUB_SHA
+            product_source_sha='b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4';identity_source_sha='b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4';fixture_generator_source_sha='b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4'
+            candidate=@{source_sha='b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4';run_id=42227112910;artifact_id=13506927140;zip_sha256='a7ef3faed3c42aada77fe5619b732fe092b8787f89311047105ff6082b132656'}
+            baseline=@{source_sha='8e68ccfe63389e1533235e253eb59329f15be898';zip_sha256='dee47046f01c6a2c31c5bda3a3a3bcf3fc2a1603eb18b35464f68cde04ec7612'}
+            previous=@{source_sha='3c2e06871d28acd199ba1813605afecc9074738d';run_id=42216843544;artifact_id=13501998007;zip_sha256='41a3e4e3e8dc0b75e245eb3306ed8e5c6294d04c5fc72d4cc9110d3512ef99e7'}
+            order=@('personal-records-checks-only','r1/beta9','r1/previous','r1/candidate','r2/candidate','r2/previous','r2/beta9')
+            gui_harness_runs=1;maximum_gui_viewer_launches=3;gui_etw_captures=0;maximum_native_captures=6;retries=0;profile=$false
+            background_files=12000;independent_background_operations=36000;receive_records=4096;handoff_records=4096;handoff_bytes=16777216;candidate_records=2048;candidate_bytes=8388608;resource_limit=4096;journal_quota=67108864;settle_ms=1500;maximum_drain_ms=10000
+            require_owned_process_quiescence=$true;owned_process_quiescence_maximum_ms=45000
+            maximum_elapsed_before_matrix_ms=600000;matrix_step_deadline_minutes=30;artifact_reserve_minutes=3
+            original_full_gui_accepted=$false;original_full_gui_failed_check='packaged_executable_default_history';original_full_gui_error_type='TimeoutException'
+            release_accepted=$false;release_block='C1 full GUI failed; this diagnostic cannot replace the original acceptance or authorize release'
+          } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $out 'public/plan.json') -Encoding utf8
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Verify original packages and build separated diagnostic tools
+        id: prepare
+        timeout-minutes: 12
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $PSNativeCommandUseErrorActionPreference = $false
+          $out = $env:FROZEN_DIAG_OUTPUT
+          $private = Join-Path $out 'private'
+          $source = 'b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4'
+          function Require([bool]$Value,[string]$Reason) { if (-not $Value) { throw $Reason } }
+          function Hash([string]$Path) { (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
+          function Fixed-Artifact([long]$Artifact,[long]$Run,[string]$Source,[string]$ZipHash,[string]$Label) {
+            $metadata = gh api "repos/LuckyLivio/Contain/actions/artifacts/$Artifact" | ConvertFrom-Json
+            Require ($LASTEXITCODE -eq 0 -and $metadata.id -eq $Artifact -and $metadata.name -eq 'contain-windows-x64-viewer' -and $metadata.expired -eq $false -and $metadata.workflow_run.id -eq $Run -and $metadata.workflow_run.head_sha -eq $Source) 'Frozen artifact identity differs or expired'
+            $outer = Join-Path $private ($Label + '-artifact.zip')
+            python -c 'import pathlib,subprocess,sys; f=pathlib.Path(sys.argv[1]).open("wb"); subprocess.run(["gh","api","repos/LuckyLivio/Contain/actions/artifacts/"+sys.argv[2]+"/zip"],stdout=f,check=True); f.close()' $outer $Artifact
+            Require ($LASTEXITCODE -eq 0) 'Frozen artifact download failed'
+            $directory = Join-Path $private ($Label + '-artifact')
+            Expand-Archive -LiteralPath $outer -DestinationPath $directory
+            $zips = @(Get-ChildItem -LiteralPath $directory -Recurse -File | Where-Object { $_.Name -eq 'contain-0.3.2-beta.10-windows-x64.zip' })
+            Require ($zips.Count -eq 1) 'Frozen original ZIP is missing or ambiguous'
+            Require ((Hash $zips[0].FullName) -eq $ZipHash) 'Frozen original ZIP bytes differ'
+            return $zips[0].FullName
+          }
+          $candidate = Fixed-Artifact 13506927140 42227112910 $source 'a7ef3faed3c42aada77fe5619b732fe092b8787f89311047105ff6082b132656' 'candidate'
+          $previous = Fixed-Artifact 13501998007 42216843544 '3c2e06871d28acd199ba1813605afecc9074738d' '41a3e4e3e8dc0b75e245eb3306ed8e5c6294d04c5fc72d4cc9110d3512ef99e7' 'previous'
+          $baseline = Join-Path $private 'beta9-original.zip'
+          Invoke-WebRequest -Uri 'https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.9/contain-0.3.2-beta.9-windows-x64.zip' -OutFile $baseline
+          Require ((Hash $baseline) -eq 'dee47046f01c6a2c31c5bda3a3a3bcf3fc2a1603eb18b35464f68cde04ec7612') 'Frozen Beta 9 ZIP bytes differ'
+          $package = Join-Path $private '程序包 中文 & [x]'
+          Expand-Archive -LiteralPath $candidate -DestinationPath $package
+          $build = Get-Content -LiteralPath (Join-Path $package 'BUILD.json') -Raw | ConvertFrom-Json
+          Require ($build.source_sha -eq $source -and $build.target -eq 'win-x64' -and $build.version -eq '0.3.2-beta.10') 'Frozen C1 build identity differs'
+          foreach ($name in @('contain.exe','contain-test-installer.exe','Contain.Viewer.exe','Contain.Viewer.dll')) {
+            $rows = @($build.files | Where-Object { $_.path -eq $name })
+            Require ($rows.Count -eq 1 -and (Hash (Join-Path $package $name)) -eq $rows[0].sha256) 'Frozen C1 executable or production DLL differs'
+          }
+          foreach ($script in @('scripts/follow-installer-experiment.ps1','scripts/capture-loss-matrix.ps1')) {
+            $tokens=$null; $errors=$null
+            $null=[Management.Automation.Language.Parser]::ParseFile([IO.Path]::GetFullPath($script),[ref]$tokens,[ref]$errors)
+            Require ($errors.Count -eq 0) 'Diagnostic driver syntax failed before any viewer or capture'
+          }
+          $worktree = Join-Path $private 'source-b0d2510'
+          git worktree add --detach $worktree $source
+          Require ($LASTEXITCODE -eq 0) 'Frozen-source worktree failed'
+          Require ((git -C $worktree rev-parse HEAD).Trim() -eq $source) 'Frozen-source worktree SHA differs'
+          Require (@(git -C $worktree status --porcelain).Count -eq 0) 'Frozen-source worktree must be clean'
+          $buildTarget = [IO.Path]::GetFullPath('target')
+          $oldTarget = $env:CARGO_TARGET_DIR
+          $env:CARGO_TARGET_DIR = $buildTarget
+          Push-Location $worktree
+          try {
+            cargo build -p contain-core --example follow-identity-diagnostic --locked
+            Require ($LASTEXITCODE -eq 0) 'Frozen-source identity diagnostic build failed'
+            cargo build -p contain-offline --bin viewer-fixtures --locked
+            Require ($LASTEXITCODE -eq 0) 'Frozen-source viewer fixture generator build failed'
+          } finally { Pop-Location; $env:CARGO_TARGET_DIR = $oldTarget }
+          $identity = Join-Path $buildTarget 'debug/examples/follow-identity-diagnostic.exe'
+          $generator = Join-Path $buildTarget 'debug/viewer-fixtures.exe'
+          $fixtures = Join-Path $private 'viewer-fixtures'
+          & $generator $fixtures
+          Require ($LASTEXITCODE -eq 0) 'Frozen-source synthetic viewer fixtures failed'
+          python -c "import pathlib,shutil,sqlite3,sys; p=pathlib.Path(sys.argv[1]); shutil.copyfile(p/'empty.db',p/'future.db'); c=sqlite3.connect(p/'future.db'); c.execute('PRAGMA user_version=99'); c.close(); (p/'corrupt.db').write_bytes(b'SYNTHETIC corrupt database'); c=sqlite3.connect(p/'unrelated.db'); c.execute('CREATE TABLE unrelated(value TEXT)'); c.close()" $fixtures
+          Require ($LASTEXITCODE -eq 0) 'Frozen-source adverse database fixture setup failed'
+          $harness = Join-Path $private 'viewer-tests'
+          dotnet publish desktop/Contain.Viewer.Tests/Contain.Viewer.Tests.csproj -c Release -r win-x64 --self-contained true -o $harness
+          Require ($LASTEXITCODE -eq 0) 'Current-source diagnostic harness build failed'
+          # The harness references the exact production DLL from C1. Only the
+          # separate harness publish directory is changed; the ZIP is untouched.
+          Copy-Item -LiteralPath (Join-Path $package 'Contain.Viewer.dll') -Destination (Join-Path $harness 'Contain.Viewer.dll') -Force
+          Require ((Hash (Join-Path $harness 'Contain.Viewer.dll')) -eq (Hash (Join-Path $package 'Contain.Viewer.dll'))) 'Harness production reference differs from frozen C1'
+          Require ((Hash $candidate) -eq 'a7ef3faed3c42aada77fe5619b732fe092b8787f89311047105ff6082b132656') 'Original candidate ZIP changed during preparation'
+          [ordered]@{
+            schema_version=1;protocol='contain-frozen-beta10-provenance-1';harness_source_sha=$env:GITHUB_SHA;script_source_sha=$env:GITHUB_SHA
+            product_source_sha=$source;identity_source_sha=$source;fixture_generator_source_sha=$source
+            original_zip_sha256=(Hash $candidate);core_sha256=(Hash (Join-Path $package 'contain.exe'));installer_fixture_sha256=(Hash (Join-Path $package 'contain-test-installer.exe'))
+            viewer_exe_sha256=(Hash (Join-Path $package 'Contain.Viewer.exe'));production_viewer_dll_sha256=(Hash (Join-Path $package 'Contain.Viewer.dll'));harness_production_reference_sha256=(Hash (Join-Path $harness 'Contain.Viewer.dll'))
+            harness_exe_sha256=(Hash (Join-Path $harness 'Contain.Viewer.Tests.exe'));harness_dll_sha256=(Hash (Join-Path $harness 'Contain.Viewer.Tests.dll'));identity_diagnostic_sha256=(Hash $identity);viewer_fixture_generator_sha256=(Hash $generator)
+            standalone_report_source_marker='working-tree';standalone_report_source_marker_is_revision=$false;release_accepted=$false
+          } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $out 'public/provenance.json') -Encoding utf8
+          "FROZEN_CANDIDATE_ZIP=$candidate" >> $env:GITHUB_ENV
+          "FROZEN_PREVIOUS_ZIP=$previous" >> $env:GITHUB_ENV
+          "FROZEN_BASELINE_ZIP=$baseline" >> $env:GITHUB_ENV
+          "FROZEN_GUI_PACKAGE=$package" >> $env:GITHUB_ENV
+          "FROZEN_GUI_FIXTURES=$fixtures" >> $env:GITHUB_ENV
+          "FROZEN_GUI_HARNESS=$harness" >> $env:GITHUB_ENV
+          "FROZEN_IDENTITY_EXE=$identity" >> $env:GITHUB_ENV
+      - name: One personal-record GUI diagnosis then verify owned process quiescence
+        id: gui
+        if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
+        timeout-minutes: 12
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $out = $env:FROZEN_DIAG_OUTPUT
+          $guiOutput = Join-Path $out 'gui'
+          New-Item -ItemType Directory -Path $guiOutput | Out-Null
+          $fixtureTemp = Join-Path $out 'private/fixture-temp'
+          New-Item -ItemType Directory -Path $fixtureTemp | Out-Null
+          $env:TEMP = $fixtureTemp; $env:TMP = $fixtureTemp
+          Remove-Item Env:CONTAIN_VIEWER_TEST_ROOT -ErrorAction SilentlyContinue
+          $arguments = @('--personal-records-checks-only',$env:FROZEN_GUI_PACKAGE,$env:FROZEN_GUI_FIXTURES,$guiOutput)
+          $quoted = $arguments | ForEach-Object { '"' + $_.Replace('"','\"') + '"' }
+          $harness = $null; $exitCode = $null; $driverError = $null; $timedOut = $false
+          try {
+            $harness = Start-Process -FilePath (Join-Path $env:FROZEN_GUI_HARNESS 'Contain.Viewer.Tests.exe') -ArgumentList $quoted -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $out 'private/harness.stdout') -RedirectStandardError (Join-Path $out 'private/harness.stderr')
+            $null = $harness.Handle
+            if ($harness.WaitForExit(600000)) { $harness.Refresh(); $exitCode = $harness.ExitCode }
+            else { $timedOut = $true }
+          } catch { $driverError = $_.Exception.GetType().Name }
+          # Only count exact canonical paths beneath this attempt's isolated
+          # root, including copies under gui/private/.../moved-package. Never
+          # terminate a viewer/core/installer or mistake an unreadable path for 0.
+          function Owned-Processes {
+            $result = @{viewers=0;cores=0;unknown=0}
+            $prefix = [IO.Path]::GetFullPath($out).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+            $enumerationErrors = @()
+            $processes = @(Get-Process -Name 'Contain.Viewer','contain' -ErrorAction SilentlyContinue -ErrorVariable enumerationErrors)
+            foreach ($enumerationError in $enumerationErrors) {
+              if ($enumerationError.FullyQualifiedErrorId -notlike 'NoProcessFoundForGivenName,*') { $result.unknown++ }
+            }
+            foreach ($process in $processes) {
+              try {
+                if ($process.HasExited) { continue }
+                $path = $process.Path
+                if ([string]::IsNullOrEmpty($path)) { $result.unknown++; continue }
+                $canonical = [IO.Path]::GetFullPath($path)
+                if ($canonical.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)) {
+                  if ([IO.Path]::GetFileName($canonical) -ieq 'Contain.Viewer.exe') { $result.viewers++ }
+                  elseif ([IO.Path]::GetFileName($canonical) -ieq 'contain.exe') { $result.cores++ }
+                  else { $result.unknown++ }
+                }
+              } catch { $result.unknown++ }
+            }
+            return $result
+          }
+          $wait = [Diagnostics.Stopwatch]::StartNew()
+          do {
+            $remaining = Owned-Processes
+            $harnessExited = $null -ne $harness -and $harness.HasExited
+            if (($harnessExited -and $remaining.viewers -eq 0 -and $remaining.cores -eq 0 -and $remaining.unknown -eq 0) -or $wait.ElapsedMilliseconds -ge 45000) { break }
+            Start-Sleep -Milliseconds 200
+          } while ($true)
+          $quiescent = $harnessExited -and $remaining.viewers -eq 0 -and $remaining.cores -eq 0 -and $remaining.unknown -eq 0
+          [ordered]@{schema_version=1;harness_started=($null -ne $harness);harness_exited=$harnessExited;exit_code=$exitCode;timed_out=$timedOut;driver_error_type=$driverError;viewer_count=$remaining.viewers;core_count=$remaining.cores;unknown_count=$remaining.unknown;all_owned_viewer_core_exited=$quiescent;maximum_quiescence_wait_ms=45000;actual_quiescence_wait_ms=$wait.ElapsedMilliseconds;release_accepted=$false} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $out 'public/gui-execution.json') -Encoding utf8
+          "quiescent=$($quiescent.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          if (-not $quiescent) { Write-Host 'Matrix remains not run: owned GUI/core termination is unverified' }
+      - name: Diagnose all six frozen-package captures without acceptance substitution
+        id: matrix
+        if: ${{ !cancelled() && steps.prepare.outcome == 'success' && steps.gui.outputs.quiescent == 'true' }}
+        timeout-minutes: 30
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $plan = Get-Content -LiteralPath (Join-Path $env:FROZEN_DIAG_OUTPUT 'public/plan.json') -Raw | ConvertFrom-Json
+          $elapsed = [DateTime]::UtcNow - [DateTime]::Parse($plan.declared_at_utc,[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::RoundtripKind)
+          if ($elapsed.TotalMilliseconds -gt $plan.maximum_elapsed_before_matrix_ms) {
+            @{schema_version=1;reason='insufficient_remaining_bounded_job_budget';elapsed_before_matrix_ms=[long]$elapsed.TotalMilliseconds;maximum_elapsed_before_matrix_ms=$plan.maximum_elapsed_before_matrix_ms;release_accepted=$false} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:FROZEN_DIAG_OUTPUT 'public/matrix-not-run.json') -Encoding utf8
+            Write-Host 'Matrix remains not run: preserve the declared capture deadline and artifact upload reserve'
+            exit 0
+          }
+          # CandidateSource and identity implementation are both frozen b0d;
+          # the driver/harness source remains separately recorded in plan.json.
+          ./scripts/capture-loss-matrix.ps1 -BaselineZip $env:FROZEN_BASELINE_ZIP -PreviousZip $env:FROZEN_PREVIOUS_ZIP -CandidateZip $env:FROZEN_CANDIDATE_ZIP -CandidateSha256 'a7ef3faed3c42aada77fe5619b732fe092b8787f89311047105ff6082b132656' -CandidateSource 'b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4' -IdentityDiagnosticExe $env:FROZEN_IDENTITY_EXE -OutputDirectory (Join-Path $env:FROZEN_DIAG_OUTPUT 'matrix')
+      - name: Preserve the original full-GUI release blocker in the diagnostic result
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:FROZEN_DIAG_OUTPUT) { throw 'Diagnostic plan was not created; no completed diagnosis is claimed' }
+          $out = $env:FROZEN_DIAG_OUTPUT
+          function Optional-Json([string]$Relative) {
+            $path = Join-Path $out $Relative
+            if (Test-Path -LiteralPath $path -PathType Leaf) { return Get-Content -LiteralPath $path -Raw | ConvertFrom-Json }
+            return $null
+          }
+          $gui = Optional-Json 'public/gui-execution.json'
+          $personal = Optional-Json 'gui/personal-records-summary.json'
+          $matrix = Optional-Json 'matrix/public/capture-loss-matrix.json'
+          $matrixBlocked = Optional-Json 'public/matrix-not-run.json'
+          $zipUnchanged = if ($env:FROZEN_CANDIDATE_ZIP -and (Test-Path -LiteralPath $env:FROZEN_CANDIDATE_ZIP)) { (Get-FileHash -LiteralPath $env:FROZEN_CANDIDATE_ZIP -Algorithm SHA256).Hash.ToLowerInvariant() -eq 'a7ef3faed3c42aada77fe5619b732fe092b8787f89311047105ff6082b132656' } else { $null }
+          [ordered]@{
+            schema_version=1;protocol='contain-frozen-beta10-diagnosis-1';harness_source_sha=$env:GITHUB_SHA;product_source_sha='b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4'
+            accepted=$false;release_accepted=$false;original_full_gui_accepted=$false;original_full_gui_run=42227112910;original_full_gui_failed_check='packaged_executable_default_history';original_full_gui_error_type='TimeoutException'
+            original_zip_unchanged=$zipUnchanged;gui_execution=$gui;personal_diagnostic=$personal
+            matrix_executed=($null -ne $matrix);matrix_completed=$(if($null -ne $matrix){$matrix.completed}else{$false});matrix_capture_oracles_passed=$(if($null -ne $matrix){$matrix.accepted}else{$null})
+            matrix_not_run_reason=$(if($null -ne $matrix){$null}elseif($null -ne $matrixBlocked){$matrixBlocked.reason}elseif($null -ne $gui -and $gui.all_owned_viewer_core_exited -ne $true){'owned_process_termination_unverified'}else{'setup_or_matrix_execution_unavailable'})
+            release_block='The original C1 full GUI failure remains. This diagnostic workflow and a passing personal subset or capture matrix cannot authorize release.'
+            retries=0;profile=$false;real_user_records_accessed=$false
+          } | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $out 'public/frozen-diagnosis-summary.json') -Encoding utf8
+          if ($zipUnchanged -eq $false) { throw 'Original frozen candidate ZIP changed; diagnosis is invalid' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frozen-beta10-diagnosis
+          path: |
+            ${{ env.FROZEN_DIAG_OUTPUT }}/public/*.json
+            ${{ env.FROZEN_DIAG_OUTPUT }}/gui/personal-records-summary.json
+            ${{ env.FROZEN_DIAG_OUTPUT }}/matrix/public/*.json
+            ${{ env.FROZEN_DIAG_OUTPUT }}/matrix/r1/beta9/public/*.json
+            ${{ env.FROZEN_DIAG_OUTPUT }}/matrix/r1/previous/public/*.json
+            ${{ env.FROZEN_DIAG_OUTPUT }}/matrix/r1/candidate/public/*.json
+            ${{ env.FROZEN_DIAG_OUTPUT }}/matrix/r2/candidate/public/*.json
+            ${{ env.FROZEN_DIAG_OUTPUT }}/matrix/r2/previous/public/*.json
+            ${{ env.FROZEN_DIAG_OUTPUT }}/matrix/r2/beta9/public/*.json
+          if-no-files-found: warn

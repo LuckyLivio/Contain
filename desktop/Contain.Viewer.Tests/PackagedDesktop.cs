@@ -31,6 +31,18 @@ internal sealed class PackagedDesktop : IDisposable
     internal string ReportDialogDiagnostic { get; private set; } = string.Empty;
     internal Action? ReportDialogProgress { get; set; }
     internal string CleanupState { get; private set; } = "not_disposed";
+    private string readyStage = "not_started";
+    private string readyTimeoutKind = "none";
+    private int readyDiscoveryAttempts;
+    private int readyEnabledAttempts;
+    private int readyProbeAttempts;
+    private long readyElapsedMilliseconds;
+    private long readyLastProbeMilliseconds;
+
+    internal sealed record ReadyDiagnostic(string Launch, string Stage, string TimeoutKind,
+        int DiscoveryAttempts, int EnabledAttempts, int UiProbeAttempts, long ElapsedMs, long LastUiProbeMs,
+        int ProcessId, bool? ProcessAlive, int? ProcessExitCode, bool? OwnedMainWindowPresent,
+        bool? MainWindowVisible, bool? MainWindowEnabled, bool? MainWindowHung, bool NativeSnapshotAvailable);
 
     internal PackagedDesktop(string package, string workingDirectory, bool savedRecordsOnly = false)
     {
@@ -51,8 +63,84 @@ internal sealed class PackagedDesktop : IDisposable
 
     internal async Task ReadyAsync()
     {
-        await WaitAsync(async () => !process.HasExited && await ExistsAsync("NewInstall"), TimeSpan.FromSeconds(40));
-        await WaitAsync(() => EnabledAsync("NewInstall"), TimeSpan.FromSeconds(40));
+        var clock = Stopwatch.StartNew();
+        readyDiscoveryAttempts = readyEnabledAttempts = readyProbeAttempts = 0;
+        readyLastProbeMilliseconds = 0;
+        readyTimeoutKind = "none";
+        readyStage = "discover_control";
+        try
+        {
+            await WaitAsync(async () =>
+            {
+                readyDiscoveryAttempts++;
+                return !process.HasExited && await ReadyProbeAsync(() => Find("NewInstall") is not null);
+            }, TimeSpan.FromSeconds(40));
+            readyStage = "wait_enabled";
+            await WaitAsync(() =>
+            {
+                readyEnabledAttempts++;
+                return ReadyProbeAsync(() => Required("NewInstall").Current.IsEnabled);
+            }, TimeSpan.FromSeconds(40));
+            readyStage = "ready";
+        }
+        catch (TimeoutException)
+        {
+            if (readyTimeoutKind == "none")
+                readyTimeoutKind = readyStage == "discover_control" ? "control_discovery_40s" : "control_enabled_40s";
+            throw;
+        }
+        finally { readyElapsedMilliseconds = clock.ElapsedMilliseconds; }
+    }
+
+    private async Task<bool> ReadyProbeAsync(Func<bool> action)
+    {
+        readyProbeAttempts++;
+        var clock = Stopwatch.StartNew();
+        // Keep the exact existing UIA worker/deadline behavior. Only identify
+        // whether its 20-second wrapper or the outer 40-second wait expired.
+        var probe = Task.Run(action);
+        try { return await probe.WaitAsync(TimeSpan.FromSeconds(20)); }
+        catch (TimeoutException error)
+        {
+            readyTimeoutKind = probe.IsFaulted && ReferenceEquals(probe.Exception?.InnerException, error)
+                ? "uia_operation_timeout" : "uia_probe_20s";
+            throw;
+        }
+        finally { readyLastProbeMilliseconds = clock.ElapsedMilliseconds; }
+    }
+
+    internal ReadyDiagnostic ReadySnapshot(string launch)
+    {
+        if (launch is not ("default_history" or "seeded_first" or "seeded_restart"))
+            throw new InvalidOperationException("The readiness diagnostic requires a fixed launch label.");
+        bool? alive = null, present = null, visible = null, enabled = null, hung = null;
+        int? exitCode = null;
+        var nativeAvailable = false;
+        try
+        {
+            // Native boolean queries only: never read captions, paths, UIA
+            // trees or exception text while inspecting a failed readiness wait.
+            process.Refresh();
+            alive = !process.HasExited;
+            if (alive == false) { exitCode = process.ExitCode; present = false; }
+            else
+            {
+                var window = process.MainWindowHandle;
+                GetWindowThreadProcessId(window, out var owner);
+                present = window != IntPtr.Zero && owner == process.Id;
+                if (present == true)
+                {
+                    visible = IsWindowVisible(window);
+                    enabled = IsWindowEnabled(window);
+                    hung = IsHungAppWindow(window);
+                }
+            }
+            nativeAvailable = true;
+        }
+        catch (Exception) { /* Unavailable stays null; private native errors are not published. */ }
+        return new(launch, readyStage, readyTimeoutKind, readyDiscoveryAttempts, readyEnabledAttempts,
+            readyProbeAttempts, readyElapsedMilliseconds, readyLastProbeMilliseconds, process.Id, alive,
+            exitCode, present, visible, enabled, hung, nativeAvailable);
     }
 
     internal Task<bool> ExistsAsync(string id) => Ui(() => Find(id) is not null);
@@ -813,6 +901,7 @@ internal sealed class PackagedDesktop : IDisposable
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, System.Text.StringBuilder name, int maximum);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool IsHungAppWindow(IntPtr window);
     [DllImport("user32.dll")] private static extern IntPtr ChildWindowFromPointEx(IntPtr parent, NativePoint point, uint flags);
     [DllImport("user32.dll")] private static extern bool ScreenToClient(IntPtr window, ref NativePoint point);
     [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr window, out WindowBounds bounds);
