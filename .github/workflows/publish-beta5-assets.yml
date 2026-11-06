@@ -1,0 +1,31 @@
+name: Upload verified Beta 5 assets
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: upload-verified-v0.3.2-beta.5
+  cancel-in-progress: false
+jobs:
+  upload:
+    if: ${{ github.repository == 'LuckyLivio/Contain' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '13469922353,13469812538,13469757684'
+          run-id: '42144562866'
+          repository: LuckyLivio/Contain
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/beta5-input
+      - name: Verify exact accepted files, upload to existing draft and read back
+        run: python3 scripts/upload-beta5-assets.py --input "$RUNNER_TEMP/beta5-input" --upload
