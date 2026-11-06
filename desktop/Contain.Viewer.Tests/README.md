@@ -11,6 +11,12 @@ Failure, existing targets, equal-count replacement, escaped special text and
 bounded output use isolated fixtures. `export-summary.json` and the actual report
 bytes are mandatory inputs to package verification, which independently checks
 the report hash and complete ordered ID list. No new installation capture runs.
+`export-progress.json` is updated at each check and native save-dialog stage;
+it contains only fixed stage names, control classes/IDs, counts and error types.
+Native Save/Cancel uses verified mouse input so no synchronous UIA Invoke remains
+inside the modal dialog. The saved-record export plan has opt-in bounded cleanup
+of its own launched viewer if normal close fails; it never terminates a process
+tree, and live installer verification does not opt into that cleanup.
 
 Beta 5 adds nine required saved-record search checks in `SearchVerification.cs`.
 `search-summary.json` binds the exact source and frozen package to the native

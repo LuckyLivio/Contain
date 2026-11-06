@@ -1,4 +1,5 @@
 using System.Net;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -33,6 +34,10 @@ internal sealed class SearchExportVerification(Options options, bool priorChecks
     private string[] reportIds = [], pageAfterIds = [];
     private string? copiedId, explainId;
     private long? beforeOffset, afterOffset;
+    private readonly Stopwatch elapsed = Stopwatch.StartNew();
+    private readonly List<object> progress = [];
+    private string currentCheck = "startup", currentStage = "setup";
+    private PackagedDesktop? actualDesktop;
 
     internal async Task<bool> RunAsync(Form owner)
     {
@@ -41,6 +46,7 @@ internal sealed class SearchExportVerification(Options options, bool priorChecks
         var library = PersonalRecords.ForCurrentUser().DatabasePath;
         var reportPath = Path.Combine(options.Output, "reports", "search-export-synthetic.html");
         var original = Path.Combine(options.Fixtures, "search.db");
+        Progress("started");
         try
         {
             await Check(Plan[0], async () =>
@@ -54,8 +60,11 @@ internal sealed class SearchExportVerification(Options options, bool priorChecks
                 Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
                 Require(!File.Exists(reportPath), "actual native export starts with a new output filename");
             });
-            using (var desktop = new PackagedDesktop(options.Package, root))
+            using (var desktop = new PackagedDesktop(options.Package, root, savedRecordsOnly: true))
             {
+                actualDesktop = desktop;
+                desktop.ReportDialogProgress = () => Progress("dialog_stage");
+                Stage("packaged_viewer_start");
                 await desktop.ReadyAsync(); actualExecutable = true; actualDpi = await desktop.DeviceDpiAsync();
                 await Check(Plan[1], async () =>
                 {
@@ -77,10 +86,13 @@ internal sealed class SearchExportVerification(Options options, bool priorChecks
                     Require(await desktop.TextAsync("ExportReport") == "导出全部 53 条匹配结果", "search export action states its full range");
                     Require(await desktop.FullyVisibleAsync("ExportReport"), "full search-export action is inside every native client viewport");
                     screenshots.Add(await desktop.ScreenshotAsync(Path.Combine(options.Output, "screenshots"), "search-export-before-save.png"));
+                    Stage("native_search_save");
                     await desktop.ExportReportAsync(reportPath);
                     nativeSaveDialog = desktop.ReportDialogInteractions == 1 && desktop.ReportDialogSaves == 1;
                     Require(nativeSaveDialog, "actual packaged EXE native save dialog operated");
+                    Stage("search_report_completion");
                     await PackagedDesktop.WaitAsync(async () => File.Exists(reportPath) && await desktop.EnabledAsync("NewInstall"), TimeSpan.FromSeconds(90));
+                    Stage("search_report_all_ids");
                     var html = await File.ReadAllTextAsync(reportPath, Encoding.UTF8);
                     reportIds = EventIds(html);
                     Require(reportIds.SequenceEqual(Expected), "all 53 HTML event-row IDs exactly equal independent fixed order, with no duplicates omissions or foreign rows");
@@ -104,6 +116,7 @@ internal sealed class SearchExportVerification(Options options, bool priorChecks
                     Require(explainId == Selected && (await desktop.TextAsync("EventDetails")).Contains(Selected, StringComparison.Ordinal), "selected explanation remains exact event120 after export");
                     await desktop.InvokeAsync("CopyEventId"); copiedId = Clipboard.GetText();
                     Require(copiedId == Selected, "copied ID still matches selected event and explanation");
+                    Stage("native_save_cancel");
                     await desktop.ExportReportAsync(null);
                     Require(desktop.ReportDialogInteractions == 2 && desktop.ReportDialogSaves == 1, "actual native save dialog cancellation exercised");
                     Require(await desktop.TextAsync("EventFilter") == "needle" && await desktop.TextAsync("EventsPage") == "共 53 条，显示第 51–53 条" && await desktop.DescriptionAsync("EventDetails") == "event:" + Selected, "cancel preserves query page and explanation");
@@ -114,7 +127,9 @@ internal sealed class SearchExportVerification(Options options, bool priorChecks
                     await PackagedDesktop.WaitAsync(async () => (await desktop.TextAsync("EventsPage")).StartsWith("偏移 0", StringComparison.Ordinal) && await desktop.EnabledAsync("ExportReport"), TimeSpan.FromSeconds(30));
                     Require(await desktop.TextAsync("ExportReport") == "导出本页报告", "clear restores ordinary report action");
                     var ordinaryPath = Path.Combine(root, "ordinary-after-search.html");
+                    Stage("native_ordinary_save");
                     await desktop.ExportReportAsync(ordinaryPath);
+                    Stage("ordinary_report_completion");
                     await PackagedDesktop.WaitAsync(async () => File.Exists(ordinaryPath) && await desktop.EnabledAsync("NewInstall"), TimeSpan.FromSeconds(90));
                     var ordinary = await File.ReadAllTextAsync(ordinaryPath, Encoding.UTF8);
                     var history = Regex.Match(ordinary, "<pre data-kind=\"history\">(.*?)</pre>", RegexOptions.Singleline | RegexOptions.CultureInvariant);
@@ -123,11 +138,14 @@ internal sealed class SearchExportVerification(Options options, bool priorChecks
                     var ids = response.Data.GetProperty("events").EnumerateArray().Select(e => e.GetProperty("id").GetString()).ToArray();
                     Require(ids.SequenceEqual(Enumerable.Range(0, 50).Select(i => $"synthetic-search-event-{i:000}")), "ordinary first page retains all 50 original unfiltered rows");
                     Require(!ordinary.Contains("id=\"matched-events\"", StringComparison.Ordinal), "ordinary report keeps its own scope");
+                    Stage("packaged_viewer_normal_close");
+                    await desktop.CloseAsync(); Require(desktop.ExitCode == 0, "actual packaged executable exits normally");
                 });
-                await desktop.CloseAsync(); Require(desktop.ExitCode == 0, "actual packaged executable exits normally");
             }
+            Progress("packaged_viewer_disposed");
 
             var dialogs = new TestDialogs();
+            Stage("in_process_regressions_start");
             using var form = new ViewerForm(client, dialogs); form.Show(owner); await Idle(form); await Select(form, Session);
             await Check(Plan[4], async () =>
             {
@@ -186,17 +204,20 @@ internal sealed class SearchExportVerification(Options options, bool priorChecks
                 Require(!Directory.EnumerateFiles(root, ".contain-report-*.tmp").Any(), "all failure paths clean operation-owned temporary files");
                 // Exercise the production streaming formatter independently of the
                 // pipe: escaping can exceed the HTML cap even below the JSON cap.
+                Stage("formatter_mid_write_cancel");
                 var writer = typeof(ReportExporter).GetMethod("WriteSearchHtmlAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
                 Task<long> Render(Stream output, JsonElement data, CancellationToken token) => (Task<long>)writer.Invoke(null, [output, data, token])!;
                 using var duringWrite = new CancellationTokenSource();
                 using var interrupted = new CancelAfterWritesStream(duringWrite, 40);
                 await Reject(() => Render(interrupted, page.Data, duringWrite.Token));
                 Require(duringWrite.IsCancellationRequested && interrupted.BytesWritten > 0, "cancellation after actual formatter writes stops the partial stream");
+                Stage("formatter_html_limit");
                 var oversized = JsonNode.Parse(page.Data.GetRawText())!;
                 oversized["events"] = new JsonArray(JsonNode.Parse(page.Data.GetProperty("events")[0].GetRawText()));
                 oversized["events"]![0]!["resource"] = new string('&', 14 * 1024 * 1024);
                 using var large = JsonDocument.Parse(oversized.ToJsonString(new JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
-                try { await Render(Stream.Null, large.RootElement, CancellationToken.None); throw new TestFailureException("Escaped HTML limit was not enforced."); }
+                using var formatterDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                try { await Task.Run(() => Render(Stream.Null, large.RootElement, formatterDeadline.Token)).WaitAsync(TimeSpan.FromSeconds(35)); throw new TestFailureException("Escaped HTML limit was not enforced."); }
                 catch (CoreClientException error) { Require(error.Message.Contains("64 MiB", StringComparison.Ordinal), "HTML expansion above 64 MiB fails explicitly, never reports a truncated success"); }
             });
             await Check(Plan[6], async () =>
@@ -223,15 +244,19 @@ internal sealed class SearchExportVerification(Options options, bool priorChecks
                 return Task.CompletedTask;
             });
         }
-        catch (Exception error) { errors.AppendLine(error.ToString()); }
+        catch (Exception error) { errors.AppendLine(error.ToString()); Progress("suite_failed", error.GetType().Name); }
         foreach (var name in Plan.Where(name => checks.All(c => c.Name != name))) checks.Add(new(name, "not_run", "export_prerequisite_unavailable"));
         var accepted = priorChecksPassed && checks.All(c => c.Status == "passed");
+        Progress(accepted ? "accepted" : "rejected");
         File.WriteAllText(Path.Combine(options.PrivateOutput, "search-export-details.log"), errors.ToString());
         File.WriteAllText(Path.Combine(options.Output, "export-summary.json"), JsonSerializer.Serialize(new
         {
             schema_version = 1, protocol_revision = "contain-desktop-search-export-verification-1", source_sha = options.Source,
             native_windows = OperatingSystem.IsWindows(), architecture = RuntimeInformation.OSArchitecture.ToString(), windows_version = Environment.OSVersion.Version.ToString(), actual_device_dpi = actualDpi,
             synthetic = true, real_etw_executed = false, real_user_records_accessed = false, actual_packaged_executable = actualExecutable, native_save_dialog = nativeSaveDialog,
+            native_dialog_stage = actualDesktop?.ReportDialogStage, native_dialog_diagnostic = actualDesktop?.ReportDialogDiagnostic,
+            native_dialog_interactions = actualDesktop?.ReportDialogInteractions, native_dialog_saves = actualDesktop?.ReportDialogSaves,
+            saved_record_viewer_cleanup = actualDesktop?.CleanupState,
             package_manifest_sha256 = Hash(Path.Combine(options.Package, "BUILD.json")), viewer_assembly_sha256 = Hash(typeof(ViewerForm).Assembly.Location),
             viewer_launcher_sha256 = Hash(Path.Combine(options.Package, "Contain.Viewer.exe")), contain_sha256 = Hash(client.ExecutablePath),
             report = File.Exists(reportPath) ? new { path = "reports/search-export-synthetic.html", bytes = new FileInfo(reportPath).Length, sha256 = Hash(reportPath) } : null,
@@ -273,8 +298,33 @@ internal sealed class SearchExportVerification(Options options, bool priorChecks
     }
     private async Task Check(string name, Func<Task> action)
     {
-        try { await action(); checks.Add(new(name, "passed")); }
-        catch (Exception error) { checks.Add(new(name, "failed", error.GetType().Name, error is TestFailureException ? error.Message : "search export verification failed")); errors.AppendLine(name).AppendLine(error.ToString()); }
+        currentCheck = name; currentStage = "check_start"; Progress("started");
+        try { await action(); checks.Add(new(name, "passed")); Progress("passed"); }
+        catch (Exception error)
+        {
+            checks.Add(new(name, "failed", error.GetType().Name, error is TestFailureException ? error.Message : "stage=" + currentStage + "; dialog=" + actualDesktop?.ReportDialogStage));
+            errors.AppendLine(name).AppendLine(error.ToString()); Progress("failed", error.GetType().Name);
+        }
+    }
+    private void Stage(string name) { currentStage = name; Progress("stage"); }
+    private void Progress(string status, string? errorType = null)
+    {
+        // Public progress contains only declared stage names, safe type names
+        // and counts. Never copy dialog values, filenames or exception messages.
+        progress.Add(new
+        {
+            elapsed_ms = elapsed.ElapsedMilliseconds, check = currentCheck, stage = currentStage, status, error_type = errorType,
+            dialog_stage = actualDesktop?.ReportDialogStage, dialog_diagnostic = actualDesktop?.ReportDialogDiagnostic,
+            dialog_interactions = actualDesktop?.ReportDialogInteractions, dialog_saves = actualDesktop?.ReportDialogSaves,
+            saved_record_viewer_cleanup = actualDesktop?.CleanupState
+        });
+        Directory.CreateDirectory(options.Output);
+        File.WriteAllText(Path.Combine(options.Output, "export-progress.json"), JsonSerializer.Serialize(new
+        {
+            schema_version = 1, synthetic = true, source_sha = options.Source, entries = progress
+        }, new JsonSerializerOptions { WriteIndented = true }));
+        Console.WriteLine($"search-export {currentCheck} {currentStage} {status}");
+        Console.Out.Flush();
     }
     private void Require(bool condition, string reason) { if (!condition) throw new TestFailureException(reason); assertions++; }
     private static string Hash(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();

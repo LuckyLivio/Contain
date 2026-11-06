@@ -10,6 +10,8 @@ namespace Contain.Viewer.Tests;
 internal sealed class PackagedDesktop : IDisposable
 {
     private readonly Process process;
+    private readonly bool savedRecordsOnly;
+    private readonly long startedAt;
     internal int ProcessId => process.Id;
     internal bool HasExited => process.HasExited;
     internal int ExitCode => process.ExitCode;
@@ -18,17 +20,26 @@ internal sealed class PackagedDesktop : IDisposable
     internal int DatabasePathInteractions { get; private set; }
     internal int ReportDialogInteractions { get; private set; }
     internal int ReportDialogSaves { get; private set; }
+    internal string ReportDialogStage { get; private set; } = "not_started";
+    internal string ReportDialogDiagnostic { get; private set; } = string.Empty;
+    internal Action? ReportDialogProgress { get; set; }
+    internal string CleanupState { get; private set; } = "not_disposed";
 
-    internal PackagedDesktop(string package, string workingDirectory)
+    internal PackagedDesktop(string package, string workingDirectory, bool savedRecordsOnly = false)
     {
         if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(TestRecordIsolation.Variable)))
             throw new InvalidOperationException("A packaged test process requires the isolated record-library guard.");
         Executable = Path.GetFullPath(Path.Combine(package, "Contain.Viewer.exe"));
         WorkingDirectory = Path.GetFullPath(workingDirectory);
+        this.savedRecordsOnly = savedRecordsOnly;
         process = Process.Start(new ProcessStartInfo(Executable)
         {
             UseShellExecute = false, WorkingDirectory = WorkingDirectory
         }) ?? throw new IOException("The packaged desktop process did not start.");
+        // Retain the exact process handle and creation identity for the opt-in
+        // saved-records cleanup. Never discover a replacement process by PID.
+        _ = process.Handle;
+        startedAt = process.StartTime.ToUniversalTime().Ticks;
     }
 
     internal async Task ReadyAsync()
@@ -110,54 +121,128 @@ internal sealed class PackagedDesktop : IDisposable
             if (!Directory.Exists(Path.GetDirectoryName(outputPath)) || File.Exists(outputPath) || Directory.Exists(outputPath))
                 throw new InvalidOperationException("The native save test requires a new file in its isolated existing directory.");
         }
-        // Invoke can remain inside the product's modal ShowDialog. Drive the
-        // dialog on another UIA worker before awaiting that invocation.
-        var opening = InvokeAsync("ExportReport");
         IntPtr dialog = IntPtr.Zero;
+        ReportDialogDiagnostic = string.Empty;
         try
         {
-            await WaitAsync(async () =>
+            Stage("click_export");
+            // A synchronous UIA InvokePattern can remain blocked in ShowDialog.
+            // Resolve the production button, then issue real mouse input instead.
+            var exportButton = await Ui(() =>
             {
-                dialog = await Ui(FindReportDialog);
-                return dialog != IntPtr.Zero;
+                var control = Required("ExportReport");
+                if (!control.Current.IsEnabled) throw new InvalidOperationException("The actual export control is disabled.");
+                return new IntPtr(control.Current.NativeWindowHandle);
+            });
+            ClickNativeButton(exportButton);
+            Stage("wait_save_dialog");
+            await WaitAsync(() =>
+            {
+                dialog = FindReportDialog();
+                return Task.FromResult(dialog != IntPtr.Zero);
             }, TimeSpan.FromSeconds(15));
             ReportDialogInteractions++;
-            await Ui(() =>
+            Stage("locate_native_controls");
+            var controls = ReportControls(dialog);
+            ReportDialogDiagnostic = "controls=" + controls.Count + "; " + string.Join(",", controls
+                .Where(control => control.Class.Equals("Edit", StringComparison.OrdinalIgnoreCase) || control.Id is 1 or 2 or 1001 or 1148 or 1152)
+                .Select(control => control.Class + ":" + control.Id + (IsWindowVisible(control.Window) ? ":visible" : ":hidden")));
+            ReportDialogProgress?.Invoke();
+            if (outputPath is not null)
             {
-                var element = Automation.AutomationElement.FromHandle(dialog);
-                if (outputPath is not null)
-                {
-                    // Modern IFileDialog exposes its filename Edit as 1001;
-                    // legacy common dialogs use edt1 (1152), sometimes hosted
-                    // by the filename ComboBox (1148). Never select by caption.
-                    var editable = element.FindAll(Automation.TreeScope.Descendants,
-                        new Automation.PropertyCondition(Automation.AutomationElement.ControlTypeProperty, Automation.ControlType.Edit))
-                        .Cast<Automation.AutomationElement>().Where(item => item.Current.AutomationId is "1001" or "1148" or "1152").ToArray();
-                    if (editable.Length != 1 || !editable[0].TryGetCurrentPattern(Automation.ValuePattern.Pattern, out var pattern))
-                        throw new InvalidOperationException("The native save dialog has no unambiguous filename value control.");
-                    var value = (Automation.ValuePattern)pattern;
-                    value.SetValue(outputPath);
-                    if (value.Current.Value != outputPath)
-                        throw new InvalidOperationException("The native save dialog did not preserve the exact output path.");
-                }
-                var button = element.FindFirst(Automation.TreeScope.Descendants, new Automation.AndCondition(
-                    new Automation.PropertyCondition(Automation.AutomationElement.ControlTypeProperty, Automation.ControlType.Button),
-                    new Automation.PropertyCondition(Automation.AutomationElement.AutomationIdProperty, outputPath is null ? "2" : "1")))
-                    ?? throw new InvalidOperationException("The native save dialog's Save/Cancel button is absent.");
-                Invoke(button);
-            });
-            await WaitAsync(() => Ui(() => !IsWindowVisible(dialog)), TimeSpan.FromSeconds(15));
-            await opening;
+                var editable = controls.Where(control => IsWindowVisible(control.Window) && control.Class.Equals("Edit", StringComparison.OrdinalIgnoreCase)
+                    && control.Id is 1001 or 1148 or 1152).ToArray();
+                if (editable.Length != 1)
+                    throw new InvalidOperationException("The native save dialog has no unambiguous filename Edit control.");
+                Stage("set_filename");
+                // WM_SETTEXT is Unicode and literal; no SendKeys interpolation or
+                // shell parsing can alter Chinese, spaces, %, _ or ampersands.
+                if (SendMessageTimeoutText(editable[0].Window, 0x000C, IntPtr.Zero, outputPath,
+                        0x0003, 2000, out var setResult) == IntPtr.Zero || setResult == UIntPtr.Zero)
+                    throw new IOException("The native filename edit did not accept bounded WM_SETTEXT.");
+                var readback = new System.Text.StringBuilder(outputPath.Length + 2);
+                if (SendMessageTimeoutBuffer(editable[0].Window, 0x000D, new IntPtr(readback.Capacity), readback,
+                        0x0003, 2000, out _) == IntPtr.Zero || readback.ToString() != outputPath)
+                    throw new IOException("The native filename edit did not preserve the exact path.");
+            }
+            var command = outputPath is null ? 2 : 1;
+            var button = GetDlgItem(dialog, command);
+            if (button == IntPtr.Zero || !IsWindowVisible(button))
+            {
+                var matches = controls.Where(control => IsWindowVisible(control.Window) && control.Id == command && control.Class.Equals("Button", StringComparison.OrdinalIgnoreCase)).ToArray();
+                if (matches.Length != 1) throw new InvalidOperationException("The native Save/Cancel button is not unambiguous.");
+                button = matches[0].Window;
+            }
+            Stage(outputPath is null ? "click_cancel" : "click_save");
+            ClickNativeButton(button);
+            Stage("wait_dialog_close");
+            await WaitAsync(() => Task.FromResult(!IsWindowVisible(dialog)), TimeSpan.FromSeconds(15));
             if (outputPath is not null) ReportDialogSaves++;
+            Stage(outputPath is null ? "cancelled" : "save_submitted");
         }
         catch
         {
-            // Close only this test process's dialog so an assertion failure
-            // does not leave a native modal window blocking the remaining plan.
-            if (dialog != IntPtr.Zero) PostMessage(dialog, 0x0010, IntPtr.Zero, IntPtr.Zero);
-            try { await opening; } catch { }
+            Stage("failed_" + ReportDialogStage);
+            // Only this process's modal window is asked to close. Every helper
+            // call is bounded; no blocked UIA Invoke task remains after failure.
+            if (dialog != IntPtr.Zero)
+            {
+                PostMessage(dialog, 0x0010, IntPtr.Zero, IntPtr.Zero);
+                try { await WaitAsync(() => Task.FromResult(!IsWindowVisible(dialog)), TimeSpan.FromSeconds(3)); }
+                catch (TimeoutException) { }
+            }
             throw;
         }
+
+        void Stage(string stage)
+        {
+            ReportDialogStage = stage;
+            // Progress executes on the harness continuation, never a UIA worker.
+            ReportDialogProgress?.Invoke();
+        }
+    }
+
+    private void ClickNativeButton(IntPtr button)
+    {
+        if (button == IntPtr.Zero || !IsWindowVisible(button)) throw new InvalidOperationException("The native test button is absent or invisible.");
+        GetWindowThreadProcessId(button, out var owner);
+        if (owner != process.Id) throw new InvalidOperationException("The native test button belongs to another process.");
+        var root = GetAncestor(button, 2);
+        if (root == IntPtr.Zero) throw new InvalidOperationException("The native test button has no root window.");
+        SetForegroundWindow(root);
+        SetWindowPos(root, IntPtr.Zero, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040);
+        if (!GetWindowRect(button, out var rectangle) || rectangle.Right <= rectangle.Left || rectangle.Bottom <= rectangle.Top)
+            throw new InvalidOperationException("The native test button has no clickable bounds.");
+        var point = new NativePoint { X = rectangle.Left + (rectangle.Right - rectangle.Left) / 2,
+            Y = rectangle.Top + (rectangle.Bottom - rectangle.Top) / 2 };
+        var hit = WindowFromPoint(point);
+        GetWindowThreadProcessId(hit, out var hitOwner);
+        if (hitOwner != process.Id || (hit != button && !IsChild(button, hit)))
+            throw new InvalidOperationException("Another native control covers the test button's click point.");
+        GetCursorPos(out var previous);
+        try
+        {
+            if (!SetCursorPos(point.X, point.Y)) throw new IOException("The native test click could not position the cursor.");
+            mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
+            mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+        }
+        finally { SetCursorPos(previous.X, previous.Y); }
+    }
+
+    private static List<(IntPtr Window, int Id, string Class)> ReportControls(IntPtr dialog)
+    {
+        var result = new List<(IntPtr Window, int Id, string Class)>();
+        EnumChildWindows(dialog, (window, _) =>
+        {
+            var name = new System.Text.StringBuilder(80);
+            GetClassName(window, name, name.Capacity);
+            // Only native class names and numeric IDs are retained as diagnostics;
+            // filenames, paths, captions and edit values never enter evidence.
+            var safeClass = string.Concat(name.ToString().Where(c => char.IsAsciiLetterOrDigit(c) || c is '#' or '.' or '_'));
+            result.Add((window, GetDlgCtrlID(window), safeClass));
+            return true;
+        }, IntPtr.Zero);
+        return result;
     }
 
     private IntPtr FindReportDialog()
@@ -430,14 +515,46 @@ internal sealed class PackagedDesktop : IDisposable
 
     public void Dispose()
     {
-        if (!process.HasExited) process.CloseMainWindow();
-        // Never kill the product/installer tree following a failed assertion.
-        process.Dispose();
+        try
+        {
+            if (process.HasExited) { CleanupState = "already_exited"; return; }
+            if (!savedRecordsOnly)
+            {
+                process.CloseMainWindow();
+                CleanupState = "normal_close_requested";
+                // Live installation verification never terminates a product or
+                // installer tree following an assertion failure.
+                return;
+            }
+            // This opt-in plan launches only a read-only viewer over synthetic
+            // saved records. Close its modal dialogs first, then its main window.
+            EnumWindows((window, _) =>
+            {
+                GetWindowThreadProcessId(window, out var owner);
+                if (owner == process.Id) PostMessage(window, 0x0010, IntPtr.Zero, IntPtr.Zero);
+                return true;
+            }, IntPtr.Zero);
+            if (process.WaitForExit(2000)) { CleanupState = "normal_close_completed"; return; }
+            if (process.StartTime.ToUniversalTime().Ticks != startedAt)
+                throw new InvalidOperationException("The saved-record viewer creation identity changed.");
+            process.Kill(entireProcessTree: false);
+            CleanupState = process.WaitForExit(3000) ? "owned_saved_record_viewer_terminated" : "owned_saved_record_viewer_exit_timeout";
+        }
+        finally { process.Dispose(); }
     }
 
     [StructLayout(LayoutKind.Sequential)] private struct WindowBounds { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] private struct NativePoint { public int X, Y; }
     [DllImport("user32.dll")] private static extern IntPtr GetParent(IntPtr window);
+    [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr window, uint flags);
+    [DllImport("user32.dll")] private static extern bool IsChild(IntPtr parent, IntPtr child);
+    [DllImport("user32.dll")] private static extern IntPtr GetDlgItem(IntPtr dialog, int item);
+    [DllImport("user32.dll")] private static extern int GetDlgCtrlID(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, WindowCallback callback, IntPtr parameter);
+    [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr SendMessageTimeoutText(IntPtr window, uint message, IntPtr wParam, string text, uint flags, uint timeout, out UIntPtr result);
+    [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr SendMessageTimeoutBuffer(IntPtr window, uint message, IntPtr wParam, System.Text.StringBuilder text, uint flags, uint timeout, out UIntPtr result);
     private delegate bool WindowCallback(IntPtr window, IntPtr parameter);
     [DllImport("user32.dll")] private static extern bool EnumWindows(WindowCallback callback, IntPtr parameter);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, System.Text.StringBuilder name, int maximum);

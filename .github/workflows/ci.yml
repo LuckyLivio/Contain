@@ -187,6 +187,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Desktop package freeze failed' }
       - name: Actual Windows forms, packaged CLI and local report verification
         id: viewer_verify
+        timeout-minutes: 12
         if: ${{ !cancelled() && steps.viewer_package.outcome == 'success' }}
         shell: pwsh
         run: |
@@ -204,8 +205,19 @@ jobs:
           }
           $testArgs = @('--package',$nativePackage,'--fixtures',"$env:CONTAIN_RUN_DIR/viewer-fixtures",'--output',"$env:CONTAIN_RUN_DIR/viewer-public",'--private-output',"$env:CONTAIN_RUN_DIR/viewer-private",'--source',$env:GITHUB_SHA)
           if ('${{ steps.trial_plan.outputs.install }}' -eq 'true') { $testArgs += @('--install-fixture', (Join-Path $nativePackage 'contain-test-installer.exe')) }
-          & "$env:CONTAIN_RUN_DIR/viewer-tests/Contain.Viewer.Tests.exe" @testArgs *> "$env:CONTAIN_RUN_DIR/viewer-private/harness.log"
-          $code = $LASTEXITCODE
+          # Wait for the harness itself, not a descendant holding a pipeline open
+          # after a failed modal-dialog assertion. The owned process has a hard
+          # deadline; retained summaries still make failures reviewable.
+          $quotedArgs = $testArgs | ForEach-Object { '"' + $_.Replace('"', '\"') + '"' }
+          $harness = Start-Process -FilePath "$env:CONTAIN_RUN_DIR/viewer-tests/Contain.Viewer.Tests.exe" -ArgumentList $quotedArgs -PassThru -NoNewWindow -RedirectStandardOutput "$env:CONTAIN_RUN_DIR/viewer-private/harness.log" -RedirectStandardError "$env:CONTAIN_RUN_DIR/viewer-private/harness-stderr.log"
+          $null = $harness.Handle # Retain the exact process identity until its exit code is read.
+          if (-not $harness.WaitForExit(600000)) {
+            $harness.Kill() # Only this test harness, never an installer tree.
+            throw 'Native desktop harness exceeded its ten-minute deadline'
+          }
+          $harness.Refresh()
+          $code = $harness.ExitCode
+          if ($null -eq $code) { throw 'Native desktop harness exit code is unavailable' }
           Write-Host "Native desktop verification exit code: $code"
           if ($code -ne 0) { exit $code }
       - name: Package the frozen desktop and its actual result
@@ -240,6 +252,7 @@ jobs:
             ${{ env.CONTAIN_RUN_DIR }}/viewer-public/overview-summary.json
             ${{ env.CONTAIN_RUN_DIR }}/viewer-public/search-summary.json
             ${{ env.CONTAIN_RUN_DIR }}/viewer-public/export-summary.json
+            ${{ env.CONTAIN_RUN_DIR }}/viewer-public/export-progress.json
             ${{ env.CONTAIN_RUN_DIR }}/viewer-public/screenshots/*.png
             ${{ env.CONTAIN_RUN_DIR }}/viewer-public/reports/*.html
           if-no-files-found: error
