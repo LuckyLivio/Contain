@@ -280,7 +280,11 @@ internal sealed class FirstUseConfigurationChecks(Options options, bool priorChe
 
         C<CheckBox>(form, "AdvancedToggle").Checked = true;
         C<CheckBox>(form, "SnapshotOnly").Checked = true;
-        var before = form.PendingOperation;
+        var statusControl = C<TextBox>(form, "InstallStatus");
+        var correctionControl = C<Label>(form, "InstallCorrectionHint");
+        var statusBeforeConflict = statusControl.Text;
+        var correctionBeforeConflict = correctionControl.Text;
+        var correctionWasVisible = correctionControl.Visible;
         start.PerformClick(); await form.PendingOperation.WaitAsync(TimeSpan.FromSeconds(20));
         Require(follow.Checked, "snapshot conflict never silently changes the selected follow mode");
         Require(C<CheckBox>(form, "SnapshotOnly").Checked, "snapshot conflict preserves the user's explicit snapshot selection");
@@ -292,7 +296,14 @@ internal sealed class FirstUseConfigurationChecks(Options options, bool priorChe
             + C<Label>(form, "CaptureModeNote").Text;
         Require(correction.Contains("指定文件夹", StringComparison.Ordinal) && correction.Contains("快照", StringComparison.Ordinal),
             "snapshot conflict provides the explicit manual-folder correction next to the recording action");
-        Require(!ReferenceEquals(before, form.PendingOperation), "the actual Start action exercised the prelaunch conflict validation");
+        Require(correctionControl.Visible && (!correctionWasVisible || correctionControl.Text != correctionBeforeConflict)
+            && correctionControl.Text.Contains("快照", StringComparison.Ordinal)
+            && correctionControl.Text.Contains("指定文件夹", StringComparison.Ordinal),
+            "the actual Start action exposes this conflict's new visible manual-folder correction");
+        Require(statusControl.Visible && statusControl.Text != statusBeforeConflict
+            && statusControl.Text.Contains("启动或记录失败：", StringComparison.Ordinal)
+            && statusControl.Text.Contains("ETW", StringComparison.Ordinal),
+            "the actual Start action reports a new prelaunch mode-validation failure in the visible status");
         C<CheckBox>(form, "SnapshotOnly").Checked = false;
         C<CheckBox>(form, "AdvancedToggle").Checked = false;
 

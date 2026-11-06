@@ -83,3 +83,14 @@ checks did not run. Other viewer, personal-record, overview, search, export and
 progress checks passed, as did the 54 quality gates. The diagnostic artifact is
 not a release candidate. The fix focuses the already checked mode and keeps the
 original assertions, split into individual diagnostic conditions.
+
+The second candidate `b2c2b793e15506d4bf9cda8617f70ffbacf91815`,
+[CI 42189250179](https://github.com/LuckyLivio/Contain/actions/runs/42189250179),
+passed those six strict state conditions but stopped at the test's Task-reference
+receipt. Synchronous prelaunch validation can return the cached completed Task,
+so reference identity did not prove whether Start executed. The corrected test
+checks the newly visible, specific validation error and status instead. This
+attempt also started zero installers/captures. Cold-restart test helpers were
+aligned with the new automatic write search: they explicitly clear it and wait
+for the ordinary first page before using full-timeline offsets; exact event and
+explanation identity checks remain unchanged.

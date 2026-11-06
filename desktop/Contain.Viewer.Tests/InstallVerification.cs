@@ -418,7 +418,14 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         await WaitIdle(viewer!);
         if (C<TextBox>(viewer!, "EventFilter").Text.Length != 0)
         {
-            C<Button>(viewer!, "ClearEventSearch").PerformClick(); await WaitIdle(viewer!);
+            C<Button>(viewer!, "ClearEventSearch").PerformClick();
+            // Clearing the automatic follow search is debounced. The full
+            // timeline index must not be applied to the previous filtered page.
+            await PackagedDesktop.WaitAsync(() => Task.FromResult(
+                C<TextBox>(viewer!, "EventFilter").Text.Length == 0
+                && C<Label>(viewer!, "EventsPage").Text.Contains("偏移 0", StringComparison.Ordinal)
+                && !viewer!.IsBusy), TimeSpan.FromSeconds(30));
+            await WaitIdle(viewer!);
         }
         for (var page = 0; page < index / 50; page++)
         {
