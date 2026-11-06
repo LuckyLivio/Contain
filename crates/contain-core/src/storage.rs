@@ -22,7 +22,7 @@ mod read_only_tests;
 mod reliability;
 #[path = "storage/search.rs"]
 mod search;
-pub use search::{EventSearch, EventSearchPage};
+pub use search::{EventSearch, EventSearchPage, MAX_SEARCH_EXPORT_BYTES};
 #[cfg(test)]
 #[path = "storage/state_validation_tests.rs"]
 mod state_validation_tests;

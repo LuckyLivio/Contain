@@ -68,11 +68,34 @@ public sealed class CoreClient
                 !data.TryGetProperty("limit", out var actualLimit) || actualLimit.ValueKind != JsonValueKind.Number || !actualLimit.TryGetInt32(out var returnedLimit) || returnedLimit != limit ||
                 !data.TryGetProperty("offset", out var actualOffset) || actualOffset.ValueKind != JsonValueKind.Number || !actualOffset.TryGetInt64(out var returnedOffset) || returnedOffset != offset ||
                 !data.TryGetProperty("matched_total", out var total) || total.ValueKind != JsonValueKind.Number || !total.TryGetInt64(out var matchedTotal) || matchedTotal < 0 ||
-                count != Math.Min((long)limit, Math.Max(0, matchedTotal - offset)))
+                count != Math.Min((long)limit, Math.Max(0, matchedTotal - offset)) ||
+                !ValidSearchIdentity(data))
                 throw new CoreClientException("page_contract", "CLI 返回的搜索条件、总数或分页范围与请求不一致。");
         }
         return response;
     }
+
+    public async Task<CoreResponse> SearchMatchesAsync(string database, string id, string search,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(search);
+        if (search.Contains('\0')) throw new CoreClientException("invalid_search", "搜索内容不能包含空字符。");
+        var response = await QueryAsync(database, "history", "history",
+            ["--json", "--all-matches", "--search=" + search, "--", Identity(id)], cancellationToken).ConfigureAwait(false);
+        var data = response.Data;
+        EnsureIdentity(data.GetProperty("app_id").GetString(), id);
+        if (!data.TryGetProperty("view_scope", out var scope) || scope.ValueKind != JsonValueKind.String || scope.GetString() != "search_matches" ||
+            !data.TryGetProperty("search", out var actualSearch) || actualSearch.ValueKind != JsonValueKind.String || actualSearch.GetString() != search ||
+            !data.TryGetProperty("matched_total", out var total) || total.ValueKind != JsonValueKind.Number || !total.TryGetInt64(out var matchedTotal) ||
+            matchedTotal < 0 || matchedTotal != data.GetProperty("events").GetArrayLength() || !ValidSearchIdentity(data))
+            throw new CoreClientException("search_export_contract", "CLI 返回的搜索条件、总数或完整结果标识不一致，未导出报告。");
+        return response;
+    }
+
+    private static bool ValidSearchIdentity(JsonElement data) =>
+        data.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String &&
+        data.TryGetProperty("search_fingerprint", out var fingerprint) && fingerprint.ValueKind == JsonValueKind.String &&
+        fingerprint.GetString() is { Length: 64 } text && text.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
 
     public async Task<CoreResponse> ExplainAsync(string database, string sessionId, string eventId, CancellationToken cancellationToken = default)
     {
@@ -101,7 +124,9 @@ public sealed class CoreClient
         var all = new List<string> { "--read-only", "--db", path, command };
         all.AddRange(arguments);
         var output = await RunAsync(all, cancellationToken);
-        return CoreResponse.Parse(output, kind);
+        // Full matching exports can approach the existing output limit. Keep JSON
+        // parsing and contract traversal off the WinForms message thread.
+        return await Task.Run(() => CoreResponse.Parse(output, kind), cancellationToken).ConfigureAwait(false);
     }
 
     private async Task EnsureVersionAsync(CancellationToken cancellationToken)

@@ -5,6 +5,7 @@ synthetic production-store sample may be copied; user databases stay local.
 """
 import argparse
 import hashlib
+from html.parser import HTMLParser
 import importlib.util
 import json
 import os
@@ -26,6 +27,13 @@ INSTALL_VERIFICATION = "contain-desktop-install-verification-1"
 LAYOUT_VERIFICATION = "contain-desktop-layout-verification-1"
 PROGRESS_VERIFICATION = "contain-desktop-progress-verification-1"
 PERSONAL_RECORDS_VERIFICATION = "contain-desktop-personal-records-verification-1"
+SEARCH_EXPORT_VERIFICATION = "contain-desktop-search-export-verification-1"
+SEARCH_EXPORT_REQUIRED_CHECKS = frozenset({
+    "frozen_export_package_identity", "actual_packaged_search_export_all_ids",
+    "exported_page_selection_preserved", "ordinary_page_report_after_clear",
+    "no_matches_cancel_and_failure_state", "safe_targets_and_cancelled_write",
+    "literal_text_html_escaping", "unchanged_readonly_databases",
+})
 SEARCH_VERIFICATION = "contain-desktop-session-search-verification-1"
 SEARCH_REQUIRED_CHECKS = frozenset({
     "frozen_search_package_identity", "full_session_search_fixed_oracle",
@@ -214,8 +222,9 @@ def usage(source, install=False, version=None):
    重启后仍从数据库读取同一会话；未结束的历史记录不代表采集进程当前仍在运行。
 4. 在“事件与依据”的“搜索本次记录”输入文件名、完整路径、操作或置信标签，
    搜索当前数据库中本次会话的全部事件。每页最多 50 条，显示匹配总数与当前范围；翻页保留条件。
-5. 点击事件查看同一原始事件的依据，可复制其 ID。搜索时可直接清除条件；
-   清除搜索后可导出普通浏览页的本地 HTML 报告。
+5. 点击事件查看同一原始事件的依据，可复制其 ID。搜索成功后点击“导出全部 N 条匹配结果”，
+   选择新的 .html 文件；无论当前页码或是否选中事件，报告都包含全部匹配事件。
+   导出后保留搜索条件、当前页和所选事件。清除搜索后仍可“导出本页报告”。
 
 无需 Rust、Visual Studio、Python 或另装 .NET。Windows x64 系统组件和随包
 .NET 8 / MSVC 运行库用于运行程序；不自动申请管理员权限。
@@ -234,7 +243,10 @@ Unknown 和中断模型。它由生产 Storage/RawBuffer 写入，未发生真�
 状态变化和源操作是不同证据。High 不是安全删除授权；Unknown 不是危险判定；
 记录结束不代表覆盖完整。报告包含本地路径与记录内容，由你决定保存位置，不会上传。
 普通报告仅包含本条记录的当前未筛选事件页、所选事件解释与状态变化。
-搜索结果完整导出留待 Beta.6；搜索期间提示“清除搜索后可导出普通浏览页”。
+搜索报告只包含本次会话的全部匹配事件及必要上下文，顺序与搜索一致。
+一次导出使用同一只读数据视图；发现匹配内容已变化会提示刷新后重试。
+查询中、查询失败或无匹配时不能导出旧结果。取消保存不改变当前视图；已有文件不覆盖，
+写入失败或取消后不会留下半份报告。超过输出限额会明确失败，不会截断后声称全部导出成功。
 版本、脚本、界面和核心身份见 BUILD.json；
 必需检查的实际结果见 VALIDATION.json。构建未签名，属于有限范围的 Beta。
 整个 Program Files 目录曾有用户反馈停在整理阶段；缺少原始数据库和错误日志，
@@ -631,6 +643,122 @@ def search_verification_matches(value, build, manifest_sha):
         and all(type(value.get(key)) is int and value[key] == 0 for key in ("failed", "skipped", "not_run")))
 
 
+class SearchReportIds(HTMLParser):
+    """Read actual report rows, independently of native summary/count assertions."""
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.ids = []
+        self.matched_tables = 0
+        self.in_matches = False
+        self.valid = True
+        self.row_id = None
+        self.cells = 0
+        self.first_cell = None
+        self.reading_first_cell = False
+
+    def handle_starttag(self, tag, attributes):
+        attrs = dict(attributes)
+        if tag in {"script", "iframe", "object", "embed", "link", "img"}:
+            self.valid = False
+        if any(name.startswith("on") for name in attrs):
+            self.valid = False
+        if tag == "table":
+            if self.in_matches:
+                self.valid = False
+            self.in_matches = attrs.get("id") == "matched-events"
+            self.matched_tables += int(self.in_matches)
+        if "data-event-id" in attrs:
+            if tag != "tr" or not self.in_matches:
+                self.valid = False
+            self.ids.append(attrs["data-event-id"])
+            if self.row_id is not None:
+                self.valid = False
+            self.row_id = attrs["data-event-id"]
+            self.cells = 0
+            self.first_cell = ""
+        if tag == "td" and self.row_id is not None:
+            self.cells += 1
+            self.reading_first_cell = self.cells == 1
+
+    def handle_data(self, data):
+        if self.reading_first_cell:
+            self.first_cell += data
+
+    def handle_endtag(self, tag):
+        if tag == "td":
+            self.reading_first_cell = False
+        if tag == "tr" and self.row_id is not None:
+            if self.cells < 5 or self.first_cell != self.row_id:
+                self.valid = False
+            self.row_id = None
+        if tag == "table":
+            self.in_matches = False
+
+
+def search_export_report_matches(value, summary_path):
+    if not isinstance(value, dict) or summary_path is None:
+        return False
+    report = value.get("report")
+    if not isinstance(report, dict) or report.get("path") != "reports/search-export-synthetic.html":
+        return False
+    if type(report.get("bytes")) is not int or not 0 < report["bytes"] <= 64 * 1024 * 1024:
+        return False
+    if not isinstance(report.get("sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", report["sha256"]):
+        return False
+    try:
+        path = safe_file(summary_path.parent / "reports" / "search-export-synthetic.html")
+        if path.stat().st_size != report["bytes"] or sha(path) != report["sha256"]:
+            return False
+        parser = SearchReportIds()
+        parser.feed(path.read_text(encoding="utf-8"))
+        parser.close()
+        return (parser.valid and parser.matched_tables == 1 and not parser.in_matches and parser.row_id is None
+                and parser.ids == [f"synthetic-search-event-{index:03d}" for index in range(70, 123)])
+    except (OSError, ValueError, UnicodeError):
+        return False
+
+
+def search_export_verification_matches(value, build, manifest_sha, summary_path):
+    if not isinstance(value, dict):
+        return False
+    checks, planned = value.get("checks"), value.get("planned_checks")
+    if not (isinstance(checks, list) and all(isinstance(check, dict) for check in checks)
+            and isinstance(planned, list) and all(isinstance(name, str) for name in planned)):
+        return False
+    names = [check.get("name") for check in checks]
+    if (not all(isinstance(name, str) for name in names)
+            or len(names) != len(set(names)) or set(names) != SEARCH_EXPORT_REQUIRED_CHECKS
+            or len(planned) != len(set(planned)) or set(planned) != SEARCH_EXPORT_REQUIRED_CHECKS):
+        return False
+    expected = {entry["path"]: entry["sha256"] for entry in build["files"]}
+    ids = [f"synthetic-search-event-{index:03d}" for index in range(70, 123)]
+    return (
+        type(value.get("schema_version")) is int and value["schema_version"] == 1
+        and value.get("protocol_revision") == SEARCH_EXPORT_VERIFICATION
+        and value.get("source_sha") == build["source_sha"]
+        and value.get("native_windows") is True and value.get("synthetic") is True
+        and value.get("real_etw_executed") is False and value.get("real_user_records_accessed") is False
+        and value.get("completed") is True and value.get("accepted") is True
+        and value.get("actual_packaged_executable") is True and value.get("native_save_dialog") is True
+        and type(value.get("actual_device_dpi")) is int and value["actual_device_dpi"] > 0
+        and isinstance(value.get("windows_version"), str) and bool(value["windows_version"].strip())
+        and type(value.get("retries")) is int and value["retries"] == 0
+        and value.get("package_manifest_sha256") == manifest_sha
+        and value.get("viewer_assembly_sha256") == expected["Contain.Viewer.dll"]
+        and value.get("viewer_launcher_sha256") == expected["Contain.Viewer.exe"]
+        and value.get("contain_sha256") == expected["contain.exe"]
+        and type(value.get("event_count")) is int and value["event_count"] == 53
+        and value.get("report_event_ids") == ids
+        and all(type(value.get(key)) is int and value[key] == 50 for key in ("page_before_offset", "page_after_offset"))
+        and value.get("page_after_ids") == ids[50:]
+        and all(value.get(key) == "synthetic-search-event-120"
+                for key in ("selected_event_id", "copied_event_id", "explain_event_id"))
+        and all(check.get("status") == "passed" for check in checks)
+        and type(value.get("passed")) is int and value["passed"] == len(SEARCH_EXPORT_REQUIRED_CHECKS)
+        and all(type(value.get(key)) is int and value[key] == 0 for key in ("failed", "skipped", "not_run"))
+        and search_export_report_matches(value, summary_path))
+
+
 def finalize(args):
     package = args.package.resolve()
     build = verify_package(package)
@@ -649,6 +777,8 @@ def finalize(args):
     overview = read(overview_path) if overview_path and overview_path.is_file() else {}
     search_path = getattr(args, "search_verification", None)
     search = read(search_path) if search_path and search_path.is_file() else {}
+    export_path = getattr(args, "search_export_verification", None)
+    exported = read(export_path) if export_path and export_path.is_file() else {}
     install_requested = build.get("controlled_fixture") is not None or install_path is not None
     checks = {
         "frozen_package_unchanged": True,
@@ -665,6 +795,8 @@ def finalize(args):
         "native_persisted_overview_and_navigation": overview_verification_matches(overview, build, manifest_sha),
         # A successful older viewer suite cannot substitute for Beta 5 search.
         "native_session_event_search": search_verification_matches(search, build, manifest_sha),
+        # Beta 6 requires actual EXE export plus independently parsed report bytes.
+        "native_search_export": search_export_verification_matches(exported, build, manifest_sha, export_path),
     }
     if install_requested:
         checks["native_gui_install_etw_and_exact_result"] = install_verification_matches(installation, build, manifest_sha)
@@ -697,6 +829,8 @@ def finalize(args):
         native_personal_records_verification=personal,
         native_overview_verification=overview,
         native_search_verification=search,
+        native_search_export_verification=exported,
+        search_export_verification_summary_sha256=sha(export_path) if export_path and export_path.is_file() else None,
         search_verification_summary_sha256=sha(search_path) if search_path and search_path.is_file() else None,
         overview_verification_summary_sha256=sha(overview_path) if overview_path and overview_path.is_file() else None,
         personal_records_verification_summary_sha256=sha(personal_path) if personal_path and personal_path.is_file() else None,
@@ -754,6 +888,8 @@ def main():
         help="Require persisted overview outcomes, exact current-session navigation and cold restart")
     finish.add_argument("--search-verification", type=Path,
         help="Require current-session cross-page search and original event identity in the actual packaged EXE")
+    finish.add_argument("--search-export-verification", type=Path,
+        help="Require actual packaged EXE full-search export, fixed ordered HTML IDs and retained current page")
     finish.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:

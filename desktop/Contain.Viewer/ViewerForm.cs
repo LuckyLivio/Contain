@@ -69,6 +69,9 @@ public sealed class ViewerForm : Form
     private int _changeOffset;
     private bool _moreEvents;
     private long? _matchedEvents;
+    private string? _searchFingerprint;
+    private string _searchExportReason = "请先完成搜索。";
+    private bool _exporting;
     private bool _moreChanges;
     private InstallRunResult? _lastRun;
 
@@ -273,7 +276,7 @@ public sealed class ViewerForm : Form
         _status.AutoEllipsis = true;
         _status.Padding = new Padding(4, 6, 4, 0);
         root.Controls.Add(_status, 0, 4);
-        _tips.SetToolTip(_export, "导出本记录全部状态变化、普通浏览的当前事件页和所选事件解释。清除搜索后可导出普通浏览页。");
+        _tips.SetToolTip(_export, "普通浏览导出本页报告；搜索成功后导出当前会话的全部匹配事件。");
     }
 
     private void WireEvents()
@@ -359,18 +362,51 @@ public sealed class ViewerForm : Form
         };
         _export.Click += (_, _) =>
         {
-            if (_database is null || _recordId is null || _eventFilter.Text.Length != 0) return;
-            var path = _dialogs.ChooseReport(this, $"Contain-report-{DateTime.Now:yyyyMMdd-HHmmss}.html");
-            if (path is null) return;
+            if (!_export.Enabled || _database is null || _recordId is null) return;
+            // Capture the entire request before entering the modal dialog's
+            // nested message loop. Neither pagination nor selection is modified.
             var db = _database;
             var id = _recordId;
+            var search = _eventFilter.Text.Length == 0 ? null : _eventFilter.Text;
+            var fingerprint = _searchFingerprint;
+            var matched = _matchedEvents;
             var eventId = _selectedEventId;
             var offset = _eventOffset;
+            var path = _dialogs.ChooseReport(this, $"Contain-report-{DateTime.Now:yyyyMMdd-HHmmss}.html");
+            if (path is null)
+            {
+                SetStatus("已取消保存，当前搜索、页码和选择保持不变。", false);
+                return;
+            }
+            _exporting = true;
             StartOperation(async token =>
             {
-                await ReportExporter.ExportAsync(_client, db, id, eventId, _pageSize, offset, path, token);
-                token.ThrowIfCancellationRequested();
-                SetStatus($"已导出本地报告：{path}。范围：本记录全部状态变化、当前未筛选事件页、所选事件解释；不包含全部事件历史。", false);
+                try
+                {
+                    if (search is not null)
+                    {
+                        SetStatus($"正在导出全部 {matched} 条匹配结果…", false);
+                        var count = await ReportExporter.ExportSearchAsync(_client, db, id, search, fingerprint!, matched!.Value, path, token);
+                        token.ThrowIfCancellationRequested();
+                        SetStatus($"已导出全部 {count} 条匹配事件：{Path.GetFullPath(path)}。当前搜索、页码和选择保持不变。", false);
+                    }
+                    else
+                    {
+                        await ReportExporter.ExportAsync(_client, db, id, eventId, _pageSize, offset, path, token);
+                        token.ThrowIfCancellationRequested();
+                        SetStatus($"已导出本地报告：{path}。范围：本记录全部状态变化、当前未筛选事件页、所选事件解释；不包含全部事件历史。", false);
+                    }
+                }
+                catch (CoreClientException error) when (error.Code == "export_record_changed" && !token.IsCancellationRequested)
+                {
+                    if (_database == db && _recordId == id && _eventFilter.Text == search)
+                    {
+                        _searchFingerprint = null;
+                        _searchExportReason = "搜索结果已变化，请刷新搜索后再导出。";
+                    }
+                    throw;
+                }
+                finally { _exporting = false; }
             });
         };
         FormClosed += (_, _) => { _operationCancellation?.Cancel(); _tips.Dispose(); };
@@ -513,6 +549,8 @@ public sealed class ViewerForm : Form
         {
             _pageEvents = [];
             _matchedEvents = null;
+            _searchFingerprint = null;
+            _searchExportReason = "正在查询，完成后可导出全部匹配结果。";
             _moreEvents = false;
             RenderEvents();
             _eventsPage.Text = "正在查询…";
@@ -529,6 +567,7 @@ public sealed class ViewerForm : Form
             }
             catch (Exception error) when (!token.IsCancellationRequested)
             {
+                _searchExportReason = "查询失败，请重试搜索后再导出。";
                 _eventsPage.Text = "查询失败";
                 _eventDetails.Text = "查询失败：" + error.Message + "\r\n可修改搜索条件、清除搜索或重新选择记录重试。";
                 throw;
@@ -541,6 +580,8 @@ public sealed class ViewerForm : Form
         var rows = Array(Field(history.Data, "events")).ToList();
         _eventOffset = offset;
         _matchedEvents = history.Data.TryGetProperty("matched_total", out var total) ? total.GetInt64() : null;
+        _searchFingerprint = history.Data.TryGetProperty("search_fingerprint", out var fingerprint) ? fingerprint.GetString() : null;
+        _searchExportReason = _matchedEvents == 0 ? "没有匹配项可导出。" : string.Empty;
         _moreEvents = _matchedEvents is { } matched ? matched > offset + rows.Count : rows.Count > _pageSize;
         _pageEvents = rows.Take(_pageSize).Select(row => row.Clone()).ToList();
         RenderEvents();
@@ -632,6 +673,8 @@ public sealed class ViewerForm : Form
         _changeOffset = 0;
         _moreEvents = false;
         _matchedEvents = null;
+        _searchFingerprint = null;
+        _searchExportReason = "请先完成搜索。";
         _moreChanges = false;
         _pageEvents = [];
         _allChanges = [];
@@ -712,10 +755,16 @@ public sealed class ViewerForm : Form
         _eventFilter.Enabled = _recordId is not null && (!IsBusy || _eventQuery);
         _clearEventSearch.Enabled = _eventFilter.Enabled && _eventFilter.Text.Length != 0;
         _changeFilter.Enabled = !IsBusy;
-        _export.Enabled = !IsBusy && _database is not null && _recordId is not null && _eventFilter.Text.Length == 0;
-        _eventsScope.Text = _eventFilter.Text.Length != 0
-            ? "搜索本次记录全部事件 · 英文字母忽略大小写，其他字符精确包含匹配。清除搜索后可导出普通浏览页。"
+        var searching = _eventFilter.Text.Length != 0;
+        var canExportMatches = _matchedEvents is > 0 && _searchFingerprint is not null;
+        _export.Text = searching ? _matchedEvents is > 0 ? $"导出全部 {_matchedEvents} 条匹配结果" : "导出匹配结果" : "导出本页报告";
+        _export.Enabled = !IsBusy && _database is not null && _recordId is not null && (!searching || canExportMatches);
+        var exportReason = _exporting ? "正在导出，请等待完成。" : IsBusy ? "正在读取，请等待查询完成。"
+            : canExportMatches ? $"可导出全部 {_matchedEvents} 条匹配事件，当前页和选择保持不变。" : _searchExportReason;
+        _eventsScope.Text = searching
+            ? "搜索本次记录全部事件 · 英文字母忽略大小写，其他字符精确包含匹配。" + exportReason
             : $"搜索本次记录全部事件（每页最多 {_pageSize} 条）· 英文字母忽略大小写，其他字符精确包含匹配。普通报告包含本记录状态变化、当前事件页和所选解释。";
+        _tips.SetToolTip(_export, searching ? exportReason : "导出本记录状态变化、普通浏览的当前事件页和所选事件解释。");
         _previousEvents.Enabled = !IsBusy && _recordId is not null && _eventOffset > 0;
         _nextEvents.Enabled = !IsBusy && _recordId is not null && _moreEvents;
         _previousChanges.Enabled = !IsBusy && _recordId is not null && _changeOffset > 0;

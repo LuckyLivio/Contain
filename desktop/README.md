@@ -7,8 +7,8 @@ Graphical recording is a separate [implementation and validation milestone](../d
 
 ## Current download
 
-Use the [Beta 5 release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.5).
-Its [session event search, validation scope and known issues](../docs/session-event-search-beta5.md) distinguish
+Use the [Beta 6 release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.6).
+Its [complete search export, validation scope and known issues](../docs/search-export-beta6.md) distinguish
 native Windows results, simulated layout stress and user-reported trials.
 The entries below retain historical evidence rather than additional current downloads.
 
@@ -56,10 +56,12 @@ non-system runtime for the exact `contain.exe` sidecar.
    to explain or copy that row's original event ID.
 5. Choose **导出本页报告** and a new `.html` filename. The report contains the
    selected record's summary and state differences, the current unfiltered event
-   page, and the selected event's explanation. During search the viewer displays
-   **清除搜索后可导出普通浏览页** and offers **清除搜索**. Complete matching-result
-   export is deferred to Beta 6. It states that page scope and
-   retains the CLI JSON. It is self-contained, has no scripts or network requests,
+   page, and the selected event's explanation. During a successful search, the same action becomes
+   **导出全部 N 条匹配结果**. It exports all matching events in their search order,
+   regardless of the visible page or selected row. The search report includes the
+   exact session name/UUID, query, scope, actual count and original event fields.
+   The page and selected explanation remain in place after export, dialog cancel
+   or failure. Ordinary page reports retain their existing scope and CLI JSON. It is self-contained, has no scripts or network requests,
    and remains local. Original paths and evidence are included, so review it
    before sharing.
 
@@ -83,8 +85,13 @@ read-only flags and holds one read transaction per CLI invocation. Missing,
 unrecognized, corrupt and newer databases are rejected. Supported older schemas
 use the existing migration only on an in-memory backup; the original is not
 migrated. A new query can observe another process's later commit. The viewer has
-no background refresh; reopen a record to refresh it. Export rechecks the summary,
-state view and selected event and refuses detected changes between queries.
+no background refresh; reopen a record to refresh it. Ordinary page export rechecks the summary,
+state view and selected event and refuses detected changes between queries. Search
+export reads the complete matched sequence and count within a single CLI read
+snapshot, using the same backend matcher and ordering as search. A full-content
+fingerprint binds it to the displayed successful search, including equal-count
+event replacement; changed results require refreshing before export. Limits or
+failures never become a truncated successful report.
 
 The additive `list --details`, `inspect --summary` and `diff --state-only`
 contracts avoid loading current-schema event history for the overview. Summary

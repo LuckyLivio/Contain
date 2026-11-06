@@ -7,30 +7,15 @@ using System.Text.Json;
 namespace Contain.Viewer;
 
 /// <summary>A local report from the same read-only CLI contracts used by the viewer.</summary>
-public static class ReportExporter
+public static partial class ReportExporter
 {
     public static async Task ExportAsync(CoreClient client, string database, string recordId,
         string? eventId, int pageSize, long offset, string outputPath,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(client);
-        ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
-        var target = Path.GetFullPath(outputPath);
+        var target = ValidateTarget(client, database, outputPath);
         var db = Path.GetFullPath(database);
-        // A Windows alternate data stream is not a separate report file.
-        var root = Path.GetPathRoot(target) ?? string.Empty;
-        if (target[root.Length..].Contains(':'))
-            throw new CoreClientException("export_path", "报告必须是独立的普通文件，不能写入备用数据流。");
-        if (File.Exists(target) || Directory.Exists(target))
-            throw new CoreClientException("export_exists", "报告目标已存在；请选择新的文件名。不会覆盖数据库或其他文件。");
-        if (!string.Equals(Path.GetExtension(target), ".html", StringComparison.OrdinalIgnoreCase))
-            throw new CoreClientException("export_extension", "请选择 .html 本地报告文件。");
         var parent = Path.GetDirectoryName(target)!;
-        if (!Directory.Exists(parent))
-            throw new CoreClientException("export_directory", "报告目录不存在。");
-        var protectedPaths = new[] { db, db + "-wal", db + "-shm", db + "-journal", client.ExecutablePath };
-        if (protectedPaths.Any(path => string.Equals(path, target, StringComparison.OrdinalIgnoreCase)))
-            throw new CoreClientException("export_protected", "不能将报告写入数据库或程序文件。");
 
         var summary = await client.SummaryAsync(db, recordId, cancellationToken);
         var changes = await client.DiffAsync(db, recordId, cancellationToken);
@@ -59,11 +44,13 @@ public static class ReportExporter
         var binaryHash = await HashFileAsync(client.ExecutablePath, cancellationToken);
         var html = BuildHtml(db, summary, changes, history, explanation, pageSize, offset, binaryHash);
         var temporary = Path.Combine(parent, ".contain-report-" + Guid.NewGuid().ToString("N") + ".tmp");
+        var created = false;
         try
         {
             await using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None,
                 8192, FileOptions.Asynchronous))
             {
+                created = true;
                 var bytes = new UTF8Encoding(false).GetBytes(html);
                 await stream.WriteAsync(bytes, cancellationToken);
                 await stream.FlushAsync(cancellationToken);
@@ -73,8 +60,32 @@ public static class ReportExporter
         }
         finally
         {
-            if (File.Exists(temporary)) File.Delete(temporary);
+            if (created && File.Exists(temporary)) File.Delete(temporary);
         }
+    }
+
+    private static string ValidateTarget(CoreClient client, string database, string outputPath)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
+        var target = Path.GetFullPath(outputPath);
+        var db = Path.GetFullPath(database);
+        // A Windows alternate data stream is not a separate report file.
+        var root = Path.GetPathRoot(target) ?? string.Empty;
+        if (target[root.Length..].Contains(':'))
+            throw new CoreClientException("export_path", "报告必须是独立的普通文件，不能写入备用数据流。");
+        if (File.Exists(target) || Directory.Exists(target))
+            throw new CoreClientException("export_exists", "报告目标已存在；请选择新的文件名。不会覆盖数据库或其他文件。");
+        if (!string.Equals(Path.GetExtension(target), ".html", StringComparison.OrdinalIgnoreCase))
+            throw new CoreClientException("export_extension", "请选择 .html 本地报告文件。");
+        var parent = Path.GetDirectoryName(target)!;
+        if (!Directory.Exists(parent))
+            throw new CoreClientException("export_directory", "报告目录不存在。");
+        var protectedPaths = new[] { db, db + "-wal", db + "-shm", db + "-journal", client.ExecutablePath };
+        if (protectedPaths.Any(path => string.Equals(path, target, StringComparison.OrdinalIgnoreCase)))
+            throw new CoreClientException("export_protected", "不能将报告写入数据库或程序文件。");
+
+        return target;
     }
 
     private static async Task<string> HashFileAsync(string path, CancellationToken cancellationToken)

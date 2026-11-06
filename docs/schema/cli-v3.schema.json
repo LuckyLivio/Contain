@@ -1046,6 +1046,19 @@
           "items": {
             "$ref": "#/$defs/event"
           }
+        },
+        "name": {
+          "type": "string"
+        },
+        "search_fingerprint": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "view_scope": {
+          "type": "string",
+          "enum": [
+            "search_matches"
+          ]
         }
       }
     },

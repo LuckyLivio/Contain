@@ -275,11 +275,12 @@ pub fn generate_viewer(directory: &Path) -> Result<()> {
 fn generate_search_fixture(directory: &Path) -> Result<()> {
     let path = directory.join("search.db");
     let mut db = Storage::open(&path)?;
+    let mut replaced = Storage::open(&directory.join("search-replaced.db"))?;
     for case in ["search", "search-other"] {
         let mut c = capture(case);
         c.name = "SYNTHETIC 同名搜索记录".into();
         let pattern = events(&c, false)[0].clone();
-        let raw = (0..130_u64)
+        let raw: Vec<SystemEvent> = (0..130_u64)
             .map(|index| {
                 let mut event = pattern.clone();
                 event.id = format!("{}-event-{index:03}", c.id);
@@ -306,9 +307,24 @@ fn generate_search_fixture(directory: &Path) -> Result<()> {
                 event
             })
             .collect();
+        let mut replacement = raw.clone();
+        if case == "search" {
+            replacement[81].resource = r"C:\synthetic\Needle replaced-same-count.txt".into();
+        }
+        persist_in_storage(&mut replaced, c.clone(), replacement, false)?;
         persist_in_storage(&mut db, c, raw, false)?;
     }
     drop(db);
+    drop(replaced);
+    let mut special = capture("search-special");
+    special.name = "SYNTHETIC <记录> & \"HTML\"".into();
+    special.finished_at = "2026-10-01T00:00:02Z".into();
+    special.events = events(&special, false);
+    special.events.truncate(1);
+    special.events[0].resource =
+        r#"C:\synthetic\<script>alert('synthetic')</script> & "引号" %_ 中文.txt"#.into();
+    special.events[0].operation = "write_requested<&>".into();
+    Storage::open(&directory.join("search-special.db"))?.save(&special)?;
     // A supported schema v3 observation store without the modern document index.
     // Generate through production save, then remove only post-v3 storage additions.
     let legacy_path = directory.join("search-legacy.db");
