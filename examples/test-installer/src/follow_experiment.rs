@@ -10,6 +10,26 @@ use std::{
     time::{Duration, Instant},
 };
 
+fn wait_pair_marker(root: &Path, name: &str) -> Result<()> {
+    if !std::env::var_os("CONTAIN_FIXTURE_BACKGROUND_WAIT").is_some_and(|value| value == "1") {
+        return Ok(());
+    }
+    let deadline = Instant::now() + Duration::from_secs(45);
+    let marker = root.join(name);
+    while !marker.is_file() {
+        anyhow::ensure!(
+            Instant::now() < deadline,
+            "bounded pair background timed out"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    anyhow::ensure!(
+        fs::read(marker)? == b"background complete",
+        "pair marker mismatch"
+    );
+    Ok(())
+}
+
 pub(crate) fn run(role: Role, root: &Path) -> Result<bool> {
     if !matches!(
         role,
@@ -37,6 +57,7 @@ pub(crate) fn run(role: Role, root: &Path) -> Result<bool> {
                 root.join(".follow-go"),
                 b"follow independent writer may run",
             )?;
+            wait_pair_marker(root, ".pair-background-started")?;
             truth.write(
                 &a.join("parent-target.txt"),
                 b"Contain follow experiment: exact parent write\n",
@@ -48,6 +69,7 @@ pub(crate) fn run(role: Role, root: &Path) -> Result<bool> {
                 .context("launch direct follow fixture child")?
                 .wait()?;
             anyhow::ensure!(exit.success(), "direct follow fixture child failed: {exit}");
+            wait_pair_marker(root, ".pair-background-finished")?;
             thread::sleep(Duration::from_millis(1200));
         }
         Role::FollowChild => {

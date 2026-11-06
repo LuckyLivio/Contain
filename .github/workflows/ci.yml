@@ -30,6 +30,7 @@ jobs:
         shell: pwsh
         env:
           TRIAL_PAIR_REQUESTED: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[trial-pair]') }}
+          LOSS_PAIR_REQUESTED: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[capture-loss]') }}
           INSTALL_REQUESTED: ${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[desktop-install]') || contains(github.event.head_commit.message, '[stage1-beta]')) }}
           BETA_REQUESTED: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[stage1-beta]') }}
           SNAPSHOT_REQUESTED: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[snapshot-fixture]') }}
@@ -41,6 +42,9 @@ jobs:
           New-Item -ItemType Directory -Path $runDir -ErrorAction Stop | Out-Null
           $env:CONTAIN_RUN_DIR = $runDir
           "CONTAIN_RUN_DIR=$runDir" >> $env:GITHUB_ENV
+          $lossPair = $env:LOSS_PAIR_REQUESTED -eq 'true'
+          if ($lossPair -and $env:INSTALL_REQUESTED -ne 'true') { throw 'Loss comparison requires the existing packaged desktop/install gates' }
+          "loss_pair=$($lossPair.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           $desktop = $env:DESKTOP_REQUESTED -eq 'true'
           $beta = $env:BETA_REQUESTED -eq 'true'
           "beta=$($beta.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
@@ -60,7 +64,8 @@ jobs:
           New-Item -ItemType Directory -Path "$runDir/quality-public" | Out-Null
           [ordered]@{
             schema_version=1; source_sha=$env:GITHUB_SHA; requested=($requested -or $install)
-            configurations=$(if($install){@('gui-controlled-exe')}elseif($requested){@('default','dual-clock')}else{@()}); maximum_native_captures=$(if($install){1}elseif($requested){2}else{0}); retries=0
+            configurations=$(if($install){@('gui-controlled-exe')}elseif($requested){@('default','dual-clock')}else{@()}); maximum_native_captures=$(if($lossPair){3}elseif($install){1}elseif($requested){2}else{0}); retries=0
+            capture_loss_pair=$lossPair; loss_pair_baseline='8e68ccfe63389e1533235e253eb59329f15be898'
             desktop_viewer=$desktop; desktop_install=$install; stage_one_beta=$beta
             beta_layout=$(if($desktop){@('native_default_resize_maximize_tabs_paging','simulated_150_percent_layout_stress_not_system_dpi','simulated_200_percent_layout_stress_not_system_dpi','readonly_database_identity_after_layout')}else{@()})
             install_plan=$(if($install){@('offline_protocol_arguments_and_read_only_regressions','first_use_configuration_and_layout_before_capture','native_exe_picker_default_follow_without_watch_roots','default_follow_single_input_without_directory_advanced_or_doctor','one_gui_started_controlled_fixture_real_etw','duplicate_start_and_conservative_close','verified_root_and_direct_child_source_writes_exact_session_autoopen','source_event_explain_and_export','native_picker_navigation_and_cancel')}else{@()})
@@ -155,6 +160,10 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - name: Saved loss diagnostic presentation regressions
+        if: ${{ !cancelled() && steps.trial_plan.outputs.desktop == 'true' }}
+        shell: pwsh
+        run: dotnet run --project desktop/Contain.Viewer.Presentation.Tests -c Release
       - name: Build the native desktop viewer and synthetic stores
         id: viewer_build
         if: ${{ !cancelled() && steps.trial_plan.outputs.desktop == 'true' && steps.quality_check.outcome == 'success' && steps.coverage.outcome == 'success' && steps.original_coverage.outcome == 'success' && steps.dependencies.outcome == 'success' && steps.companion.outcome == 'success' && steps.build.outcome == 'success' && steps.quality_summary.outcome == 'success' }}
@@ -234,6 +243,29 @@ jobs:
           $finalArgs += @('--first-use-configuration-verification',"$env:CONTAIN_RUN_DIR/viewer-public/first-use-configuration-summary.json")
           python @finalArgs
           if ($LASTEXITCODE -ne 0) { throw 'Desktop milestone unverified; diagnostic package retains the actual failed or unexecuted checks' }
+      - name: Same-runner Beta 9 and candidate capture loss comparison
+        if: ${{ !cancelled() && steps.trial_plan.outputs.loss_pair == 'true' && steps.viewer_package.outcome == 'success' }}
+        timeout-minutes: 12
+        shell: pwsh
+        run: |
+          $baseline = Join-Path $env:CONTAIN_RUN_DIR 'beta9-windows-x64.zip'
+          Invoke-WebRequest -Uri 'https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.9/contain-0.3.2-beta.9-windows-x64.zip' -OutFile $baseline
+          foreach ($script in @('scripts/capture-loss-pair.ps1','scripts/follow-installer-experiment.ps1')) {
+            $tokens = $null; $parseErrors = $null
+            $null = [Management.Automation.Language.Parser]::ParseFile([IO.Path]::GetFullPath($script), [ref]$tokens, [ref]$parseErrors)
+            if ($parseErrors.Count) { throw 'Loss comparison script syntax failed before any comparison capture' }
+          }
+          $candidateHash = (Get-FileHash -LiteralPath $env:CONTAIN_PACKAGE -Algorithm SHA256).Hash.ToLowerInvariant()
+          ./scripts/capture-loss-pair.ps1 -BaselineZip $baseline -BaselineSha256 'dee47046f01c6a2c31c5bda3a3a3bcf3fc2a1603eb18b35464f68cde04ec7612' -CandidateZip $env:CONTAIN_PACKAGE -CandidateSha256 $candidateHash -CandidateSource $env:GITHUB_SHA -OutputDirectory "$env:CONTAIN_RUN_DIR/loss-pair" -BackgroundFiles 12000
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && steps.trial_plan.outputs.loss_pair == 'true' }}
+        with:
+          name: capture-loss-pair-evidence
+          path: |
+            ${{ env.CONTAIN_RUN_DIR }}/loss-pair/public/*.json
+            ${{ env.CONTAIN_RUN_DIR }}/loss-pair/beta9/public/*.json
+            ${{ env.CONTAIN_RUN_DIR }}/loss-pair/candidate/public/*.json
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         if: ${{ always() && steps.viewer_package.outcome == 'success' }}
         with:

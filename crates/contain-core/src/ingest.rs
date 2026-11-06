@@ -343,12 +343,17 @@ fn record_while_mode<T>(
                             let _timer = profile::timer("receiver_lifetime_update");
                             let mut live = receiver_live.lock().unwrap();
                             live.received = live.received.saturating_add(page.len() as u64);
+                            // Resolve the page against all lifecycle facts received in
+                            // it, including thread starts delivered after file records.
+                            for event in &page {
+                                live.cache.ingest(event);
+                            }
+                            let mut follow_candidates = Vec::new();
                             for event in page {
-                                live.cache.ingest(&event);
                                 if live.follow.is_some()
                                     && matches!(event.event_type.as_str(), "file" | "completion")
                                 {
-                                    live.follow.as_mut().unwrap().push(event);
+                                    follow_candidates.push(event);
                                 } else {
                                     if event.event_type == "file"
                                         || (event.event_type == "registry"
@@ -360,7 +365,7 @@ fn record_while_mode<T>(
                                 }
                             }
                             if let Some(mut follow) = live.follow.take() {
-                                let selected = follow.flush(&mut live.cache, false);
+                                let selected = follow.receive(follow_candidates, &mut live.cache);
                                 if selected.iter().any(|e| e.event_type == "file") {
                                     live.last_activity = Instant::now();
                                 }

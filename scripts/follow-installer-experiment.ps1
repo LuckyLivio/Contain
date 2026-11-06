@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory)][string]$ContainExecutable,
     [Parameter(Mandatory)][string]$FixtureExecutable,
     [Parameter(Mandatory)][string]$OutputDirectory,
-    [Parameter(Mandatory)][string]$Source
+    [Parameter(Mandatory)][string]$Source,
+    [ValidateRange(0,30000)][int]$BackgroundFiles = 0
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -19,7 +20,11 @@ $phase = 'preflight'
 $captureExit = $null
 $lastStatus = $null
 $previousTruth = $env:CONTAIN_FIXTURE_TRUTH
+$previousBackgroundWait = $env:CONTAIN_FIXTURE_BACKGROUND_WAIT
 $unrelated = $null
+$background = $null
+$backgroundSignal = $null
+$ownedProcesses = [Collections.Generic.List[Diagnostics.Process]]::new()
 function Write-Json([object]$Value,[string]$Path) {
     [IO.File]::WriteAllText($Path,($Value | ConvertTo-Json -Depth 40),[Text.UTF8Encoding]::new($false))
 }
@@ -28,6 +33,7 @@ function Start-Owned([string]$Exe,[string[]]$Arguments,[string]$Name,[int]$Timeo
     $quoted = $Arguments | ForEach-Object { '"' + $_.Replace('"','\"') + '"' }
     $process = Start-Process -FilePath $Exe -ArgumentList $quoted -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $private ($Name+'.stdout')) -RedirectStandardError (Join-Path $private ($Name+'.stderr'))
     $null = $process.Handle
+    $ownedProcesses.Add($process)
     if (-not $process.WaitForExit($Timeout)) { throw 'Owned experiment command exceeded its declared deadline; no success is inferred' }
     $process.Refresh()
     if ($null -eq $process.ExitCode) { throw 'Owned command exit unavailable' }
@@ -55,16 +61,37 @@ try {
     }
     if (Test-Path -LiteralPath (Join-Path $root 'B')) { throw 'Directory B must be created by the direct child at runtime' }
     $expected = @{schema_version=1;targets=$targets;capture_exit_code=$null;directory_b_existed_before=$false;product_watch_arguments=@();source_sha=$Source;
-        excluded_io_directories=@($private);excluded_io_paths=@($database,(Join-Path $private 'capture.stdout'),(Join-Path $private 'capture.stderr'))}
+        excluded_io_directories=@($private);excluded_io_paths=@($database,(Join-Path $private 'capture.stdout'),(Join-Path $private 'capture.stderr'));
+        background_files=$BackgroundFiles;truth_directory=$truth}
     $expectedPath = Join-Path $private 'expected.json'
     Write-Json $expected $expectedPath
     $phase = 'independent_writer'
     $unrelated = Start-Process -FilePath $FixtureExecutable -ArgumentList @('--role','follow-unrelated','--root',('"'+$root+'"')) -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $private 'unrelated.stdout') -RedirectStandardError (Join-Path $private 'unrelated.stderr')
     $null = $unrelated.Handle
+    $ownedProcesses.Add($unrelated)
     $deadline = [Diagnostics.Stopwatch]::StartNew()
     while (-not (Test-Path -LiteralPath (Join-Path $root '.follow-unrelated-ready'))) {
         if ($deadline.ElapsedMilliseconds -gt 10000 -or $unrelated.HasExited) { throw 'Independent writer readiness failed' }
         Start-Sleep -Milliseconds 20
+    }
+    if ($BackgroundFiles -gt 0) {
+        $env:CONTAIN_FIXTURE_BACKGROUND_WAIT = '1'
+        # Existing fixture writes, renames and deletes each file, with independent
+        # syscall truth. The unrelated fixture is a sibling, never a descendant
+        # of the installer. A separate bounded helper bridges the fixture signals.
+        $background = Start-Process -FilePath $FixtureExecutable -ArgumentList @('--role','noise','--files',"$BackgroundFiles",'--root',('"'+$root+'"')) -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $private 'background.stdout') -RedirectStandardError (Join-Path $private 'background.stderr')
+        $null = $background.Handle
+        $ownedProcesses.Add($background)
+        $deadline.Restart()
+        while (-not (Test-Path -LiteralPath (Join-Path $root '.noise-ready'))) {
+            if ($deadline.ElapsedMilliseconds -gt 10000 -or $background.HasExited) { throw 'Background fixture readiness failed' }
+            Start-Sleep -Milliseconds 20
+        }
+        $signalCode = '$r=' + "'" + $root.Replace("'","''") + "';" + '$n=[Diagnostics.Process]::GetProcessById(' + $background.Id + ');$null=$n.Handle;$d=[Diagnostics.Stopwatch]::StartNew(); while(-not [IO.File]::Exists([IO.Path]::Combine($r,".follow-go"))){if($d.ElapsedMilliseconds -gt 45000){exit 2};[Threading.Thread]::Sleep(10)};[IO.File]::WriteAllText([IO.Path]::Combine($r,".fixture-go"),"begin");if(-not $n.WaitForExit(45000)){exit 3};$n.Refresh();if($n.ExitCode -ne 0){exit 4};[IO.File]::WriteAllText([IO.Path]::Combine($r,".pair-background-finished"),"background complete")'
+        $encodedSignal = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($signalCode))
+        $backgroundSignal = Start-Process -FilePath (Join-Path $PSHOME 'pwsh.exe') -ArgumentList @('-NoProfile','-NonInteractive','-EncodedCommand',$encodedSignal) -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $private 'signal.stdout') -RedirectStandardError (Join-Path $private 'signal.stderr')
+        $null = $backgroundSignal.Handle
+        $ownedProcesses.Add($backgroundSignal)
     }
     $phase = 'one_follow_capture'
     # Answer paths are fixture arguments only. There is deliberately no --watch,
@@ -83,6 +110,12 @@ try {
     if (-not $unrelated.WaitForExit(10000)) { throw 'Independent writer failed to finish' }
     $unrelated.Refresh()
     $expected.independent_exit_code = $unrelated.ExitCode
+    if ($null -ne $background) {
+        if (-not $background.WaitForExit(30000) -or -not $backgroundSignal.WaitForExit(1000)) { throw 'Background fixture or signal exceeded its deadline' }
+        $background.Refresh(); $backgroundSignal.Refresh()
+        $expected.background_exit_code = $background.ExitCode
+        $expected.background_signal_exit_code = $backgroundSignal.ExitCode
+    }
     foreach ($target in $targets) {
         $target.actual_content_sha256 = if (Test-Path -LiteralPath $target.path -PathType Leaf) { (Get-FileHash -LiteralPath $target.path -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
         $target.content_verified = $target.actual_content_sha256 -eq $target.content_sha256
@@ -120,4 +153,16 @@ try {
     throw "Follow-installer experiment failed at $phase; safe evidence retained; no looser attribution accepted."
 } finally {
     $env:CONTAIN_FIXTURE_TRUTH = $previousTruth
+    $env:CONTAIN_FIXTURE_BACKGROUND_WAIT = $previousBackgroundWait
+    if ($BackgroundFiles -gt 0) {
+        # Never begin the paired candidate while a prior owned collector or
+        # fixture can still generate activity. Keep exact handles; no PID kills.
+        $quiescence = [Diagnostics.Stopwatch]::StartNew()
+        do {
+            $remaining = @($ownedProcesses | Where-Object { -not $_.HasExited }).Count
+            if ($remaining -eq 0 -or $quiescence.ElapsedMilliseconds -ge 45000) { break }
+            Start-Sleep -Milliseconds 20
+        } while ($true)
+        Write-Json @{all_owned_processes_exited=($remaining -eq 0);owned_processes=$ownedProcesses.Count;remaining=$remaining;maximum_wait_ms=45000} (Join-Path $private 'worker-termination.json')
+    }
 }
