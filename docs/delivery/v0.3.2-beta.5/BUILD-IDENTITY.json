@@ -1,0 +1,742 @@
+{
+  "schema_version": 1,
+  "version": "0.3.2-beta.5",
+  "release_tag": "v0.3.2-beta.5",
+  "source_sha": "2a788cf4705234d1cca472ee78709cfa9062366b",
+  "pull_request_url": "https://github.com/LuckyLivio/Contain/pull/8",
+  "ci_run_url": "https://github.com/LuckyLivio/Contain/actions/runs/42144562866",
+  "main_relationship": "Runtime PR #8 merged this accepted source as runtime_merge_sha with an identical source tree. A subsequent delivery-only PR adds this identity and a constrained asset uploader; the accepted Windows ZIP is not rebuilt or repacked.",
+  "package": {
+    "filename": "contain-0.3.2-beta.5-windows-x64.zip",
+    "bytes": 76799726,
+    "sha256": "2403e582104e10b5ceedd8053fe3e9690fbc969ec827daaffbbbfe1a0abe2c5e"
+  },
+  "source_archive": {
+    "path": "SOURCE.zip",
+    "source_sha": "2a788cf4705234d1cca472ee78709cfa9062366b",
+    "sha256": "83f32de7cd026c9802205b8b5d22f471495a9f73022e0441df7e8fb6ae6336cf",
+    "format": "git archive zip; exact tracked HEAD snapshot; no repository history",
+    "exact_tracked_files": 399
+  },
+  "build_manifest_sha256": "bbde414eb5c805c51d7ebdbf91f662b4943288f7a76d29023dfafe9ed83a3994",
+  "validation_manifest_sha256": "41fb79af710cbc8b7949fcf666af43af1e2c404c06139ff0de39cfc5d8f6883f",
+  "build": {
+    "viewer_configuration": "Release",
+    "viewer_framework": "net8.0-windows",
+    "self_contained": true,
+    "core_profile": "debug",
+    "core_target": "x86_64-pc-windows-msvc",
+    "included_frameworks": [
+      {
+        "name": "Microsoft.NETCore.App",
+        "version": "8.0.33"
+      },
+      {
+        "name": "Microsoft.WindowsDesktop.App",
+        "version": "8.0.33"
+      }
+    ],
+    "toolchain": {
+      "dotnet": "10.0.403",
+      "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+      "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)"
+    },
+    "build_platform": {
+      "system": "Windows",
+      "release": "2025Server",
+      "version": "10.0.26100",
+      "architecture": "AMD64",
+      "runner_image": "win25-vs2026",
+      "runner_image_version": "20261103.298.1",
+      "ci_run_url": "https://github.com/LuckyLivio/Contain/actions/runs/42144562866"
+    },
+    "signed": false
+  },
+  "frozen_binaries": [
+    {
+      "path": "contain.exe",
+      "bytes": 12624384,
+      "sha256": "9d5216be31eddbbaebf1a2bc07ced0b8b4309f747ad9bfc356060ab68b06c49e"
+    },
+    {
+      "path": "Contain.Viewer.dll",
+      "bytes": 204800,
+      "sha256": "c527483bba55ebeabe501f317a4ac38719a0c072fdef28a4a06ee7d4dfcdfe66"
+    },
+    {
+      "path": "Contain.Viewer.exe",
+      "bytes": 152064,
+      "sha256": "0dc64a64388d612e1c0e59bba46d47930e1f2c81b8d5a1b463e5307a247f42c8"
+    }
+  ],
+  "validation": {
+    "status": "bounded_desktop_viewer_verified",
+    "checks": {
+      "frozen_package_unchanged": true,
+      "quality_complete": true,
+      "native_ui_cli_and_export": true,
+      "native_personal_records_and_cold_restart": true,
+      "native_persisted_overview_and_navigation": true,
+      "native_session_event_search": true,
+      "native_layout_and_simulated_scale": true,
+      "native_progress_and_failure_feedback": true
+    },
+    "native_search": {
+      "schema_version": 1,
+      "protocol_revision": "contain-desktop-session-search-verification-1",
+      "source_sha": "2a788cf4705234d1cca472ee78709cfa9062366b",
+      "native_windows": true,
+      "architecture": "X64",
+      "windows_version": "10.0.26100.0",
+      "actual_device_dpi": 96,
+      "synthetic": true,
+      "real_etw_executed": false,
+      "real_user_records_accessed": false,
+      "actual_packaged_executable": true,
+      "package_manifest_sha256": "bbde414eb5c805c51d7ebdbf91f662b4943288f7a76d29023dfafe9ed83a3994",
+      "viewer_assembly_sha256": "c527483bba55ebeabe501f317a4ac38719a0c072fdef28a4a06ee7d4dfcdfe66",
+      "viewer_launcher_sha256": "0dc64a64388d612e1c0e59bba46d47930e1f2c81b8d5a1b463e5307a247f42c8",
+      "contain_sha256": "9d5216be31eddbbaebf1a2bc07ced0b8b4309f747ad9bfc356060ab68b06c49e",
+      "total_matches": 53,
+      "first_page_count": 50,
+      "second_page_count": 3,
+      "expected_ids": [
+        "synthetic-search-event-070",
+        "synthetic-search-event-071",
+        "synthetic-search-event-072",
+        "synthetic-search-event-073",
+        "synthetic-search-event-074",
+        "synthetic-search-event-075",
+        "synthetic-search-event-076",
+        "synthetic-search-event-077",
+        "synthetic-search-event-078",
+        "synthetic-search-event-079",
+        "synthetic-search-event-080",
+        "synthetic-search-event-081",
+        "synthetic-search-event-082",
+        "synthetic-search-event-083",
+        "synthetic-search-event-084",
+        "synthetic-search-event-085",
+        "synthetic-search-event-086",
+        "synthetic-search-event-087",
+        "synthetic-search-event-088",
+        "synthetic-search-event-089",
+        "synthetic-search-event-090",
+        "synthetic-search-event-091",
+        "synthetic-search-event-092",
+        "synthetic-search-event-093",
+        "synthetic-search-event-094",
+        "synthetic-search-event-095",
+        "synthetic-search-event-096",
+        "synthetic-search-event-097",
+        "synthetic-search-event-098",
+        "synthetic-search-event-099",
+        "synthetic-search-event-100",
+        "synthetic-search-event-101",
+        "synthetic-search-event-102",
+        "synthetic-search-event-103",
+        "synthetic-search-event-104",
+        "synthetic-search-event-105",
+        "synthetic-search-event-106",
+        "synthetic-search-event-107",
+        "synthetic-search-event-108",
+        "synthetic-search-event-109",
+        "synthetic-search-event-110",
+        "synthetic-search-event-111",
+        "synthetic-search-event-112",
+        "synthetic-search-event-113",
+        "synthetic-search-event-114",
+        "synthetic-search-event-115",
+        "synthetic-search-event-116",
+        "synthetic-search-event-117",
+        "synthetic-search-event-118",
+        "synthetic-search-event-119",
+        "synthetic-search-event-120",
+        "synthetic-search-event-121",
+        "synthetic-search-event-122"
+      ],
+      "first_page_ids": [
+        "synthetic-search-event-070",
+        "synthetic-search-event-071",
+        "synthetic-search-event-072",
+        "synthetic-search-event-073",
+        "synthetic-search-event-074",
+        "synthetic-search-event-075",
+        "synthetic-search-event-076",
+        "synthetic-search-event-077",
+        "synthetic-search-event-078",
+        "synthetic-search-event-079",
+        "synthetic-search-event-080",
+        "synthetic-search-event-081",
+        "synthetic-search-event-082",
+        "synthetic-search-event-083",
+        "synthetic-search-event-084",
+        "synthetic-search-event-085",
+        "synthetic-search-event-086",
+        "synthetic-search-event-087",
+        "synthetic-search-event-088",
+        "synthetic-search-event-089",
+        "synthetic-search-event-090",
+        "synthetic-search-event-091",
+        "synthetic-search-event-092",
+        "synthetic-search-event-093",
+        "synthetic-search-event-094",
+        "synthetic-search-event-095",
+        "synthetic-search-event-096",
+        "synthetic-search-event-097",
+        "synthetic-search-event-098",
+        "synthetic-search-event-099",
+        "synthetic-search-event-100",
+        "synthetic-search-event-101",
+        "synthetic-search-event-102",
+        "synthetic-search-event-103",
+        "synthetic-search-event-104",
+        "synthetic-search-event-105",
+        "synthetic-search-event-106",
+        "synthetic-search-event-107",
+        "synthetic-search-event-108",
+        "synthetic-search-event-109",
+        "synthetic-search-event-110",
+        "synthetic-search-event-111",
+        "synthetic-search-event-112",
+        "synthetic-search-event-113",
+        "synthetic-search-event-114",
+        "synthetic-search-event-115",
+        "synthetic-search-event-116",
+        "synthetic-search-event-117",
+        "synthetic-search-event-118",
+        "synthetic-search-event-119"
+      ],
+      "second_page_ids": [
+        "synthetic-search-event-120",
+        "synthetic-search-event-121",
+        "synthetic-search-event-122"
+      ],
+      "selected_event_id": "synthetic-search-event-120",
+      "copied_event_id": "synthetic-search-event-120",
+      "explain_event_id": "synthetic-search-event-120",
+      "planned_checks": [
+        "frozen_search_package_identity",
+        "full_session_search_fixed_oracle",
+        "second_page_copy_explain_identity",
+        "literal_text_operation_confidence",
+        "empty_clear_failure_and_export_boundary",
+        "superseded_queries_and_same_name_records",
+        "default_library_and_legacy_readonly",
+        "packaged_exe_cross_page_search",
+        "search_databases_unchanged"
+      ],
+      "checks": [
+        {
+          "name": "frozen_search_package_identity",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "full_session_search_fixed_oracle",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "second_page_copy_explain_identity",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "literal_text_operation_confidence",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "empty_clear_failure_and_export_boundary",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "superseded_queries_and_same_name_records",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "default_library_and_legacy_readonly",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "packaged_exe_cross_page_search",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "search_databases_unchanged",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        }
+      ],
+      "assertions": 57,
+      "screenshots": [
+        {
+          "name": "search-packaged-second-page.png",
+          "sha256": "b9a725a8038b242e8c231456bdd9af0bd5ae868c4183d83c9d5a0d4ae8da16f3",
+          "width": 1024,
+          "height": 720
+        },
+        {
+          "name": "search-packaged-second-page-resized.png",
+          "sha256": "fa9771d70fac9a0e2b7717d77e19791d266b5147e4777fd3d8769fe7503e9a33",
+          "width": 1024,
+          "height": 720
+        }
+      ],
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "not_run": 0,
+      "completed": true,
+      "accepted": true,
+      "retries": 0,
+      "scope": "Saved synthetic records only; actual packaged Windows EXE plus production forms/CLI. Native DPI recorded; simulated layout is separate. No installer or ETW."
+    },
+    "quality_summary_sha256": "d5e2c4659aebaa9b0a7e2fdb73346b88313b83ddd73995c6a636505db307752c",
+    "native_checks": {
+      "native_verification": [
+        {
+          "name": "frozen_package_and_actual_ui_assembly_identity",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "synthetic_inputs_and_special_character_paths",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "real_cli_records_summary_and_exact_time_strings",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "real_cli_second_page_and_explanation_identity",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "real_cli_diff_precise_integer_and_unknown_state",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "strict_protocol_rejects_invalid_schema_kind_and_shape",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "missing_null_unknown_enums_and_json_precision",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "real_cli_database_and_process_failures_are_errors",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "doctor_rejected_without_starting_capture",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "native_window_empty_state",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "native_production_executable_launch",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "ui_open_finished_record_and_overview",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "ui_state_changes_filter_and_reason",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "ui_page_then_select_and_explain_same_event",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "ui_search_empty_and_clear_restores_first_page",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "ui_local_report_matches_current_record_page_and_event",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "ui_historical_name_and_unknown_evidence",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "ui_unfinished_and_unavailable_metrics",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "ui_packaged_three_record_sample_switching",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "ui_valid_empty_database_and_cancel",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "ui_errors_are_visible_and_do_not_create_records",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "all_source_and_viewed_databases_unchanged",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        }
+      ],
+      "native_layout_verification": [
+        {
+          "name": "native_default_layout_resize_maximize",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "simulated_150_percent_layout",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "simulated_200_percent_layout",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "unchanged_read_only_fixture_after_layout",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        }
+      ],
+      "native_progress_verification": [
+        {
+          "name": "additive_measurements_and_missing_values",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "repeated_finalizing_and_stale_identity",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "slow_finalizing_real_pipes_ui_timer_and_close_guard",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "structured_failure_details_and_clipboard",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "missing_terminal_result",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "nonzero_collector_exit",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "absent_progress_measurement",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "disposed_form_callback_guard",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        }
+      ],
+      "native_personal_records_verification": [
+        {
+          "name": "guarded_test_root_and_missing_library",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "default_path_and_name_suggestion",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "manual_name_and_advanced_custom_location",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "external_database_read_only_new_record_default",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "scope_conflict_before_library_creation",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "future_corrupt_unwritable_records_preserved",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "packaged_executable_default_history",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "packaged_executable_cold_restart_exact_session_event",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        }
+      ],
+      "native_overview_verification": [
+        {
+          "name": "frozen_overview_package_identity",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "persisted_three_outcomes",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "missing_statistics_distinct_from_zero",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "same_name_uuid_switch_and_details_navigation",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "external_legacy_and_default_library",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "query_failure_clears_previous_summary",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "packaged_overview_three_outcomes",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "packaged_overview_cold_restart_exact_session_event",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "overview_expand_resize_actions_and_long_text",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        },
+        {
+          "name": "overview_databases_unchanged",
+          "status": "passed",
+          "error_type": null,
+          "safe_reason": null
+        }
+      ]
+    },
+    "required_quality_gates": 50,
+    "nextest": {
+      "runner": "nextest",
+      "executed": 347,
+      "passed": 347,
+      "failed": 0,
+      "skipped": 7,
+      "leaky": 0
+    },
+    "coverage_floors": {
+      "lines_percent": 66.5,
+      "functions_percent": 70
+    },
+    "workspace_coverage": [
+      {
+        "lines": {
+          "count": 19861,
+          "covered": 15087,
+          "percent": 75.9629424500277
+        },
+        "functions": {
+          "count": 1583,
+          "covered": 1225,
+          "percent": 77.3847125710676
+        },
+        "regions": {
+          "count": 33153,
+          "covered": 24344,
+          "percent": 73.42925225469791
+        },
+        "instantiations": {
+          "count": 2548,
+          "covered": 1364,
+          "percent": 53.53218210361067
+        },
+        "branches": {
+          "count": 0,
+          "covered": 0,
+          "percent": 0
+        }
+      }
+    ],
+    "original_package_coverage": [
+      {
+        "lines": {
+          "count": 14309,
+          "covered": 10437,
+          "percent": 72.94010762457195
+        },
+        "functions": {
+          "count": 1124,
+          "covered": 852,
+          "percent": 75.80071174377224
+        },
+        "regions": {
+          "count": 23335,
+          "covered": 16582,
+          "percent": 71.06063852581958
+        },
+        "instantiations": {
+          "count": 2054,
+          "covered": 964,
+          "percent": 46.93281402142161
+        },
+        "branches": {
+          "count": 0,
+          "covered": 0,
+          "percent": 0
+        }
+      }
+    ],
+    "python_suites": 24,
+    "python_tests": 387,
+    "coverage_scope": "Rust inline tests and aliases included. No LLVM branch or .NET coverage. Search: 67/67 lines, 7/7 functions, 102/111 regions; nine SQLite error-propagation regions not covered. Zero-execution duplicate instantiations retained in QUALITY-SUMMARY.json.",
+    "simulated_scales": [
+      1.5,
+      2.0
+    ],
+    "native_total_passed": 61,
+    "linux": {
+      "offline_passed": 91,
+      "ignored": 8,
+      "failed": 0,
+      "desktop_cross_compile": "passed; not native Windows evidence"
+    }
+  },
+  "not_executed": [
+    "New installer or ETW capture",
+    "Windows 10 / ARM64 / Parallels manual trials",
+    "Real monitor DPI transition",
+    "Complete matching-result export (Beta 6)",
+    "Three existing ignored disk performance experiments",
+    "New fuzz campaign (seed regression passed)",
+    "Windows 10/11 manual trial and native high-DPI monitor switching"
+  ],
+  "artifact": {
+    "id": 13469922353,
+    "run_id": 42144562866,
+    "url": "https://github.com/LuckyLivio/Contain/actions/runs/42144562866/artifacts/13469922353"
+  },
+  "prior_attempts": [
+    {
+      "source_sha": "79d2306bebb943db93ddb578a23c7b8d4a7880b0",
+      "ci_run_url": "https://github.com/LuckyLivio/Contain/actions/runs/42143294822",
+      "outcome": "Automated checks passed, but visual screenshot review found search input clipped after focusing copy. Superseded by pinned search header and an actual native viewport regression; prior ZIP not published."
+    }
+  ],
+  "runtime_merge_sha": "ea37238d628ef57a41dbb0ea0deaceed9f3dc897"
+}
