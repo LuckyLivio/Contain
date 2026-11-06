@@ -1,0 +1,41 @@
+name: Upload verified Beta 10 assets
+on:
+  workflow_dispatch:
+    inputs:
+      accepted_source:
+        description: Exact accepted Windows source SHA
+        required: true
+      accepted_run:
+        description: Successful same-ZIP desktop and loss-comparison CI run ID
+        required: true
+      extended_run:
+        description: Successful same-source Windows fuzz and benchmark CI run ID
+        required: true
+      zip_sha256:
+        description: Independently reviewed accepted ZIP SHA-256
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: upload-verified-v0.3.2-beta.10
+  cancel-in-progress: false
+jobs:
+  upload:
+    if: ${{ github.repository == 'LuckyLivio/Contain' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ACCEPTED_SOURCE: ${{ inputs.accepted_source }}
+      ACCEPTED_RUN: ${{ inputs.accepted_run }}
+      EXTENDED_RUN: ${{ inputs.extended_run }}
+      ACCEPTED_ZIP_SHA: ${{ inputs.zip_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify exact artifacts, upload only to the existing draft and read back
+        run: python3 scripts/upload-beta10-assets.py --source "$ACCEPTED_SOURCE" --run "$ACCEPTED_RUN" --extended-run "$EXTENDED_RUN" --zip-sha256 "$ACCEPTED_ZIP_SHA" --upload
