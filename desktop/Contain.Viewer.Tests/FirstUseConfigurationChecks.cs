@@ -20,6 +20,7 @@ internal sealed class FirstUseConfigurationChecks(Options options, bool priorChe
     private readonly CoreClient client = new(Path.Combine(options.Package, "contain.exe"));
     private int assertions;
     private object? folderGuidance;
+    private object? followConfiguration;
 
     internal async Task<bool> RunAsync(Form owner)
     {
@@ -52,6 +53,7 @@ internal sealed class FirstUseConfigurationChecks(Options options, bool priorChe
             C<Button>(viewer, "NewInstall").PerformClick();
             Require(ReferenceEquals(form, viewer.ActiveInstallForm) && installDialogs.InstallerCalls == 2,
                 "existing task entry reuses its configuration window without another picker");
+            await VerifyFollowConfiguration(form, root, installDialogs);
             form.Close(); viewer.Close();
         });
         await Check(Plan[1], async () =>
@@ -60,6 +62,7 @@ internal sealed class FirstUseConfigurationChecks(Options options, bool priorChe
             var records = PersonalRecords.ForCurrentUser(); var dialogs = new ConfigurationTestDialogs();
             var bridge = new InstallClient(client.ExecutablePath);
             using var form = new InstallForm(bridge, (_, _) => Task.CompletedTask, dialogs); form.Show(owner);
+            TestRecordIsolation.SelectManualObservation(form);
             C<TextBox>(form, "InstallerPath").Text = client.ExecutablePath;
             Require(C<TextBox>(form, "WatchRoot").Text.Length == 0 && !C<Button>(form, "StartRecording").Enabled,
                 "an executable alone cannot enable recording or imply a scope");
@@ -67,7 +70,7 @@ internal sealed class FirstUseConfigurationChecks(Options options, bool priorChe
             var folderNote = C<Label>(form, "WatchRootNote");
             var missingHint = C<Label>(form, "WatchRootHint").Text;
             Require(folderTitle.Text == "要记录哪个文件夹里的变化？"
-                && folderNote.Text == "通常选软件准备安装到的文件夹。例如，安装包在“下载”里、软件准备装到 D 盘，就选 D 盘上对应的已有文件夹。这里的选择只决定 Contain 观察哪里。"
+                && folderNote.Text == "通常选软件准备安装到的已有文件夹。安装包的下载位置不代表安装目标；这里仅决定观察范围。"
                 && folderTitle.Visible && folderNote.Visible && dialogs.WatchCalls == 0,
                 "the visible ordinary page distinguishes installer location from installation target before opening a picker");
             Require(missingHint == "请选择一个已有文件夹，再开始记录。",
@@ -104,6 +107,7 @@ internal sealed class FirstUseConfigurationChecks(Options options, bool priorChe
             var records = PersonalRecords.ForCurrentUser(); var dialogs = new ConfigurationTestDialogs();
             var bridge = new InstallClient(client.ExecutablePath);
             using var form = new InstallForm(bridge, (_, _) => Task.CompletedTask, dialogs); form.Show(owner);
+            TestRecordIsolation.SelectManualObservation(form);
             C<TextBox>(form, "InstallerPath").Text = client.ExecutablePath; C<TextBox>(form, "WatchRoot").Text = root;
             C<Button>(form, "StartRecording").PerformClick(); await form.PendingOperation.WaitAsync(TimeSpan.FromSeconds(20));
             Require(!bridge.CollectorStarted && !Directory.Exists(Path.GetDirectoryName(records.DatabasePath))
@@ -124,6 +128,7 @@ internal sealed class FirstUseConfigurationChecks(Options options, bool priorChe
             var root = TestRecordIsolation.Create("first-use-advanced"); using var isolation = TestRecordIsolation.Use(root);
             var watch = Path.Combine(root, "observed"); Directory.CreateDirectory(watch);
             using var form = new InstallForm(new InstallClient(client.ExecutablePath), (_, _) => Task.CompletedTask); form.Show(owner);
+            TestRecordIsolation.SelectManualObservation(form);
             C<TextBox>(form, "InstallerPath").Text = client.ExecutablePath; C<TextBox>(form, "WatchRoot").Text = watch;
             Require(!C<Control>(form, "CaptureConfigurationPreview").Visible, "unchanged defaults do not add an ordinary-page confirmation checklist");
             C<CheckBox>(form, "AdvancedToggle").Checked = true;
@@ -171,6 +176,7 @@ internal sealed class FirstUseConfigurationChecks(Options options, bool priorChe
             {
                 var opened = 0; var bridge = new InstallClient(Environment.ProcessPath!);
                 using var form = new InstallForm(bridge, (_, _) => { opened++; return Task.CompletedTask; }); form.Show(owner);
+                TestRecordIsolation.SelectManualObservation(form);
                 C<TextBox>(form, "InstallerPath").Text = Environment.ProcessPath!; C<TextBox>(form, "WatchRoot").Text = watch;
                 var defaultDatabase = PersonalRecords.ForCurrentUser().DatabasePath;
                 Require(!Directory.Exists(Path.GetDirectoryName(defaultDatabase)) && !File.Exists(invocations),
@@ -227,6 +233,7 @@ internal sealed class FirstUseConfigurationChecks(Options options, bool priorChe
             schema_version = 1, protocol_revision = "contain-desktop-first-use-configuration-verification-1", source_sha = options.Source,
             native_windows = OperatingSystem.IsWindows(), windows_version = Environment.OSVersion.Version.ToString(), synthetic = true,
             folder_guidance_verification = folderGuidance,
+            follow_configuration_verification = followConfiguration,
             real_etw_executed = false, real_user_records_accessed = false,
             package_manifest_sha256 = Hash(Path.Combine(options.Package, "BUILD.json")), viewer_assembly_sha256 = Hash(typeof(ViewerForm).Assembly.Location),
             viewer_launcher_sha256 = Hash(Path.Combine(options.Package, "Contain.Viewer.exe")), contain_sha256 = Hash(client.ExecutablePath),
@@ -248,6 +255,81 @@ internal sealed class FirstUseConfigurationChecks(Options options, bool priorChe
         }
     }
     private void Require(bool value, string message) { if (!value) throw new TestFailureException(message); assertions++; }
+
+    private async Task VerifyFollowConfiguration(InstallForm form, string root, ConfigurationTestDialogs dialogs)
+    {
+        var follow = C<RadioButton>(form, "FollowInstallerMode");
+        var manual = C<RadioButton>(form, "ManualWatchMode");
+        var start = C<Button>(form, "StartRecording");
+        Require(follow.Checked && !manual.Checked && C<TextBox>(form, "WatchRoot").Text.Length == 0 && start.Enabled,
+            "the accepted executable alone enables default installer following without guessing a directory");
+        Require(!C<Control>(form, "ManualObservation").Visible && !C<CheckBox>(form, "AdvancedToggle").Checked,
+            "default following exposes no mandatory directory or advanced configuration");
+        var request = ReadRequest(form);
+        // Argument validation uses an existing isolated destination parent. Merely
+        // configuring the real default library must still create no directories.
+        var arguments = InstallClient.BuildArguments(request with { Database = Path.Combine(root, "argument-only.db") });
+        Require(request.FollowInstaller && request.WatchRoot.Length == 0 && arguments.Contains("--follow-installer")
+            && arguments.Contains("--require-etw") && !arguments.Contains("--watch") && !arguments.Contains("--no-etw")
+            && !arguments.Any(argument => argument.StartsWith("--registry-key", StringComparison.Ordinal)),
+            "default follow arguments explicitly request ETW and contain no preset directory or registry scope");
+        C<Button>(form, "CopyInstallerPath").PerformClick();
+        Require(Clipboard.GetText() == client.ExecutablePath, "installer path copy preserves the exact selected executable");
+        var records = PersonalRecords.ForCurrentUser();
+        Require(!Directory.Exists(Path.GetDirectoryName(records.DatabasePath)), "default follow configuration never creates the personal library");
+
+        C<CheckBox>(form, "AdvancedToggle").Checked = true;
+        C<CheckBox>(form, "SnapshotOnly").Checked = true;
+        var statusControl = C<TextBox>(form, "InstallStatus");
+        var correctionControl = C<Label>(form, "InstallCorrectionHint");
+        var statusBeforeConflict = statusControl.Text;
+        var correctionBeforeConflict = correctionControl.Text;
+        var correctionWasVisible = correctionControl.Visible;
+        start.PerformClick(); await form.PendingOperation.WaitAsync(TimeSpan.FromSeconds(20));
+        Require(follow.Checked, "snapshot conflict never silently changes the selected follow mode");
+        Require(C<CheckBox>(form, "SnapshotOnly").Checked, "snapshot conflict preserves the user's explicit snapshot selection");
+        Require(form.LastStatus is null, "snapshot conflict is refused before any structured collector status or session");
+        Require(form.Result is null, "snapshot conflict is refused before returning a collector result");
+        Require(!form.IsActive, "snapshot conflict leaves no active recording after prelaunch refusal");
+        Require(!Directory.Exists(Path.GetDirectoryName(records.DatabasePath)), "snapshot conflict creates no personal-library directory");
+        var correction = C<Label>(form, "InstallCorrectionHint").Text + C<TextBox>(form, "InstallStatus").Text
+            + C<Label>(form, "CaptureModeNote").Text;
+        Require(correction.Contains("指定文件夹", StringComparison.Ordinal) && correction.Contains("快照", StringComparison.Ordinal),
+            "snapshot conflict provides the explicit manual-folder correction next to the recording action");
+        Require(correctionControl.Visible && (!correctionWasVisible || correctionControl.Text != correctionBeforeConflict)
+            && correctionControl.Text.Contains("快照", StringComparison.Ordinal)
+            && correctionControl.Text.Contains("指定文件夹", StringComparison.Ordinal),
+            "the actual Start action exposes this conflict's new visible manual-folder correction");
+        Require(statusControl.Visible && statusControl.Text != statusBeforeConflict
+            && statusControl.Text.Contains("启动或记录失败：", StringComparison.Ordinal)
+            && statusControl.Text.Contains("ETW", StringComparison.Ordinal),
+            "the actual Start action reports a new prelaunch mode-validation failure in the visible status");
+        C<CheckBox>(form, "SnapshotOnly").Checked = false;
+        C<CheckBox>(form, "AdvancedToggle").Checked = false;
+
+        manual.Checked = true;
+        Require(!start.Enabled && C<Control>(form, "ManualObservation").Visible,
+            "manual observation still requires an explicitly chosen existing folder");
+        var watched = Path.Combine(root, "manual retained 中文 %_ folder"); Directory.CreateDirectory(watched);
+        dialogs.WatchRoot = watched; C<Button>(form, "ChooseWatchRoot").PerformClick();
+        Require(start.Enabled && C<TextBox>(form, "WatchRoot").Text == watched && !ReadRequest(form).FollowInstaller,
+            "manual folder selection remains exact and uses the manual request mode");
+        follow.Checked = true;
+        var following = ReadRequest(form);
+        var switchedArguments = InstallClient.BuildArguments(following with { Database = Path.Combine(root, "argument-only.db") });
+        Require(following.FollowInstaller && following.WatchRoot.Length == 0 && !switchedArguments.Contains("--watch"),
+            "returning to follow mode does not turn a remembered manual folder into a hidden preset scope");
+        manual.Checked = true;
+        Require(C<TextBox>(form, "WatchRoot").Text == watched && start.Enabled,
+            "switching modes preserves the user's explicit manual selection for reuse");
+        follow.Checked = true;
+        followConfiguration = new
+        {
+            protocol_revision = "contain-follow-configuration-verification-1", accepted = true,
+            default_follow_no_scope = true, start_enabled = true, no_watch_argument = true,
+            manual_folder_required = true, manual_selection_preserved = true, snapshot_conflict_explicit = true
+        };
+    }
 
     private async Task VerifyNativeInputBoundary(InstallForm form)
     {

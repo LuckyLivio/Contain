@@ -206,7 +206,26 @@ pub struct SystemEvent {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct FollowInstallerStats {
+    pub direct_children_only: bool,
+    pub baseline_available: bool,
+    pub candidate_record_limit: u64,
+    pub candidate_byte_limit: u64,
+    pub resource_limit: u64,
+    pub candidates: u64,
+    pub admitted: u64,
+    pub excluded_other: u64,
+    pub unresolved: u64,
+    pub excluded_self_io: u64,
+    pub candidate_dropped: u64,
+    pub candidate_high_water_records: u64,
+    pub candidate_high_water_bytes: u64,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct BackendReport {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub follow_installer: Option<FollowInstallerStats>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_diagnostics: Option<FileDiagnosticReport>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

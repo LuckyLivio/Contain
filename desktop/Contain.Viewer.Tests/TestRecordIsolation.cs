@@ -54,6 +54,11 @@ internal static class TestRecordIsolation
         ((TextBox)form.Controls.Find("DatabaseSavePath", true).Single()).Text = database;
     }
 
+    internal static void SelectManualObservation(Form form)
+    {
+        ((RadioButton)form.Controls.Find("ManualWatchMode", true).Single()).Checked = true;
+    }
+
     private static void Validate(string root)
     {
         if (!Path.IsPathFullyQualified(root) || !Directory.Exists(root)

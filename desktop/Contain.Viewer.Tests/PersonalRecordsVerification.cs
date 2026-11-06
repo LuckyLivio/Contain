@@ -140,6 +140,7 @@ internal sealed class PersonalRecordsVerification(Options options, bool viewerCh
             Reject(() => records.PrepareForRecording(request));
             Require(!Directory.Exists(Path.GetDirectoryName(records.DatabasePath)), "scope refusal precedes default-directory creation");
             using var form = NewForm(); form.Show(owner);
+            TestRecordIsolation.SelectManualObservation(form);
             C<TextBox>(form, "InstallerPath").Text = client.ExecutablePath;
             C<TextBox>(form, "WatchRoot").Text = root;
             C<Button>(form, "StartRecording").PerformClick(); await form.PendingOperation.WaitAsync(TimeSpan.FromSeconds(20));
@@ -261,6 +262,16 @@ internal sealed class PersonalRecordsVerification(Options options, bool viewerCh
         await PackagedDesktop.WaitAsync(() => desktop.EnabledAsync("NewInstall"), TimeSpan.FromSeconds(30));
         await desktop.SelectTabAsync("事件与依据");
         await PackagedDesktop.WaitAsync(() => desktop.EnabledAsync("NewInstall"), TimeSpan.FromSeconds(30));
+        // Follow records intentionally open a visible write search. This helper's
+        // page index comes from the full saved timeline, so clear through the
+        // real control and wait for ordinary page zero before applying it.
+        if ((await desktop.TextAsync("EventFilter")).Length != 0)
+        {
+            await desktop.InvokeAsync("ClearEventSearch");
+            await PackagedDesktop.WaitAsync(async () => (await desktop.TextAsync("EventFilter")).Length == 0
+                && (await desktop.TextAsync("EventsPage")).Contains("偏移 0", StringComparison.Ordinal)
+                && await desktop.EnabledAsync("NewInstall"), TimeSpan.FromSeconds(30));
+        }
         for (var index = 0; index < page; index++)
         {
             await PackagedDesktop.WaitAsync(() => desktop.EnabledAsync("NextEvents"), TimeSpan.FromSeconds(30));

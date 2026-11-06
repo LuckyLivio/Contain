@@ -159,12 +159,44 @@ struct LiveState {
     cache: LifetimeCache,
     last_activity: Instant,
     received: u64,
+    follow: Option<crate::follow::FollowBuffer>,
 }
 pub(crate) struct LiveCapture(Arc<Mutex<LiveState>>);
 impl LiveCapture {
     /// Source receipt is measured separately from evidence persistence or actors.
     pub(crate) fn received(&self) -> u64 {
         self.0.lock().unwrap().received
+    }
+    pub(crate) fn seed_follow_initial(
+        &self,
+        records: &[(ProcessRecord, u64)],
+        threads: &[InitialThreadIdentity],
+    ) {
+        let mut live = self.0.lock().unwrap();
+        if live.follow.is_none() {
+            return;
+        }
+        for (record, at) in records {
+            live.cache.seed_snapshot(record.clone(), *at);
+        }
+        for identity in threads {
+            if let Some(process) = live
+                .cache
+                .processes
+                .get(&(identity.owner_pid, identity.owner_creation_time))
+                .cloned()
+            {
+                live.cache.seed_thread_snapshot(identity.clone(), process);
+            }
+        }
+    }
+    pub(crate) fn bind_follow_root(&self, record: ProcessRecord, session: &str) {
+        let mut live = self.0.lock().unwrap();
+        let root = (record.pid, record.creation_time.unwrap_or(0));
+        live.cache.seed(record);
+        if let Some(follow) = &mut live.follow {
+            follow.bind(root, session);
+        }
     }
     pub(crate) fn quiet_ms(&self) -> u64 {
         self.0.lock().unwrap().last_activity.elapsed().as_millis() as u64
@@ -189,12 +221,24 @@ impl LiveCapture {
                 return true;
             }
             if lifecycle {
-                return live.cache.descendants_pending(root);
+                return if live.follow.is_some() {
+                    live.cache.processes.values().any(|p| {
+                        (p.pid, p.creation_time.unwrap_or(0)) != root
+                            && crate::follow::is_direct_actor(p, root)
+                            && p.ended_at.is_none()
+                    })
+                } else {
+                    live.cache.descendants_pending(root)
+                };
             }
             live.cache
                 .processes
                 .values()
-                .filter(|p| p.pid != root.0 && p.confidence == Confidence::High)
+                .filter(|p| {
+                    p.pid != root.0
+                        && p.confidence == Confidence::High
+                        && (live.follow.is_none() || crate::follow::is_direct_actor(p, root))
+                })
                 .map(|p| (p.pid, p.creation_time))
                 .collect::<Vec<_>>()
         };
@@ -210,7 +254,26 @@ impl LiveCapture {
 pub(crate) fn record_while<T>(
     source: &mut EtwSource,
     db: &mut Storage,
+    journal: RawBuffer,
+    operation: impl FnOnce(&LiveCapture) -> Result<T>,
+) -> Result<(T, BackendReport, StreamStats)> {
+    record_while_mode(source, db, journal, false, operation)
+}
+
+pub(crate) fn record_while_follow<T>(
+    source: &mut EtwSource,
+    db: &mut Storage,
+    journal: RawBuffer,
+    operation: impl FnOnce(&LiveCapture) -> Result<T>,
+) -> Result<(T, BackendReport, StreamStats)> {
+    record_while_mode(source, db, journal, true, operation)
+}
+
+fn record_while_mode<T>(
+    source: &mut EtwSource,
+    db: &mut Storage,
     mut journal: RawBuffer,
+    follow: bool,
     operation: impl FnOnce(&LiveCapture) -> Result<T>,
 ) -> Result<(T, BackendReport, StreamStats)> {
     let receiver = source.take_receiver();
@@ -222,6 +285,7 @@ pub(crate) fn record_while<T>(
         cache: LifetimeCache::default(),
         last_activity: Instant::now(),
         received: 0,
+        follow: follow.then(Default::default),
     })));
     let initial_accepted = journal.stats.accepted;
     thread::scope(|scope| {
@@ -274,23 +338,49 @@ pub(crate) fn record_while<T>(
                             thread::sleep(Duration::from_millis(1));
                             continue;
                         }
+                        let mut accepted = Vec::new();
                         {
                             let _timer = profile::timer("receiver_lifetime_update");
                             let mut live = receiver_live.lock().unwrap();
                             live.received = live.received.saturating_add(page.len() as u64);
-                            for event in &page {
-                                live.cache.ingest(event);
-                                if event.event_type == "file"
-                                    || (event.event_type == "registry"
-                                        && event.raw.resource_resolved)
+                            for event in page {
+                                live.cache.ingest(&event);
+                                if live.follow.is_some()
+                                    && matches!(event.event_type.as_str(), "file" | "completion")
                                 {
-                                    live.last_activity = Instant::now();
+                                    live.follow.as_mut().unwrap().push(event);
+                                } else {
+                                    if event.event_type == "file"
+                                        || (event.event_type == "registry"
+                                            && event.raw.resource_resolved)
+                                    {
+                                        live.last_activity = Instant::now();
+                                    }
+                                    accepted.push(event);
                                 }
                             }
+                            if let Some(mut follow) = live.follow.take() {
+                                let selected = follow.flush(&mut live.cache, false);
+                                if selected.iter().any(|e| e.event_type == "file") {
+                                    live.last_activity = Instant::now();
+                                }
+                                accepted.extend(selected);
+                                live.follow = Some(follow);
+                            }
                         }
-                        for event in page {
+                        for event in accepted {
                             receiver_queue.push(event);
                         }
+                    }
+                    let mut live = receiver_live.lock().unwrap();
+                    if let Some(mut follow) = live.follow.take() {
+                        for event in follow.flush(&mut live.cache, false) {
+                            receiver_queue.push(event);
+                        }
+                        for event in follow.flush(&mut live.cache, true) {
+                            receiver_queue.push(event);
+                        }
+                        live.follow = Some(follow);
                     }
                 }));
                 receiver_queue.close();
@@ -321,6 +411,14 @@ pub(crate) fn record_while<T>(
         profile::merge_worker(writer_profile);
         stopped?;
         let mut backend = source.final_report();
+        if let Some(follow) = &live.0.lock().unwrap().follow {
+            let mut stats = follow.stats.clone();
+            stats.excluded_self_io = source.excluded_self_io();
+            backend.context_losses = backend
+                .context_losses
+                .saturating_add(stats.candidate_dropped);
+            backend.follow_installer = Some(stats);
+        }
         let mut handoff = queue.stats();
         handoff.initial_accepted = initial_accepted;
         handoff.receiver_finished = reader_result.is_ok();

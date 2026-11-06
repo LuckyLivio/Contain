@@ -74,6 +74,7 @@ public sealed class ViewerForm : Form
     private bool _exporting;
     private bool _moreChanges;
     private InstallRunResult? _lastRun;
+    private bool _followRecord;
 
     public bool IsBusy { get; private set; }
     public Task PendingOperation { get; private set; } = Task.CompletedTask;
@@ -467,7 +468,7 @@ public sealed class ViewerForm : Form
             try { _sessions.Rows.Clear(); }
             finally { _rendering = false; }
             _sessionTitle.Text = "我的记录";
-            _overview.Text = "暂无安装记录。\r\n\r\n点击“新建安装记录”，选择安装器与已有观察目录后开始。记录会保存到我的记录，下一次打开 Contain 时自动列出。\r\n\r\n首次开始记录时才创建记录库；当前没有生成数据库或演示数据。";
+            _overview.Text = "暂无安装记录。\r\n\r\n点击“新建安装记录”，选择 EXE 后点击“开始记录”即可跟随安装器；也可明确选择“指定文件夹观察”。记录会保存到我的记录，下一次打开 Contain 时自动列出。\r\n\r\n首次开始记录时才创建记录库；当前没有生成数据库或演示数据。";
             SetStatus("我的记录 · 暂无已保存记录。", false);
             return;
         }
@@ -525,9 +526,10 @@ public sealed class ViewerForm : Form
             var history = await _client.HistoryAsync(db, id, _pageSize + 1, 0, token);
             token.ThrowIfCancellationRequested();
             _recordId = id;
+            _followRecord = RecordingScope.IsFollowInstaller(summary.Data);
             _sessionTitle.AccessibleDescription = "session:" + id;
             _sessionTitle.Text = FieldText(summary.Data, "name");
-            _summaryStatus.Text = "当前会话的已保存证据 · 观察范围内的变化不代表最终所有权";
+            _summaryStatus.Text = _followRecord ? "跟随安装器的已保存文件事件 · 未采集安装前基线 · 不判断最终归属" : "当前会话的已保存证据 · 观察范围内的变化不代表最终所有权";
             _overview.Text = OverviewText(summary.Data, changes.Data) + $"\r\n会话 ID：{id}\r\n数据库：{db}\r\n";
             _overviewPanel.SetRecord(OverviewPresentation.Build(summary.Data, changes.Data), id);
             _allChanges = [];
@@ -537,7 +539,37 @@ public sealed class ViewerForm : Form
             RenderChanges();
             ShowEvents(history, 0);
             UpdateTaskSummary();
-            SetStatus("记录已加载。可查看状态变化、事件与依据，或展开技术详情。", false);
+            if (_followRecord)
+            {
+                // One backend search covers the whole session, without assembling
+                // history page-by-page in the desktop. Preserve that visible filter.
+                const string writes = "write_requested";
+                var writeHistory = await _client.HistoryAsync(db, id, _pageSize, 0, writes, token);
+                token.ThrowIfCancellationRequested();
+                _rendering = true;
+                try { _eventFilter.Text = writes; }
+                finally { _rendering = false; }
+                ShowEvents(writeHistory, 0);
+                _tabs.SelectedTab = _tabs.TabPages["EventsTab"];
+                var chosen = _pageEvents.FirstOrDefault(item => FieldText(item, "event_type") == "file"
+                    && FieldText(item, "operation") == "write_requested"
+                    && FieldText(item, "confidence") == "High" && FieldText(Field(item, "evidence"), "source") == "EtwFile"
+                    && FieldText(Field(item, "evidence"), "rule") is "InstallerPid" or "DescendantProcess");
+                if (chosen.ValueKind == JsonValueKind.Object)
+                {
+                    _rendering = true;
+                    try
+                    {
+                        var row = _events.Rows.Cast<DataGridViewRow>().Single(value => value.Tag is JsonElement item && FieldText(item, "id") == FieldText(chosen, "id"));
+                        row.Selected = true; _events.CurrentCell = row.Cells[0];
+                    }
+                    finally { _rendering = false; }
+                    await ExplainAsync(chosen, token);
+                    SetStatus("已打开本次安装器关联的文件写入及解释。可输入文件名搜索；清除搜索可浏览全部事件。", false);
+                }
+                else SetStatus("已打开跟随记录的文件写入；当前页没有可直接说明的已关联项，可核对保存证据。", false);
+            }
+            else SetStatus("记录已加载。可查看状态变化、事件与依据，或展开技术详情。", false);
         }
         catch (Exception error) when (!token.IsCancellationRequested)
         {
@@ -614,7 +646,7 @@ public sealed class ViewerForm : Form
                 throw new InvalidDataException("事件详情与当前记录或当前页不一致；未展示可能误关联的依据。请重新打开记录。");
             _selectedEventId = eventId;
             _eventDetails.AccessibleDescription = "event:" + eventId;
-            _eventDetails.Text = ExplainText(explanation.Data);
+            _eventDetails.Text = (_followRecord ? "跟随记录未采集安装前文件基线，不能据此断言文件新增、当前路径或最终归属。\r\n\r\n" : "") + ExplainText(explanation.Data);
             _rawDetails.Text = Pretty(explanation.Envelope);
             SetStatus("已读取此事件的生产 explain 结果。High 表示源证据关联，不表示安全删除。", false);
         }
@@ -671,12 +703,14 @@ public sealed class ViewerForm : Form
         }
         finally { _rendering = false; }
         _changesPage.Text = _recordId is null ? "尚未加载变化" : $"全部 {_allChanges.Count} 项 · 筛选后 {selected.Count} 项 · 本页 {_changes.Rows.Count} 项";
-        _changeDetails.Text = selected.Count == 0 ? "没有符合当前筛选的状态变化。未观察到不等于没有发生。" : "选择一项变化查看记录的依据。前后状态变化不自动建立归属。";
+        _changeDetails.Text = _followRecord ? "跟随记录未采集安装前文件基线；请在事件与依据查看文件操作。空状态差异不表示没有文件操作。"
+            : selected.Count == 0 ? "没有符合当前筛选的状态变化。未观察到不等于没有发生。" : "选择一项变化查看记录的依据。前后状态变化不自动建立归属。";
         UpdateEnabled();
     }
 
     private void ResetRecord()
     {
+        _followRecord = false;
         _recordId = null;
         _sessionTitle.AccessibleDescription = null;
         _eventOffset = 0;
@@ -894,6 +928,11 @@ public sealed class ViewerForm : Form
         var exitResult = exitCode.ValueKind == JsonValueKind.Number && exitCode.TryGetInt32(out var code)
             ? code == 0 ? "退出码 0（安装器报告成功，未验证最终安装状态）" : $"退出码 {code}（非零；具体含义由安装器定义）"
             : "未确认（记录没有提供退出码）";
+        if (RecordingScope.IsFollowInstaller(data))
+            text.AppendLine("记录方式：跟随安装器及已验证直接子进程；未预设观察目录。")
+                .AppendLine("文件状态对比：未采集安装前基线。文件 0 项不表示没有文件操作，请查看事件与依据。")
+                .AppendLine("后读到的文件与历史名称不证明安装前不存在、当前路径或最终归属。")
+                .AppendLine();
         text.AppendLine("本次记录结果")
             .AppendLine($"安装器退出结果：{exitResult}")
             .AppendLine($"记录完成：{(captureState == "finished" ? "已确认结束" : "未确认完整结束")}；数据保存：已从数据库读到记录。保存不代表安装成功或记录完整。")

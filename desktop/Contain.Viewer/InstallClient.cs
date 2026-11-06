@@ -6,20 +6,31 @@ namespace Contain.Viewer;
 
 public sealed record InstallRequest(string Installer, string Name, string WatchRoot, string Database,
     IReadOnlyList<string> Arguments, string? RegistryKey = null, bool SnapshotOnly = false,
-    ulong SettleMilliseconds = 1500, ulong MaxDrainMilliseconds = 10000)
+    ulong SettleMilliseconds = 1500, ulong MaxDrainMilliseconds = 10000, bool FollowInstaller = false)
 {
     public InstallRequest Validate(bool allowMissingDatabaseDirectory = false)
     {
         if (!File.Exists(Installer) || !string.Equals(Path.GetExtension(Installer), ".exe", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("请选择已存在的 .exe 安装器。当前不支持直接启动 .msi、脚本或服务代理安装。");
         if (string.IsNullOrWhiteSpace(Name) || Name.Contains('\0')) throw new InvalidDataException("请输入记录名称。");
-        if (!Directory.Exists(WatchRoot)) throw new InvalidDataException("观察目录必须已存在；请自行选择实际需要观察的目录。不会自动创建软件目标目录。");
-        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(WatchRoot));
         var database = Path.GetFullPath(Database);
-        var prefix = Path.EndsInDirectorySeparator(root) ? root : root + Path.DirectorySeparatorChar;
-        if (string.Equals(root, database, StringComparison.OrdinalIgnoreCase) || database.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("数据库及 WAL/SHM 必须位于观察目录之外。");
-        PersonalRecords.EnsureOutsideWatch(database, root);
+        var root = "";
+        if (FollowInstaller)
+        {
+            if (MaxDrainMilliseconds > 10000)
+                throw new InvalidDataException("跟随记录的最长排空时间不能超过 10000 毫秒，请在高级设置中修正等待参数。");
+            if (SnapshotOnly || !string.IsNullOrWhiteSpace(RegistryKey))
+                throw new InvalidDataException("跟随安装器记录需要 ETW 文件来源；如需快照或注册表，请明确选择“指定文件夹观察”。不会自动切换方式。");
+        }
+        else
+        {
+            if (!Directory.Exists(WatchRoot)) throw new InvalidDataException("观察目录必须已存在；请自行选择实际需要观察的目录。不会自动创建软件目标目录。");
+            root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(WatchRoot));
+            var prefix = Path.EndsInDirectorySeparator(root) ? root : root + Path.DirectorySeparatorChar;
+            if (string.Equals(root, database, StringComparison.OrdinalIgnoreCase) || database.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("数据库及 WAL/SHM 必须位于观察目录之外。");
+            PersonalRecords.EnsureOutsideWatch(database, root);
+        }
         if (!allowMissingDatabaseDirectory && !Directory.Exists(Path.GetDirectoryName(database)) || Directory.Exists(database))
             throw new InvalidDataException("数据库父目录必须已存在，保存位置必须是文件。");
         if (Arguments.Any(x => x.Contains('\0'))) throw new InvalidDataException("安装器参数不能含 NUL 字符。");
@@ -49,9 +60,11 @@ public sealed class InstallClient(string executablePath)
     public static IReadOnlyList<string> BuildArguments(InstallRequest request)
     {
         var valid = request.Validate();
-        var args = new List<string> { "--db", valid.Database, "install", "--status-json", "--name=" + valid.Name,
-            "--watch", valid.WatchRoot, "--settle-ms", valid.SettleMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            "--max-drain-ms", valid.MaxDrainMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture) };
+        var args = new List<string> { "--db", valid.Database, "install", "--status-json", "--name=" + valid.Name };
+        if (valid.FollowInstaller) args.Add("--follow-installer");
+        else { args.Add("--watch"); args.Add(valid.WatchRoot); }
+        args.AddRange(["--settle-ms", valid.SettleMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--max-drain-ms", valid.MaxDrainMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
         args.Add(valid.SnapshotOnly ? "--no-etw" : "--require-etw");
         if (!string.IsNullOrEmpty(valid.RegistryKey)) args.Add("--registry-key=" + valid.RegistryKey);
         args.Add(valid.Installer);

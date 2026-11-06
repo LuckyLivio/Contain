@@ -138,12 +138,16 @@ fn file_name_evidence(
 }
 
 impl Decoder {
+    fn path_admitted(&self, path: &str) -> bool {
+        (self.follow_installer || native::in_scope(path, &self.roots))
+            && !self.excluded_paths.iter().any(|excluded| path == excluded)
+    }
     fn begin_file_name(&mut self, id: u16, object: u64, supplied: Option<&String>) -> bool {
         if !matches!(id, 12 | 30) {
             return false;
         }
         let removed = self.paths.remove(&object).is_some();
-        if let Some(path) = supplied.filter(|p| native::in_scope(p, &self.roots)) {
+        if let Some(path) = supplied.filter(|p| self.path_admitted(p)) {
             if self.paths.len() < OBJECT_CAPACITY {
                 self.paths.insert(
                     object,
@@ -472,8 +476,14 @@ impl Decoder {
                 diagnostics.invalidate(object);
             }
         }
+        if path
+            .as_ref()
+            .is_some_and(|path| self.excluded_paths.iter().any(|excluded| path == excluded))
+        {
+            self.excluded_self_io += 1;
+        }
         let unresolved_path = path.is_none();
-        let Some(path) = path.filter(|p| native::in_scope(p, &self.roots)) else {
+        let Some(path) = path.filter(|p| self.path_admitted(p)) else {
             if let Some(diagnostics) = &mut self.file_diagnostics {
                 diagnostics.ignored(
                     if unresolved_path {
@@ -827,7 +837,7 @@ mod tests {
         assert!(fields.diagnostics.is_none());
     }
 
-    fn decoder_without_diagnostics() -> Decoder {
+    pub(super) fn decoder_without_diagnostics() -> Decoder {
         let (tx, _rx) = mpsc::sync_channel(1);
         Decoder {
             file_diagnostics: None,
@@ -839,6 +849,9 @@ mod tests {
             pending: HashMap::new(),
             registry_context: Default::default(),
             roots: vec![],
+            follow_installer: false,
+            excluded_self_io: 0,
+            excluded_paths: vec![],
             registry_root: None,
             devices: vec![],
             tx,
@@ -1011,5 +1024,31 @@ mod tests {
         let copied = file_name_evidence(None, 200, "later", Some(origin)).unwrap();
         assert!(!copied.current_path_verified);
         assert_eq!(copied.observed_ticks, 100);
+    }
+}
+
+#[cfg(test)]
+mod follow_admission_tests {
+    use super::*;
+    #[test]
+    fn follow_names_remain_bounded_historical_and_self_io_exclusions_are_exact() {
+        let mut decoder = super::tests::decoder_without_diagnostics();
+        decoder.follow_installer = true;
+        decoder.excluded_paths = vec![
+            r"c:\records\contain.db".into(),
+            r"c:\records\contain.db-wal".into(),
+        ];
+        let outside = r"d:\not-preselected\new\file.txt".to_owned();
+        decoder.begin_file_name(12, 1, Some(&outside));
+        assert_eq!(decoder.paths[&1].0, outside);
+        assert!(decoder.path_admitted(&outside));
+        assert!(!decoder.path_admitted(r"c:\records\contain.db"));
+        assert!(!decoder.path_admitted(r"c:\records\contain.db-wal"));
+        assert!(decoder.path_admitted(r"c:\records\contain.db-other"));
+        for i in 2..=OBJECT_CAPACITY as u64 + 1 {
+            decoder.begin_file_name(12, i, Some(&outside));
+        }
+        assert_eq!(decoder.paths.len(), OBJECT_CAPACITY);
+        assert!(decoder.metrics.get(Count::ContextEvictions) > 0);
     }
 }

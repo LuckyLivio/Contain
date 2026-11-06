@@ -7,8 +7,8 @@ Graphical recording is a separate [implementation and validation milestone](../d
 
 ## Current download
 
-Use the [Beta 8 release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.8).
-Its [folder and task-completion guidance fixes](../docs/install-guidance-beta8.md) distinguish
+Use the [Beta 9 release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.9).
+Its [follow-installer workflow and validation boundaries](../docs/follow-installer-beta9.md) distinguish
 native Windows results, simulated layout stress and user-reported trials.
 The entries below retain historical evidence rather than additional current downloads.
 
@@ -115,15 +115,14 @@ A successful check does not guarantee later startup.
    returns to the current history selection. Choosing an EXE opens one configuration
    page and moves focus to the observation folder. An existing task instead opens
    its current status window.
-2. Choose **要记录哪个文件夹里的变化？**. Usually select the existing folder
-   where the software is going to be installed: if the installer is in Downloads
-   but the software will be on drive D, select the corresponding existing folder
-   on D. This selection only controls where Contain observes changes; another
-   existing folder can still be selected explicitly. The installer still controls its own installation destination;
-   Contain does not create it, infer it from the EXE directory, reuse a previous
-   scope or expand the range. View/copy/change the selected paths as needed.
+2. The ordinary mode is **跟随安装器记录**: no observation directory is
+   required. It records file operations by the explicitly started EXE and verified
+   direct children. It requires the existing ETW permissions/sources and does not
+   establish an installation-before baseline, current cached path or ownership.
+   **指定文件夹观察** retains the existing explicit folder choice and before/after
+   comparison; the installer still selects its installation destination.
 3. Click **开始记录** once. The EXE filename suggests the record name and the
-   destination defaults to **我的记录**. An absent or invalidated folder explains
+   destination defaults to **我的记录**. In manual mode an absent or invalidated folder explains
    why Start cannot proceed. Permission/source and database checks still precede
    launching the installer; conflicts offer **更改保存位置**. Selection and
    configuration never start the installer or create a recording session.
@@ -136,7 +135,9 @@ A successful check does not guarantee later startup.
    The program neither silently changes mode nor automatically elevates.
 5. Recording uses the existing real preparing/capturing/finalizing/finished/failed
    stages. Installer exit, capture completion, saved data and quality are separate
-   facts. After finalization, the exact returned session opens in the viewer;
+   facts. After finalization, the exact returned session opens in the viewer; follow
+   records enter the event view with a backend write-operation search and select
+   a source-attributed row when available;
    searching, explaining and exporting its events retain their previous behavior.
 
 A custom database remains outside the observation scope and does not replace the

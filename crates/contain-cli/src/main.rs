@@ -46,6 +46,12 @@ enum Commands {
             help = "Existing watch root; repeat for multiple directories"
         )]
         watch_roots: Vec<PathBuf>,
+        #[arg(
+            long,
+            conflicts_with_all = ["watch_roots", "registry_key", "no_etw"],
+            help = "Experimental: retain verified installer/direct-child file activity without a directory baseline; requires ETW"
+        )]
+        follow_installer: bool,
         #[arg(long)]
         registry_key: Option<String>,
         #[arg(long, default_value_t = 1500)]
@@ -195,6 +201,7 @@ fn run_cli(cli: Cli) -> Result<()> {
             installer,
             name,
             watch_roots,
+            follow_installer,
             registry_key,
             settle_ms,
             max_drain_ms,
@@ -226,6 +233,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                     installer,
                     args,
                     watch_roots,
+                    follow_installer,
                     registry_key,
                     settle_ms,
                     max_drain_ms,
@@ -234,8 +242,14 @@ fn run_cli(cli: Cli) -> Result<()> {
                         .checked_mul(1024 * 1024)
                         .context("evidence quota overflow")?,
                 };
-                let capture = if status_json || require_etw {
-                    install_observed(options, &mut storage, &mut status, require_etw, &mut emit)?
+                let capture = if status_json || require_etw || follow_installer {
+                    install_observed(
+                        options,
+                        &mut storage,
+                        &mut status,
+                        require_etw || follow_installer,
+                        &mut emit,
+                    )?
                 } else {
                     install(options, &mut storage)?
                 };
@@ -641,6 +655,39 @@ mod command_tests {
             }
         ));
     }
+    #[test]
+    fn follow_installer_is_explicit_and_cannot_mix_with_folder_or_snapshot_modes() {
+        let parsed = Cli::try_parse_from([
+            "contain",
+            "install",
+            "setup.exe",
+            "--follow-installer",
+            "--status-json",
+        ])
+        .unwrap();
+        assert!(matches!(parsed.command, Commands::Install {
+            follow_installer: true, watch_roots, no_etw: false, ..
+        } if watch_roots.is_empty()));
+        for incompatible in [
+            vec!["--watch", "C:\\existing"],
+            vec!["--no-etw"],
+            vec!["--registry-key", "Software\\Example"],
+        ] {
+            let mut args = vec!["contain", "install", "setup.exe", "--follow-installer"];
+            args.extend(incompatible);
+            assert!(Cli::try_parse_from(args).is_err());
+        }
+        assert!(matches!(
+            Cli::try_parse_from(["contain", "install", "setup.exe"])
+                .unwrap()
+                .command,
+            Commands::Install {
+                follow_installer: false,
+                ..
+            }
+        ));
+    }
+
     #[test]
     fn structured_install_is_additive_and_preserves_literal_arguments() {
         let input = [

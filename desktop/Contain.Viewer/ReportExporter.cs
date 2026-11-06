@@ -118,6 +118,11 @@ public static partial class ReportExporter
 
         html.Append("<section><h2>观察范围与限制</h2><dl>");
         Pair(html, "程序", JsonView.Text(JsonView.Field(data, "installer")));
+        if (RecordingScope.IsFollowInstaller(data))
+        {
+            Pair(html, "记录方式", "跟随安装器及已验证直接子进程的文件事件；未预设观察目录。");
+            Pair(html, "安装前文件基线", "未采集；文件状态差异为空不代表没有文件操作。事件关联不建立当前路径或最终归属。");
+        }
         Pair(html, "观察目录", string.Join("\n", JsonView.Items(JsonView.Field(data, "watch_roots")).Select(v => JsonView.Text(v))));
         Pair(html, "注册表范围", JsonView.Text(JsonView.Field(data, "registry_key"), "未选择 / 未记录"));
         var backend = JsonView.Field(data, "backend");

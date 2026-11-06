@@ -90,6 +90,8 @@ class ViewerPackageTests(unittest.TestCase):
             self.assertEqual(command[-1], self.source)
             with zipfile.ZipFile(command[command.index('--output') + 1], 'x') as archive:
                 archive.writestr('Cargo.toml', 'SYNTHETIC source snapshot')
+                for name, content in getattr(self, 'source_extra_files', {}).items():
+                    archive.writestr(name, content)
         with mock.patch.object(VIEWER, 'source_identity', return_value=self.source_identity), \
              mock.patch.object(VIEWER.subprocess, 'check_output', return_value='SYNTHETIC compiler identity'), \
              mock.patch.object(VIEWER.subprocess, 'check_call', side_effect=archive_source), \
@@ -156,6 +158,48 @@ class ViewerPackageTests(unittest.TestCase):
             restart_event_id='bbbbbbbb-cccc-dddd-eeee-ffffffffffff',
             first_use=self.valid_first_use(build),
             manual_checks=[dict(name='native_picker_navigation_and_cancel', status='passed')])
+
+
+    def valid_follow_install_verification(self, build):
+        value = self.valid_install_verification(build)
+        directory = self.root / 'screenshots'
+        width, height = 740, 620
+        def chunk(kind, data):
+            return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+        data = (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+            + chunk(b'IDAT', zlib.compress((b'\x00' + bytes([12, 34, 56]) * width) * height)) + chunk(b'IEND', b''))
+        image = directory / 'install-follow-configured.png'; image.write_bytes(data)
+        value['first_use'] = dict(protocol_revision='contain-follow-install-flow-1',
+            actual_packaged_executable=True, cancel_preserved_record_selection=True, configuration_created_no_session=True,
+            keyboard_flow_verified=True, default_name_matches_exe=True, default_database=True, default_follow=True,
+            no_watch_argument=True, follow_mode_persisted=True, main_entry_kept_active_task=True,
+            duplicate_start_created_one_session=True, windows_version='10.0.26100.0', actual_device_dpi=96,
+            installer_picker_cancels=1, installer_picker_selections=1, ordinary_input_count=1, saved_scope_count=0,
+            observation_picker_selections=0, advanced_interactions=0, environment_check_interactions=0,
+            database_path_interactions=0, session_id=value['session_id'], screenshots=[dict(name=image.name,
+                sha256=VIEWER.sha(image), width=width, height=height)])
+        oracle = load('follow_package_unit_oracle', 'verify-follow-installer-experiment.py')
+        parent = dict(label='parent', event_id='11111111-2222-3333-4444-555555555555', operation='write_requested',
+            timestamp_ticks='150', pid=10, creation_time='100', rule='InstallerPid', confidence='High', actor_confidence='High',
+            source='EtwFile', completion=True, state_validated=False, recorded_name_sha256='1'*64,
+            current_path_verified=False, historical_name_source='file_object_cache')
+        child = dict(parent, label='child', event_id=value['event_id'], pid=11, creation_time='200', timestamp_ticks='250',
+            rule='DescendantProcess', recorded_name_sha256='2'*64)
+        unrelated = dict(label='unrelated', observed_event_count=0, contextual_event_count=0, event_ids=[], event_id=None,
+            outcome='not_retained_by_follow_scope; no_claim_no_system_event', classification='unobserved')
+        value['follow_verification'] = dict(schema_version=1, protocol='contain-follow-installer-experiment-1',
+            source_sha=self.source, synthetic=False, controlled_fixture=True, maximum_native_captures=1, retries=0,
+            session_id=value['session_id'], checks=[dict(name=name,status='passed',reason=None) for name in oracle.PLAN],
+            observations=[parent,child,unrelated], ownership_claim=False,current_path_claim=False,
+            installation_before_baseline=False,post_install_file_reads=False,accepted=True,passed=len(oracle.PLAN),failed=0,not_run=0,unresolved=[],
+            follow_counters=dict(direct_children_only=True,baseline_available=False,candidate_record_limit=2048,
+                candidate_byte_limit=8388608,resource_limit=4096,candidate_dropped=0,candidate_high_water_records=86,
+                candidate_high_water_bytes=100827),
+            storage_counters=dict(quota_bytes=67108864,committed_bytes=294239,persisted=274,failed=0,quota_dropped=0),
+            selected_event_id=value['event_id'],copied_event_id=value['event_id'],explain_event_id=value['event_id'],
+            restart_event_id=value['event_id'],returned_session_id=value['session_id'],autoopened_session_id=value['session_id'],
+            restart_session_id=value['session_id'])
+        return value
 
     def valid_first_use(self, build):
         directory = self.root / 'screenshots'; directory.mkdir(exist_ok=True)
@@ -1000,6 +1044,37 @@ class ViewerPackageTests(unittest.TestCase):
         self.assertFalse(VIEWER.first_use_install_verification_matches(bad,build,manifest,path))
         self.assertFalse(VIEWER.first_use_install_verification_matches(good,build,manifest,None))
 
+
+    def test_follow_gate_is_distinct_from_legacy_manual_two_input_flow(self):
+        fixture=self.root/'fixture.exe';fixture.write_bytes(TRIAL_TESTS.synthetic_pe())
+        build=self.prepare(fixture);manifest=VIEWER.sha(self.package/'BUILD.json');path=self.root/'install-summary.json'
+        good=self.valid_follow_install_verification(build)
+        self.assertTrue(VIEWER.first_use_install_verification_matches(good,build,manifest,path))
+        legacy=self.valid_install_verification(build)
+        self.assertTrue(VIEWER.first_use_install_verification_matches(legacy,build,manifest,path))
+        for field,wrong in [('ordinary_input_count',2),('saved_scope_count',1),('observation_picker_selections',1),
+                ('default_follow',False),('no_watch_argument',False),('follow_mode_persisted',False),('screenshots',[])]:
+            bad=copy.deepcopy(good);bad['first_use'][field]=wrong
+            self.assertFalse(VIEWER.first_use_install_verification_matches(bad,build,manifest,path),field)
+
+    def test_follow_gate_requires_actual_source_actor_and_ui_copy_restart_identity(self):
+        fixture=self.root/'fixture.exe';fixture.write_bytes(TRIAL_TESTS.synthetic_pe())
+        build=self.prepare(fixture);manifest=VIEWER.sha(self.package/'BUILD.json');path=self.root/'install-summary.json'
+        good=self.valid_follow_install_verification(build)
+        for mutate in [lambda d:d.pop('follow_verification'),
+                lambda d:d['follow_verification']['checks'].pop(),
+                lambda d:d['follow_verification'].update(copied_event_id='not-selected'),
+                lambda d:d['follow_verification'].update(restart_session_id='other-session'),
+                lambda d:d['follow_verification']['observations'][1].update(confidence='Unknown'),
+                lambda d:d['follow_verification']['observations'][1].update(completion=None),
+                lambda d:d['follow_verification']['observations'][0].update(current_path_verified=True),
+                lambda d:d['follow_verification']['observations'][0].update(state_validated=True),
+                lambda d:d['follow_verification']['observations'][2].update(outcome='there_was_no_system_write'),
+                lambda d:d['follow_verification']['follow_counters'].update(candidate_dropped=1),
+                lambda d:d['follow_verification']['storage_counters'].update(quota_dropped=1)]:
+            bad=copy.deepcopy(good);mutate(bad)
+            self.assertFalse(VIEWER.first_use_install_verification_matches(bad,build,manifest,path))
+
     def test_first_use_screenshots_require_actual_distinct_png_bytes(self):
         fixture=self.root/'fixture.exe'; fixture.write_bytes(TRIAL_TESTS.synthetic_pe())
         build=self.prepare(fixture); good=self.valid_install_verification(build); path=self.root/'install-summary.json'
@@ -1083,7 +1158,11 @@ class ViewerPackageTests(unittest.TestCase):
                          '使用自定义保存位置','打开外部数据库不会改变新记录的默认保存位置'):
             self.assertIn(required,usage)
         self.assertNotIn('数据库选择观察目录',usage)
-        self.assertIn('普通流程只需 EXE 和已有观察文件夹',usage)
+        self.assertIn('普通流程只需选择 EXE',usage)
+        self.assertIn('跟随安装器记录',usage)
+        self.assertIn('指定文件夹观察',usage)
+        self.assertIn('没有安装前基线',usage)
+        self.assertIn('执行进程关联不代表最终归属',usage)
         self.assertIn('检查环境不是开始前的额外步骤',usage)
         self.assertIn('要记录哪个文件夹里的变化？',usage)
         self.assertIn('安装包在“下载”里、软件准备装到 D 盘',usage)

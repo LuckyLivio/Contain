@@ -1,3 +1,4 @@
+mod follow_experiment;
 mod root_input;
 mod truth;
 use anyhow::{Context, Result};
@@ -24,6 +25,9 @@ enum Role {
     Worker,
     Noise,
     Burst,
+    FollowParent,
+    FollowChild,
+    FollowUnrelated,
 }
 
 #[derive(Parser)]
@@ -107,7 +111,7 @@ fn hold_for_observation() {
 }
 
 fn run() -> Result<()> {
-    let args = Args::parse();
+    let mut args = Args::parse();
     let configured = std::env::var_os("CONTAIN_FIXTURE_ROOT");
     let (root, name) = configured_root(args.root.as_deref(), configured.as_deref(), args.cleanup)?;
     let key_path = format!("Software\\Contain\\Demo\\{name}");
@@ -123,6 +127,18 @@ fn run() -> Result<()> {
         }
         fs::remove_dir_all(&root)?;
         println!("Fixture cleaned: {} and HKCU\\{}", root.display(), key_path);
+        return Ok(());
+    }
+    // Test-only zero-argument follow workload. The product neither reads this
+    // setting nor receives an observation directory from it. configured_root
+    // already required the existing guarded marker for environment selection.
+    if args.root.is_none()
+        && matches!(args.role, Role::Parent)
+        && std::env::var_os("CONTAIN_FIXTURE_FOLLOW").is_some_and(|value| value == "1")
+    {
+        args.role = Role::FollowParent;
+    }
+    if follow_experiment::run(args.role, &root)? {
         return Ok(());
     }
     let truth = truth::Truth::new(&root, &format!("{:?}", args.role).to_lowercase())?;
@@ -309,7 +325,9 @@ fn run() -> Result<()> {
             }
             return Ok(());
         }
-        Role::Unrelated => unreachable!(),
+        Role::Unrelated | Role::FollowParent | Role::FollowChild | Role::FollowUnrelated => {
+            unreachable!()
+        }
     }
     hold_for_observation();
     Ok(())

@@ -1,0 +1,71 @@
+name: Supplementary default-target 7-Zip follow trial
+on:
+  workflow_dispatch:
+    inputs:
+      accepted_source:
+        description: Exact accepted Windows source SHA
+        required: true
+      accepted_run:
+        description: Successful packaged desktop CI run ID
+        required: true
+      zip_sha256:
+        description: Independently accepted Windows x64 ZIP SHA-256
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: contain-7zip-follow-trial
+  cancel-in-progress: false
+jobs:
+  trial:
+    if: ${{ github.repository == 'LuckyLivio/Contain' && github.ref == 'refs/heads/main' && github.run_attempt == 1 }}
+    runs-on: windows-latest
+    timeout-minutes: 12
+    permissions:
+      actions: read
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ACCEPTED_SOURCE: ${{ inputs.accepted_source }}
+      ACCEPTED_RUN: ${{ inputs.accepted_run }}
+      ACCEPTED_ZIP_SHA: ${{ inputs.zip_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify accepted identity and download the unchanged ZIP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:ACCEPTED_SOURCE -notmatch '^[0-9a-f]{40}$' -or $env:ACCEPTED_RUN -notmatch '^[0-9]+$' -or $env:ACCEPTED_ZIP_SHA -notmatch '^[0-9a-f]{64}$') { throw 'Invalid accepted identity inputs' }
+          $run = gh api "repos/LuckyLivio/Contain/actions/runs/$env:ACCEPTED_RUN" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne $env:ACCEPTED_SOURCE -or $run.event -ne 'push' -or $run.conclusion -ne 'success' -or $run.status -ne 'completed' -or $run.run_attempt -ne 1 -or $run.path -ne '.github/workflows/ci.yml' -or $run.head_repository.full_name -ne 'LuckyLivio/Contain') { throw 'Accepted CI source/run differs' }
+          $compare = gh api "repos/LuckyLivio/Contain/compare/${env:ACCEPTED_SOURCE}...main" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $compare.status -notin @('ahead','identical') -or $compare.merge_base_commit.sha -ne $env:ACCEPTED_SOURCE) { throw 'Accepted source is not merged into main' }
+          $out = Join-Path $env:RUNNER_TEMP ('contain-7zip-trial-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+          New-Item -ItemType Directory -Path $out | Out-Null
+          $artifacts = gh api "repos/LuckyLivio/Contain/actions/runs/$env:ACCEPTED_RUN/artifacts?per_page=100" | ConvertFrom-Json
+          $selected = @($artifacts.artifacts | Where-Object { $_.name -eq 'contain-windows-x64-viewer' -and -not $_.expired })
+          if ($LASTEXITCODE -ne 0 -or $selected.Count -ne 1) { throw 'Accepted package artifact missing or ambiguous' }
+          gh run download $env:ACCEPTED_RUN --repo LuckyLivio/Contain --name contain-windows-x64-viewer --dir (Join-Path $out 'artifact')
+          if ($LASTEXITCODE -ne 0) { throw 'Accepted artifact download failed' }
+          $zip = Join-Path $out 'artifact/contain-0.3.2-beta.9-windows-x64.zip'
+          if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:ACCEPTED_ZIP_SHA) { throw 'Accepted ZIP hash differs' }
+          $package = Join-Path $out 'package'
+          Expand-Archive -LiteralPath $zip -DestinationPath $package
+          $tokens = $null; $errors = $null
+          $null = [System.Management.Automation.Language.Parser]::ParseFile([IO.Path]::GetFullPath('scripts/7zip-follow-trial.ps1'), [ref]$tokens, [ref]$errors)
+          if ($errors.Count) { throw 'Trial script syntax failed before any installer launch' }
+          "CONTAIN_7ZIP_TRIAL_PACKAGE=$package" >> $env:GITHUB_ENV
+          "CONTAIN_7ZIP_TRIAL_OUTPUT=$(Join-Path $out 'result')" >> $env:GITHUB_ENV
+      - name: One default-target third-party trial without directory scope
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/7zip-follow-trial.ps1 -PackageDirectory $env:CONTAIN_7ZIP_TRIAL_PACKAGE -OutputDirectory $env:CONTAIN_7ZIP_TRIAL_OUTPUT -Source $env:ACCEPTED_SOURCE -PackageSha256 $env:ACCEPTED_ZIP_SHA
+      - name: Retain only the safe supplementary aggregate, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 7zip-follow-trial-evidence
+          path: ${{ env.CONTAIN_7ZIP_TRIAL_OUTPUT }}/public/*.json
+          if-no-files-found: warn

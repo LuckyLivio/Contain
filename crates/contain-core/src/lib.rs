@@ -4,6 +4,7 @@ pub mod cleanup;
 pub mod correlation;
 pub mod doctor;
 pub mod filesystem;
+mod follow;
 pub mod ingest;
 pub mod install_status;
 pub mod inventory;

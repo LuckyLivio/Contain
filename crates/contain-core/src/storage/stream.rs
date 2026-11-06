@@ -326,6 +326,42 @@ impl Storage {
         }
         result
     }
+    /// Exact self-IO names, not a prefix exclusion of neighboring user files.
+    pub(crate) fn capture_self_io_paths(&self) -> Vec<String> {
+        let mut paths = Vec::new();
+        if let Some(database) = self.connection.path().filter(|p| *p != ":memory:") {
+            let canonical = std::fs::canonicalize(database)
+                .unwrap_or_else(|_| std::path::PathBuf::from(database));
+            let database = crate::path::normalize_path(&canonical.to_string_lossy(), &[]);
+            for suffix in ["", "-wal", "-shm", "-journal"] {
+                paths.push(format!("{database}{suffix}"));
+            }
+        }
+        for variable in ["CONTAIN_ETW_RAW_CLOCK_PATH", "CONTAIN_PROFILE_PATH"] {
+            if let Some(path) = std::env::var_os(variable) {
+                let absolute = std::path::absolute(path).unwrap_or_default();
+                let resolved = absolute
+                    .parent()
+                    .and_then(|p| p.canonicalize().ok())
+                    .zip(absolute.file_name())
+                    .map(|(p, name)| p.join(name))
+                    .unwrap_or(absolute);
+                paths.push(crate::path::normalize_path(
+                    &resolved.to_string_lossy(),
+                    &[],
+                ));
+                if variable == "CONTAIN_ETW_RAW_CLOCK_PATH"
+                    && let Some(name) = resolved.file_name()
+                {
+                    let rows =
+                        resolved.with_file_name(format!("{}.rows.bin", name.to_string_lossy()));
+                    paths.push(crate::path::normalize_path(&rows.to_string_lossy(), &[]));
+                }
+            }
+        }
+        paths
+    }
+
     pub(crate) fn validate_diagnostic_location(&self, diagnostic: &std::path::Path) -> Result<()> {
         if let Some(database) = self.connection.path().filter(|p| *p != ":memory:") {
             let diagnostic = std::path::absolute(diagnostic)?;
@@ -1402,3 +1438,53 @@ mod tests {
 #[cfg(test)]
 #[path = "replay.rs"]
 mod replay;
+
+#[cfg(test)]
+mod follow_persistence_tests {
+    use super::*;
+    #[test]
+    fn follow_limits_and_missing_baseline_survive_saved_summary_readback() {
+        let mut db =
+            Storage::from_connection(rusqlite::Connection::open_in_memory().unwrap()).unwrap();
+        let capture = Capture {
+            id: "follow-saved".into(),
+            schema_version: 3,
+            backend: crate::model::BackendReport {
+                follow_installer: Some(crate::model::FollowInstallerStats {
+                    direct_children_only: true,
+                    baseline_available: false,
+                    candidate_record_limit: 2048,
+                    candidate_byte_limit: 8388608,
+                    resource_limit: 4096,
+                    candidates: 3,
+                    admitted: 2,
+                    excluded_other: 1,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        db.save(&capture).unwrap();
+        let saved = db.load_summary_by_id("follow-saved").unwrap();
+        assert!(saved.watch_roots.is_empty() && saved.files.is_empty());
+        let scope = saved.backend.follow_installer.unwrap();
+        assert!(scope.direct_children_only && !scope.baseline_available);
+        assert_eq!(
+            (
+                scope.candidate_record_limit,
+                scope.candidate_byte_limit,
+                scope.resource_limit
+            ),
+            (2048, 8388608, 4096)
+        );
+        assert_eq!(
+            (scope.candidates, scope.admitted, scope.excluded_other),
+            (3, 2, 1)
+        );
+        let legacy = serde_json::to_value(crate::model::BackendReport::default()).unwrap();
+        assert!(legacy.get("follow_installer").is_none());
+        let old: crate::model::BackendReport = serde_json::from_value(legacy).unwrap();
+        assert!(old.follow_installer.is_none());
+    }
+}

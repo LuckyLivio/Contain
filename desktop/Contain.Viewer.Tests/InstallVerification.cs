@@ -63,10 +63,13 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
     private string? initialOutcomeText;
     private readonly List<ImageResult> firstUseScreenshots = [];
     private uint? firstUseDpi;
-    private bool cancelPreservedSelection, missingScopeBlocked, configurationCreatedNoSession;
-    private bool invalidScopeBlocked, databaseConflictBlocked, correctionsPreservedConfiguration;
-    private bool keyboardFlowVerified, defaultNameMatchesExe, scopeExactMatch, activeEntryPreserved, duplicateCreatedOne;
-    private string? selectedScopeHash, persistedScopeHash;
+    private bool cancelPreservedSelection, configurationCreatedNoSession;
+    private bool defaultFollow, noWatchArgument, followModePersisted;
+    private JsonElement? followVerification;
+    private string? copiedEvent;
+    private Process? unrelatedProcess;
+    private string? previousFixtureFollow;
+    private bool keyboardFlowVerified, defaultNameMatchesExe, activeEntryPreserved, duplicateCreatedOne;
     private int savedScopeCount;
     private readonly Stopwatch progressClock = Stopwatch.StartNew();
     private readonly List<object> progressEntries = [];
@@ -76,6 +79,7 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
 
     public async Task<bool> RunAsync()
     {
+        previousFixtureFollow = Environment.GetEnvironmentVariable("CONTAIN_FIXTURE_FOLLOW");
         previousFixtureRoot = Environment.GetEnvironmentVariable("CONTAIN_FIXTURE_ROOT");
         previousFixtureTruth = Environment.GetEnvironmentVariable("CONTAIN_FIXTURE_TRUTH");
         try
@@ -98,6 +102,8 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
                 catch (Exception error) { privateLog.AppendLine("Actual desktop retained: " + error); }
                 actualDesktop.Dispose();
             }
+            unrelatedProcess?.Dispose();
+            Environment.SetEnvironmentVariable("CONTAIN_FIXTURE_FOLLOW", previousFixtureFollow);
             Environment.SetEnvironmentVariable("CONTAIN_FIXTURE_TRUTH", previousFixtureTruth);
             Environment.SetEnvironmentVariable("CONTAIN_FIXTURE_ROOT", previousFixtureRoot);
             WriteSummary();
@@ -182,22 +188,21 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
 
     private async Task Configure()
     {
-        Phase("configure_isolated_fixture");
+        Phase("configure_isolated_follow_fixture");
         Require(File.Exists(options.InstallFixture), "controlled installer exists");
         Require(Hash(options.InstallFixture!) == Hash(Path.Combine(options.Package, "contain-test-installer.exe")), "exact frozen installer fixture");
         var name = "contain-demo-desktop-" + options.Source[..12] + "-" + Guid.NewGuid().ToString("N")[..8];
         root = Path.Combine(Path.GetTempPath(), name);
         truthRoot = Path.Combine(Path.GetTempPath(), name + "-truth");
-        var personalRoot = TestRecordIsolation.Create("one-live-default-record");
+        var personalRoot = TestRecordIsolation.Create("one-live-default-follow-record");
         liveIsolation = TestRecordIsolation.Use(personalRoot);
         database = PersonalRecords.ForCurrentUser().DatabasePath;
-        Require(!Directory.Exists(root) && !Directory.Exists(truthRoot) && !File.Exists(database), "new disposable scope and database");
-        Directory.CreateDirectory(root); Directory.CreateDirectory(truthRoot);
-        Directory.CreateDirectory(Path.GetDirectoryName(database)!); // Explicit synthetic historical controls only.
+        Require(!Directory.Exists(root) && !Directory.Exists(truthRoot) && !File.Exists(database), "new disposable target and database");
+        Directory.CreateDirectory(root); Directory.CreateDirectory(truthRoot); Directory.CreateDirectory(Path.Combine(root, "A"));
+        Directory.CreateDirectory(Path.GetDirectoryName(database)!);
         await File.WriteAllTextAsync(Path.Combine(truthRoot, ".contain-demo-marker"), "Contain test fixture");
         await File.WriteAllTextAsync(Path.Combine(root, ".contain-demo-marker"), "Contain test fixture");
-        foreach (var file in new[] { "settings.txt", "rename-me.txt", "delete-me.txt" })
-            await File.WriteAllTextAsync(Path.Combine(root, file), "baseline");
+        Require(!Directory.Exists(Path.Combine(root, "B")), "direct-child target does not exist before capture");
         File.Copy(Path.Combine(options.Package, "samples", "viewer-demo.db"), database, false);
         recordName = Path.GetFileNameWithoutExtension(options.InstallFixture!);
         Require(recordName == "contain-test-installer", "fixed native fixture filename oracle");
@@ -205,24 +210,18 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         var earlier = await client.ListAsync(database);
         foreach (var item in earlier.Data.EnumerateArray())
         {
-            var id = Text(item, "id");
-            earlierSummaries.Add(id, (await client.SummaryAsync(database, id)).Data.Clone());
+            var id = Text(item, "id"); earlierSummaries.Add(id, (await client.SummaryAsync(database, id)).Data.Clone());
         }
         Require(earlierSummaries.Count == 3, "old and same-name records seeded before this launch");
         await VerifyOfflineFailure();
-        previousFixtureTruth = Environment.GetEnvironmentVariable("CONTAIN_FIXTURE_TRUTH");
-        previousFixtureRoot = Environment.GetEnvironmentVariable("CONTAIN_FIXTURE_ROOT");
         Environment.SetEnvironmentVariable("CONTAIN_FIXTURE_TRUTH", truthRoot);
         Environment.SetEnvironmentVariable("CONTAIN_FIXTURE_ROOT", root);
-        selectedScopeHash = ScopeHash(root);
+        Environment.SetEnvironmentVariable("CONTAIN_FIXTURE_FOLLOW", "1");
         initialWorkingDirectory = Path.Combine(personalRoot, "initial-working-directory"); Directory.CreateDirectory(initialWorkingDirectory);
         actualDesktop = new PackagedDesktop(options.Package, initialWorkingDirectory); actualFirstPid = actualDesktop.ProcessId;
         actualDesktop.ConfigurationProgress = () => Progress("native_dialog");
         await actualDesktop.ReadyAsync();
-        firstUseDpi = await actualDesktop.DeviceDpiAsync();
         initialOutcomeText = await actualDesktop.TextAsync("CaptureOutcome");
-        // Keep an exact existing event selected while the first native EXE picker
-        // is cancelled. Selection is checked by identity, not its display name.
         await PersonalRecordsVerification.VerifyExactUi(actualDesktop, "synthetic-interrupted", "synthetic-interrupted-event-2", 0);
         var originalDatabaseHash = Hash(database);
         Phase("native_initial_picker_cancel");
@@ -230,85 +229,41 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         await PackagedDesktop.WaitAsync(() => actualDesktop.EnabledAsync("NewInstall"), TimeSpan.FromSeconds(10));
         Require(!await actualDesktop.ExistsAsync("StartRecording"), "cancelled initial picker returns without a configuration window");
         Require(await actualDesktop.DescriptionAsync("SessionTitle") == "session:synthetic-interrupted"
-            && await actualDesktop.DescriptionAsync("EventDetails") == "event:synthetic-interrupted-event-2", "cancel preserves exact selected historical record and explanation");
-        Require(Hash(database) == originalDatabaseHash && !Directory.EnumerateFiles(truthRoot, "ground-truth-*.jsonl").Any(), "cancel starts no installer and changes no session");
+            && await actualDesktop.DescriptionAsync("EventDetails") == "event:synthetic-interrupted-event-2", "cancel preserves exact historical selection and explanation");
+        Require(Hash(database) == originalDatabaseHash && !File.Exists(Path.Combine(root, ".follow-go")), "cancel launches no installer and changes no session");
         cancelPreservedSelection = true;
-
         Phase("native_initial_picker_select");
         await actualDesktop.ChooseInstallerAsync(options.InstallFixture!);
         await PackagedDesktop.WaitAsync(() => actualDesktop.ExistsAsync("StartRecording"), TimeSpan.FromSeconds(10));
-        Require(await actualDesktop.FocusedAsync("ChooseWatchRoot"), "EXE selection naturally focuses the observation-folder action");
-        firstUseDpi = await actualDesktop.ControlWindowDpiAsync("StartRecording");
-        Require(!await actualDesktop.IsCheckedAsync("AdvancedToggle"), "ordinary configuration starts with advanced settings collapsed");
-        Require((await actualDesktop.NativeVisibleTextAsync("InstallerFileName")).Contains(Path.GetFileName(options.InstallFixture!), StringComparison.Ordinal), "selected EXE filename is visible");
+        Require(await actualDesktop.FocusedAsync("StartRecording"), "EXE selection focuses the directly available Start action");
+        Require(await actualDesktop.IsCheckedAsync("FollowInstallerMode") && !await actualDesktop.IsCheckedAsync("ManualWatchMode"), "ordinary page defaults to follow installer");
+        Require(!await actualDesktop.IsCheckedAsync("AdvancedToggle") && await actualDesktop.EnabledAsync("StartRecording"), "one selected EXE can start with advanced settings collapsed");
+        Require((await actualDesktop.NativeVisibleTextAsync("InstallerFileName")).Contains(Path.GetFileName(options.InstallFixture!), StringComparison.Ordinal), "selected filename is visible");
         await actualDesktop.ToggleAsync("ShowInstallerPath", true);
-        Require(Normalize(await actualDesktop.TextAsync("InstallerPath")) == Normalize(options.InstallFixture!), "native picker selected the exact frozen EXE path");
+        Require(Normalize(await actualDesktop.TextAsync("InstallerPath")) == Normalize(options.InstallFixture!), "native picker selected the exact frozen EXE");
         await actualDesktop.ToggleAsync("ShowInstallerPath", false);
-        Require((await actualDesktop.TextAsync("WatchRoot")).Length == 0 && !await actualDesktop.EnabledAsync("StartRecording"), "EXE selection does not infer an observation directory and cannot start");
-        Require((await actualDesktop.TextAsync("WatchRootHint")) == "请选择一个已有文件夹，再开始记录。", "missing observation directory has an actionable explanation");
-        await actualDesktop.ClickTwiceAsync("StartRecording");
-        Require(Hash(database) == originalDatabaseHash && !Directory.EnumerateFiles(truthRoot, "ground-truth-*.jsonl").Any(), "missing directory cannot launch installer or create a session");
-        missingScopeBlocked = true;
-        firstUseScreenshots.Add(await actualDesktop.ScreenshotControlWindowAsync("StartRecording", Path.Combine(options.Output, "screenshots"), "install-first-use-missing-folder.png"));
-
-        Phase("native_observation_picker");
-        await actualDesktop.TabToAsync("ChooseWatchRoot");
-        await actualDesktop.ChooseWatchRootAsync(root);
-        await PackagedDesktop.WaitAsync(() => actualDesktop.EnabledAsync("StartRecording"), TimeSpan.FromSeconds(10));
-        Require(Normalize(await actualDesktop.TextAsync("WatchRoot")) == Normalize(root), "native folder picker preserves the exact user-selected existing scope");
-        Require(await actualDesktop.FullyVisibleAsync("StartRecording"), "ordinary primary action fits its actual native viewport");
-        await actualDesktop.TabToAsync("StartRecording");
-        keyboardFlowVerified = true;
-        firstUseScreenshots.Add(await actualDesktop.ScreenshotControlWindowAsync("StartRecording", Path.Combine(options.Output, "screenshots"), "install-first-use-configured.png"));
+        await actualDesktop.ResizeControlWindowAsync("StartRecording", 740, 620);
+        firstUseDpi = await actualDesktop.ControlWindowDpiAsync("StartRecording");
+        await actualDesktop.TabToAsync("StartRecording"); keyboardFlowVerified = true;
+        Require(await actualDesktop.FullyVisibleAsync("StartRecording"), "primary action is reachable in the actual compact viewport");
+        firstUseScreenshots.Add(await actualDesktop.ScreenshotControlWindowAsync("StartRecording", Path.Combine(options.Output, "screenshots"), "install-follow-configured.png"));
         screenshots.AddRange(firstUseScreenshots);
-
-        // These two adverse starts fail configuration validation before a
-        // collector, installer or session exists. They do not consume a capture.
-        Phase("native_missing_directory_validation");
-        var unavailable = root + "-temporarily-unavailable";
-        Directory.Move(root, unavailable);
-        try
-        {
-            await actualDesktop.KeyboardActivateAsync("StartRecording", focus: false);
-            await PackagedDesktop.WaitAsync(async () => await actualDesktop.ExistsAsync("InstallStatus")
-                    && (await actualDesktop.TextAsync("InstallStatus")).Contains("重新选择", StringComparison.Ordinal)
-                || await actualDesktop.ExistsAsync("WatchRootHint")
-                    && (await actualDesktop.TextAsync("WatchRootHint")).Contains("重新选择", StringComparison.Ordinal), TimeSpan.FromSeconds(10));
-            Require(Hash(database) == originalDatabaseHash && !Directory.EnumerateFiles(truthRoot, "ground-truth-*.jsonl").Any(), "invalidated selected directory fails before installer or session creation");
-            invalidScopeBlocked = true;
-        }
-        finally { Directory.Move(unavailable, root); }
-        await actualDesktop.TabToAsync("ChooseWatchRoot");
-        await actualDesktop.ChooseWatchRootAsync(root);
-        Phase("native_personal_database_scope_conflict");
-        await actualDesktop.TabToAsync("ChooseWatchRoot");
-        await actualDesktop.ChooseWatchRootAsync(Path.GetDirectoryName(database)!);
-        await actualDesktop.TabToAsync("StartRecording");
-        await actualDesktop.KeyboardActivateAsync("StartRecording", focus: false);
-        await PackagedDesktop.WaitAsync(async () => await actualDesktop.ExistsAsync("ChangeSaveLocation")
-            && await actualDesktop.EnabledAsync("ChangeSaveLocation"), TimeSpan.FromSeconds(10));
-        Require(Hash(database) == originalDatabaseHash && !Directory.EnumerateFiles(truthRoot, "ground-truth-*.jsonl").Any(), "personal-library conflict fails before installer or session creation");
-        databaseConflictBlocked = true;
-        await actualDesktop.TabToAsync("ChooseWatchRoot");
-        await actualDesktop.ChooseWatchRootAsync(root);
-        await PackagedDesktop.WaitAsync(() => actualDesktop.EnabledAsync("StartRecording"), TimeSpan.FromSeconds(10));
-        Require(Normalize(await actualDesktop.TextAsync("WatchRoot")) == Normalize(root)
-            && (await actualDesktop.NativeVisibleTextAsync("InstallerFileName")).Contains(Path.GetFileName(options.InstallFixture!), StringComparison.Ordinal), "correcting the folder preserves the selected installer");
-        correctionsPreservedConfiguration = true;
-        Require(actualDesktop.AdvancedInteractions == 0 && actualDesktop.EnvironmentCheckInteractions == 0 && actualDesktop.DatabasePathInteractions == 0,
-            "ordinary flow never opens advanced settings, checks environment or chooses a database");
-        Require(!await actualDesktop.IsCheckedAsync("AdvancedToggle"), "ordinary flow remains collapsed before starting");
-        Require((await client.ListAsync(database)).Data.GetArrayLength() == earlierSummaries.Count && !Directory.EnumerateFiles(truthRoot, "ground-truth-*.jsonl").Any(),
-            "configuration and corrected prelaunch failures create no session and launch no installer");
-        configurationCreatedNoSession = true;
+        Require(actualDesktop.WatchPickerSelections == 0 && actualDesktop.AdvancedInteractions == 0
+            && actualDesktop.EnvironmentCheckInteractions == 0 && actualDesktop.DatabasePathInteractions == 0, "ordinary follow flow makes no folder, advanced, Doctor or database selection");
+        Require(Hash(database) == originalDatabaseHash && !File.Exists(Path.Combine(root, ".follow-go")), "configuration creates no session and launches no installer");
+        defaultFollow = noWatchArgument = configurationCreatedNoSession = true;
         interactionChecks.Add(new("native_picker_navigation_and_cancel", "passed"));
-        configured = true;
-        Phase("ordinary_configuration_ready");
+        configured = true; Phase("ordinary_follow_configuration_ready");
     }
 
     private async Task Start()
     {
         Phase("ordinary_start_once");
+        var independent = new ProcessStartInfo(options.InstallFixture!) { UseShellExecute = false, CreateNoWindow = true,
+            RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var argument in new[] { "--role", "follow-unrelated", "--root", root! }) independent.ArgumentList.Add(argument);
+        unrelatedProcess = Process.Start(independent) ?? throw new IOException("Independent fixture did not start.");
+        await PackagedDesktop.WaitAsync(() => Task.FromResult(File.Exists(Path.Combine(root!, ".follow-unrelated-ready"))), TimeSpan.FromSeconds(10));
         Require(actualDesktop is not null, "configured actual packaged process");
         Require(await actualDesktop!.EnabledAsync("StartRecording"), "actual start action available without an environment-check detour");
         await actualDesktop.TabToAsync("StartRecording");
@@ -411,11 +366,9 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         Require(listed.Data.EnumerateArray().Count(item => Text(item, "name") == recordName) >= 2, "same-name records coexist without association by name");
         foreach (var earlier in earlierSummaries)
             Require(JsonView.JsonEqual(earlier.Value, (await client.SummaryAsync(database!, earlier.Key)).Data), "earlier finished and unfinished records remain unchanged");
-        Require(summary.Data.GetProperty("watch_roots").GetArrayLength() == 1, "only explicit observation root");
         savedScopeCount = summary.Data.GetProperty("watch_roots").GetArrayLength();
-        var savedScope = summary.Data.GetProperty("watch_roots")[0].GetString()!;
-        Require(Normalize(savedScope) == Normalize(root!), "saved scope exactly equals the directory selected through the native picker");
-        persistedScopeHash = ScopeHash(savedScope); scopeExactMatch = persistedScopeHash == selectedScopeHash;
+        Require(savedScopeCount == 0 && summary.Data.GetProperty("backend").TryGetProperty("follow_installer", out _), "saved follow marker has no preset observation directory");
+        followModePersisted = true;
         Require(summary.Data.GetProperty("backend").GetProperty("etw_file").GetString() == "active", "stored backend is real ETW");
         Screenshot(viewer!, "install-autoopened-session.png");
     }
@@ -453,13 +406,27 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
             .Select(line => JsonDocument.Parse(line).RootElement.Clone()).ToArray();
         Require(truth.Length > 0, "existing fixture independent syscall oracle produced evidence");
         await File.WriteAllTextAsync(Path.Combine(options.PrivateOutput, "install-ground-truth.json"), JsonSerializer.Serialize(truth));
-        sourceEvent = sourceEvents.FirstOrDefault(item => Text(item, "event_type") == "file" && Text(item, "confidence") is "High" or "Certain" && truth.Any(row => MatchesTruth(item, row)));
-        Require(sourceEvent.Value.ValueKind == JsonValueKind.Object, "a real High source observation matches independent PID/birth/path/operation/time oracle");
+        await VerifyFollowOracle(full);
+        var observedChild = followVerification!.Value.GetProperty("observations").EnumerateArray().Single(item => Text(item, "label") == "child");
+        selectedEvent = Text(observedChild, "event_id");
+        sourceEvent = events.Single(item => Text(item, "id") == selectedEvent);
+        Require(truth.Any(row => Text(row, "role") == "followchild" && MatchesTruth(sourceEvent.Value, row)),
+            "the demonstration selects the direct child's independently verified source write");
         independentTruthVerified = true;
-        selectedEvent = Text(sourceEvent.Value, "id");
         var index = Array.FindIndex(events, item => Text(item, "id") == selectedEvent);
         C<TabControl>(viewer!, "Tabs").SelectedIndex = 2;
         await WaitIdle(viewer!);
+        if (C<TextBox>(viewer!, "EventFilter").Text.Length != 0)
+        {
+            C<Button>(viewer!, "ClearEventSearch").PerformClick();
+            // Clearing the automatic follow search is debounced. The full
+            // timeline index must not be applied to the previous filtered page.
+            await PackagedDesktop.WaitAsync(() => Task.FromResult(
+                C<TextBox>(viewer!, "EventFilter").Text.Length == 0
+                && C<Label>(viewer!, "EventsPage").Text.Contains("偏移 0", StringComparison.Ordinal)
+                && !viewer!.IsBusy), TimeSpan.FromSeconds(30));
+            await WaitIdle(viewer!);
+        }
         for (var page = 0; page < index / 50; page++)
         {
             var next = C<Button>(viewer!, "NextEvents");
@@ -475,6 +442,8 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         var explanation = CoreResponse.Parse(C<TextBox>(viewer!, "RawDetails").Text, "explain");
         Require(Text(explanation.Data, "app_id") == session && JsonView.JsonEqual(explanation.Data.GetProperty("event"), sourceEvent.Value), "explanation exact session and event identity");
         C<CheckBox>(viewer!, "RawToggle").Checked = false;
+        C<Button>(viewer!, "CopyEventId").PerformClick();
+        Require(Clipboard.GetText() == selectedEvent, "real source row and copied ID match the same explanation");
         Screenshot(viewer!, "install-real-event-explain.png");
         report = Path.Combine(Path.GetTempPath(), "contain-desktop-report-" + session + ".html");
         viewerDialogs.Report = report;
@@ -501,11 +470,75 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         var restartedExplanation = await PersonalRecordsVerification.VerifyExactUi(restarted, session!, selectedEvent!, index / 50);
         Require(JsonView.JsonEqual(restartedExplanation.Data.GetProperty("event"), sourceEvent.Value),
             "cold-restarted actual EXE explains the exact original real source event");
+        await restarted.InvokeAsync("CopyEventId");
+        copiedEvent = Clipboard.GetText();
+        Require(copiedEvent == selectedEvent, "cold-restarted actual EXE copies the same child event ID as its explanation");
         Require(restarted.WorkingDirectory != initialWorkingDirectory, "actual cold restart changes working directory");
         restartedSession = restartedExplanation.Data.GetProperty("app_id").GetString();
         restartedEvent = restartedExplanation.Data.GetProperty("event").GetProperty("id").GetString();
         screenshots.Add(await restarted.ScreenshotAsync(Path.Combine(options.Output, "screenshots"), "install-packaged-cold-restart-exact-event.png"));
         await restarted.CloseAsync(); coldRestartVerified = true;
+        var verified = JsonNode.Parse(followVerification!.Value.GetRawText())!.AsObject();
+        verified["selected_event_id"] = selectedEvent; verified["copied_event_id"] = copiedEvent;
+        verified["explain_event_id"] = Text(explanation.Data.GetProperty("event"), "id");
+        verified["restart_event_id"] = restartedEvent; verified["returned_session_id"] = finalStatus!.SessionId;
+        verified["autoopened_session_id"] = session; verified["restart_session_id"] = restartedSession;
+        followVerification = JsonSerializer.SerializeToElement(verified);
+    }
+
+    private async Task VerifyFollowOracle(JsonElement full)
+    {
+        Require(unrelatedProcess is not null, "independent writer was launched outside the installer tree");
+        await unrelatedProcess!.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        privateLog.AppendLine(await unrelatedProcess.StandardError.ReadToEndAsync());
+        _ = await unrelatedProcess.StandardOutput.ReadToEndAsync();
+        var expectedTargets = new[]
+        {
+            new { label = "parent", role = "followparent", path = Path.Combine(root!, "A", "parent-target.txt"), content = "Contain follow experiment: exact parent write\n" },
+            new { label = "child", role = "followchild", path = Path.Combine(root!, "B", "child-target.txt"), content = "Contain follow experiment: exact direct child write\n" },
+            new { label = "unrelated", role = "followunrelated", path = Path.Combine(root!, "A", "unrelated-target.txt"), content = "Contain follow experiment: independent writer, never installer\n" }
+        };
+        var privateOracle = Path.Combine(options.PrivateOutput, "follow-native-oracle"); Directory.CreateDirectory(privateOracle);
+        var expectedPath = Path.Combine(privateOracle, "expected.json");
+        var expected = new
+        {
+            source_sha = options.Source, capture_exit_code = 0, independent_exit_code = unrelatedProcess.ExitCode,
+            directory_b_existed_before = false, product_watch_arguments = Array.Empty<string>(),
+            excluded_io_paths = new[] { database! }, excluded_io_directories = new[] { options.PrivateOutput },
+            targets = expectedTargets.Select(item => new { item.label, item.role, item.path,
+                content_sha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(item.content))).ToLowerInvariant(),
+                actual_content_sha256 = File.Exists(item.path) ? Hash(item.path) : null })
+        };
+        await File.WriteAllTextAsync(expectedPath, JsonSerializer.Serialize(expected));
+        var explanationDirectory = Path.Combine(privateOracle, "explanations"); Directory.CreateDirectory(explanationDirectory);
+        foreach (var target in expectedTargets)
+        {
+            var candidates = full.GetProperty("events").EnumerateArray().Where(item => Text(item, "event_type") == "file"
+                && Text(item.GetProperty("evidence"), "source") == "EtwFile" && Normalize(Text(item, "resource")) == Normalize(target.path)).ToArray();
+            Require(candidates.Length <= 32, "independent target selection respects its fixed candidate bound");
+            foreach (var item in candidates)
+            {
+                var id = Text(item, "id"); Require(Regex.IsMatch(id, "^[a-zA-Z0-9_-]{1,100}$"), "safe exact event ID");
+                var explanation = await client.ExplainAsync(database!, session!, id);
+                await File.WriteAllTextAsync(Path.Combine(explanationDirectory, id + ".json"), explanation.RawJson);
+            }
+        }
+        var summaryPath = Path.Combine(privateOracle, "follow-native-summary.json");
+        var start = new ProcessStartInfo("python") { UseShellExecute = false, CreateNoWindow = true,
+            RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = new UTF8Encoding(false, true) };
+        foreach (var argument in new[] { Path.GetFullPath("scripts/verify-follow-installer-experiment.py"),
+            "--capture", Path.Combine(options.PrivateOutput, "install-capture.json"), "--truth", truthRoot!, "--expected", expectedPath,
+            "--explanations", explanationDirectory, "--output", summaryPath, "--source", options.Source }) start.ArgumentList.Add(argument);
+        using var oracle = Process.Start(start) ?? throw new IOException("Independent native oracle did not start.");
+        var stdout = oracle.StandardOutput.ReadToEndAsync(); var stderr = oracle.StandardError.ReadToEndAsync();
+        await oracle.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        privateLog.AppendLine(await stdout).AppendLine(await stderr);
+        if (File.Exists(summaryPath))
+        {
+            using var result = JsonDocument.Parse(await File.ReadAllTextAsync(summaryPath)); followVerification = result.RootElement.Clone();
+        }
+        Require(oracle.ExitCode == 0 && followVerification is { } verified && verified.GetProperty("accepted").GetBoolean(),
+            "all fixed root, direct-child, unrelated, baseline, bounded-storage and reopened-explanation oracle checks passed");
     }
 
     private async Task<JsonElement> ReadFullCapture()
@@ -516,7 +549,8 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         var output = process.StandardOutput.ReadToEndAsync(); var error = process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(90));
         var raw = await output; privateLog.AppendLine(await error);
-        Require(process.ExitCode == 0, "actual full read-only capture export succeeds");
+        Require(process.ExitCode == 0 && Encoding.UTF8.GetByteCount(raw) <= 64 * 1024 * 1024,
+            "actual full read-only capture export succeeds within the existing output bound");
         using var doc = JsonDocument.Parse(raw);
         var data = doc.RootElement.GetProperty("data").Clone();
         Require(Text(data, "id") == session, "full result is exact session");
@@ -543,6 +577,7 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
             {
                 using var lockedForm = new InstallForm(new InstallClient(client.ExecutablePath), failureViewer.OpenCapturedSessionAsync);
                 lockedForm.Show(failureViewer);
+                TestRecordIsolation.SelectManualObservation(lockedForm);
                 C<TextBox>(lockedForm, "InstallerPath").Text = invalidInstaller;
                 C<TextBox>(lockedForm, "RecordName").Text = recordName;
                 C<TextBox>(lockedForm, "WatchRoot").Text = root!;
@@ -557,6 +592,7 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
             finally { File.SetAttributes(lockedDatabase, File.GetAttributes(lockedDatabase) & ~FileAttributes.ReadOnly); }
             C<Button>(failureViewer, "NewInstall").PerformClick();
             using var failedForm = failureViewer.ActiveInstallForm ?? throw new InvalidOperationException("Failure fixture did not open the production install entry.");
+            TestRecordIsolation.SelectManualObservation(failedForm);
             C<TextBox>(failedForm, "InstallerPath").Text = invalidInstaller;
             C<TextBox>(failedForm, "RecordName").Text = recordName;
             C<TextBox>(failedForm, "WatchRoot").Text = root!;
@@ -752,26 +788,25 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
             cold_restart_verified = coldRestartVerified, working_directory_changed = coldRestartVerified,
             first_use = new
             {
-                protocol_revision = "contain-first-install-flow-1", actual_packaged_executable = actualCapture,
+                protocol_revision = "contain-follow-install-flow-1", actual_packaged_executable = actualCapture,
                 windows_version = Environment.OSVersion.Version.ToString(), actual_device_dpi = firstUseDpi,
                 installer_picker_cancels = actualDesktop?.InstallerPickerCancels ?? 0,
                 installer_picker_selections = actualDesktop?.InstallerPickerSelections ?? 0,
                 observation_picker_selections = actualDesktop?.WatchPickerSelections ?? 0,
-                cancel_preserved_record_selection = cancelPreservedSelection, missing_scope_blocks_start = missingScopeBlocked,
+                cancel_preserved_record_selection = cancelPreservedSelection,
                 configuration_created_no_session = configurationCreatedNoSession,
-                invalid_scope_blocked = invalidScopeBlocked, database_conflict_blocked = databaseConflictBlocked,
-                corrections_preserved_configuration = correctionsPreservedConfiguration,
-                ordinary_input_count = 2, advanced_interactions = actualDesktop?.AdvancedInteractions ?? 0,
+                default_follow = defaultFollow, no_watch_argument = noWatchArgument, follow_mode_persisted = followModePersisted,
+                ordinary_input_count = 1, advanced_interactions = actualDesktop?.AdvancedInteractions ?? 0,
                 preexisting_session_count = earlierSummaries.Count,
                 environment_check_interactions = actualDesktop?.EnvironmentCheckInteractions ?? 0,
                 database_path_interactions = actualDesktop?.DatabasePathInteractions ?? 0,
                 keyboard_flow_verified = keyboardFlowVerified, default_name_matches_exe = defaultNameMatchesExe,
                 default_database = defaultSaveWithoutPathInteraction,
-                selected_scope_sha256 = selectedScopeHash, persisted_scope_sha256 = persistedScopeHash,
-                scope_exact_match = scopeExactMatch, saved_scope_count = savedScopeCount, session_id = session,
+                saved_scope_count = savedScopeCount, session_id = session,
                 main_entry_kept_active_task = activeEntryPreserved, duplicate_start_created_one_session = duplicateCreatedOne,
                 screenshots = firstUseScreenshots
             },
+            follow_verification = followVerification,
             first_process_id = actualFirstPid, restarted_process_id = actualRestartPid, first_process_exit_code = actualFirstExitCode,
             restart_session_id = restartedSession, restart_event_id = restartedEvent, collector_process_id = actualCollectorPid,
             viewer_assembly_sha256 = Hash(Path.Combine(options.Package, "Contain.Viewer.dll")),

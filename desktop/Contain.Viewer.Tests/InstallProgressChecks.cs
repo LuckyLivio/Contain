@@ -339,6 +339,7 @@ internal static class InstallProgressChecks
             await operation.WaitAsync(TimeSpan.FromSeconds(15));
             Require(form.Result is { Succeeded: true } && form.LastStatus?.ElapsedMilliseconds is null,
                 "legacy measurement-free stream remains supported");
+            C<CheckBox>(form, "ShowProgressDetails").Checked = true;
             Require(C<TextBox>(form, "InstallStatus").Text.Contains("任务耗时：不可用"), "missing timing never fabricated");
         }));
         await Check(Plan[7], () => RunCase("slow_success", async (form, operation) =>
@@ -418,6 +419,7 @@ internal static class InstallProgressChecks
             try
             {
                 form.Show(owner);
+                TestRecordIsolation.SelectManualObservation(form);
                 C<TextBox>(form, "InstallerPath").Text = Environment.ProcessPath!;
                 C<TextBox>(form, "RecordName").Text = "SYNTHETIC progress protocol fixture";
                 C<TextBox>(form, "WatchRoot").Text = watch;
