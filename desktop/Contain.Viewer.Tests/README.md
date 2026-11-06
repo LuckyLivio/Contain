@@ -1,5 +1,13 @@
 # Native desktop verification
 
+Beta 8 reuses the viewer-only plan for folder guidance and task next steps. The
+progress checks compare the actual status control, clipboard action and native
+details window through held synthetic lifecycle checkpoints, including a nonzero
+installer exit with Degraded coverage and failed partial evidence. The summary's
+`guidance_verification` binds those cases to the frozen assembly; no new installer
+or ETW capture is part of this focused run. Layout checks include the longer
+folder explanation at native DPI and separate simulated scales.
+
 Beta 7 adds five mandatory configuration checks in
 `FirstUseConfigurationChecks.cs`, with `first-use-configuration-summary.json`.
 They exercise the frozen production forms using isolated missing/invalid scopes,

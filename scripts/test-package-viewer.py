@@ -513,7 +513,7 @@ class ViewerPackageTests(unittest.TestCase):
 
     def test_progress_required_plan_matches_actual_harness(self):
         source=(Path(__file__).parent.parent/'desktop/Contain.Viewer.Tests/InstallProgressChecks.cs').read_text(encoding='utf-8')
-        section=source.split('Plan =',1)[1].split('];',1)[0]
+        section=VIEWER.re.search(r'\bPlan\s*=\s*\[(.*?)\];', source, VIEWER.re.S).group(1)
         self.assertEqual(set(VIEWER.re.findall(r'"([a-z_]+)"',section)),VIEWER.PROGRESS_REQUIRED_CHECKS)
 
 
@@ -1085,6 +1085,9 @@ class ViewerPackageTests(unittest.TestCase):
         self.assertNotIn('数据库选择观察目录',usage)
         self.assertIn('普通流程只需 EXE 和已有观察文件夹',usage)
         self.assertIn('检查环境不是开始前的额外步骤',usage)
+        self.assertIn('要记录哪个文件夹里的变化？',usage)
+        self.assertIn('安装包在“下载”里、软件准备装到 D 盘',usage)
+        self.assertIn('这里的选择只决定 Contain 观察哪里',usage)
         self.assertNotIn('完成环境检查后点击开始',usage)
 
 

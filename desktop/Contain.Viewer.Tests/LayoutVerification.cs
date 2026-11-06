@@ -119,6 +119,7 @@ internal sealed class LayoutVerification(Options options, bool viewerChecksPasse
             await Settle(install);
             currentPhase = "install_missing_observation";
             await VerifyOrdinaryInstall(install, null);
+            Screenshot(install, name + "-install-missing-folder.png");
             C<TextBox>(install, "WatchRoot").Text = watch;
             currentPhase = "install_ordinary";
             await VerifyOrdinaryInstall(install, watch);
@@ -250,13 +251,18 @@ internal sealed class LayoutVerification(Options options, bool viewerChecksPasse
         Require(!C<CheckBox>(install, "AdvancedToggle").Checked, "ordinary configuration starts and remains one collapsed page");
         foreach (var name in new[] { "RecordName", "DatabaseSavePath", "ChooseSaveDatabase", "InstallerArguments", "RegistryKey", "SettleMilliseconds", "MaxDrainMilliseconds", "SnapshotOnly", "CheckEnvironment" })
             Require(!C<Control>(install, name).Visible, "optional setting is absent from ordinary flow: " + name);
-        foreach (var name in new[] { "InstallerFileName", "ShowInstallerPath", "ChooseInstaller", "WatchRoot", "ChooseWatchRoot", "StartRecording", "AdvancedToggle" })
+        foreach (var name in new[] { "InstallerFileName", "ShowInstallerPath", "ChooseInstaller", "WatchRootLabel", "WatchRootNote", "WatchRoot", "ChooseWatchRoot", "StartRecording", "AdvancedToggle" })
             await Reach(C<Control>(install, name));
+        Require(C<Label>(install, "WatchRootLabel").Text == "要记录哪个文件夹里的变化？"
+            && C<Label>(install, "WatchRootNote").Text.Contains("安装包在“下载”里", StringComparison.Ordinal)
+            && C<Label>(install, "WatchRootNote").Text.Contains("软件准备装到 D 盘", StringComparison.Ordinal)
+            && C<Label>(install, "WatchRootNote").Text.Contains("这里的选择只决定 Contain 观察哪里。", StringComparison.Ordinal),
+            "reachable ordinary text explains download location, installation target and observation-only scope");
         Require(C<Button>(install, "StartRecording").Enabled == (watch is not null), "missing scope visibly prevents Start without optional diagnostic steps");
         if (watch is null)
         {
             await Reach(C<Label>(install, "WatchRootHint"));
-            Require(C<Label>(install, "WatchRootHint").Text.Contains("还需选择观察文件夹", StringComparison.Ordinal), "missing-folder reason is readable in ordinary layout");
+            Require(C<Label>(install, "WatchRootHint").Text == "请选择一个已有文件夹，再开始记录。", "missing-folder reason is readable in ordinary layout");
         }
         else
         {

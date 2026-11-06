@@ -24,6 +24,10 @@ FIXTURES = load('beta7_upload_package_fixtures', 'test-package-viewer.py')
 
 class Beta7DeliveryTests(unittest.TestCase):
     def setUp(self):
+        # This historical delivery contract keeps its own frozen version when
+        # the current product advances to another prerelease.
+        version = mock.patch.object(FIXTURES.VIEWER.TRIAL, 'product_version', return_value=UPLOAD.VERSION)
+        version.start(); self.addCleanup(version.stop)
         self.fixture = FIXTURES.ViewerPackageTests()
         self.fixture.setUp()
         self.addCleanup(self.fixture.tearDown)

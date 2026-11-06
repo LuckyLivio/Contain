@@ -19,6 +19,7 @@ internal sealed class FirstUseConfigurationChecks(Options options, bool priorChe
     private readonly StringBuilder privateErrors = new();
     private readonly CoreClient client = new(Path.Combine(options.Package, "contain.exe"));
     private int assertions;
+    private object? folderGuidance;
 
     internal async Task<bool> RunAsync(Form owner)
     {
@@ -62,7 +63,14 @@ internal sealed class FirstUseConfigurationChecks(Options options, bool priorChe
             C<TextBox>(form, "InstallerPath").Text = client.ExecutablePath;
             Require(C<TextBox>(form, "WatchRoot").Text.Length == 0 && !C<Button>(form, "StartRecording").Enabled,
                 "an executable alone cannot enable recording or imply a scope");
-            Require(C<Label>(form, "WatchRootHint").Text.Contains("还需选择观察文件夹", StringComparison.Ordinal),
+            var folderTitle = C<Label>(form, "WatchRootLabel");
+            var folderNote = C<Label>(form, "WatchRootNote");
+            var missingHint = C<Label>(form, "WatchRootHint").Text;
+            Require(folderTitle.Text == "要记录哪个文件夹里的变化？"
+                && folderNote.Text == "通常选软件准备安装到的文件夹。例如，安装包在“下载”里、软件准备装到 D 盘，就选 D 盘上对应的已有文件夹。这里的选择只决定 Contain 观察哪里。"
+                && folderTitle.Visible && folderNote.Visible && dialogs.WatchCalls == 0,
+                "the visible ordinary page distinguishes installer location from installation target before opening a picker");
+            Require(missingHint == "请选择一个已有文件夹，再开始记录。",
                 "missing observation scope has an actionable ordinary-flow hint");
             Require(!C<CheckBox>(form, "AdvancedToggle").Checked && !C<Button>(form, "CheckEnvironment").Visible
                 && !C<TextBox>(form, "RecordName").Visible && !C<CheckBox>(form, "SnapshotOnly").Visible,
@@ -75,6 +83,8 @@ internal sealed class FirstUseConfigurationChecks(Options options, bool priorChe
             dialogs.WatchRoot = watched; C<Button>(form, "ChooseWatchRoot").PerformClick();
             Require(C<TextBox>(form, "WatchRoot").ReadOnly && C<TextBox>(form, "WatchRoot").Text == watched
                 && C<Button>(form, "StartRecording").Enabled, "a selected existing directory is shown exactly and enables explicit Start");
+            folderGuidance = new { protocol_revision = "contain-folder-guidance-verification-1", title = folderTitle.Text,
+                note = folderNote.Text, missing_hint = missingHint, visible_before_picker = true, explicit_selection_preserved = true };
             C<Button>(form, "CopyWatchRoot").PerformClick(); Require(Clipboard.GetText() == watched, "copy retains the exact selected observation path");
             var moved = watched + " moved"; Directory.Move(watched, moved);
             C<Button>(form, "StartRecording").PerformClick(); await form.PendingOperation.WaitAsync(TimeSpan.FromSeconds(20));
@@ -216,6 +226,7 @@ internal sealed class FirstUseConfigurationChecks(Options options, bool priorChe
         {
             schema_version = 1, protocol_revision = "contain-desktop-first-use-configuration-verification-1", source_sha = options.Source,
             native_windows = OperatingSystem.IsWindows(), windows_version = Environment.OSVersion.Version.ToString(), synthetic = true,
+            folder_guidance_verification = folderGuidance,
             real_etw_executed = false, real_user_records_accessed = false,
             package_manifest_sha256 = Hash(Path.Combine(options.Package, "BUILD.json")), viewer_assembly_sha256 = Hash(typeof(ViewerForm).Assembly.Location),
             viewer_launcher_sha256 = Hash(Path.Combine(options.Package, "Contain.Viewer.exe")), contain_sha256 = Hash(client.ExecutablePath),

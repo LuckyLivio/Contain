@@ -7,8 +7,8 @@ Graphical recording is a separate [implementation and validation milestone](../d
 
 ## Current download
 
-Use the [Beta 7 release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.7).
-Its [new-record flow, validation scope and known issues](../docs/simple-install-beta7.md) distinguish
+Use the [Beta 8 release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.8).
+Its [folder and task-completion guidance fixes](../docs/install-guidance-beta8.md) distinguish
 native Windows results, simulated layout stress and user-reported trials.
 The entries below retain historical evidence rather than additional current downloads.
 
@@ -115,9 +115,11 @@ A successful check does not guarantee later startup.
    returns to the current history selection. Choosing an EXE opens one configuration
    page and moves focus to the observation folder. An existing task instead opens
    its current status window.
-2. Choose **要观察哪个文件夹？**. Contain records changes inside this existing
-   folder. To observe files in the installation target, select its corresponding
-   existing folder. The installer still controls its own installation destination;
+2. Choose **要记录哪个文件夹里的变化？**. Usually select the existing folder
+   where the software is going to be installed: if the installer is in Downloads
+   but the software will be on drive D, select the corresponding existing folder
+   on D. This selection only controls where Contain observes changes; another
+   existing folder can still be selected explicitly. The installer still controls its own installation destination;
    Contain does not create it, infer it from the EXE directory, reuse a previous
    scope or expand the range. View/copy/change the selected paths as needed.
 3. Click **开始记录** once. The EXE filename suggests the record name and the
@@ -171,7 +173,11 @@ its window is actually waiting for the user.
 exact session/database and collector information. **复制任务摘要** copies a concise
 local diagnostic snapshot. Neither action uploads anything. Review local paths
 before sharing. Saved evidence, source stop and installer exit remain separate
-from a confirmed complete session and from installation success.
+from a confirmed complete session and from installation success. Once the existing
+completion checks confirm the saved result, the window, details and copied summary
+say **记录已保存，可以查看变化。** even with a nonzero installer exit or Degraded
+coverage. Active finalization and result readback retain their own waiting guidance;
+failed or unconfirmed endings point to task details and available saved evidence.
 
 ## Build and verification
 

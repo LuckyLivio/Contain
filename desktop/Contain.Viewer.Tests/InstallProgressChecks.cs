@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Drawing.Imaging;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -11,6 +12,11 @@ namespace Contain.Viewer.Tests;
 internal static class InstallProgressChecks
 {
     private const string ScenarioVariable = "CONTAIN_SYNTHETIC_STATUS_SCENARIO";
+    private const string GuidanceDirectoryVariable = "CONTAIN_SYNTHETIC_GUIDANCE_DIRECTORY";
+    private static readonly string[] GuidancePlan = ["installer_still_running", "exited_still_collecting",
+        "stopped_partial_finalizing", "saved_result_readback", "terminal_waiting_for_collector",
+        "confirmed_nonzero_installer_degraded", "failed_saved_evidence", "prelaunch_failed_no_evidence",
+        "missing_terminal_result", "nonzero_collector_exit"];
     private static readonly string[] Plan = ["additive_measurements_and_missing_values", "repeated_finalizing_and_stale_identity",
         "slow_finalizing_real_pipes_ui_timer_and_close_guard", "structured_failure_details_and_clipboard",
         "missing_terminal_result", "nonzero_collector_exit", "absent_progress_measurement", "disposed_form_callback_guard"];
@@ -41,6 +47,41 @@ internal static class InstallProgressChecks
         Console.OutputEncoding = new UTF8Encoding(false);
         var id = Guid.NewGuid().ToString();
         var clock = Stopwatch.StartNew();
+        if (scenario == "guidance_checkpoints")
+        {
+            var directory = Path.GetFullPath(Environment.GetEnvironmentVariable(GuidanceDirectoryVariable)
+                ?? throw new InvalidDataException("Guidance checkpoints need their isolated handshake directory."));
+            if (!Path.GetFileName(directory).StartsWith("contain-progress-synthetic-", StringComparison.Ordinal)
+                || !string.Equals(Path.GetDirectoryName(directory), Path.TrimEndingDirectorySeparator(Path.GetTempPath()), StringComparison.OrdinalIgnoreCase)
+                || !Directory.Exists(directory) || (File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidDataException("Guidance checkpoints must stay inside their isolated temporary directory.");
+            void Guidance(int sequence, string stage, string step, bool exited, bool stopped, bool saved)
+            {
+                var node = JsonNode.Parse(Document(database, id, sequence, stage, stage != "preparing", exited, stopped, saved,
+                    step, (ulong)clock.ElapsedMilliseconds))!;
+                if (exited) node["data"]!["installer_exit_code"] = 23;
+                Console.WriteLine(node.ToJsonString()); Console.Out.Flush();
+            }
+            async Task Pause(string checkpoint)
+            {
+                var release = Path.Combine(directory, checkpoint + ".continue");
+                var deadline = Stopwatch.StartNew();
+                while (!File.Exists(release) && deadline.Elapsed < TimeSpan.FromSeconds(12)) await Task.Delay(20);
+                if (!File.Exists(release)) throw new TimeoutException("Synthetic guidance checkpoint was not released.");
+            }
+            Guidance(1, "preparing", "database_open", false, false, false);
+            Guidance(2, "capturing", "installer_running", false, false, true);
+            await Pause("running");
+            Guidance(3, "capturing", "descendant_drain", true, false, true);
+            await Pause("exited");
+            Guidance(4, "finalizing", "evidence_replay", true, true, true);
+            await Pause("finalizing");
+            Guidance(5, "finalizing", "result_readback", true, true, true);
+            await Pause("readback");
+            Guidance(6, "finished", "completed", true, true, true);
+            await Pause("terminal");
+            return 0;
+        }
         void Emit(int sequence, string stage, string step, ulong? count = null, string? error = null)
         {
             var started = stage != "preparing";
@@ -137,6 +178,9 @@ internal static class InstallProgressChecks
     {
         Directory.CreateDirectory(output);
         var checks = new List<CheckResult>();
+        var guidanceCases = new List<GuidanceCase>();
+        var guidanceScreenshots = new List<ImageResult>();
+        var lateCallbackPreserved = false;
         var privateErrors = new StringBuilder();
         var assertions = 0;
         void Require(bool condition, string message) { if (!condition) throw new TestFailureException(message); assertions++; }
@@ -190,8 +234,10 @@ internal static class InstallProgressChecks
                 "monotonic display estimates leave actual work measurements unchanged");
             return Task.CompletedTask;
         });
-        await Check(Plan[2], () => RunCase("slow_success", async (form, operation) =>
+        await Check(Plan[2], async () =>
         {
+          await RunCase("slow_success", async (form, operation) =>
+          {
             var observed = await WaitFor(() => form.LastStatus is { Stage: "finalizing", ProcessedCount: 1 }, operation);
             Require(observed, "slow finalization observed in actual form");
             var first = form.LastStatus!;
@@ -204,7 +250,42 @@ internal static class InstallProgressChecks
             await operation.WaitAsync(TimeSpan.FromSeconds(15));
             Require(form.Result is { Succeeded: true, ProtocolError: null } && form.LastStatus is { Stage: "finished" }, "same-stage progress and bounded stderr cannot corrupt completion");
             Require(form.Result!.Diagnostics.StartsWith("SYNTHETIC diagnostic prefix 中文") && form.Result.Diagnostics.Length > 65536, "concurrent stderr exceeds pipe capacity and drains independently");
-        }));
+          });
+          await RunCase("guidance_checkpoints", async (form, operation) =>
+          {
+            Require(await WaitFor(() => form.LastStatus?.Step == "installer_running", operation), "running guidance checkpoint observed");
+            var running = form.LastStatus!;
+            VerifyGuidance(form, "installer_still_running", "安装器仍在运行，可能需要您在安装器窗口继续操作；无法判断它是否正在等待输入。");
+            Continue("running");
+            Require(await WaitFor(() => form.LastStatus?.Step == "descendant_drain", operation), "installer exit precedes source stop");
+            VerifyGuidance(form, "exited_still_collecting", "无需继续操作安装器；请等待整理和保存。");
+            Continue("exited");
+            Require(await WaitFor(() => form.LastStatus?.Step == "evidence_replay", operation), "stopped source and partial evidence still need finalization");
+            VerifyGuidance(form, "stopped_partial_finalizing", "采集已停止，已有证据保存；请等待整理和最终结果确认。", screenshot: true);
+            Continue("finalizing");
+            Require(await WaitFor(() => form.LastStatus?.Step == "result_readback", operation), "saved result is still awaiting readback");
+            VerifyGuidance(form, "saved_result_readback", "记录已保存，正在读回并确认本次结果，请稍候。");
+            Continue("readback");
+            Require(await WaitFor(() => form.LastStatus?.Stage == "finished", operation), "terminal message observed before the held collector exits");
+            Require(form.IsActive && form.Result is null && !operation.IsCompleted, "terminal message alone never confirms collector success");
+            VerifyGuidance(form, "terminal_waiting_for_collector", "已收到最终状态，正在确认采集进程退出和本次结果，请稍候。", screenshot: true);
+            Continue("terminal");
+            await operation.WaitAsync(TimeSpan.FromSeconds(15));
+            Require(form.Result is { Succeeded: true } && form.LastStatus is { InstallerExitCode: 23, QualityLevel: "Degraded", Step: "completed" },
+                "existing completion rules accept nonzero installer exit and degraded coverage after confirmed readback");
+            VerifyGuidance(form, "confirmed_nonzero_installer_degraded", "记录已保存，可以查看变化。", screenshot: true);
+            var final = form.LastStatus;
+            var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            var generation = (int)typeof(InstallForm).GetField("generation", flags)!.GetValue(form)!;
+            typeof(InstallForm).GetMethod("QueueStatus", flags)!.Invoke(form, [running, generation]);
+            await Task.Delay(100);
+            Require(ReferenceEquals(final, form.LastStatus), "a delayed UI dispatch cannot overwrite the confirmed final status");
+            Require(NextStep(C<TextBox>(form, "InstallStatus").Text) == "记录已保存，可以查看变化。"
+                && NextStep(form.TaskSummaryText) == "记录已保存，可以查看变化。", "late running state cannot restore waiting guidance in the UI or summary");
+            lateCallbackPreserved = true;
+            void Continue(string checkpoint) => File.WriteAllText(Path.Combine(Path.GetDirectoryName(form.Database)!, checkpoint + ".continue"), "continue");
+          });
+        });
         await Check(Plan[3], async () =>
         {
             await RunCase("failure", async (form, operation) =>
@@ -213,6 +294,7 @@ internal static class InstallProgressChecks
             Require(form.Result is { Succeeded: false, CollectorExitCode: 7 } && form.LastStatus is { Stage: "failed", DataSaved: true }, "structured failed result preserves partial-save meaning");
             Require(C<TextBox>(form, "InstallStatus").Text.Contains("失败") && !C<TextBox>(form, "InstallStatus").Text.Contains(new string('错', 1000)), "concise default failure summary");
             Require(form.TaskDetailsText.Contains(new string('错', 1000)), "full structured error retained in details");
+            VerifyGuidance(form, "failed_saved_evidence", "本次记录失败或未确认完整结束，请查看任务详情。可打开已有记录查看已保存的证据。", screenshot: true);
             C<Button>(form, "CopyTaskSummary").PerformClick();
             Require(Clipboard.GetText().Contains(form.LastStatus!.SessionId) && Clipboard.GetText().Contains("sqlite_save"), "task summary carries exact identity and actual failed step");
             C<Button>(form, "TaskDetails").PerformClick();
@@ -226,6 +308,7 @@ internal static class InstallProgressChecks
                 Require(form.Result is { CanRetryBeforeInstaller: true, CollectorPid: > 0 }
                     && C<Button>(form, "StartRecording").Enabled && C<Button>(form, "ChangeSaveLocation").Visible,
                     "trusted terminal failure before installer launch enables explicit correction and retry");
+                VerifyGuidance(form, "prelaunch_failed_no_evidence", "本次记录失败或未确认完整结束，请查看任务详情。");
             });
         });
         await Check(Plan[4], async () =>
@@ -234,6 +317,7 @@ internal static class InstallProgressChecks
             {
             await operation.WaitAsync(TimeSpan.FromSeconds(15));
             Require(form.Result is { Succeeded: false, CollectorExitCode: 0, LastStatus.Stage: "finalizing", ProtocolError: not null }, "zero collector exit without terminal result remains unfinished");
+            VerifyGuidance(form, "missing_terminal_result", "本次记录失败或未确认完整结束，请查看任务详情。可打开已有记录查看已保存的证据。");
             });
             foreach (var scenario in new[] { "prelaunch_missing", "prelaunch_malformed" })
                 await RunCase(scenario, async (form, operation) =>
@@ -248,6 +332,7 @@ internal static class InstallProgressChecks
         {
             await operation.WaitAsync(TimeSpan.FromSeconds(15));
             Require(form.Result is { Succeeded: false, CollectorExitCode: 9, LastStatus.Stage: "finished" }, "nonzero child overrides otherwise finished message");
+            VerifyGuidance(form, "nonzero_collector_exit", "本次记录失败或未确认完整结束，请查看任务详情。可打开已有记录查看已保存的证据。");
         }));
         await Check(Plan[6], () => RunCase("missing_measurement", async (form, operation) =>
         {
@@ -263,7 +348,8 @@ internal static class InstallProgressChecks
             await operation.WaitAsync(TimeSpan.FromSeconds(15));
             Require(operation.IsCompletedSuccessfully, "disposed-form callbacks do not throw or kill child");
         }));
-        var accepted = checks.Count == Plan.Length && checks.All(check => check.Status == "passed");
+        var guidanceAccepted = guidanceCases.Select(value => value.Name).SequenceEqual(GuidancePlan) && lateCallbackPreserved;
+        var accepted = checks.Count == Plan.Length && checks.All(check => check.Status == "passed") && guidanceAccepted;
         var summaryJson = JsonSerializer.Serialize(new
         {
             schema_version = 1, protocol_revision = "contain-desktop-progress-verification-1", source_sha = source,
@@ -272,6 +358,8 @@ internal static class InstallProgressChecks
             package_manifest_sha256 = package is null ? null : Hash(Path.Combine(package, "BUILD.json")),
             contain_sha256 = package is null ? null : Hash(Path.Combine(package, "contain.exe")),
             harness_sha256 = Hash(Environment.ProcessPath!), planned_checks = Plan, checks, assertions,
+            guidance_verification = new { protocol_revision = "contain-install-guidance-verification-1", accepted = guidanceAccepted,
+                late_callback_preserved = lateCallbackPreserved, cases = guidanceCases, screenshots = guidanceScreenshots },
             passed = checks.Count(check => check.Status == "passed"), failed = checks.Count(check => check.Status == "failed"),
             not_run = Plan.Length - checks.Count, skipped = 0, retries = 0, accepted,
             completed = checks.Count == Plan.Length
@@ -288,13 +376,43 @@ internal static class InstallProgressChecks
         if (privateErrors.Length > 0) File.WriteAllText(Path.Combine(privateOutput ?? output, "progress-private-errors.log"), privateErrors.ToString());
         return accepted;
 
+        void VerifyGuidance(InstallForm form, string name, string expected, bool screenshot = false)
+        {
+            var state = form.LastStatus ?? throw new TestFailureException("Guidance needs an actual parsed status.");
+            Require(C<Button>(form, "CopyTaskSummary").Enabled && C<Button>(form, "TaskDetails").Enabled, "guidance remains available through actual copy and details actions");
+            Require(NextStep(C<TextBox>(form, "InstallStatus").Text) == expected, "visible next step matches its independent expected state: " + name);
+            C<Button>(form, "CopyTaskSummary").PerformClick();
+            Require(NextStep(Clipboard.GetText()) == expected && Clipboard.GetText().Contains(state.SessionId, StringComparison.Ordinal),
+                "actual copied summary has the same guidance and exact current session: " + name);
+            C<Button>(form, "TaskDetails").PerformClick();
+            var details = form.OwnedForms.Single(window => window.Name == "InstallTaskDetails");
+            Require(NextStep(C<TextBox>(details, "InstallTaskDiagnostics").Text) == expected,
+                "native technical details have the same guidance: " + name);
+            details.Close();
+            guidanceCases.Add(new(name, state.Stage, state.Step, state.InstallerStarted, state.InstallerExited,
+                state.InstallerExitCode, state.CaptureFinished, state.DataSaved, state.QualityLevel,
+                form.Result?.Succeeded, expected, true));
+            if (screenshot)
+            {
+                form.Refresh();
+                using var bitmap = new Bitmap(form.Width, form.Height);
+                form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
+                var nameOnDisk = "guidance-" + name + ".png";
+                var directory = Path.Combine(output, "screenshots"); Directory.CreateDirectory(directory);
+                var path = Path.Combine(directory, nameOnDisk); bitmap.Save(path, ImageFormat.Png);
+                guidanceScreenshots.Add(new(nameOnDisk, Hash(path), bitmap.Width, bitmap.Height));
+            }
+        }
+
         async Task RunCase(string scenario, Func<InstallForm, Task, Task> check)
         {
             var previous = Environment.GetEnvironmentVariable(ScenarioVariable);
+            var previousGuidanceDirectory = Environment.GetEnvironmentVariable(GuidanceDirectoryVariable);
             var root = Path.Combine(Path.GetTempPath(), "contain-progress-synthetic-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
             var watch = Path.Combine(root, "watched"); Directory.CreateDirectory(watch);
             Environment.SetEnvironmentVariable(ScenarioVariable, scenario);
+            if (scenario == "guidance_checkpoints") Environment.SetEnvironmentVariable(GuidanceDirectoryVariable, root);
             var bridge = new InstallClient(Environment.ProcessPath!);
             using var form = new InstallForm(bridge, (_, _) => Task.CompletedTask);
             try
@@ -311,9 +429,20 @@ internal static class InstallProgressChecks
                 finally { await operation.WaitAsync(TimeSpan.FromSeconds(15)); }
                 Require(bridge.CollectorStarted, "actual synthetic collector acquisition is retained after its exit");
             }
-            finally { Environment.SetEnvironmentVariable(ScenarioVariable, previous); }
+            finally
+            {
+                Environment.SetEnvironmentVariable(ScenarioVariable, previous);
+                Environment.SetEnvironmentVariable(GuidanceDirectoryVariable, previousGuidanceDirectory);
+            }
         }
     }
+
+    private sealed record GuidanceCase(string Name, string Stage, string? Step, bool InstallerStarted, bool InstallerExited,
+        int? InstallerExitCode, bool CaptureFinished, bool DataSaved, string? QualityLevel, bool? ResultSucceeded,
+        string NextStep, bool UiClipboardDetailsMatch);
+
+    private static string NextStep(string text) => text.Split(["\r\n", "\n"], StringSplitOptions.None)
+        .Single(line => line.StartsWith("下一步：", StringComparison.Ordinal))["下一步：".Length..];
 
     private static async Task<bool> WaitFor(Func<bool> condition, Task operation)
     {
