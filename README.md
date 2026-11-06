@@ -8,9 +8,10 @@ Rust、Visual Studio、Python、PowerShell 7 或独立 .NET 运行库。
 
 ## 下载与使用
 
-**[直接下载 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.9/contain-0.3.2-beta.9-windows-x64.zip)** · [Beta Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.9) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.9/SHA256SUMS.txt)
+**[直接下载 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.10/contain-0.3.2-beta.10-windows-x64.zip)** · [Beta Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.10) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.10/SHA256SUMS.txt)
 
-版本 **0.3.2-beta.9**。[本版跟随记录、页面和验证边界](docs/follow-installer-beta9.md)。
+版本 **0.3.2-beta.10**。[本版采集丢失修复、对照与复测](docs/capture-loss-beta10.md)。
+沿用 [Beta.9 跟随证据与桌面边界](docs/follow-installer-beta9.md)；[Beta.9 历史发布与附件](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.9) 保留。
 发布页提供实际验收的 Windows x64 自包含 ZIP、SHA-256 和 `BUILD-IDENTITY.json`，
 其中记录冻结源码、Windows / DPI、原生验收结果和构建身份。
 
