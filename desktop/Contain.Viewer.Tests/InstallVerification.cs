@@ -245,7 +245,7 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         Require(Normalize(await actualDesktop.TextAsync("InstallerPath")) == Normalize(options.InstallFixture!), "native picker selected the exact frozen EXE path");
         await actualDesktop.ToggleAsync("ShowInstallerPath", false);
         Require((await actualDesktop.TextAsync("WatchRoot")).Length == 0 && !await actualDesktop.EnabledAsync("StartRecording"), "EXE selection does not infer an observation directory and cannot start");
-        Require((await actualDesktop.TextAsync("WatchRootHint")).Contains("还需选择观察文件夹", StringComparison.Ordinal), "missing observation directory has an actionable explanation");
+        Require((await actualDesktop.TextAsync("WatchRootHint")) == "请选择一个已有文件夹，再开始记录。", "missing observation directory has an actionable explanation");
         await actualDesktop.ClickTwiceAsync("StartRecording");
         Require(Hash(database) == originalDatabaseHash && !Directory.EnumerateFiles(truthRoot, "ground-truth-*.jsonl").Any(), "missing directory cannot launch installer or create a session");
         missingScopeBlocked = true;

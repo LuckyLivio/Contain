@@ -90,7 +90,7 @@ public sealed class InstallForm : Form
         maxDrain.ValueChanged += (_, _) => UpdateScopePreview();
         recordName.TextChanged += (_, _) => { if (!suggestingName) nameEdited = true; UpdateScopePreview(); };
         installer.TextChanged += (_, _) => { SuggestRecordName(); UpdateScopePreview(); };
-        watchRoot.TextChanged += (_, _) => { watchHint.Text = string.IsNullOrWhiteSpace(watchRoot.Text) ? "还需选择观察文件夹，才能确定要记录哪里的变化。" : ""; correctionHint.Visible = false; };
+        watchRoot.TextChanged += (_, _) => { watchHint.Text = string.IsNullOrWhiteSpace(watchRoot.Text) ? "请选择一个已有文件夹，再开始记录。" : ""; correctionHint.Visible = false; };
         customDatabase.CheckedChanged += (_, _) => { saveLocation.Text = customDatabase.Checked ? "保存到自定义位置" : "保存到我的记录"; UpdateScopePreview(); };
         changeSaveLocation.Visible = false;
         changeSaveLocation.Click += (_, _) =>
@@ -126,7 +126,7 @@ public sealed class InstallForm : Form
         };
         if (initialInstaller is not null) installer.Text = initialInstaller;
         UpdateScopePreview();
-        watchHint.Text = "还需选择观察文件夹，才能确定要记录哪里的变化。";
+        watchHint.Text = "请选择一个已有文件夹，再开始记录。";
         status.Text = "仅点击“开始记录”才会启动所选安装器。";
         status.Visible = false;
         start.Click += (_, _) => { if (!IsActive && !checking && !consumed) PendingOperation = StartAsync(); };
@@ -207,9 +207,9 @@ public sealed class InstallForm : Form
         installer.ReadOnly = true; installer.Visible = false; installer.TabIndex = 2;
         installer.AccessibleName = "安装器完整路径";
         AddSection(fields, installer);
-        var watchLabel = new Label { Name = "WatchRootLabel", Text = "要观察哪个文件夹？", AutoSize = true, Dock = DockStyle.Top, Margin = new Padding(3, 18, 3, 4) };
+        var watchLabel = new Label { Name = "WatchRootLabel", Text = "要记录哪个文件夹里的变化？", AutoSize = true, Dock = DockStyle.Top, Margin = new Padding(3, 18, 3, 4) };
         AddSection(fields, watchLabel);
-        var scopeNote = new Label { Name = "WatchRootNote", Text = "Contain 会记录这个文件夹里的变化。要查看安装目标里的文件，请选择对应的已有文件夹。",
+        var scopeNote = new Label { Name = "WatchRootNote", Text = "通常选软件准备安装到的文件夹。例如，安装包在“下载”里、软件准备装到 D 盘，就选 D 盘上对应的已有文件夹。这里的选择只决定 Contain 观察哪里。",
             AutoSize = true, Dock = DockStyle.Top, Margin = new Padding(3, 0, 3, 8) };
         AddSection(fields, scopeNote);
         watchRoot.ReadOnly = true; watchRoot.TabIndex = 3; watchRoot.PlaceholderText = "请选择一个已有文件夹";
@@ -439,7 +439,11 @@ public sealed class InstallForm : Form
             if (!client.CollectorStarted) consumed = false;
             localFailure = error.Message; localFailureDetails = error.ToString();
             if (!IsDisposed && !Disposing && !consumed) ShowCorrection(error.Message);
-            if (!IsDisposed && !Disposing) status.AppendText("\r\n启动或记录失败：" + Brief(error.Message) + "\r\n已有记录保留，可查看任务详情。");
+            if (!IsDisposed && !Disposing)
+            {
+                if (LastStatus is not null) RenderStatus(LastStatus, false);
+                status.AppendText("\r\n启动或记录失败：" + Brief(error.Message) + "\r\n已有记录保留，可查看任务详情。");
+            }
         }
         finally
         {
@@ -466,7 +470,9 @@ public sealed class InstallForm : Form
             {
                 (InstallStatus Status, long ReceivedAt)? latest;
                 lock (progressGate) { latest = pendingProgress; pendingProgress = null; dispatchScheduled = false; }
-                if (IsDisposed || Disposing || taskGeneration != generation || latest is null) return;
+                // A queued progress callback cannot replace the already confirmed
+                // terminal result while opening its saved session asynchronously.
+                if (IsDisposed || Disposing || taskGeneration != generation || latest is null || Result is not null) return;
                 LastStatus = latest.Value.Status;
                 lastStatusReceivedAt = latest.Value.ReceivedAt;
                 RenderStatus(LastStatus);
@@ -484,6 +490,8 @@ public sealed class InstallForm : Form
 
     private void RenderStatus(InstallStatus value, bool? completed = null)
     {
+        value = Result?.LastStatus ?? value;
+        completed = Result?.Succeeded ?? completed ?? DisplayCompletion;
         var receivedAgo = lastStatusReceivedAt == 0 ? (ulong?)null : (ulong)Stopwatch.GetElapsedTime(lastStatusReceivedAt).TotalMilliseconds;
         var advance = IsActive && completed is null ? receivedAgo ?? 0 : 0;
         var display = progressClock.Observe(value, advance, (ulong)taskClock.ElapsedMilliseconds, IsActive && completed is null && value.Stage is not ("finished" or "failed"));
@@ -555,7 +563,7 @@ public sealed class InstallForm : Form
 
     internal static string FormatStatus(InstallStatus value, bool? completed = null, ulong localAdvanceMilliseconds = 0, ulong? receivedAgoMilliseconds = null, InstallDisplayTimes? display = null)
     {
-        var phase = completed == false ? "失败 / 未完成" : value.Stage switch { "preparing" => "准备中", "capturing" => "记录中", "finalizing" => "整理中", "finished" => completed == true ? "已结束" : "最终结果已保存，等待采集进程退出", "failed" => "失败 / 未完成", _ => "未确认" };
+        var phase = completed == false ? "失败 / 未完成" : value.Stage switch { "preparing" => "准备中", "capturing" => "记录中", "finalizing" => "整理中", "finished" => completed == true ? "已结束" : "已收到最终状态，等待退出和结果确认", "failed" => "失败 / 未完成", _ => "未确认" };
         var exit = !value.InstallerStarted ? "尚未确认启动" : !value.InstallerExited ? "已启动，尚未确认退出" : value.InstallerExitCode is null ? "已退出，未提供退出码" : value.InstallerExitCode == 0 ? "退出码 0（安装是否达到预期仍需核对）" : $"退出码 {value.InstallerExitCode}（非零；具体原因由安装器决定）";
         var quality = value.QualityLevel switch { "Degraded" => "Degraded · 覆盖受限", "Complete" => "Complete（仍限于配置范围与来源）", null => "整理完成后确认", _ => value.QualityLevel };
         var activeClock = completed is null && value.Stage is not ("finished" or "failed");
@@ -566,10 +574,28 @@ public sealed class InstallForm : Form
         var count = value.ProcessedCount is { } countValue ? $"{countValue:N0} {Unit(value.ProcessedUnit)}" : "不可用";
         var progressAge = value.ElapsedMilliseconds is { } measured && value.LastProgressElapsedMilliseconds is { } last
             ? Duration(display?.ProgressAge ?? SaturatingAdd(measured - last, advance)) + "前" : "不可用";
-        var interaction = value.InstallerExited || value.InstallerInteraction == "not_needed" ? "无需继续操作安装器；请等待整理和保存。"
+        var interaction = NextStep(value, completed);
+        return $"{phase} · {StepLabel(value.Step)}\r\n任务耗时：{elapsed}；阶段耗时：{stageElapsed}；步骤耗时：{stepElapsed}；已处理：{count}\r\n最近实际进展：{progressAge}；最近状态接收：{(receivedAgoMilliseconds is { } receipt ? Duration(receipt) + "前" : "不可用")}\r\n{(activeClock ? "计时由本地续计；状态消息和界面刷新不等于实际工作进展，无消息不自动判定卡死。\r\n" : "")}下一步：{interaction}\r\n安装器结果：{exit}\r\n记录：{(completed == true ? "已完成" : "尚未确认完整结束")}；数据保存：{(value.DataSaved ? completed == true ? "已保存记录" : "已保存证据（可能仍不完整）" : "尚未确认")}\r\n采集来源：{(value.CaptureFinished ? "已停止" : "尚未确认停止")}；覆盖限制：{quality}\r\n{(string.IsNullOrWhiteSpace(value.Error) ? "" : "失败原因：" + Brief(value.Error) + "\r\n")}详情中可查看准确会话、来源、错误原文；High 不代表最终归属或安全删除许可。";
+    }
+
+    private static string NextStep(InstallStatus value, bool? completed)
+    {
+        // Completion is supplied by the existing bridge result, independently
+        // of installer exit code and coverage quality. Saving some evidence or
+        // receiving a terminal status alone does not confirm that result.
+        if (completed == true) return "记录已保存，可以查看变化。";
+        if (completed == false || value.Stage == "failed")
+            return "本次记录失败或未确认完整结束，请查看任务详情。"
+                + (value.DataSaved ? "可打开已有记录查看已保存的证据。" : "")
+                + (completed is null ? "仍在确认采集进程退出。" : "");
+        if (value.Stage == "finished") return "已收到最终状态，正在确认采集进程退出和本次结果，请稍候。";
+        if (value.Step == "result_readback")
+            return value.DataSaved ? "记录已保存，正在读回并确认本次结果，请稍候。" : "正在读回并确认本次结果，请稍候。";
+        if (value.CaptureFinished)
+            return value.DataSaved ? "采集已停止，已有证据保存；请等待整理和最终结果确认。" : "采集已停止；请等待整理和保存。";
+        return value.InstallerExited || value.InstallerInteraction == "not_needed" ? "无需继续操作安装器；请等待整理和保存。"
             : value.InstallerInteraction == "may_need_input" ? "安装器仍在运行，可能需要您在安装器窗口继续操作；无法判断它是否正在等待输入。"
             : value.InstallerInteraction == "not_started" ? "安装器尚未启动，请等待准备完成。" : "安装器交互状态不可用，请核对安装器窗口。";
-        return $"{phase} · {StepLabel(value.Step)}\r\n任务耗时：{elapsed}；阶段耗时：{stageElapsed}；步骤耗时：{stepElapsed}；已处理：{count}\r\n最近实际进展：{progressAge}；最近状态接收：{(receivedAgoMilliseconds is { } receipt ? Duration(receipt) + "前" : "不可用")}\r\n{(activeClock ? "计时由本地续计；状态消息和界面刷新不等于实际工作进展，无消息不自动判定卡死。\r\n" : "")}下一步：{interaction}\r\n安装器结果：{exit}\r\n记录：{(completed == true ? "已完成" : "尚未确认完整结束")}；数据保存：{(value.DataSaved ? completed == true ? "已保存记录" : "已保存证据（可能仍不完整）" : "尚未确认")}\r\n采集来源：{(value.CaptureFinished ? "已停止" : "尚未确认停止")}；覆盖限制：{quality}\r\n{(string.IsNullOrWhiteSpace(value.Error) ? "" : "失败原因：" + Brief(value.Error) + "\r\n")}详情中可查看准确会话、来源、错误原文；High 不代表最终归属或安全删除许可。";
     }
 
     internal static string StepLabel(string? step) => step switch
@@ -588,8 +614,10 @@ public sealed class InstallForm : Form
     internal static string Duration(ulong milliseconds) => milliseconds < 1000 ? $"{milliseconds} 毫秒" : $"{milliseconds / 1000 / 3600:D2}:{milliseconds / 1000 / 60 % 60:D2}:{milliseconds / 1000 % 60:D2}";
     private static string Brief(string text) { var line = text.Replace('\r', ' ').Replace('\n', ' '); return line.Length <= 240 ? line : line[..240] + "…（原文见详情）"; }
 
+    private bool? DisplayCompletion => Result?.Succeeded ?? (localFailure is null ? null : false);
+
     internal string TaskSummaryText => new StringBuilder()
-        .AppendLine(Contain.Viewer.ProductVersion.Display).AppendLine(LastStatus is { } state ? FormatStatus(state, Result?.Succeeded) : status.Text)
+        .AppendLine(Contain.Viewer.ProductVersion.Display).AppendLine(LastStatus is { } state ? FormatStatus(Result?.LastStatus ?? state, DisplayCompletion) : status.Text)
         .AppendLine($"会话 ID：{LastStatus?.SessionId ?? "未确认"}")
         .AppendLine($"数据库：{LastStatus?.Database ?? SelectedDatabase}")
         .AppendLine($"最后确认阶段：{Result?.LastConfirmedStage ?? LastStatus?.Stage ?? "未取得结构化状态"}")
