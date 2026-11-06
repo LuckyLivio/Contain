@@ -66,6 +66,47 @@ separate diagnostic attempt, not a replacement for D1 or acceptance. Retain both
 failures. Review snapshot query budget, failures, observation boundaries and
 process-provider overflow before choosing the fix.
 
+### Candidate C1 / diagnostic round D3, declared before execution
+
+D2 (`721df2d`, run 42225513650) retained off/on receive losses 4,661/6,326 and
+candidate losses 7,121/6,358. The on case had no process-provider overflow. Its
+candidate rejects were 6,357 file records and one completion, all hitting the
+record guard. Snapshot enumeration completed in 167,701,000 ns with no budget
+exhaustion, 1,371 resolved threads, 227 failed queries and eight threads born
+after trace start. Do not extend or rebalance the snapshot budget.
+
+Source inspection identified a distinct handoff omission: initialization drains
+ETW lifecycle facts to the raw journal, before the live receiver exists. The live
+cache was subsequently created empty and seeded only with API snapshots. The
+already-consumed lifecycle facts were unavailable for live candidate selection,
+although final replay recovered them. A thread born after trace start is correctly
+excluded from the initial handle snapshot; its saved ETW start must instead reach
+the live cache. D2 saved 10/17 initialization records, but lacks the rejected raw
+records needed to claim this omission caused every candidate loss.
+
+C1 moves the same bounded live lifetime cache across initialization and receiver
+startup, ingesting lifecycle facts before journaling them. It does not add another
+cache, queue or collector, change snapshot boundaries, or suppress loss. Existing
+snapshot conflict checks remain required when snapshot evidence follows ETW facts.
+Use controlled startup-order inputs to demonstrate old failure/new retention.
+
+Controlled replay against actual source modules, same 10,240 unrelated writes:
+the old snapshot-only live cache dropped 8,192 candidates and retained 2,048
+pending; the moved initialization cache dropped zero, retained zero pending, and
+correctly excluded all 10,240 unrelated writes. Both retained all four parent /
+direct-child request-and-successful-completion records, misselected zero unrelated
+writes and persisted 9/9 raw records. Final replay resolved the saved background
+identity in both cases. This isolates evidence availability during live selection;
+it is not real ETW throughput or a Windows acceptance claim.
+
+Run D3's off/on pair once, with the same 36,000-operation load and bounds and an
+explicit algorithm-change flag. Retain both outcomes, including failures. D3
+provides stage diagnostics only. Separately run the immutable ZIP's existing
+desktop gate followed by the complete six-case matrix below. These are separate
+Windows runners; compare D3 with prior diagnostics only as supporting observations.
+The same-runner six-case matrix is the acceptance comparison. Run same-source
+Bench/Fuzz explicitly; no reruns to select a green outcome.
+
 ## Final immutable ZIP acceptance
 
 Freeze one candidate ZIP after the existing checks. Keep its exact source SHA and

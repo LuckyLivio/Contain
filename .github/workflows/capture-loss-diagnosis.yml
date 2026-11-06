@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Check diagnostics and build unchanged admission algorithm
+      - name: Check diagnostics and build candidate admission algorithm
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -45,7 +45,7 @@ jobs:
           $core=[IO.Path]::GetFullPath('target/debug/contain.exe')
           $fixture=[IO.Path]::GetFullPath('target/debug/contain-test-installer.exe')
           $identity=[IO.Path]::GetFullPath('target/debug/examples/follow-identity-diagnostic.exe')
-          [ordered]@{schema_version=1;source_sha=$env:GITHUB_SHA;order=@('profile-off','profile-on');maximum_native_captures=2;retries=0;background_files=12000;independent_background_operations=36000;queue_capacity=4096;handoff_records=4096;handoff_bytes=16777216;candidate_records=2048;candidate_bytes=8388608;journal_quota=67108864;core_sha256=(Get-FileHash $core -Algorithm SHA256).Hash.ToLowerInvariant();fixture_sha256=(Get-FileHash $fixture -Algorithm SHA256).Hash.ToLowerInvariant();algorithm_change=$false;release_acceptance=$false} | ConvertTo-Json | Set-Content (Join-Path $out 'diagnosis-plan.json') -Encoding utf8
+          [ordered]@{schema_version=1;source_sha=$env:GITHUB_SHA;order=@('profile-off','profile-on');maximum_native_captures=2;retries=0;background_files=12000;independent_background_operations=36000;queue_capacity=4096;handoff_records=4096;handoff_bytes=16777216;candidate_records=2048;candidate_bytes=8388608;journal_quota=67108864;core_sha256=(Get-FileHash $core -Algorithm SHA256).Hash.ToLowerInvariant();fixture_sha256=(Get-FileHash $fixture -Algorithm SHA256).Hash.ToLowerInvariant();algorithm_change=$true;algorithm_change_scope='preserve_initialization_lifecycle_in_existing_live_cache';release_acceptance=$false} | ConvertTo-Json | Set-Content (Join-Path $out 'diagnosis-plan.json') -Encoding utf8
           foreach($case in @('profile-off','profile-on')) {
             try {
               $arguments=@{ContainExecutable=$core;FixtureExecutable=$fixture;IdentityDiagnosticExe=$identity;OutputDirectory=(Join-Path $out $case);Source=$env:GITHUB_SHA;BackgroundFiles=12000;Profile=($case -eq 'profile-on')}

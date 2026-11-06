@@ -204,6 +204,14 @@ impl LiveCapture {
         }
         live.follow_cache_updated |= !records.is_empty() || !threads.is_empty();
         for (record, at) in records {
+            // Startup ETW facts now precede these snapshots. Check contradictory
+            // observations without replacing the wider lifecycle interval.
+            if record
+                .creation_time
+                .is_some_and(|birth| live.cache.processes.contains_key(&(record.pid, birth)))
+            {
+                live.cache.seed(record.clone());
+            }
             live.cache.seed_snapshot(record.clone(), *at);
         }
         for identity in threads {
@@ -282,24 +290,27 @@ pub(crate) fn record_while<T>(
     source: &mut EtwSource,
     db: &mut Storage,
     journal: RawBuffer,
+    initial_cache: LifetimeCache,
     operation: impl FnOnce(&LiveCapture) -> Result<T>,
 ) -> Result<(T, BackendReport, StreamStats)> {
-    record_while_mode(source, db, journal, false, operation)
+    record_while_mode(source, db, journal, initial_cache, false, operation)
 }
 
 pub(crate) fn record_while_follow<T>(
     source: &mut EtwSource,
     db: &mut Storage,
     journal: RawBuffer,
+    initial_cache: LifetimeCache,
     operation: impl FnOnce(&LiveCapture) -> Result<T>,
 ) -> Result<(T, BackendReport, StreamStats)> {
-    record_while_mode(source, db, journal, true, operation)
+    record_while_mode(source, db, journal, initial_cache, true, operation)
 }
 
 fn record_while_mode<T>(
     source: &mut EtwSource,
     db: &mut Storage,
     mut journal: RawBuffer,
+    initial_cache: LifetimeCache,
     follow: bool,
     operation: impl FnOnce(&LiveCapture) -> Result<T>,
 ) -> Result<(T, BackendReport, StreamStats)> {
@@ -310,8 +321,8 @@ fn record_while_mode<T>(
     let queue = Arc::new(Queue::new(RECORDS, BYTES));
     let done = Arc::new(AtomicBool::new(false));
     let live = LiveCapture(Arc::new(Mutex::new(LiveState {
-        cache: LifetimeCache::default(),
-        follow_cache_updated: false,
+        cache: initial_cache,
+        follow_cache_updated: follow,
         last_activity: Instant::now(),
         received: 0,
         follow: follow.then(Default::default),
@@ -483,7 +494,16 @@ fn record_while_mode<T>(
         profile::merge_worker(writer_profile);
         stopped?;
         let mut backend = source.final_report();
-        if let Some(follow) = &live.0.lock().unwrap().follow {
+        let live = live.0.lock().unwrap();
+        if let Some(follow) = &live.follow {
+            // Count live-stage evictions separately from final-replay evictions;
+            // these are stage occurrences, not unique dropped raw records.
+            backend.context_losses = backend.context_losses.saturating_add(live.cache.dropped);
+            if let Some(pipeline) = &mut backend.pipeline {
+                pipeline.context_evictions = pipeline
+                    .context_evictions
+                    .saturating_add(live.cache.dropped);
+            }
             let mut stats = follow.stats.clone();
             stats.excluded_self_io = source.excluded_self_io();
             backend.context_losses = backend
@@ -536,6 +556,105 @@ mod tests {
             id: sequence.to_string(),
             ..Default::default()
         }
+    }
+    fn startup_live() -> LiveCapture {
+        let mut cache = LifetimeCache::default();
+        for (operation, at, tid) in [("process_start", 100, None), ("thread_start", 110, Some(7))] {
+            cache.ingest(&SystemEvent {
+                timestamp_ticks: at,
+                operation: operation.into(),
+                resource: "observed.exe".into(),
+                evidence: AttributionEvidence {
+                    source: EvidenceSource::EtwProcess,
+                    pid: Some(2),
+                    process_creation_time: (operation == "process_start").then_some(100),
+                    ..Default::default()
+                },
+                raw: RawEvidence {
+                    thread_id: tid,
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+        }
+        LiveCapture(Arc::new(Mutex::new(LiveState {
+            cache,
+            follow_cache_updated: true,
+            last_activity: Instant::now(),
+            received: 0,
+            follow: Some(Default::default()),
+        })))
+    }
+    #[test]
+    fn startup_lifecycle_interval_survives_later_matching_initial_snapshot() {
+        let live = startup_live();
+        live.seed_follow_initial(
+            &[(
+                ProcessRecord {
+                    pid: 2,
+                    creation_time: Some(100),
+                    image: "observed.exe".into(),
+                    evidence: AttributionEvidence {
+                        source: EvidenceSource::ProcessApi,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                200,
+            )],
+            &[],
+        );
+        let mut event = SystemEvent {
+            timestamp_ticks: 150,
+            evidence: AttributionEvidence {
+                source: EvidenceSource::EtwFile,
+                ..Default::default()
+            },
+            raw: RawEvidence {
+                thread_id: Some(7),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        live.0.lock().unwrap().cache.resolve_event(&mut event);
+        assert_eq!(
+            event.evidence.pid.zip(event.evidence.process_creation_time),
+            Some((2, 100))
+        );
+    }
+    #[test]
+    fn initial_snapshot_conflict_with_startup_lifecycle_revokes_identity() {
+        let live = startup_live();
+        live.seed_follow_initial(
+            &[(
+                ProcessRecord {
+                    pid: 2,
+                    creation_time: Some(100),
+                    image: "conflicting.exe".into(),
+                    evidence: AttributionEvidence {
+                        source: EvidenceSource::ProcessApi,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                200,
+            )],
+            &[],
+        );
+        let mut event = SystemEvent {
+            timestamp_ticks: 250,
+            evidence: AttributionEvidence {
+                source: EvidenceSource::EtwFile,
+                ..Default::default()
+            },
+            raw: RawEvidence {
+                thread_id: Some(7),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        live.0.lock().unwrap().cache.resolve_event(&mut event);
+        assert!(event.evidence.process_creation_time.is_none());
     }
     #[test]
     fn observer_last_seen_refresh_does_not_dirty_follow_context_but_new_evidence_does() {

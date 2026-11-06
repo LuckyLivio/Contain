@@ -14,13 +14,13 @@ def main():
     cases = []
     for name in ('profile-off','profile-on'):
         directory = args.directory/name
-        case = dict(label=name, capture=PAIR.summarize(directory), identity=None, receiver_profile=None)
+        case = dict(label=name, capture=PAIR.summarize(directory), identity=None, receiver_profile=None, source_facts=None)
         for key, file in [('identity','follow-identity-diagnostic.json'),('receiver_profile','receiver-profile-summary.json'),('source_facts','source-capture-facts.json')]:
             target = directory/'public'/file
             if target.exists(): case[key] = json.loads(target.read_text(encoding='utf-8-sig'))
         cases.append(case)
     result = dict(schema_version=1, protocol='contain-capture-diagnosis-1', release_accepted=False,
-                  purpose='Evidence collection with unchanged admission algorithm; profile-on perturbs timing', plan=plan, cases=cases)
+                  purpose='Receiver/identity diagnosis; algorithm change is explicitly identified in plan; profile-on perturbs timing', plan=plan, cases=cases)
     output = args.directory/'public';output.mkdir(exist_ok=True)
     (output/'capture-diagnosis.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
 
