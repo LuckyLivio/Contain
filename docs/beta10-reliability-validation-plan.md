@@ -241,3 +241,17 @@ the complete desktop flow with the unchanged C1 ZIP. If product bytes must chang
 freeze a new ZIP and bind full desktop and necessary capture comparison to that
 new package. Release remains conditional on all applicable gates and reviewed
 diagnosis; never rewrite the original ZIP's failed embedded validation manifest.
+
+### Recorded D5 outcome
+
+The single declared run 42249868473 at harness source ad8c6b5 completed with
+77 checks passed, one failed and two not run. All ten Ready invocations passed;
+the empty-library launch reached ready at 394 ms from its diagnostic origin.
+No UIA deadline fired. The original startup failure remains unexplained.
+The full suite reached actual GUI installation, then failed in
+`observe_one_recording` with RequiredProductControlMissingException after
+capturing/finalizing observations. Exact installation-session save/readback,
+event explanation and cold restart remain unverified. Both original ZIP and
+all extracted package members stayed unchanged. All owned Viewer/core processes
+exited; the harness exited 1 within its original deadline. No retry or speculative
+behavioral fix was made. See [the D5 evidence report](beta10-startup-diagnosis-result.md).

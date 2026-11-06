@@ -13,7 +13,7 @@ Rust、Visual Studio、Python、PowerShell 7 或独立 .NET 运行库。
 当前已发布版本仍为 **0.3.2-beta.9**。[跟随证据与桌面边界](docs/follow-installer-beta9.md)。
 
 **Beta.10 新诊断预览，正式发布仍受桌面验收阻塞：** [下载 Windows ZIP（需登录 GitHub，解开产物外层后再解开内层 ZIP）](https://github.com/LuckyLivio/Contain/actions/runs/42227112910/artifacts/13506927140) · [同 ZIP 六次对照、校验和与 Parallels 复测](docs/beta10-capture-reliability-result.md)。
-修复了初始化生命周期事实未交给实时跟随缓存的缺口；同一个原 ZIP 两轮接收和候选丢失均为 0，父子目标写入正确关联、无关误归属为 0。完整桌面验收的空历史启动超时尚未解释，PR 保持草稿，未合并或正式发布 Beta.10。Beta.9 标签和附件保留。
+修复了初始化生命周期事实未交给实时跟随缓存的缺口；同一个原 ZIP 两轮接收和候选丢失均为 0，父子目标写入正确关联、无关误归属为 0。[后续完整桌面诊断](docs/beta10-startup-diagnosis-result.md) 中空历史启动 394 ms、10 次 Ready 均通过，但原启动超时尚未解释，安装结果观察阶段另有必需控件查找失败，实际安装会话的保存、解释及重开门槛未完成。PR 保持草稿，未合并或正式发布 Beta.10。Beta.9 标签和附件保留。
 发布页提供实际验收的 Windows x64 自包含 ZIP、SHA-256 和 `BUILD-IDENTITY.json`，
 其中记录冻结源码、Windows / DPI、原生验收结果和构建身份。
 
