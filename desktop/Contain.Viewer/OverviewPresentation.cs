@@ -100,11 +100,15 @@ internal sealed record OverviewPresentation(string Installer, string InstallerNo
         var handoff = Field(backend, "handoff");
         var stream = Field(backend, "stream");
         var follow = Field(backend, "follow_installer");
+        // Old readback fills absent backend scalars with default zero. Without
+        // pipeline accounting that zero does not prove measured context loss.
+        var context = Number(backend, "context_losses");
+        if (context == "0" && pipeline.ValueKind != JsonValueKind.Object) context = "未提供";
         return "丢失环节（保存的分项，不重复求和）\r\n"
             + $"接收队列：溢出 {Number(pipeline, "queue_overflow")} · 断开 {Number(pipeline, "enqueue_disconnected")} · 待取出 {Number(pipeline, "queue_pending")}\r\n"
             + $"线程间交付：溢出 {Number(handoff, "overflow")} · 超大记录 {Number(handoff, "oversized")} · 断开 {Number(handoff, "disconnected")} · 序列化失败 {Number(handoff, "serialize_failed")} · 待交付 {Number(handoff, "pending")}\r\n"
             + $"原始记录保存：配额丢弃 {Number(stream, "quota_dropped")} · 保存失败 {Number(stream, "failed")}\r\n"
-            + $"跟随候选丢失：{Number(follow, "candidate_dropped")} · 上下文丢失总数：{Number(backend, "context_losses")}（不同于应用原始记录丢弃总数）\r\n"
+            + $"跟随候选丢失：{Number(follow, "candidate_dropped")} · 上下文丢失总数：{context}（不同于应用原始记录丢弃总数）\r\n"
             + $"正常范围筛除（不计丢失）：主动筛除 {Number(pipeline, "deliberately_filtered")} · 不支持记录 {Number(pipeline, "unsupported_records")} · 无关进程 {Number(follow, "excluded_other")} · 自身 I/O {Number(follow, "excluded_self_io")}\r\n"
             + $"跟随身份未解析：{Number(follow, "unresolved")}（不作为已验证目标写入）";
     }

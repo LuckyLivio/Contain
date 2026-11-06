@@ -69,4 +69,10 @@ Require(!Model(filtered).Alert.Contains("丢失了部分记录", StringCompariso
 filtered["backend"]!["follow_installer"]!["candidate_dropped"] = 12;
 Require(Model(filtered).Alert.Contains("记录已保存；采集期间丢失了部分记录。", StringComparison.Ordinal)
     && Details(filtered).Contains("跟随候选丢失：12", StringComparison.Ordinal), "candidate loss remains visible independently of raw loss total");
+// Production readback of legacy metadata can supply a default scalar zero.
+historical["backend"] = new JsonObject { ["context_losses"] = 0 };
+Require(Details(historical).Contains("上下文丢失总数：未提供", StringComparison.Ordinal), "legacy default zero is not a measured context counter");
+historical["backend"]!["context_losses"] = 3;
+Require(Details(historical).Contains("上下文丢失总数：3", StringComparison.Ordinal), "positive legacy context loss remains visible");
+
 Console.WriteLine($"Saved loss presentation: {checks} passed, 0 failed (synthetic projection only).");
