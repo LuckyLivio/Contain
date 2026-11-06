@@ -8,10 +8,12 @@ Rust、Visual Studio、Python、PowerShell 7 或独立 .NET 运行库。
 
 ## 下载与使用
 
-**[直接下载 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.10/contain-0.3.2-beta.10-windows-x64.zip)** · [Beta Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.10) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.10/SHA256SUMS.txt)
+**[直接下载 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.9/contain-0.3.2-beta.9-windows-x64.zip)** · [Beta Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.9) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.9/SHA256SUMS.txt)
 
-版本 **0.3.2-beta.10**。[本版采集丢失修复、对照与复测](docs/capture-loss-beta10.md)。
-沿用 [Beta.9 跟随证据与桌面边界](docs/follow-installer-beta9.md)；[Beta.9 历史发布与附件](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.9) 保留。
+当前已发布版本仍为 **0.3.2-beta.9**。[跟随证据与桌面边界](docs/follow-installer-beta9.md)。
+
+**Beta.10 诊断预览，尚未通过正式验收：** [下载 Windows ZIP（需登录 GitHub，解开产物外层后再解开内层 ZIP）](https://github.com/LuckyLivio/Contain/actions/runs/42216843544/artifacts/13501998007) · [分层对照、校验和与 Parallels 复测](docs/capture-loss-beta10.md)。
+最终固定负载下应用丢失 57,656 → 711，目标写入仍为 Unknown；未合并或发布正式 Beta.10。Beta.9 标签和附件保留。
 发布页提供实际验收的 Windows x64 自包含 ZIP、SHA-256 和 `BUILD-IDENTITY.json`，
 其中记录冻结源码、Windows / DPI、原生验收结果和构建身份。
 

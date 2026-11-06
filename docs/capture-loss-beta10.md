@@ -1,4 +1,10 @@
-# Beta 10 capture-loss investigation
+# Beta 10 diagnostic preview — acceptance blocked
+
+**诊断预览，不是已验收的 Beta.10。** [下载 Windows ZIP](https://github.com/LuckyLivio/Contain/actions/runs/42216843544/artifacts/13501998007)（需登录 GitHub；先解开产物外层，再解开内层 Windows ZIP）。
+产物保留至 2027-02-04。源码：`3c2e06871d28acd199ba1813605afecc9074738d`。
+内层 ZIP SHA-256：`41a3e4e3e8dc0b75e245eb3306ed8e5c6294d04c5fc72d4cc9110d3512ef99e7`。
+CRC、全部 CONTENTS 文件校验和、SOURCE 和实际桌面安装验收已核对；独立重负载采集门槛失败。
+PR 保持草稿；未合并 main、未创建正式 Beta.10 tag/prerelease。Beta.9 未改动。
 
 Scope: existing WinForms, follow-installer capture and saved diagnostic text only.
 No WPF, path library or attribution confidence changes. Beta 9's tag and assets
@@ -113,6 +119,7 @@ Earlier results are retained rather than replaced:
 | `5ef1689` / [pilot](https://github.com/LuckyLivio/Contain/actions/runs/42210844846) | 64,840 → 0 | 13,421 → 0 | Passed this pilot only; different runner from later samples |
 | `a42cd5d` / [diagnostic preview](https://github.com/LuckyLivio/Contain/actions/runs/42211783353) | 62,538 → 8,256 | 56,375 → 5,598 | Rejected; target requests remained Unknown |
 | `a0e82e6` / [second candidate](https://github.com/LuckyLivio/Contain/actions/runs/42214562681) | 64,628 → 0 | 9,602 → 0 | Heavy-load pair passed; desktop runtime observation failed |
+| `3c2e068` / [final diagnostic](https://github.com/LuckyLivio/Contain/actions/runs/42216843544) | 57,656 → 711 | 56,502 → 9,249 | Desktop passed; heavy-load pair rejected, target requests remain Unknown |
 
 In these pairs handoff loss, raw persistence failure/quota loss and measured ETW
 loss were zero. Parent and child each independently performed one successful
@@ -150,3 +157,54 @@ TDH/provider decoding and real request/completion throughput. Existing Windows
 Bench and three 30-second ASan fuzz targets are separate regressions. Coverage
 includes test code, not production-only or branch coverage; ignored historical
 storage experiments are not counted as passed ordinary tests.
+
+
+## Final diagnostic result and blocker
+
+The last same-runner comparison is comparable under the declared fixed workload,
+but **not accepted**. Raw application loss fell by 56,945 records (98.7668%),
+yet the receive queue still reached its unchanged 4,096-record limit and dropped
+711 records. The unchanged provisional limit also reached 2,048 records and
+reported 9,249 candidate/context losses. Target and direct-child write requests
+remained present (two each), but neither passed verified-source attribution;
+Unknown was preserved. Handoff loss, raw persistence/quota loss, measured ETW
+loss and decoding errors were all zero. Both sides saved, exited normally,
+completed all independent background calls and passed fresh-process exact-session
+readback and all eight layer-accounting checks. Unrelated attribution was zero.
+
+Baseline/candidate callback counts were 734,591 / 685,023; received-record counts
+were 267,858 / 216,853. Maximum receive delay was 610.017 / 229.282 ms. This is
+one sequential pair on its own Windows runner, not an identical event replay,
+not the earlier pilot runner and not the user's Parallels machine. The successful
+zero-loss samples do not replace this failed final ZIP acceptance.
+
+[Download the full safe loss aggregate](https://github.com/LuckyLivio/Contain/actions/runs/42216843544/artifacts/13500959496).
+The actual Beta.10 delivery validator was run against all downloaded artifacts
+and refused them with `Loss pair acceptance or comparable improvement is missing`.
+No release assets were uploaded. The attempted direct diagnostic Release upload
+also returned an upload-host credential error and created no release; CI artifact
+download remains available. Formal release upload tooling is prepared but gated.
+
+The remaining blocker is residual receiver/provisional-candidate pressure under
+this bounded real workload, not a database save failure or a desktop failure.
+Further work needs evidence about the remaining saturated intervals before more
+changes; buffers, counters and confidence thresholds were not enlarged, hidden
+or relaxed. The private original session still needs only its saved count
+breakdown, not a database upload, to establish whether its loss stage matches.
+No claim that its root cause has been confirmed is made.
+
+Final checks: Windows nextest 378 passed / 0 failed / 7 skipped (no retries),
+all Check/Coverage/CoverageOriginal/Dependencies/Companion gates passed; GUI,
+actual package and install/save/cold-read gates passed. Coverage was 76.45% lines /
+77.50% functions for the workspace, 73.87% / 76.26% for original packages;
+`follow.rs` 99.06% / 98.44%, `ingest.rs` 71.00% / 64.58%. These scopes include
+unit-test code; receive orchestration error/unwind paths remain partly uncovered,
+and this is not branch coverage or instrumented live ETW. Historical skipped
+storage experiments were not changed or counted as passed; the existing companion
+regression ran separately. Linux offline persistence/render checks were 94 passed /
+8 ignored; actual-source model harness 74 passed; diagnostic presentation 17 passed;
+release verifier tests 28 passed. Linux cross-builds do not establish Windows
+runtime validation. The final Windows ASan fuzz targets (three × 30 seconds) passed.
+Existing synthetic Bench medians were +1.51% JSON, +8.43% lifetime, +8.54% completion,
++1.79% registry versus Beta.9 on that runner; all samples remain in the extended
+artifact, and no speedup is claimed from those tests.
