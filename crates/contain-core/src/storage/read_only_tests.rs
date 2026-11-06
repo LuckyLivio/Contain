@@ -122,6 +122,28 @@ fn session_search_matches_before_paging_with_literal_text_and_original_ids() {
                 .map(|e| e.id.clone())
                 .collect();
             assert_eq!(actual, expected);
+            let whole = db
+                .events_search_all(&capture.id, needle, MAX_SEARCH_EXPORT_BYTES)
+                .unwrap();
+            assert_eq!(whole.matched_total, 53);
+            assert_eq!(whole.name, capture.name);
+            assert_eq!(
+                whole
+                    .events
+                    .iter()
+                    .map(|event| event.id.clone())
+                    .collect::<Vec<_>>(),
+                expected
+            );
+            assert_eq!(first.search_fingerprint, second.search_fingerprint);
+            assert_eq!(first.search_fingerprint, whole.search_fingerprint);
+            assert_eq!(whole.search_fingerprint.len(), 64);
+            assert!(
+                whole
+                    .search_fingerprint
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            );
             let selected = &second.events[0];
             assert_eq!(selected.id, "search-120");
             let explained = db.for_event(&selected.id).unwrap();
@@ -273,6 +295,145 @@ fn session_search_matches_unfinished_confidence_as_exposed_by_history() {
         serde_json::to_value(&page.events[0]).unwrap(),
         serde_json::to_value(&explained.events[0]).unwrap()
     );
+}
+
+#[test]
+fn complete_search_fingerprint_detects_equal_count_replacement_and_name_change() {
+    let file = TestFile::new();
+    let capture = sample();
+    {
+        let mut db = Storage::open(&file.0).unwrap();
+        db.connection
+            .pragma_update(None, "journal_mode", "WAL")
+            .unwrap();
+        db.save(&capture).unwrap();
+    }
+    let pinned = Storage::open_read_only(&file.0).unwrap();
+    let page = pinned.events_search(&capture.id, "write", 0, 2).unwrap();
+    let whole = pinned
+        .events_search_all(&capture.id, "write", MAX_SEARCH_EXPORT_BYTES)
+        .unwrap();
+    assert_eq!(whole.events.len(), 5);
+    assert_eq!(whole.search_fingerprint, page.search_fingerprint);
+    // Retain every ID and total but replace content outside the visible page.
+    let mut replacement = capture.events[4].clone();
+    replacement.resource = "C:\\synthetic\\替换 %_ <&> \"file\".txt".into();
+    replacement.reason = "SYNTHETIC replaced event with identical ID/count".into();
+    let writer = Connection::open(&file.0).unwrap();
+    writer
+        .execute(
+            "UPDATE event_documents SET document=?1 WHERE id=?2",
+            params![serde_json::to_string(&replacement).unwrap(), replacement.id],
+        )
+        .unwrap();
+    // The explicit read-only snapshot must still return all original content.
+    let old_export = pinned
+        .events_search_all(&capture.id, "write", MAX_SEARCH_EXPORT_BYTES)
+        .unwrap();
+    assert_eq!(old_export.search_fingerprint, page.search_fingerprint);
+    assert_eq!(
+        serde_json::to_value(&old_export.events).unwrap(),
+        serde_json::to_value(&whole.events).unwrap()
+    );
+    drop(pinned);
+    let fresh = Storage::open_read_only(&file.0).unwrap();
+    let changed = fresh
+        .events_search_all(&capture.id, "write", MAX_SEARCH_EXPORT_BYTES)
+        .unwrap();
+    assert_eq!(changed.matched_total, whole.matched_total);
+    assert_eq!(
+        changed
+            .events
+            .iter()
+            .map(|event| &event.id)
+            .collect::<Vec<_>>(),
+        whole
+            .events
+            .iter()
+            .map(|event| &event.id)
+            .collect::<Vec<_>>()
+    );
+    assert_ne!(changed.search_fingerprint, whole.search_fingerprint);
+    assert_eq!(changed.events[4].resource, replacement.resource);
+    assert_eq!(
+        fresh
+            .events_search(&capture.id, "write", 2, 2)
+            .unwrap()
+            .search_fingerprint,
+        changed.search_fingerprint
+    );
+    assert_ne!(
+        fresh
+            .events_search(&capture.id, "WRITE", 0, 2)
+            .unwrap()
+            .search_fingerprint,
+        changed.search_fingerprint
+    );
+    drop(fresh);
+    writer
+        .execute(
+            "UPDATE applications SET name='SYNTHETIC renamed record' WHERE id=?1",
+            [&capture.id],
+        )
+        .unwrap();
+    let renamed = Storage::open_read_only(&file.0)
+        .unwrap()
+        .events_search_all(&capture.id, "write", MAX_SEARCH_EXPORT_BYTES)
+        .unwrap();
+    assert_eq!(renamed.name, "SYNTHETIC renamed record");
+    assert_eq!(renamed.matched_total, changed.matched_total);
+    assert_ne!(renamed.search_fingerprint, changed.search_fingerprint);
+}
+
+#[test]
+fn complete_search_refuses_limits_bad_late_documents_and_missing_session() {
+    let file = TestFile::new();
+    let mut db = Storage::open(&file.0).unwrap();
+    let mut capture = sample();
+    // A late matching resource alone exceeds the deliberately small budget.
+    // Expected failure is independent of the serializer's overhead accounting.
+    capture.events[4].resource = "x".repeat(8192);
+    db.save(&capture).unwrap();
+    assert_eq!(
+        db.events_search_all(&capture.id, "write", 65536)
+            .unwrap()
+            .events
+            .len(),
+        5
+    );
+    assert!(db.events_search_all(&capture.id, "write", 8192).is_err());
+    assert!(db.events_search_all(&capture.id, "write", 0).is_err());
+    assert!(
+        db.events_search_all(&capture.id, "write", MAX_SEARCH_EXPORT_BYTES + 1)
+            .is_err()
+    );
+    assert!(
+        db.events_search_all("missing-session", "write", MAX_SEARCH_EXPORT_BYTES)
+            .is_err()
+    );
+    let empty = db
+        .events_search_all(&capture.id, "never-present", MAX_SEARCH_EXPORT_BYTES)
+        .unwrap();
+    assert_eq!(empty.matched_total, 0);
+    assert!(empty.events.is_empty());
+    assert_eq!(
+        empty.search_fingerprint,
+        db.events_search(&capture.id, "never-present", 0, 50)
+            .unwrap()
+            .search_fingerprint
+    );
+    assert!(db.connection.is_autocommit());
+    db.connection
+        .execute(
+            "UPDATE event_documents SET document='broken' WHERE id='event-4'",
+            [],
+        )
+        .unwrap();
+    assert!(
+        db.events_search_all(&capture.id, "write", MAX_SEARCH_EXPORT_BYTES)
+            .is_err()
+    );
+    assert!(db.connection.is_autocommit());
 }
 
 #[test]

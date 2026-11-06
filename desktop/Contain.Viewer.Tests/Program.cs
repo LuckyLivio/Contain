@@ -45,6 +45,7 @@ internal static class Program
         var personalAccepted = false;
         var overviewAccepted = false;
         var searchAccepted = false;
+        var exportAccepted = false;
         using var form = new ViewerForm(runner.Client, runner.Dialogs);
         form.Shown += async (_, _) =>
         {
@@ -54,16 +55,17 @@ internal static class Program
                 personalAccepted = await new PersonalRecordsVerification(options, runner.Success).RunAsync(form);
                 overviewAccepted = await new OverviewVerification(options, runner.Success && personalAccepted).RunAsync(form);
                 searchAccepted = await new SearchVerification(options, runner.Success && personalAccepted && overviewAccepted).RunAsync(form);
+                exportAccepted = await new SearchExportVerification(options, runner.Success && personalAccepted && overviewAccepted && searchAccepted).RunAsync(form);
                 progressAccepted = await InstallProgressChecks.RunAsync(options.Output, options.Source, form, options.Package, options.PrivateOutput);
-                runner.LayoutAccepted = await new LayoutVerification(options, runner.Success && progressAccepted && personalAccepted && overviewAccepted && searchAccepted).RunAsync();
+                runner.LayoutAccepted = await new LayoutVerification(options, runner.Success && progressAccepted && personalAccepted && overviewAccepted && searchAccepted && exportAccepted).RunAsync();
                 if (options.InstallFixture is not null)
-                    runner.InstallAccepted = await new InstallVerification(options, runner.Success && runner.LayoutAccepted && progressAccepted && personalAccepted && overviewAccepted && searchAccepted).RunAsync();
+                    runner.InstallAccepted = await new InstallVerification(options, runner.Success && runner.LayoutAccepted && progressAccepted && personalAccepted && overviewAccepted && searchAccepted && exportAccepted).RunAsync();
             }
             catch (Exception error) { runner.RecordUnhandled(error); }
             finally { runner.Finish(); form.Close(); }
         };
         Application.Run(form);
-        return runner.Success && progressAccepted && personalAccepted && overviewAccepted && searchAccepted && runner.LayoutAccepted && runner.InstallAccepted ? 0 : 1;
+        return runner.Success && progressAccepted && personalAccepted && overviewAccepted && searchAccepted && exportAccepted && runner.LayoutAccepted && runner.InstallAccepted ? 0 : 1;
     }
 }
 

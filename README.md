@@ -8,9 +8,9 @@ Rust、Visual Studio、Python、PowerShell 7 或独立 .NET 运行库。
 
 ## 下载与使用
 
-**[直接下载 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.5/contain-0.3.2-beta.5-windows-x64.zip)** · [Beta Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.5) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.5/SHA256SUMS.txt)
+**[直接下载 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.6/contain-0.3.2-beta.6-windows-x64.zip)** · [Beta Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.6) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.6/SHA256SUMS.txt)
 
-版本 **0.3.2-beta.5**。[本版会话事件搜索、验证范围和已知限制](docs/session-event-search-beta5.md)。
+版本 **0.3.2-beta.6**。[本版全部匹配结果导出、验证范围和已知限制](docs/search-export-beta6.md)。
 发布页提供实际验收的 Windows x64 自包含 ZIP、SHA-256 和 `BUILD-IDENTITY.json`，
 其中记录冻结源码、Windows / DPI、原生验收结果和构建身份。
 
@@ -23,6 +23,7 @@ Rust、Visual Studio、Python、PowerShell 7 或独立 .NET 运行库。
    点击“查看变化”或“查看事件与依据”浏览当前会话；展开“技术详情”查看来源、统计和诊断。
    在“搜索本次记录”输入文件名、路径、操作或置信标签，可查找本次会话全部事件；
    结果每页最多 50 条，显示匹配总数与范围。选择结果查看同一原始事件的解释。
+   点击“导出全部 N 条匹配结果”，将当前会话全部命中保存为本地 HTML；导出后保持当前页与选择。
 5. 完全退出后重新打开，从“我的记录”选择刚才的记录。更新或移动解压目录不影响历史。
    “打开记录数据库”继续只读查看外部旧库，不改变下一次新记录的默认位置。
 
@@ -51,8 +52,9 @@ Rust、Visual Studio、Python、PowerShell 7 或独立 .NET 运行库。
 - 只观察指定有限目录及后端支持的来源，不自动扫描全盘或替用户创建软件安装目标。
   注册表配置当前为一个选定 HKCU Software 键；未请求时显示 `not_requested`。
 - 事件搜索限定当前数据库和当前会话；ASCII 字母忽略大小写，中文、空格、`%`、`_` 按普通文本包含匹配。
-  搜索时提示“清除搜索后可导出普通浏览页”，可直接清除。普通 HTML 报告仍包含本会话
-  状态变化、普通浏览的当前事件页及所选 explain；完整匹配结果导出留给 Beta.6。
+  搜索成功后可导出全部匹配事件，与当前页码或是否选中事件无关；报告列出搜索词、准确会话和全部事件。
+  读取期间内容变化、超出限制或失败时拒绝提交，不覆盖已有文件。普通浏览的“导出本页报告”
+  仍包含本会话状态变化、当前事件页及所选 explain。
   报告保留本地路径与证据，分享前请自行审阅。
 - 本轮不提供安全卸载、回滚、自动清理、完整软件足迹或最终所有权结论。没有会强杀
   安装器的“取消”按钮；异常退出后的未完成证据应保留并重新查看。
@@ -68,7 +70,7 @@ Rust、Visual Studio、Python、PowerShell 7 或独立 .NET 运行库。
 没有通过禁止目录或全盘性能实验掩盖它；继续跟踪于 [Issue #5](https://github.com/LuckyLivio/Contain/issues/5)。
 
 原生 Windows CI、模拟缩放压力、用户手工反馈和未验证条件在
-[当前交付记录](docs/session-event-search-beta5.md)中分别列出。此前四个里程碑保持关闭；
+[当前交付记录](docs/search-export-beta6.md)中分别列出。此前四个里程碑保持关闭；
 [历史交付与失败证据索引](docs/delivery-history.md)保留原始记录，旧包不再并列为当前下载。
 
 ## 开发与参考

@@ -92,7 +92,7 @@ internal sealed class SearchVerification(Options options, bool priorChecksPassed
             {
                 await Search(form, "never-present-synthetic");
                 Require(Ids(form).Length == 0 && C<Label>(form, "EventsPage").Text.Contains("没有匹配项", StringComparison.Ordinal), "empty search explicit");
-                Require(!C<Button>(form, "ExportReport").Enabled && C<Label>(form, "EventsScope").Text.Contains("清除搜索后可导出普通浏览页", StringComparison.Ordinal), "search report boundary explicit");
+                Require(!C<Button>(form, "ExportReport").Enabled, "no-match search cannot export stale results");
                 C<Button>(form, "ClearEventSearch").PerformClick(); await Idle(form);
                 Require(Ids(form).Length == 50 && Ids(form)[0] == "synthetic-search-event-000", "clear restores ordinary page one");
                 Require(C<Button>(form, "ExportReport").Enabled, "ordinary report restored");

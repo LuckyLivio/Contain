@@ -163,6 +163,42 @@ schema, migrate the original old database, or include another same-name session.
 Beta.5 does not export the complete matching set. While searching, the desktop
 requires clearing search before exporting the existing ordinary page report.
 
+### Complete matching-result reports (additive, v0.3.2-beta.6)
+
+`history <session UUID> --search TEXT --all-matches --json` returns one complete
+matching set with `view_scope:"search_matches"`, exact `app_id`, `name`, `search`,
+`matched_total`, `search_fingerprint` and `events`. It requires both `--search`
+and `--json` and conflicts with explicit `--limit`/`--offset`. This new path always
+opens read-only, including when a caller omits the global `--read-only` flag.
+It requires the exact session UUID. Existing unsearched commands remain unchanged.
+
+Paged searches additionally return `name` and `search_fingerprint`. This SHA-256
+covers a versioned domain, length-delimited session UUID/name/exact query and each
+complete serialized matching event in timeline order. Pages and whole-result
+export use the same reader, predicate, confidence projection and fingerprint.
+The fingerprint is independent of requested page offset/size. Thus replacing event
+content without changing its ID or the match count changes the fingerprint.
+
+A whole-result query reads name, total, ordered events and fingerprint within one
+SQLite read snapshot; there are no independently queried export pages. Modern
+indexed records stream through the shared visitor, retaining a bounded export
+buffer; older formats use the existing compatibility mapping. Event/context byte
+accounting fails when the requested bounded buffer is exhausted. The CLI also
+checks the exact complete JSON envelope including the trailing newline against
+64 MiB before writing anything to stdout. Oversize or malformed results fail whole,
+never a successful truncated report. Desktop timeout, cancellation and 64 MiB
+stdout limits still apply.
+
+The desktop captures database, UUID, exact query, total and fingerprint from the
+successful displayed search. Before publishing a report, it compares the complete
+view to that captured fingerprint and count. A changed result, including an
+equal-count replacement outside the current page, requires refreshing the search.
+The HTML contains only matched events and necessary session/query context; no
+unmatched page, other session, state-change section or private diagnostic log is
+included. A unique temporary file is committed without overwriting an existing
+HTML target only after successful validation and writing. Search/page/selection
+remain unchanged by export or failure.
+
 ## Desktop install progress (additive, v0.3.1)
 
 `install --status-json` writes one compact `install_status` v3 envelope per line

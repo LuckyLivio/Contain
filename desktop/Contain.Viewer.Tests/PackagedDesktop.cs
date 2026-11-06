@@ -16,6 +16,8 @@ internal sealed class PackagedDesktop : IDisposable
     internal string Executable { get; }
     internal string WorkingDirectory { get; }
     internal int DatabasePathInteractions { get; private set; }
+    internal int ReportDialogInteractions { get; private set; }
+    internal int ReportDialogSaves { get; private set; }
 
     internal PackagedDesktop(string package, string workingDirectory)
     {
@@ -98,6 +100,83 @@ internal sealed class PackagedDesktop : IDisposable
         ((Automation.ValuePattern)pattern).SetValue(text);
     });
     internal Task InvokeAsync(string id) => Ui(() => Invoke(Required(id)));
+
+    /// <summary>Operate the real process's native SaveFileDialog, including cancel.</summary>
+    internal async Task ExportReportAsync(string? outputPath)
+    {
+        if (outputPath is not null)
+        {
+            outputPath = Path.GetFullPath(outputPath);
+            if (!Directory.Exists(Path.GetDirectoryName(outputPath)) || File.Exists(outputPath) || Directory.Exists(outputPath))
+                throw new InvalidOperationException("The native save test requires a new file in its isolated existing directory.");
+        }
+        // Invoke can remain inside the product's modal ShowDialog. Drive the
+        // dialog on another UIA worker before awaiting that invocation.
+        var opening = InvokeAsync("ExportReport");
+        IntPtr dialog = IntPtr.Zero;
+        try
+        {
+            await WaitAsync(async () =>
+            {
+                dialog = await Ui(FindReportDialog);
+                return dialog != IntPtr.Zero;
+            }, TimeSpan.FromSeconds(15));
+            ReportDialogInteractions++;
+            await Ui(() =>
+            {
+                var element = Automation.AutomationElement.FromHandle(dialog);
+                if (outputPath is not null)
+                {
+                    // Modern IFileDialog exposes its filename Edit as 1001;
+                    // legacy common dialogs use edt1 (1152), sometimes hosted
+                    // by the filename ComboBox (1148). Never select by caption.
+                    var editable = element.FindAll(Automation.TreeScope.Descendants,
+                        new Automation.PropertyCondition(Automation.AutomationElement.ControlTypeProperty, Automation.ControlType.Edit))
+                        .Cast<Automation.AutomationElement>().Where(item => item.Current.AutomationId is "1001" or "1148" or "1152").ToArray();
+                    if (editable.Length != 1 || !editable[0].TryGetCurrentPattern(Automation.ValuePattern.Pattern, out var pattern))
+                        throw new InvalidOperationException("The native save dialog has no unambiguous filename value control.");
+                    var value = (Automation.ValuePattern)pattern;
+                    value.SetValue(outputPath);
+                    if (value.Current.Value != outputPath)
+                        throw new InvalidOperationException("The native save dialog did not preserve the exact output path.");
+                }
+                var button = element.FindFirst(Automation.TreeScope.Descendants, new Automation.AndCondition(
+                    new Automation.PropertyCondition(Automation.AutomationElement.ControlTypeProperty, Automation.ControlType.Button),
+                    new Automation.PropertyCondition(Automation.AutomationElement.AutomationIdProperty, outputPath is null ? "2" : "1")))
+                    ?? throw new InvalidOperationException("The native save dialog's Save/Cancel button is absent.");
+                Invoke(button);
+            });
+            await WaitAsync(() => Ui(() => !IsWindowVisible(dialog)), TimeSpan.FromSeconds(15));
+            await opening;
+            if (outputPath is not null) ReportDialogSaves++;
+        }
+        catch
+        {
+            // Close only this test process's dialog so an assertion failure
+            // does not leave a native modal window blocking the remaining plan.
+            if (dialog != IntPtr.Zero) PostMessage(dialog, 0x0010, IntPtr.Zero, IntPtr.Zero);
+            try { await opening; } catch { }
+            throw;
+        }
+    }
+
+    private IntPtr FindReportDialog()
+    {
+        var found = IntPtr.Zero;
+        var count = 0;
+        EnumWindows((window, _) =>
+        {
+            GetWindowThreadProcessId(window, out var owner);
+            var name = new System.Text.StringBuilder(64);
+            GetClassName(window, name, name.Capacity);
+            if (owner != process.Id || name.ToString() != "#32770" || !IsWindowVisible(window)) return true;
+            count++;
+            found = window;
+            return true;
+        }, IntPtr.Zero);
+        if (count > 1) throw new InvalidOperationException("More than one native report dialog belongs to the test process.");
+        return found;
+    }
     internal Task ToggleAsync(string id, bool value) => Ui(() =>
     {
         if (id == "CustomDatabaseToggle") DatabasePathInteractions++;
@@ -359,6 +438,10 @@ internal sealed class PackagedDesktop : IDisposable
     [StructLayout(LayoutKind.Sequential)] private struct WindowBounds { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] private struct NativePoint { public int X, Y; }
     [DllImport("user32.dll")] private static extern IntPtr GetParent(IntPtr window);
+    private delegate bool WindowCallback(IntPtr window, IntPtr parameter);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(WindowCallback callback, IntPtr parameter);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, System.Text.StringBuilder name, int maximum);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr window, out WindowBounds bounds);
     [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr window, ref NativePoint point);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out WindowBounds bounds);

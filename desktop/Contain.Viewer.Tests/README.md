@@ -1,5 +1,17 @@
 # Native desktop verification
 
+Beta 6 adds eight required search-export checks in `SearchExportVerification.cs`.
+The actual packaged EXE searches the same 53-match fixture, selects event 120
+on page two, invokes its export action and operates the native SaveFileDialog.
+The actual HTML in `reports/search-export-synthetic.html` is parsed and every
+event-row ID is compared with the fixed ordered 070–122 oracle. Page two,
+selected explanation and clipboard identity must survive export and native
+dialog cancellation. Ordinary page export after clearing search is also exercised.
+Failure, existing targets, equal-count replacement, escaped special text and
+bounded output use isolated fixtures. `export-summary.json` and the actual report
+bytes are mandatory inputs to package verification, which independently checks
+the report hash and complete ordered ID list. No new installation capture runs.
+
 Beta 5 adds nine required saved-record search checks in `SearchVerification.cs`.
 `search-summary.json` binds the exact source and frozen package to the native
 Windows version/DPI, query results and original event/explain/clipboard IDs.
@@ -131,3 +143,27 @@ capture. No automatic retry, third-party installer, service mutation, scale test
 or 32-run protocol is part of this plan. The package can identify verified product
 automation while leaving the graphical milestone open for an unexecuted or failed
 native picker scenario.
+
+## Beta 6 complete search export
+
+`SearchExportVerification` adds eight mandatory checks and writes
+`export-summary.json`. It starts the frozen `Contain.Viewer.exe`, searches the
+130-event synthetic session, selects event120 on result page two, and operates
+the real native SaveFileDialog. It reads the actual HTML and compares every
+`data-event-id` row against the independent fixed sequence070..122 (53 rows).
+The selected page, copied ID and explanation must survive export and native
+save cancellation. Clearing search then exports the original ordinary page.
+
+The byte-unchanged `reports/search-export-synthetic.html` is the public acceptance
+example. It contains synthetic names/resources only; private database paths and
+harness directories are rejected before publication. Screenshots use the actual
+Copy ID action to clear the completed report's private destination from status.
+No installer or ETW capture is added.
+
+Production-control regressions cover no matches, pending/failed queries, no row
+selected, existing targets, a filesystem commit failure, equal-count replacement
+of a first-page event, and cancellation. A separate formatter regression cancels
+after writes begin and refuses escaped HTML above64MiB. Special-character data
+round-trips through literal search and HTML escaping. Original fixtures and the
+restored isolated personal library must remain byte-identical; no operation-owned
+temporary report may remain.

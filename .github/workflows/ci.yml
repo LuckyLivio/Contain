@@ -218,6 +218,7 @@ jobs:
           $finalArgs += @('--layout-verification',"$env:CONTAIN_RUN_DIR/viewer-public/layout-summary.json",'--progress-verification',"$env:CONTAIN_RUN_DIR/viewer-public/progress-summary.json",'--personal-records-verification',"$env:CONTAIN_RUN_DIR/viewer-public/personal-records-summary.json")
           $finalArgs += @('--overview-verification',"$env:CONTAIN_RUN_DIR/viewer-public/overview-summary.json")
           $finalArgs += @('--search-verification',"$env:CONTAIN_RUN_DIR/viewer-public/search-summary.json")
+          $finalArgs += @('--search-export-verification',"$env:CONTAIN_RUN_DIR/viewer-public/export-summary.json")
           python @finalArgs
           if ($LASTEXITCODE -ne 0) { throw 'Desktop milestone unverified; diagnostic package retains the actual failed or unexecuted checks' }
       - uses: actions/upload-artifact@v4
@@ -238,6 +239,7 @@ jobs:
             ${{ env.CONTAIN_RUN_DIR }}/viewer-public/personal-records-summary.json
             ${{ env.CONTAIN_RUN_DIR }}/viewer-public/overview-summary.json
             ${{ env.CONTAIN_RUN_DIR }}/viewer-public/search-summary.json
+            ${{ env.CONTAIN_RUN_DIR }}/viewer-public/export-summary.json
             ${{ env.CONTAIN_RUN_DIR }}/viewer-public/screenshots/*.png
             ${{ env.CONTAIN_RUN_DIR }}/viewer-public/reports/*.html
           if-no-files-found: error

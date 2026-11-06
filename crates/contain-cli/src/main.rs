@@ -126,6 +126,9 @@ enum Commands {
             help = "Search this session before pagination: literal substring, ASCII case-insensitive; default search page size 50"
         )]
         search: Option<String>,
+        #[arg(long, requires_all = ["search", "json"], conflicts_with_all = ["limit", "offset"],
+            help = "Export all session matches in one read-only snapshot, bounded to 64 MiB JSON")]
+        all_matches: bool,
     },
     Remove {
         app: String,
@@ -360,7 +363,33 @@ fn run_cli(cli: Cli) -> Result<()> {
             limit,
             offset,
             search,
+            all_matches,
         } => {
+            if all_matches {
+                // Whole-result export always opens read-only, even if a CLI
+                // caller omitted the global flag. No legacy source is migrated.
+                let storage = Storage::open_read_only(&db)?;
+                let search = search.context("--all-matches requires --search")?;
+                let page = storage.events_search_all(
+                    &app,
+                    &search,
+                    contain_core::storage::MAX_SEARCH_EXPORT_BYTES,
+                )?;
+                let output = serde_json::to_string(&serde_json::json!({
+                    "schema_version": 3, "kind": "history", "data": {
+                        "app_id": app, "name": page.name, "search": search,
+                        "matched_total": page.matched_total, "search_fingerprint": page.search_fingerprint,
+                        "view_scope": "search_matches", "events": page.events
+                    }
+                }))?;
+                anyhow::ensure!(
+                    output.len() < contain_core::storage::MAX_SEARCH_EXPORT_BYTES,
+                    "search export JSON exceeds 64 MiB; narrow the search"
+                );
+                // Nothing is written until the entire bounded view is valid.
+                println!("{output}");
+                return Ok(());
+            }
             let storage = open()?;
             let mut capture = if limit.is_some() || search.is_some() {
                 storage.load_summary(&app)?
@@ -372,7 +401,13 @@ fn run_cli(cli: Cli) -> Result<()> {
                 let limit = limit.unwrap_or(50);
                 let page = storage.events_search(&capture.id, &search, offset, limit)?;
                 capture.events = page.events;
-                search_metadata = Some((search, page.matched_total, limit));
+                search_metadata = Some((
+                    search,
+                    page.matched_total,
+                    limit,
+                    page.name,
+                    page.search_fingerprint,
+                ));
             } else if let Some(limit) = limit {
                 capture.events = if cli.read_only {
                     storage.events_page_compatible(&capture.id, offset, limit)?
@@ -382,8 +417,10 @@ fn run_cli(cli: Cli) -> Result<()> {
             }
             if json {
                 let mut data = serde_json::json!({"app_id":capture.id,"events":capture.events});
-                if let Some((search, total, limit)) = search_metadata {
+                if let Some((search, total, limit, name, fingerprint)) = search_metadata {
                     data["search"] = search.into();
+                    data["name"] = name.into();
+                    data["search_fingerprint"] = fingerprint.into();
                     data["matched_total"] = total.into();
                     data["limit"] = limit.into();
                     data["offset"] = offset.into();
@@ -505,6 +542,55 @@ mod command_tests {
                 assert_eq!(offset, 50);
             }
             _ => panic!("expected history"),
+        }
+        let whole = Cli::try_parse_from([
+            "contain",
+            "history",
+            "sample",
+            "--search=--literal %_ 中文",
+            "--all-matches",
+            "--json",
+        ])
+        .unwrap();
+        assert!(matches!(
+            whole.command,
+            Commands::History {
+                all_matches: true,
+                search: Some(_),
+                limit: None,
+                offset: 0,
+                ..
+            }
+        ));
+        for invalid in [
+            vec!["contain", "history", "sample", "--all-matches", "--json"],
+            vec![
+                "contain",
+                "history",
+                "sample",
+                "--all-matches",
+                "--search=text",
+            ],
+            vec![
+                "contain",
+                "history",
+                "sample",
+                "--all-matches",
+                "--json",
+                "--search=text",
+                "--limit=50",
+            ],
+            vec![
+                "contain",
+                "history",
+                "sample",
+                "--all-matches",
+                "--json",
+                "--search=text",
+                "--offset=0",
+            ],
+        ] {
+            assert!(Cli::try_parse_from(invalid).is_err());
         }
         let base = Cli::try_parse_from(["contain", "inspect", "sample", "--json"]).unwrap();
         assert!(!base.read_only);
