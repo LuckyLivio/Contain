@@ -58,6 +58,15 @@ internal sealed class PackagedDesktop : IDisposable
     internal Task<bool> ExistsAsync(string id) => Ui(() => Find(id) is not null);
     internal Task<bool> EnabledAsync(string id) => Ui(() => Required(id).Current.IsEnabled);
     internal Task<string> TextAsync(string id) => Ui(() => Text(Required(id)));
+    // A transient status window may close normally while a sample is being
+    // taken. Keep discovery and reading in one UIA operation; required reads
+    // and all completion assertions deliberately retain their fail-fast path.
+    internal Task<string?> TryTextAsync(string id) => Ui(() => TryText(() => Find(id)));
+    internal static string? TryText(Func<Automation.AutomationElement?> find)
+    {
+        try { return find() is { } element ? Text(element) : null; }
+        catch (Automation.ElementNotAvailableException) { return null; }
+    }
     // Static labels can expose a stable AccessibleName rather than their
     // displayed filename. Keep that accessibility metadata intact and read
     // the actual visible HWND caption for visual-text assertions.
@@ -721,7 +730,11 @@ internal sealed class PackagedDesktop : IDisposable
         return null;
     }
 
-    private Automation.AutomationElement Required(string id) => Find(id) ?? throw new InvalidOperationException("Actual product control is absent: " + id);
+    private Automation.AutomationElement Required(string id) => Find(id) ?? throw new RequiredProductControlMissingException(id);
+    // Public summaries already report exception type. Use a fixed type for this
+    // harness failure without exposing the control id or a raw exception message.
+    internal sealed class RequiredProductControlMissingException(string id)
+        : InvalidOperationException("Actual product control is absent: " + id);
     private Automation.AutomationElement? FindIdentity(string identity)
     {
         var windows = Automation.AutomationElement.RootElement.FindAll(Automation.TreeScope.Children,

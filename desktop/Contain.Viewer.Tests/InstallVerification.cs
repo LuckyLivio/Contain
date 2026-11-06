@@ -304,9 +304,8 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
                 Require(!actualDesktop.HasExited && !await actualDesktop.EnabledAsync("StartRecording"), "actual main-window close preserves active task");
                 closeChecked = true;
             }
-            if (await actualDesktop.ExistsAsync("InstallStatus"))
+            if (await actualDesktop.TryTextAsync("InstallStatus") is { } text)
             {
-                var text = await actualDesktop.TextAsync("InstallStatus");
                 foreach (var (caption, stage) in new[] { ("准备中", "preparing"), ("记录中", "capturing"), ("整理中", "finalizing") })
                     if (text.Contains(caption, StringComparison.Ordinal) && !observedStages.Contains(stage)) observedStages.Add(stage);
                 if (text.Contains("记录中", StringComparison.Ordinal) && !runningScreenshot)

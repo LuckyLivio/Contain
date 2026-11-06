@@ -229,6 +229,7 @@ internal sealed class OverviewVerification(Options options, bool viewerChecksPas
                     using var desktop = new PackagedDesktop(options.Package, cwd); firstPid = desktop.ProcessId;
                     await desktop.ReadyAsync(); actualExecutable = true; actualDpi = await desktop.DeviceDpiAsync();
                     Require(actualDpi > 0, "actual packaged process reports Windows DPI");
+                    await VerifyOptionalStatusSampling(desktop);
                     foreach (var (id, imageName) in Sessions.Zip(new[] { "success", "nonzero", "unfinished" }))
                     {
                         await SelectPackaged(desktop, id);
@@ -328,6 +329,26 @@ internal sealed class OverviewVerification(Options options, bool viewerChecksPas
             scope = "Actual packaged EXE and production controls using guarded isolated synthetic persisted records. No capture; native DPI distinct from separate simulated layout checks."
         }, new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower }));
         return accepted;
+    }
+
+    private async Task VerifyOptionalStatusSampling(PackagedDesktop desktop)
+    {
+        Require(await desktop.TryTextAsync("InstallStatus") is null,
+            "optional status sample is absent when the actual saved-record viewer has no install window");
+        var requiredMissing = false;
+        try { await desktop.TextAsync("InstallStatus"); }
+        catch (PackagedDesktop.RequiredProductControlMissingException) { requiredMissing = true; }
+        Require(requiredMissing, "required missing control still fails with a safe fixed failure classification");
+        var expected = await desktop.TextAsync("NewInstall");
+        Require(!string.IsNullOrWhiteSpace(expected) && await desktop.TryTextAsync("NewInstall") == expected,
+            "optional read retains actual existing packaged-control text");
+        Require(PackagedDesktop.TryText(() => throw new System.Windows.Automation.ElementNotAvailableException()) is null,
+            "a status element disappearing during the atomic UIA operation produces only an absent sample");
+        var unexpected = new InvalidOperationException("SYNTHETIC non-lifetime UIA failure");
+        var propagated = false;
+        try { PackagedDesktop.TryText(() => throw unexpected); }
+        catch (InvalidOperationException error) when (ReferenceEquals(error, unexpected)) { propagated = true; }
+        Require(propagated, "optional sampling does not suppress ordinary InvalidOperationException failures");
     }
 
     private async Task Select(ViewerForm form, string id)
