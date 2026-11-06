@@ -67,6 +67,7 @@ internal sealed class FirstUseConfigurationChecks(Options options, bool priorChe
             Require(!C<CheckBox>(form, "AdvancedToggle").Checked && !C<Button>(form, "CheckEnvironment").Visible
                 && !C<TextBox>(form, "RecordName").Visible && !C<CheckBox>(form, "SnapshotOnly").Visible,
                 "ordinary setup hides optional diagnostics and technical choices");
+            await VerifyNativeInputBoundary(form);
             var before = form.PendingOperation; C<Button>(form, "StartRecording").PerformClick(); await Task.Delay(80);
             Require(ReferenceEquals(before, form.PendingOperation) && !bridge.CollectorStarted && form.LastStatus is null
                 && !Directory.Exists(Path.GetDirectoryName(records.DatabasePath)), "missing scope starts no collector or installer and creates no library");
@@ -236,6 +237,102 @@ internal sealed class FirstUseConfigurationChecks(Options options, bool priorChe
         }
     }
     private void Require(bool value, string message) { if (!value) throw new TestFailureException(message); assertions++; }
+
+    private async Task VerifyNativeInputBoundary(InstallForm form)
+    {
+        var filename = C<Label>(form, "InstallerFileName");
+        Require(filename.AccessibilityObject.Name == "安装器文件名" && filename.Text == Path.GetFileName(client.ExecutablePath)
+            && PackagedDesktop.NativeVisibleText(filename.Handle, Environment.ProcessId) == filename.Text,
+            "native caption reading returns the complete displayed filename independently of its fixed accessibility name");
+
+        var start = C<Button>(form, "StartRecording");
+        C<Panel>(form, "InstallViewport").ScrollControlIntoView(start);
+        form.Activate(); await Task.Delay(80);
+        var clicks = 0; EventHandler clicked = (_, _) => clicks++;
+        var before = form.PendingOperation;
+        start.Click += clicked;
+        try
+        {
+            using var receipts = new NativeMouseReceipts(start);
+            PackagedDesktop.SendNativeClick(start.Handle, Environment.ProcessId);
+            PackagedDesktop.SendNativeClick(start.Handle, Environment.ProcessId);
+            await PumpUntil(() => receipts.Ups >= 2);
+            Require(receipts.Downs == 2 && receipts.Ups == 2,
+                "two real mouse gestures reach the disabled Start region, including the native double-click message");
+            Require(clicks == 0 && ReferenceEquals(before, form.PendingOperation) && form.LastStatus is null
+                && !Directory.Exists(Path.GetDirectoryName(PersonalRecords.ForCurrentUser().DatabasePath)),
+                "physical double-click on missing-scope Start invokes no recording handler and creates no library");
+        }
+        finally { start.Click -= clicked; }
+
+        // A harmless real HWND provides a positive input control and independent
+        // occlusion cases without ever enabling or invoking the installer action.
+        using var probe = new Form { Text = "SYNTHETIC native input boundary", ClientSize = new Size(360, 160),
+            StartPosition = FormStartPosition.CenterParent, ShowInTaskbar = false };
+        using var target = new Button { Text = "SYNTHETIC click counter", Bounds = new Rectangle(20, 20, 280, 50) };
+        using var overlay = new Button { Text = "SYNTHETIC covering sibling", Bounds = target.Bounds, Visible = false };
+        probe.Controls.Add(target); probe.Controls.Add(overlay);
+        var handled = 0; target.Click += (_, _) => handled++;
+        probe.Show(form); probe.Activate(); await Task.Delay(80);
+        PackagedDesktop.SendNativeClick(target.Handle, Environment.ProcessId);
+        await PumpUntil(() => handled != 0);
+        Require(handled == 1, "the same native sender delivers an enabled button click to its actual event handler");
+        target.Enabled = false;
+        Require(PackagedDesktop.NativeClickTargetIsExposed(target.Handle, Environment.ProcessId),
+            "an unobstructed disabled native button remains a valid physical gesture target");
+        overlay.Visible = true; overlay.BringToFront();
+        foreach (var enabled in new[] { true, false })
+        {
+            target.Enabled = enabled;
+            Require(!PackagedDesktop.NativeClickTargetIsExposed(target.Handle, Environment.ProcessId),
+                "an overlapping sibling blocks the intended native target in both enabled and disabled states");
+            var refused = false;
+            try { PackagedDesktop.SendNativeClick(target.Handle, Environment.ProcessId); }
+            catch (InvalidOperationException) { refused = true; }
+            Require(refused, "the native sender refuses an occluded target before injecting a click");
+        }
+        overlay.Hide();
+        Require(PackagedDesktop.NativeClickTargetIsExposed(target.Handle, Environment.ProcessId)
+            && !PackagedDesktop.NativeClickTargetIsExposed(target.Handle, Environment.ProcessId + 1),
+            "hiding the covering sibling restores the intended target but cannot bypass process ownership");
+        target.Hide();
+        Require(!PackagedDesktop.NativeClickTargetIsExposed(target.Handle, Environment.ProcessId),
+            "a hidden native target is never treated as clickable");
+        Require(handled == 1, "rejected native targeting cases invoke no extra click handler");
+        probe.Close(); form.Activate();
+    }
+
+    private static async Task PumpUntil(Func<bool> completed)
+    {
+        for (var attempt = 0; attempt < 100 && !completed(); attempt++) await Task.Delay(20);
+    }
+
+    /// <summary>Observes actual queued mouse input; never sends or handles an action.</summary>
+    private sealed class NativeMouseReceipts : IMessageFilter, IDisposable
+    {
+        private readonly Rectangle region;
+        private readonly HashSet<IntPtr> receivers = [];
+        internal int Downs { get; private set; }
+        internal int Ups { get; private set; }
+        internal NativeMouseReceipts(Control target)
+        {
+            region = target.RectangleToScreen(target.ClientRectangle);
+            for (Control? control = target; control is not null; control = control.Parent) receivers.Add(control.Handle);
+            Application.AddMessageFilter(this);
+        }
+        public bool PreFilterMessage(ref Message message)
+        {
+            if (message.Msg is not (0x0201 or 0x0202 or 0x0203) || !receivers.Contains(message.HWnd)
+                || Control.FromHandle(message.HWnd) is not { } receiver) return false;
+            var packed = message.LParam.ToInt64();
+            var point = new Point(unchecked((short)(packed & 0xffff)), unchecked((short)((packed >> 16) & 0xffff)));
+            if (!region.Contains(receiver.PointToScreen(point))) return false;
+            if (message.Msg == 0x0202) Ups++; else Downs++;
+            return false;
+        }
+        public void Dispose() => Application.RemoveMessageFilter(this);
+    }
+
     private static T C<T>(Control owner, string name) where T : Control => (T)owner.Controls.Find(name, true).Single();
     private static InstallRequest ReadRequest(InstallForm form) => (InstallRequest)typeof(InstallForm).GetMethod("Request", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(form, null)!;
     private static string[][] InvocationArguments(string path) => File.ReadAllLines(path).Select(line => JsonSerializer.Deserialize<string[]>(line)!).ToArray();

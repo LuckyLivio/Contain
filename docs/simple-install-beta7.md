@@ -52,3 +52,19 @@ path discovery, nonexistent observation directories and expanded capture scope
 remain outside this version. The existing [finalizing issue #5](https://github.com/LuckyLivio/Contain/issues/5)
 is unchanged; successful bounded recording does not establish ownership or safe
 deletion.
+
+## Retained acceptance attempts
+
+The [viewer-only preflight](https://github.com/LuckyLivio/Contain/actions/runs/42165307599)
+passed 74 desktop checks with zero installation captures; its reviewed aggregate
+is [retained separately](examples/first-install-beta7-preflight.json).
+
+The first [complete installation attempt](https://github.com/LuckyLivio/Contain/actions/runs/42166729220),
+source `999d7314d1400bf37b16e19d0a7844bdf2bfd5b1`, failed before any installer or
+ETW capture started. Its 74 desktop checks and quality gates passed, but the native
+installation suite recorded 1 pass, 1 failure and 4 not run. After successful
+native EXE cancellation and selection, the harness compared the filename label's
+accessible name with its visible text. The retained `install-summary.json` and
+`install-progress.json` record that failure; the diagnostic ZIP is not a release
+candidate. The corrected harness reads the actual native label text while keeping
+the same filename assertion and production accessibility behavior.

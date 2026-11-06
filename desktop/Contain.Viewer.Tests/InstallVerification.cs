@@ -240,7 +240,7 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         Require(await actualDesktop.FocusedAsync("ChooseWatchRoot"), "EXE selection naturally focuses the observation-folder action");
         firstUseDpi = await actualDesktop.ControlWindowDpiAsync("StartRecording");
         Require(!await actualDesktop.IsCheckedAsync("AdvancedToggle"), "ordinary configuration starts with advanced settings collapsed");
-        Require((await actualDesktop.TextAsync("InstallerFileName")).Contains(Path.GetFileName(options.InstallFixture!), StringComparison.Ordinal), "selected EXE filename is visible");
+        Require((await actualDesktop.NativeVisibleTextAsync("InstallerFileName")).Contains(Path.GetFileName(options.InstallFixture!), StringComparison.Ordinal), "selected EXE filename is visible");
         await actualDesktop.ToggleAsync("ShowInstallerPath", true);
         Require(Normalize(await actualDesktop.TextAsync("InstallerPath")) == Normalize(options.InstallFixture!), "native picker selected the exact frozen EXE path");
         await actualDesktop.ToggleAsync("ShowInstallerPath", false);
@@ -270,8 +270,10 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         try
         {
             await actualDesktop.KeyboardActivateAsync("StartRecording", focus: false);
-            await PackagedDesktop.WaitAsync(async () => (await actualDesktop.TextAsync("InstallStatus")).Contains("重新选择", StringComparison.Ordinal)
-                || (await actualDesktop.TextAsync("WatchRootHint")).Contains("重新选择", StringComparison.Ordinal), TimeSpan.FromSeconds(10));
+            await PackagedDesktop.WaitAsync(async () => await actualDesktop.ExistsAsync("InstallStatus")
+                    && (await actualDesktop.TextAsync("InstallStatus")).Contains("重新选择", StringComparison.Ordinal)
+                || await actualDesktop.ExistsAsync("WatchRootHint")
+                    && (await actualDesktop.TextAsync("WatchRootHint")).Contains("重新选择", StringComparison.Ordinal), TimeSpan.FromSeconds(10));
             Require(Hash(database) == originalDatabaseHash && !Directory.EnumerateFiles(truthRoot, "ground-truth-*.jsonl").Any(), "invalidated selected directory fails before installer or session creation");
             invalidScopeBlocked = true;
         }
@@ -291,7 +293,7 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         await actualDesktop.ChooseWatchRootAsync(root);
         await PackagedDesktop.WaitAsync(() => actualDesktop.EnabledAsync("StartRecording"), TimeSpan.FromSeconds(10));
         Require(Normalize(await actualDesktop.TextAsync("WatchRoot")) == Normalize(root)
-            && (await actualDesktop.TextAsync("InstallerFileName")).Contains(Path.GetFileName(options.InstallFixture!), StringComparison.Ordinal), "correcting the folder preserves the selected installer");
+            && (await actualDesktop.NativeVisibleTextAsync("InstallerFileName")).Contains(Path.GetFileName(options.InstallFixture!), StringComparison.Ordinal), "correcting the folder preserves the selected installer");
         correctionsPreservedConfiguration = true;
         Require(actualDesktop.AdvancedInteractions == 0 && actualDesktop.EnvironmentCheckInteractions == 0 && actualDesktop.DatabasePathInteractions == 0,
             "ordinary flow never opens advanced settings, checks environment or chooses a database");

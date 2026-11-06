@@ -58,6 +58,26 @@ internal sealed class PackagedDesktop : IDisposable
     internal Task<bool> ExistsAsync(string id) => Ui(() => Find(id) is not null);
     internal Task<bool> EnabledAsync(string id) => Ui(() => Required(id).Current.IsEnabled);
     internal Task<string> TextAsync(string id) => Ui(() => Text(Required(id)));
+    // Static labels can expose a stable AccessibleName rather than their
+    // displayed filename. Keep that accessibility metadata intact and read
+    // the actual visible HWND caption for visual-text assertions.
+    internal Task<string> NativeVisibleTextAsync(string id) => Ui(() =>
+        NativeVisibleText(new IntPtr(Required(id).Current.NativeWindowHandle), process.Id));
+
+    internal static string NativeVisibleText(IntPtr window, int expectedProcessId)
+    {
+        GetWindowThreadProcessId(window, out var owner);
+        if (window == IntPtr.Zero || owner != expectedProcessId || !IsWindowVisible(window))
+            throw new InvalidOperationException("The requested visual caption has no visible owned HWND.");
+        if (SendMessageTimeoutValue(window, 0x000E, IntPtr.Zero, IntPtr.Zero, 0x0003, 2000, out var length) == IntPtr.Zero
+            || length.ToUInt64() > 65536)
+            throw new IOException("The visible caption length could not be read within its bound.");
+        var value = new System.Text.StringBuilder(checked((int)length.ToUInt64() + 1));
+        if (SendMessageTimeoutBuffer(window, 0x000D, new IntPtr(value.Capacity), value, 0x0003, 2000, out var copied) == IntPtr.Zero
+            || copied.ToUInt64() != length.ToUInt64() || value.Length != (int)length.ToUInt64())
+            throw new IOException("The complete visible caption could not be read consistently.");
+        return value.ToString();
+    }
     internal Task<uint> DeviceDpiAsync() => Ui(() => { process.Refresh(); return GetDpiForWindow(process.MainWindowHandle); });
     internal Task<bool> OnscreenAsync(string id) => Ui(() =>
     {
@@ -351,11 +371,13 @@ internal sealed class PackagedDesktop : IDisposable
     private static string KeysLiteral(string value) => string.Concat(value.Select(character =>
         "+^%~(){}[]".Contains(character) ? "{" + character + "}" : character.ToString()));
 
-    private void ClickNativeButton(IntPtr button)
+    private void ClickNativeButton(IntPtr button) => SendNativeClick(button, process.Id);
+
+    internal static void SendNativeClick(IntPtr button, int expectedProcessId)
     {
         if (button == IntPtr.Zero || !IsWindowVisible(button)) throw new InvalidOperationException("The native test button is absent or invisible.");
         GetWindowThreadProcessId(button, out var owner);
-        if (owner != process.Id) throw new InvalidOperationException("The native test button belongs to another process.");
+        if (owner != expectedProcessId) throw new InvalidOperationException("The native test button belongs to another process.");
         var root = GetAncestor(button, 2);
         if (root == IntPtr.Zero) throw new InvalidOperationException("The native test button has no root window.");
         SetForegroundWindow(root);
@@ -364,9 +386,7 @@ internal sealed class PackagedDesktop : IDisposable
             throw new InvalidOperationException("The native test button has no clickable bounds.");
         var point = new NativePoint { X = rectangle.Left + (rectangle.Right - rectangle.Left) / 2,
             Y = rectangle.Top + (rectangle.Bottom - rectangle.Top) / 2 };
-        var hit = WindowFromPoint(point);
-        GetWindowThreadProcessId(hit, out var hitOwner);
-        if (hitOwner != process.Id || (hit != button && !IsChild(button, hit)))
+        if (!NativeClickTargetIsExposed(button, expectedProcessId))
             throw new InvalidOperationException("Another native control covers the test button's click point.");
         GetCursorPos(out var previous);
         try
@@ -376,6 +396,47 @@ internal sealed class PackagedDesktop : IDisposable
             mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
         }
         finally { SetCursorPos(previous.X, previous.Y); }
+    }
+
+    internal static bool NativeClickTargetIsExposed(IntPtr control, int expectedProcessId)
+    {
+        if (control == IntPtr.Zero || !IsWindowVisible(control) || !GetWindowRect(control, out var bounds)
+            || bounds.Right <= bounds.Left || bounds.Bottom <= bounds.Top) return false;
+        GetWindowThreadProcessId(control, out var owner);
+        var root = GetAncestor(control, 2);
+        if (owner != expectedProcessId || root == IntPtr.Zero) return false;
+        var point = new NativePoint { X = bounds.Left + (bounds.Right - bounds.Left) / 2,
+            Y = bounds.Top + (bounds.Bottom - bounds.Top) / 2 };
+        var hit = WindowFromPoint(point);
+        GetWindowThreadProcessId(hit, out var hitOwner);
+        if (hitOwner != expectedProcessId || GetAncestor(hit, 2) != root) return false;
+        // Preserve the enabled-control obstruction check exactly. Windows skips
+        // disabled controls in WindowFromPoint, so that case needs an explicit
+        // child hit test which still rejects an overlapping sibling.
+        if (IsWindowEnabled(control)) return hit == control || IsChild(control, hit);
+        for (var parent = GetParent(control); parent != IntPtr.Zero; parent = GetParent(parent))
+        {
+            if (!GetClientRect(parent, out var client)) return false;
+            var origin = new NativePoint();
+            if (!ClientToScreen(parent, ref origin) || bounds.Left < origin.X || bounds.Top < origin.Y
+                || bounds.Right > origin.X + client.Right || bounds.Bottom > origin.Y + client.Bottom) return false;
+            if (parent == root) break;
+        }
+        var current = root;
+        for (var depth = 0; depth < 64; depth++)
+        {
+            var local = point;
+            if (!ScreenToClient(current, ref local)) return false;
+            // CWP_SKIPINVISIBLE | CWP_SKIPTRANSPARENT; intentionally do not use
+            // CWP_SKIPDISABLED. Every parent/child in the path remains owned.
+            var child = ChildWindowFromPointEx(current, local, 0x0001 | 0x0004);
+            if (child == IntPtr.Zero) return false;
+            if (child == current) return current == control || IsChild(control, current);
+            GetWindowThreadProcessId(child, out var childOwner);
+            if (childOwner != expectedProcessId || !IsChild(current, child)) return false;
+            current = child;
+        }
+        return false;
     }
 
     private static List<(IntPtr Window, int Id, string Class)> ReportControls(IntPtr dialog)
@@ -713,12 +774,17 @@ internal sealed class PackagedDesktop : IDisposable
     [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, WindowCallback callback, IntPtr parameter);
     [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern IntPtr SendMessageTimeoutBuffer(IntPtr window, uint message, IntPtr wParam, System.Text.StringBuilder text, uint flags, uint timeout, out UIntPtr result);
+    [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", SetLastError = true)]
+    private static extern IntPtr SendMessageTimeoutValue(IntPtr window, uint message, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out UIntPtr result);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo info);
     private delegate bool WindowCallback(IntPtr window, IntPtr parameter);
     [DllImport("user32.dll")] private static extern bool EnumWindows(WindowCallback callback, IntPtr parameter);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, System.Text.StringBuilder name, int maximum);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr window);
+    [DllImport("user32.dll")] private static extern IntPtr ChildWindowFromPointEx(IntPtr parent, NativePoint point, uint flags);
+    [DllImport("user32.dll")] private static extern bool ScreenToClient(IntPtr window, ref NativePoint point);
     [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr window, out WindowBounds bounds);
     [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr window, ref NativePoint point);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out WindowBounds bounds);

@@ -5,6 +5,11 @@ Beta 7 adds five mandatory configuration checks in
 They exercise the frozen production forms using isolated missing/invalid scopes,
 personal-library conflicts, synthetic permission failures and advanced settings.
 The empty-library/no-implicit-creation checks are separate from the live capture.
+Native helper regressions distinguish a label's displayed HWND text from its
+stable accessibility name and verify real enabled/disabled click delivery.
+Disabled controls use child hit testing that includes disabled children while
+still rejecting covering siblings; enabled-control obstruction checks remain
+strict. These helper checks run before any live capture.
 
 The existing optional one-capture `InstallVerification` plan now starts from the
 actual packaged EXE's main **新建安装记录** button. Real keyboard input operates
