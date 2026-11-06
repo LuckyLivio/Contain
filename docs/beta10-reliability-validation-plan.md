@@ -45,6 +45,27 @@ and the fix with controlled inputs before final live acceptance. Keep all queue,
 byte, per-record, resource/request, journal and exit bounds, loss accounting and
 Unknown/attribution rules unchanged.
 
+### Diagnostic round D2, declared before execution
+
+D1 (`00a82f6`, run 42222854581) retained both samples. Off/on receive loss was
+2,575/4,093 and candidate loss 8,137/7,418. In the instrumented sample, 4,060 of
+4,093 receive losses occurred during initial candidate classification; lock wait
+and pending scans accounted for zero. All 7,418 candidate rejections hit the
+2,048-record guard, with no identity available at rejection. This last category
+includes completion records that rely on requests; it does not prove 7,418
+missing thread identities. Both target identity chains and unique successful
+completions survived; global loss correctly suppressed final promotion.
+
+D1's public export omitted existing `pipeline.providers` and
+`initial_identity_snapshot` fields. The private Windows DB is not available after
+the job. D2 therefore repeats exactly one off/on pair, same load and bounds, with
+the admission algorithm still unchanged. Export only these already-saved numeric
+fields, plus fixed bounded new-pending/drop counts by file/completion/other.
+Do not add identity collection or infer the old run's missing values. D2 is a
+separate diagnostic attempt, not a replacement for D1 or acceptance. Retain both
+failures. Review snapshot query budget, failures, observation boundaries and
+process-provider overflow before choosing the fix.
+
 ## Final immutable ZIP acceptance
 
 Freeze one candidate ZIP after the existing checks. Keep its exact source SHA and

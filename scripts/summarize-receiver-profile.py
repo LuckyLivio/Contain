@@ -9,6 +9,7 @@ STAGES = tuple('receiver_' + name for name in (
 FIELDS = ('count', 'elapsed_ns', 'max_elapsed_ns', 'units', 'enqueued', 'overflow', 'dequeued',
           'max_pending_before', 'max_pending_after', 'cpu_count', 'cpu_ns')
 COUNTERS = '''receiver_pages receiver_page_records receiver_lifecycle_records follow_receive_pages follow_incoming_records follow_scan_calls follow_scan_visits follow_dirty_bind follow_dirty_cache follow_dirty_resource follow_dirty_request follow_dirty_completion follow_dirty_related_removed follow_dirty_flush follow_drop_serialization follow_drop_record_bytes follow_drop_pending_records follow_drop_pending_bytes follow_drop_resources follow_drop_requests follow_drop_pending_before_bind follow_drop_pending_no_identity follow_drop_pending_unverified_actor follow_pending_before_bind_attempts follow_pending_no_identity_attempts follow_pending_unverified_actor_attempts'''.split()
+COUNTERS += 'follow_new_pending_file follow_new_pending_completion follow_new_pending_other follow_drop_pending_file follow_drop_pending_completion follow_drop_pending_other'.split()
 
 
 def number(v):

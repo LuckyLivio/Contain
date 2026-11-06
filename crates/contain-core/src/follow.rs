@@ -81,6 +81,13 @@ enum DropReason {
     Resources,
     Requests,
 }
+fn pending_kind(event: &SystemEvent) -> usize {
+    match event.event_type.as_str() {
+        "file" => 0,
+        "completion" => 1,
+        _ => 2,
+    }
+}
 #[derive(Default)]
 struct FollowDiagnostics {
     changes: [u64; 7],
@@ -90,11 +97,15 @@ struct FollowDiagnostics {
     pending_unverified_actor: u64,
     last_pending_reason: usize,
     pending_drops: [u64; 3],
+    new_pending_kinds: [u64; 3],
+    dropped_pending_kinds: [u64; 3],
 }
 impl FollowDiagnostics {
     fn finish(self) {
         let [bind, cache, resource, request, completion, removed, flush] = self.changes;
         let [before_bind, no_identity, unverified_actor] = self.pending_drops;
+        let [new_file, new_completion, new_other] = self.new_pending_kinds;
+        let [dropped_file, dropped_completion, dropped_other] = self.dropped_pending_kinds;
         let [
             serialization,
             record_bytes,
@@ -120,6 +131,14 @@ impl FollowDiagnostics {
             ("follow_drop_pending_before_bind", before_bind),
             ("follow_drop_pending_no_identity", no_identity),
             ("follow_drop_pending_unverified_actor", unverified_actor),
+            // Distinct first-time buffer attempts and actual rejections by kind.
+            // Retained candidates rechecked by scan_pending are not counted here.
+            ("follow_new_pending_file", new_file),
+            ("follow_new_pending_completion", new_completion),
+            ("follow_new_pending_other", new_other),
+            ("follow_drop_pending_file", dropped_file),
+            ("follow_drop_pending_completion", dropped_completion),
+            ("follow_drop_pending_other", dropped_other),
             // Attempts, including retries, rather than distinct lost records.
             (
                 "follow_pending_before_bind_attempts",
@@ -159,10 +178,11 @@ impl FollowBuffer {
             diagnostics.drops[reason as usize] += 1;
         }
     }
-    fn dropped_pending(&mut self, reason: DropReason) {
+    fn dropped_pending(&mut self, reason: DropReason, event: &SystemEvent) {
         self.dropped(reason);
         if let Some(diagnostics) = &mut self.diagnostics {
             diagnostics.pending_drops[diagnostics.last_pending_reason] += 1;
+            diagnostics.dropped_pending_kinds[pending_kind(event)] += 1;
         }
     }
     fn request_candidate_removed(&mut self, id: &str) {
@@ -217,8 +237,11 @@ impl FollowBuffer {
         Some(size.0)
     }
     fn buffer(&mut self, event: SystemEvent) {
+        if let Some(diagnostics) = &mut self.diagnostics {
+            diagnostics.new_pending_kinds[pending_kind(&event)] += 1;
+        }
         let Some(size) = Self::serialized_size(&event) else {
-            self.dropped_pending(DropReason::Serialization);
+            self.dropped_pending(DropReason::Serialization, &event);
             self.request_candidate_removed(&event.id);
             return;
         };
@@ -232,7 +255,7 @@ impl FollowBuffer {
             None
         };
         if let Some(reason) = reason {
-            self.dropped_pending(reason);
+            self.dropped_pending(reason, &event);
             self.request_candidate_removed(&event.id);
             return;
         }
@@ -551,6 +574,15 @@ mod tests {
         cache.seed(root());
         cache
     }
+    fn pending_by_kind(kind: &str, id: &str) -> SystemEvent {
+        let mut event = file(id, 999);
+        event.event_type = kind.into();
+        if kind == "completion" {
+            event.operation = "operation_end".into();
+            event.raw.related_event = Some("unresolved-0".into());
+        }
+        event
+    }
     #[test]
     fn diagnostics_separate_pending_capacity_loss_from_normal_filtering() {
         let mut follow = FollowBuffer::default();
@@ -571,6 +603,16 @@ mod tests {
                 .map(|index| file(&format!("unresolved-{index}"), 999))
                 .collect();
             assert!(follow.receive(incoming, &mut cache, true).is_empty());
+            let mut next = vec![
+                pending_by_kind("completion", "completion-cap"),
+                pending_by_kind("other", "other-cap"),
+            ];
+            for kind in ["file", "completion", "other"] {
+                let mut oversized = pending_by_kind(kind, &format!("{kind}-oversized"));
+                oversized.resource = "x".repeat(CANDIDATE_RECORD_BYTES);
+                next.push(oversized);
+            }
+            assert!(follow.receive(next, &mut cache, false).is_empty());
             assert!(
                 follow
                     .receive(vec![file("other", 10)], &mut cache, false)
@@ -578,25 +620,79 @@ mod tests {
             );
             assert!(follow.flush(&mut cache, true).is_empty());
         });
-        assert_eq!(follow.stats.candidate_dropped, 1);
+        assert_eq!(follow.stats.candidate_dropped, 6);
         assert_eq!(follow.stats.excluded_other, 1);
         let counters = &report["counters"];
-        assert_eq!(counters["follow_drop_pending_records"], 1);
+        assert_eq!(counters["follow_drop_pending_records"], 3);
         assert_eq!(counters["follow_drop_pending_bytes"], 0);
-        assert_eq!(counters["follow_drop_pending_no_identity"], 1);
+        assert_eq!(counters["follow_drop_pending_no_identity"], 6);
         assert_eq!(counters["follow_drop_pending_before_bind"], 0);
         assert_eq!(counters["follow_drop_pending_unverified_actor"], 0);
-        assert_eq!(counters["follow_drop_record_bytes"], 0);
+        // Oversized records retain the existing first-guard priority even when
+        // the record count is already full. Each kind is counted exactly once.
+        assert_eq!(counters["follow_drop_record_bytes"], 3);
+        for kind in ["file", "completion", "other"] {
+            assert_eq!(counters[format!("follow_drop_pending_{kind}")], 2);
+        }
+        assert_eq!(
+            counters["follow_new_pending_file"],
+            (CANDIDATE_RECORDS + 2) as u64
+        );
+        assert_eq!(counters["follow_new_pending_completion"], 2);
+        assert_eq!(counters["follow_new_pending_other"], 2);
         assert_eq!(counters["follow_dirty_bind"], 1);
         assert_eq!(
             counters["follow_pending_no_identity_attempts"],
-            (CANDIDATE_RECORDS + 1) as u64
+            (CANDIDATE_RECORDS + 6) as u64
         );
         assert_eq!(counters["follow_scan_visits"], CANDIDATE_RECORDS as u64);
         assert_eq!(
             report["queue_stage_totals"]["receiver_follow_pending_final"]["units"],
             CANDIDATE_RECORDS as u64
         );
+        assert!(follow.diagnostics.is_none());
+    }
+    #[test]
+    fn diagnostics_count_byte_limit_rejections_by_kind_without_counting_retries_as_new() {
+        let mut follow = FollowBuffer::default();
+        let mut cache = cache();
+        let report = profile::test_profile(|| {
+            follow.bind((1, 100), "s");
+            let large = "x".repeat(CANDIDATE_RECORD_BYTES - 2048);
+            let incoming = (0..32)
+                .map(|index| {
+                    let mut event = file(&format!("unresolved-{index}"), 999);
+                    event.resource = large.clone();
+                    event
+                })
+                .collect();
+            assert!(follow.receive(incoming, &mut cache, true).is_empty());
+            assert_eq!(follow.pending.len(), 32);
+            assert!(follow.bytes < CANDIDATE_BYTES);
+            let rejected = ["file", "completion", "other"]
+                .into_iter()
+                .map(|kind| {
+                    let mut event = pending_by_kind(kind, &format!("{kind}-byte-cap"));
+                    event.resource = large.clone();
+                    event
+                })
+                .collect();
+            assert!(follow.receive(rejected, &mut cache, false).is_empty());
+            assert!(follow.flush(&mut cache, false).is_empty());
+            assert!(follow.flush(&mut cache, true).is_empty());
+        });
+        assert_eq!(follow.stats.candidate_dropped, 3);
+        let counters = &report["counters"];
+        assert_eq!(counters["follow_drop_pending_bytes"], 3);
+        assert_eq!(counters["follow_drop_pending_records"], 0);
+        assert_eq!(counters["follow_drop_record_bytes"], 0);
+        assert_eq!(counters["follow_new_pending_file"], 33);
+        assert_eq!(counters["follow_new_pending_completion"], 1);
+        assert_eq!(counters["follow_new_pending_other"], 1);
+        for kind in ["file", "completion", "other"] {
+            assert_eq!(counters[format!("follow_drop_pending_{kind}")], 1);
+        }
+        assert_eq!(counters["follow_scan_visits"], 64);
         assert!(follow.diagnostics.is_none());
     }
     #[test]

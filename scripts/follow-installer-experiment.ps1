@@ -137,6 +137,8 @@ try {
     $inspectExit = Start-Owned $ContainExecutable @('--db',$database,'--read-only','inspect',$session,'--json') 'inspect' 30000
     if ($inspectExit -ne 0 -or (Get-Item -LiteralPath (Join-Path $private 'inspect.stdout')).Length -gt 67108864) { throw 'Saved-session readback failed or exceeded its output bound' }
     $captureJson = Join-Path $private 'inspect.stdout'
+    python "$PSScriptRoot/summarize-source-capture-facts.py" --capture $captureJson --output (Join-Path $public 'source-capture-facts.json')
+    if ($LASTEXITCODE -ne 0) { throw 'Existing source accounting summary failed' }
     $selectionPath = Join-Path $private 'selection.json'
     python "$PSScriptRoot/verify-follow-installer-experiment.py" --capture $captureJson --truth $truth --expected $expectedPath --select-only --output $selectionPath --source $Source
     if ($LASTEXITCODE -ne 0) { throw 'Candidate selection failed' }

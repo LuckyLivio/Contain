@@ -33,6 +33,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Diagnostic example build failed' }
           python scripts/test-summarize-receiver-profile.py
           if ($LASTEXITCODE -ne 0) { throw 'Safe profile report regressions failed' }
+          python scripts/test-summarize-source-capture-facts.py
+          if ($LASTEXITCODE -ne 0) { throw 'Safe existing source accounting regressions failed' }
       - name: Two predeclared diagnostic captures without retries
         shell: pwsh
         run: |
