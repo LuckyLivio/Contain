@@ -18,7 +18,7 @@ SPEC.loader.exec_module(COUNTS)
 class SessionLossCountsTests(unittest.TestCase):
     def make_db(self, root, backend=None, historical=False):
         path = root / "synthetic.db"
-        with sqlite3.connect(path) as db:
+        with contextlib.closing(sqlite3.connect(path)) as db, db:
             db.executescript("""
                 CREATE TABLE installation_sessions(id TEXT PRIMARY KEY, finished_at TEXT, exit_code INTEGER);
                 INSERT INTO installation_sessions VALUES ('exact', 'synthetic-end', 0),('other','',NULL);
@@ -75,7 +75,7 @@ class SessionLossCountsTests(unittest.TestCase):
     def test_unfinished_uses_committed_journal_and_private_errors_are_hidden(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = self.make_db(Path(tmp), dict(stream=dict(persisted=99,error=None)))
-            with sqlite3.connect(path) as db:
+            with contextlib.closing(sqlite3.connect(path)) as db, db:
                 db.execute("UPDATE capture_runs SET state='capturing',stats_json=?,error=?", (json.dumps(dict(persisted=2,error=None)), 'private path error'))
             result = COUNTS.read_report(path, 'exact')
             self.assertEqual(result['stream']['persisted'], 2)
@@ -91,7 +91,7 @@ class SessionLossCountsTests(unittest.TestCase):
             before = hashes()
             COUNTS.read_report(path, 'exact')
             self.assertEqual(hashes(),before)
-            with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True) as db:
+            with contextlib.closing(sqlite3.connect(path.as_uri()+'?mode=ro',uri=True)) as db, db:
                 db.execute('PRAGMA query_only=ON')
                 with self.assertRaises(sqlite3.OperationalError):
                     db.execute("DELETE FROM installation_sessions")
@@ -100,7 +100,7 @@ class SessionLossCountsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             path = self.make_db(root)
-            with sqlite3.connect(path) as writer:
+            with contextlib.closing(sqlite3.connect(path)) as writer, writer:
                 writer.execute('PRAGMA journal_mode=WAL')
                 writer.execute("UPDATE installation_sessions SET exit_code=7 WHERE id='exact'")
                 writer.commit()
@@ -134,7 +134,7 @@ class SessionLossCountsTests(unittest.TestCase):
                 with contextlib.redirect_stdout(output):
                     self.assertEqual(COUNTS.main(['--database',name,'--session-id','missing']),code)
                 self.assertEqual(json.loads(output.getvalue()),dict(error=label))
-            with sqlite3.connect(path) as db:
+            with contextlib.closing(sqlite3.connect(path)) as db, db:
                 db.execute("UPDATE capture_metadata SET backend_json='private-malformed-json'")
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
