@@ -209,7 +209,7 @@ internal sealed class OverviewVerification(Options options, bool viewerChecksPas
                     Func<CancellationToken, Task> cancelledRead = async _ =>
                     { await completion.Task; threwAfterCancellation = true; throw new IOException("SYNTHETIC superseded read failure"); };
                     var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
-                    typeof(ViewerForm).GetMethod("StartOperation", flags)!.Invoke(form, [cancelledRead, true]);
+                    typeof(ViewerForm).GetMethod("StartOperation", flags)!.Invoke(form, [cancelledRead, true, false]);
                     var operationVersion = typeof(ViewerForm).GetField("_operationVersion", flags)!.GetValue(form);
                     var cancellation = (CancellationTokenSource)typeof(ViewerForm).GetField("_operationCancellation", flags)!.GetValue(form)!;
                     cancellation.Cancel(); completion.SetResult(); await form.PendingOperation;

@@ -132,6 +132,37 @@ process identities or ownership. Clients still preserve exact time strings and
 integer values and distinguish unavailable/null from zero. The viewer does not
 start collection or active provider probes.
 
+### Session event search (additive, v0.3.2-beta.5)
+
+`history <session UUID> --search TEXT --limit 50 --offset 0 --json` matches the
+complete selected session before paging. It returns the existing history kind,
+`app_id` and bounded `events`, plus `search` (the exact supplied string),
+`matched_total`, `limit` and `offset`. If search is specified without a limit,
+the limit is 50; the existing 1–4096 limit bounds apply. Omitting `--search`
+preserves previous command behavior and JSON shape. An empty search matches all
+events; the desktop clears the option to resume ordinary browsing.
+
+Matching uses literal text containment in operation, recorded resource/name/path,
+confidence label, event ID or event type. ASCII A–Z are case-insensitive; other
+characters are compared exactly. Whitespace is retained. Chinese, `%`, `_`, quotes
+and backslashes have no wildcard, SQL or escape meaning. Names are historical
+recorded values, not current filesystem lookups. Unfinished events match their
+exposed `Unknown` confidence, never an unconfirmed raw confidence claim.
+
+`Storage::events_search` streams modern session documents in the existing timeline
+order `(ticks, sequence, id)` and retains only the requested page. Raw unfinished
+sessions use `(ticks, sequence)`, where sequence is unique within the session.
+Supported legacy records reuse the existing full-read mapping. All use one
+`EventSearch` predicate, reusable by future exports. Count and page are accumulated
+in the same pass and read transaction. Session input is bound as a SQL parameter;
+search input is a Rust string, never interpolated into SQL. A malformed event or
+query failure fails the whole request, including when it occurs beyond this page.
+Separate requests may observe later database commits. Search does not change
+schema, migrate the original old database, or include another same-name session.
+
+Beta.5 does not export the complete matching set. While searching, the desktop
+requires clearing search before exporting the existing ordinary page report.
+
 ## Desktop install progress (additive, v0.3.1)
 
 `install --status-json` writes one compact `install_status` v3 envelope per line

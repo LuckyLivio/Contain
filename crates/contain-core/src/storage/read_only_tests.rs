@@ -46,6 +46,236 @@ fn sample() -> Capture {
 }
 
 #[test]
+fn session_search_matches_before_paging_with_literal_text_and_original_ids() {
+    for version in [4, 2, 3] {
+        let file = TestFile::new();
+        let mut capture = sample();
+        capture.events = (0..130)
+            .rev() // Deliberately persist out of timeline order.
+            .map(|index| SystemEvent {
+                id: format!("search-{index:03}"),
+                timestamp_ticks: 134_350_000_000_000_017,
+                sequence: index / 2, // Equal time and sequence requires the ID tie-break.
+                operation: if index == 129 {
+                    "DeleteRequested"
+                } else {
+                    "write_requested"
+                }
+                .into(),
+                resource: if (70..123).contains(&index) {
+                    r"C:\Synthetic Path\中文文件%_Needle.txt".into()
+                } else {
+                    r"C:\Synthetic Path\ordinary.txt".into()
+                },
+                confidence: if index == 129 {
+                    Confidence::High
+                } else {
+                    Confidence::Unknown
+                },
+                ..Default::default()
+            })
+            .collect();
+        let mut other = capture.clone();
+        other.id = "other-session".into();
+        // Same display name must never change session search scope.
+        for event in &mut other.events {
+            event.id = format!("other-{}", event.id);
+        }
+        {
+            let mut db = Storage::open(&file.0).unwrap();
+            db.save(&capture).unwrap();
+            db.save(&other).unwrap();
+            if version < 4 {
+                db.connection
+                    .execute_batch("DELETE FROM event_documents; DROP TABLE raw_ingest;")
+                    .unwrap();
+                if version == 2 {
+                    db.connection.execute_batch("DROP TABLE reliability_metadata; DROP TABLE observation_details; DROP TABLE normalized_operations; DROP TABLE evidence_edges;").unwrap();
+                }
+                db.connection
+                    .pragma_update(None, "user_version", version)
+                    .unwrap();
+            }
+        }
+        let before = fs::read(&file.0).unwrap();
+        let db = Storage::open_read_only(&file.0).unwrap();
+        for needle in [
+            "NEEDLE",
+            "中文文件",
+            "%",
+            "_Needle",
+            r"c:\synthetic path\中文文件%_needle.txt",
+        ] {
+            let first = db.events_search(&capture.id, needle, 0, 50).unwrap();
+            let second = db.events_search(&capture.id, needle, 50, 50).unwrap();
+            assert_eq!((first.matched_total, second.matched_total), (53, 53));
+            assert_eq!((first.events.len(), second.events.len()), (50, 3));
+            // Expected identities come from a fixed fixture specification, not
+            // the production matcher or a second query over stored resources.
+            let expected: Vec<_> = (70..123)
+                .map(|index| format!("search-{index:03}"))
+                .collect();
+            let actual: Vec<_> = first
+                .events
+                .iter()
+                .chain(&second.events)
+                .map(|e| e.id.clone())
+                .collect();
+            assert_eq!(actual, expected);
+            let selected = &second.events[0];
+            assert_eq!(selected.id, "search-120");
+            let explained = db.for_event(&selected.id).unwrap();
+            assert_eq!(explained.id, capture.id);
+            let explained_event = explained
+                .events
+                .iter()
+                .find(|e| e.id == selected.id)
+                .unwrap();
+            assert_eq!(
+                serde_json::to_value(selected).unwrap(),
+                serde_json::to_value(explained_event).unwrap()
+            );
+        }
+        for needle in ["deleterequested", "HIGH", "search-129"] {
+            let page = db.events_search(&capture.id, needle, 0, 50).unwrap();
+            assert_eq!(page.matched_total, 1);
+            assert_eq!(page.events[0].id, "search-129");
+        }
+        for needle in ["missing", "%missing", "针", "' OR 1=1 --"] {
+            let page = db.events_search(&capture.id, needle, 0, 50).unwrap();
+            assert_eq!(page.matched_total, 0);
+            assert!(page.events.is_empty());
+        }
+        let all = db.events_search(&capture.id, "", 0, 50).unwrap();
+        assert_eq!(all.matched_total, 130);
+        assert_eq!(all.events.len(), 50);
+        // `_` occurs literally in the first 129 operations; treating it as a
+        // SQL wildcard would incorrectly include DeleteRequested as well.
+        assert_eq!(
+            db.events_search(&capture.id, "_", 0, 50)
+                .unwrap()
+                .matched_total,
+            129
+        );
+        let after = db
+            .events_search(&capture.id, "needle", u64::MAX, 50)
+            .unwrap();
+        assert_eq!(after.matched_total, 53);
+        assert!(after.events.is_empty());
+        assert!(db.events_search(&capture.id, "needle", 0, 0).is_err());
+        assert!(db.events_search(&capture.id, "needle", 0, 4097).is_err());
+        drop(db);
+        assert_eq!(fs::read(&file.0).unwrap(), before);
+    }
+}
+
+#[test]
+fn session_search_ascii_case_rule_and_writable_snapshot_lifetime() {
+    let file = TestFile::new();
+    let mut capture = sample();
+    capture.events[0].resource = "C:\\Path With Spaces\\Ä-file.txt".into();
+    let mut db = Storage::open(&file.0).unwrap();
+    db.save(&capture).unwrap();
+    assert_eq!(
+        db.events_search(&capture.id, "path with spaces", 0, 50)
+            .unwrap()
+            .matched_total,
+        1
+    );
+    assert_eq!(
+        db.events_search(&capture.id, "Ä-file", 0, 50)
+            .unwrap()
+            .matched_total,
+        1
+    );
+    assert_eq!(
+        db.events_search(&capture.id, "ä-file", 0, 50)
+            .unwrap()
+            .matched_total,
+        0
+    );
+    assert!(db.connection.is_autocommit());
+    // Search releases the temporary read view; subsequent writes still work.
+    db.connection
+        .execute(
+            "UPDATE event_documents SET document='broken' WHERE id='event-0'",
+            [],
+        )
+        .unwrap();
+    assert!(db.events_search(&capture.id, "file", 0, 50).is_err());
+    assert!(db.connection.is_autocommit());
+}
+
+#[test]
+fn session_search_uses_read_snapshot_and_rejects_bad_documents() {
+    let file = TestFile::new();
+    {
+        let mut db = Storage::open(&file.0).unwrap();
+        db.connection
+            .pragma_update(None, "journal_mode", "WAL")
+            .unwrap();
+        db.save(&sample()).unwrap();
+    }
+    let db = Storage::open_read_only(&file.0).unwrap();
+    assert_eq!(
+        db.events_search("sample-session", "write", 0, 1)
+            .unwrap()
+            .matched_total,
+        5
+    );
+    {
+        let writer = Connection::open(&file.0).unwrap();
+        writer
+            .execute(
+                "UPDATE event_documents SET document='invalid' WHERE id='event-4'",
+                [],
+            )
+            .unwrap();
+    }
+    // A subsequent query on the same explicit read view keeps the old snapshot.
+    assert_eq!(
+        db.events_search("sample-session", "write", 4, 1)
+            .unwrap()
+            .events[0]
+            .id,
+        "event-4"
+    );
+    drop(db);
+    let db = Storage::open_read_only(&file.0).unwrap();
+    // Even a malformed document after a full page must fail, not claim a partial
+    // count/list is a successful complete search.
+    assert!(db.events_search("sample-session", "write", 0, 1).is_err());
+}
+
+#[test]
+fn session_search_matches_unfinished_confidence_as_exposed_by_history() {
+    let file = TestFile::new();
+    let capture = sample();
+    {
+        let mut db = Storage::open(&file.0).unwrap();
+        let mut writer = stream::RawBuffer::new(&mut db, &capture, stream::DEFAULT_QUOTA).unwrap();
+        let mut event = capture.events[0].clone();
+        event.confidence = Confidence::High;
+        writer.append(&mut db, vec![event]);
+        writer.finish(&mut db).unwrap();
+    }
+    let db = Storage::open_read_only(&file.0).unwrap();
+    assert_eq!(
+        db.events_search(&capture.id, "High", 0, 50)
+            .unwrap()
+            .matched_total,
+        0
+    );
+    let page = db.events_search(&capture.id, "Unknown", 0, 50).unwrap();
+    assert_eq!(page.matched_total, 1);
+    let explained = db.for_event(&page.events[0].id).unwrap();
+    assert_eq!(
+        serde_json::to_value(&page.events[0]).unwrap(),
+        serde_json::to_value(&explained.events[0]).unwrap()
+    );
+}
+
+#[test]
 fn exact_session_id_wins_over_a_newer_uuid_shaped_record_name() {
     let file = TestFile::new();
     let mut requested = sample();

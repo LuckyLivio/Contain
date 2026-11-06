@@ -26,6 +26,14 @@ INSTALL_VERIFICATION = "contain-desktop-install-verification-1"
 LAYOUT_VERIFICATION = "contain-desktop-layout-verification-1"
 PROGRESS_VERIFICATION = "contain-desktop-progress-verification-1"
 PERSONAL_RECORDS_VERIFICATION = "contain-desktop-personal-records-verification-1"
+SEARCH_VERIFICATION = "contain-desktop-session-search-verification-1"
+SEARCH_REQUIRED_CHECKS = frozenset({
+    "frozen_search_package_identity", "full_session_search_fixed_oracle",
+    "second_page_copy_explain_identity", "literal_text_operation_confidence",
+    "empty_clear_failure_and_export_boundary", "superseded_queries_and_same_name_records",
+    "default_library_and_legacy_readonly", "packaged_exe_cross_page_search",
+    "search_databases_unchanged",
+})
 OVERVIEW_VERIFICATION = "contain-desktop-overview-verification-1"
 OVERVIEW_REQUIRED_CHECKS = frozenset({
     "frozen_overview_package_identity", "persisted_three_outcomes",
@@ -65,7 +73,7 @@ REQUIRED_CHECKS = frozenset({
     "missing_null_unknown_enums_and_json_precision", "real_cli_database_and_process_failures_are_errors",
     "doctor_rejected_without_starting_capture", "native_window_empty_state", "native_production_executable_launch",
     "ui_open_finished_record_and_overview", "ui_page_then_select_and_explain_same_event",
-    "ui_filter_explicitly_applies_to_current_page", "ui_local_report_matches_current_record_page_and_event",
+    "ui_search_empty_and_clear_restores_first_page", "ui_local_report_matches_current_record_page_and_event",
     "ui_historical_name_and_unknown_evidence", "ui_unfinished_and_unavailable_metrics",
     "ui_valid_empty_database_and_cancel", "ui_errors_are_visible_and_do_not_create_records",
     "all_source_and_viewed_databases_unchanged", "ui_state_changes_filter_and_reason",
@@ -204,7 +212,10 @@ def usage(source, install=False, version=None):
 3. 在记录列表选择一条记录；概览分别显示安装器结果、记录状态、观察范围与覆盖、主要变化。
    “查看变化”和“查看事件与依据”打开当前会话；展开“技术详情”查看来源、统计、缺口与进程证据。
    重启后仍从数据库读取同一会话；未结束的历史记录不代表采集进程当前仍在运行。
-4. 点击事件查看依据，可复制事件 ID；点击导出保存本地 HTML 报告。
+4. 在“事件与依据”的“搜索本次记录”输入文件名、完整路径、操作或置信标签，
+   搜索当前数据库中本次会话的全部事件。每页最多 50 条，显示匹配总数与当前范围；翻页保留条件。
+5. 点击事件查看同一原始事件的依据，可复制其 ID。搜索时可直接清除条件；
+   清除搜索后可导出普通浏览页的本地 HTML 报告。
 
 无需 Rust、Visual Studio、Python 或另装 .NET。Windows x64 系统组件和随包
 .NET 8 / MSVC 运行库用于运行程序；不自动申请管理员权限。
@@ -218,10 +229,13 @@ def usage(source, install=False, version=None):
 Unknown 和中断模型。它由生产 Storage/RawBuffer 写入，未发生真实 ETW 采集。
 选择自己的空数据库时不会添加演示记录。保留原数据库；旧版兼容转换仅在内存副本。
 
-事件筛选作用于当前页；状态变化和源操作是不同证据。High 不是安全删除授权；
-Unknown 不是危险判定；记录结束不代表覆盖完整。报告包含本地路径与记录内容，
-由你决定保存位置，不会上传。报告仅包含本条记录的当前事件页、所选事件解释与
-状态变化；当前页筛选不会搜索全库。版本、脚本、界面和核心身份见 BUILD.json；
+事件搜索按普通文本包含匹配，ASCII 英文字母不区分大小写，其他字符精确匹配；
+中文、空格、% 和 _ 按字面处理。搜索仅限当前会话，不混入同名记录。
+状态变化和源操作是不同证据。High 不是安全删除授权；Unknown 不是危险判定；
+记录结束不代表覆盖完整。报告包含本地路径与记录内容，由你决定保存位置，不会上传。
+普通报告仅包含本条记录的当前未筛选事件页、所选事件解释与状态变化。
+搜索结果完整导出留待 Beta.6；搜索期间提示“清除搜索后可导出普通浏览页”。
+版本、脚本、界面和核心身份见 BUILD.json；
 必需检查的实际结果见 VALIDATION.json。构建未签名，属于有限范围的 Beta。
 整个 Program Files 目录曾有用户反馈停在整理阶段；缺少原始数据库和错误日志，
 根因尚未确认。请保留未完成记录和诊断，不能将已保存证据当作完整结束。
@@ -575,6 +589,48 @@ def overview_verification_matches(value, build, manifest_sha):
         and all(type(value.get(key)) is int and value[key] == 0 for key in ("failed", "skipped", "not_run")))
 
 
+def search_verification_matches(value, build, manifest_sha):
+    """Require the frozen executable's complete-session search and identity evidence."""
+    if not isinstance(value, dict):
+        return False
+    checks, planned = value.get("checks"), value.get("planned_checks")
+    if not (isinstance(checks, list) and all(isinstance(check, dict) for check in checks)
+            and isinstance(planned, list) and all(isinstance(name, str) for name in planned)):
+        return False
+    names = [check.get("name") for check in checks]
+    if (not all(isinstance(name, str) for name in names)
+            or len(names) != len(set(names)) or set(names) != SEARCH_REQUIRED_CHECKS
+            or len(planned) != len(set(planned)) or set(planned) != SEARCH_REQUIRED_CHECKS):
+        return False
+    expected = {entry["path"]: entry["sha256"] for entry in build["files"]}
+    return (
+        type(value.get("schema_version")) is int and value["schema_version"] == 1
+        and value.get("protocol_revision") == SEARCH_VERIFICATION
+        and value.get("source_sha") == build["source_sha"]
+        and value.get("native_windows") is True and value.get("synthetic") is True
+        and value.get("real_etw_executed") is False
+        and value.get("completed") is True and value.get("accepted") is True
+        and value.get("actual_packaged_executable") is True
+        and value.get("real_user_records_accessed") is False
+        and type(value.get("actual_device_dpi")) is int and value["actual_device_dpi"] > 0
+        and isinstance(value.get("windows_version"), str) and bool(value["windows_version"].strip())
+        and type(value.get("retries")) is int and value["retries"] == 0
+        and value.get("package_manifest_sha256") == manifest_sha
+        and value.get("viewer_assembly_sha256") == expected["Contain.Viewer.dll"]
+        and value.get("viewer_launcher_sha256") == expected["Contain.Viewer.exe"]
+        and value.get("contain_sha256") == expected["contain.exe"]
+        and all(type(value.get(key)) is int and value[key] == expected_count
+                for key, expected_count in (("total_matches", 53), ("first_page_count", 50), ("second_page_count", 3)))
+        and value.get("expected_ids") == [f"synthetic-search-event-{index:03d}" for index in range(70, 123)]
+        and value.get("first_page_ids") == value["expected_ids"][:50]
+        and value.get("second_page_ids") == value["expected_ids"][50:]
+        and all(value.get(key) == "synthetic-search-event-120"
+                for key in ("selected_event_id", "explain_event_id", "copied_event_id"))
+        and all(check.get("status") == "passed" for check in checks)
+        and type(value.get("passed")) is int and value["passed"] == len(SEARCH_REQUIRED_CHECKS)
+        and all(type(value.get(key)) is int and value[key] == 0 for key in ("failed", "skipped", "not_run")))
+
+
 def finalize(args):
     package = args.package.resolve()
     build = verify_package(package)
@@ -591,6 +647,8 @@ def finalize(args):
     personal = read(personal_path) if personal_path and personal_path.is_file() else {}
     overview_path = getattr(args, "overview_verification", None)
     overview = read(overview_path) if overview_path and overview_path.is_file() else {}
+    search_path = getattr(args, "search_verification", None)
+    search = read(search_path) if search_path and search_path.is_file() else {}
     install_requested = build.get("controlled_fixture") is not None or install_path is not None
     checks = {
         "frozen_package_unchanged": True,
@@ -605,6 +663,8 @@ def finalize(args):
         # Beta 4's result page is mandatory even if the optional diagnostic flag
         # is omitted. A passed older UI suite cannot stand in for these checks.
         "native_persisted_overview_and_navigation": overview_verification_matches(overview, build, manifest_sha),
+        # A successful older viewer suite cannot substitute for Beta 5 search.
+        "native_session_event_search": search_verification_matches(search, build, manifest_sha),
     }
     if install_requested:
         checks["native_gui_install_etw_and_exact_result"] = install_verification_matches(installation, build, manifest_sha)
@@ -636,6 +696,8 @@ def finalize(args):
         native_progress_verification=progress,
         native_personal_records_verification=personal,
         native_overview_verification=overview,
+        native_search_verification=search,
+        search_verification_summary_sha256=sha(search_path) if search_path and search_path.is_file() else None,
         overview_verification_summary_sha256=sha(overview_path) if overview_path and overview_path.is_file() else None,
         personal_records_verification_summary_sha256=sha(personal_path) if personal_path and personal_path.is_file() else None,
         progress_verification_summary_sha256=sha(progress_path) if progress_path and progress_path.is_file() else None,
@@ -690,6 +752,8 @@ def main():
         help="Require the isolated personal-library and actual packaged EXE cold-restart checks")
     finish.add_argument("--overview-verification", type=Path,
         help="Require persisted overview outcomes, exact current-session navigation and cold restart")
+    finish.add_argument("--search-verification", type=Path,
+        help="Require current-session cross-page search and original event identity in the actual packaged EXE")
     finish.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
