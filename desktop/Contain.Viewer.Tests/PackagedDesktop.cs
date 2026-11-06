@@ -47,6 +47,27 @@ internal sealed class PackagedDesktop : IDisposable
         return bounds.Width > 0 && bounds.Height > 0 && bounds.Left >= window.Left && bounds.Top >= window.Top
             && bounds.Right <= window.Right && bounds.Bottom <= window.Bottom;
     });
+    // UIA IsOffscreen and the outer-window rectangle alone can miss a child
+    // clipped by a scrolled TabPage. Check the full native control rectangle
+    // against every ancestor's client viewport, including panels and tabs.
+    internal Task<bool> FullyVisibleAsync(string id) => Ui(() =>
+    {
+        var control = Required(id);
+        var window = new IntPtr(control.Current.NativeWindowHandle);
+        if (control.Current.IsOffscreen || window == IntPtr.Zero || !GetWindowRect(window, out var bounds)
+            || bounds.Right <= bounds.Left || bounds.Bottom <= bounds.Top) return false;
+        process.Refresh();
+        for (var parent = GetParent(window); parent != IntPtr.Zero; parent = GetParent(parent))
+        {
+            if (!GetClientRect(parent, out var client)) return false;
+            var origin = new NativePoint();
+            if (!ClientToScreen(parent, ref origin)) return false;
+            if (bounds.Left < origin.X || bounds.Top < origin.Y
+                || bounds.Right > origin.X + client.Right || bounds.Bottom > origin.Y + client.Bottom) return false;
+            if (parent == process.MainWindowHandle) return true;
+        }
+        return false;
+    });
     internal Task ResizeAsync(int width, int height) => Ui(() =>
     {
         process.Refresh();
@@ -337,6 +358,9 @@ internal sealed class PackagedDesktop : IDisposable
 
     [StructLayout(LayoutKind.Sequential)] private struct WindowBounds { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] private struct NativePoint { public int X, Y; }
+    [DllImport("user32.dll")] private static extern IntPtr GetParent(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr window, out WindowBounds bounds);
+    [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr window, ref NativePoint point);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out WindowBounds bounds);
     [DllImport("user32.dll")] private static extern bool PrintWindow(IntPtr window, IntPtr dc, uint flags);
     [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);

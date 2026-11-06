@@ -200,32 +200,41 @@ public sealed class ViewerForm : Form
         changeLayout.Controls.Add(Pager(_previousChanges, _changesPage, _nextChanges), 0, 4);
         AddScrollableContent(changeTab, changeLayout);
         _tabs.TabPages.Add(changeTab);
-        var eventsTab = new TabPage("事件与依据") { Name = "EventsTab", BackColor = Color.White, Padding = new Padding(12), AutoScroll = true };
-        var eventLayout = Rows(0, 0, -45, 0, 0, -55);
+        var eventsTab = new TabPage("事件与依据") { Name = "EventsTab", BackColor = Color.White, Padding = new Padding(12) };
+        // Keep the query and its scope outside the scrollable results. Native
+        // focus on a result or Copy ID may scroll its containing viewport; it
+        // must not move the active query and Clear action under the tab header.
+        var eventTabLayout = Rows(0, 0, -100);
+        eventTabLayout.Name = "EventTabLayout";
+        eventTabLayout.Margin = Padding.Empty;
+        eventsTab.Controls.Add(eventTabLayout);
+        var eventViewport = new Panel { Name = "EventResultsViewport", Dock = DockStyle.Fill, AutoScroll = true, Margin = Padding.Empty };
+        eventTabLayout.Controls.Add(eventViewport, 0, 2);
+        var eventLayout = Rows(-45, 0, 0, -55);
         eventLayout.Name = "EventsLayout";
-        eventLayout.MinimumSize = new Size(0, 400);
+        eventLayout.MinimumSize = new Size(0, 300);
         var searchTools = new TableLayoutPanel { Name = "EventSearchTools", Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
         searchTools.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         searchTools.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         searchTools.Controls.Add(_eventFilter, 0, 0);
         searchTools.Controls.Add(_clearEventSearch, 1, 0);
-        eventLayout.Controls.Add(searchTools, 0, 0);
-        eventLayout.Controls.Add(_eventsScope, 0, 1);
+        eventTabLayout.Controls.Add(searchTools, 0, 0);
+        eventTabLayout.Controls.Add(_eventsScope, 0, 1);
         var eventTime = Column("Time", "观测时间", 175);
         eventTime.CellTemplate = new IdentityTextBoxCell();
         _events.Columns.Add(eventTime);
         _events.Columns.Add(Column("Operation", "操作", 145));
         _events.Columns.Add(Column("Resource", "记录名称 / 资源", 250));
         _events.Columns.Add(Column("Confidence", "应用关联", 90));
-        eventLayout.Controls.Add(_events, 0, 2);
-        eventLayout.Controls.Add(Pager(_previousEvents, _eventsPage, _nextEvents), 0, 3);
+        eventLayout.Controls.Add(_events, 0, 0);
+        eventLayout.Controls.Add(Pager(_previousEvents, _eventsPage, _nextEvents), 0, 1);
         var detailTools = new FlowLayoutPanel { Name = "EventDetailTools", Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, Margin = Padding.Empty };
         _copyEvent.Dock = DockStyle.None;
         _copyEvent.Margin = new Padding(0, 3, 12, 3);
         _rawToggle.Margin = new Padding(0, 8, 0, 3);
         detailTools.Controls.Add(_copyEvent);
         detailTools.Controls.Add(_rawToggle);
-        eventLayout.Controls.Add(detailTools, 0, 4);
+        eventLayout.Controls.Add(detailTools, 0, 2);
         _detailHost.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         _detailHost.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         _detailHost.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
@@ -233,11 +242,11 @@ public sealed class ViewerForm : Form
         _detailHost.Controls.Add(_eventDetails, 0, 0);
         _detailHost.Controls.Add(_rawDetails, 0, 1);
         ShowEventDetails(false);
-        eventLayout.Controls.Add(_detailHost, 0, 5);
+        eventLayout.Controls.Add(_detailHost, 0, 3);
         // Fixed logical minima do not account for wrapped native grid headers or
         // preferred-height action rows at a real monitor DPI. Reserve enough of
         // the 45% grid row for a complete header and readable data row; let the
-        // existing tab viewport scroll the resulting content extent.
+        // results viewport scroll the resulting content extent.
         var sizingEvents = false;
         eventLayout.Layout += (_, _) =>
         {
@@ -246,8 +255,8 @@ public sealed class ViewerForm : Form
             try
             {
                 var heights = eventLayout.GetRowHeights();
-                if (heights.Length != 6) return;
-                var automaticRows = heights[0] + heights[1] + heights[3] + heights[4];
+                if (heights.Length != 4) return;
+                var automaticRows = heights[1] + heights[2];
                 var gridRow = _events.ColumnHeadersHeight + Math.Max(_events.Font.Height * 2,
                     _events.RowTemplate.Height + _events.DefaultCellStyle.Padding.Vertical) + _events.Margin.Vertical;
                 var explanation = _eventDetails.Font.Height * 3 + _detailHost.Margin.Vertical;
@@ -259,7 +268,7 @@ public sealed class ViewerForm : Form
             finally { sizingEvents = false; }
         };
         _events.ColumnHeadersHeightChanged += (_, _) => eventLayout.PerformLayout();
-        AddScrollableContent(eventsTab, eventLayout);
+        AddScrollableContent(eventViewport, eventLayout);
         _tabs.TabPages.Add(eventsTab);
         _status.AutoEllipsis = true;
         _status.Padding = new Padding(4, 6, 4, 0);

@@ -167,6 +167,18 @@ internal sealed class SearchVerification(Options options, bool priorChecksPassed
                 await desktop.InvokeAsync("CopyEventId"); Require(Clipboard.GetText() == Selected, "actual packaged clipboard ID equals explained row");
                 Require((await desktop.TextAsync("EventDetails")).Contains(Selected, StringComparison.Ordinal), "actual packaged explanation same ID");
                 screenshots.Add(await desktop.ScreenshotAsync(Path.Combine(options.Output, "screenshots"), "search-packaged-second-page.png"));
+                foreach (var id in new[] { "EventFilter", "ClearEventSearch" })
+                    Require(await desktop.FullyVisibleAsync(id), "search header remains entirely inside all native client viewports after second-page selection and copy: " + id);
+                await desktop.ResizeAsync(1120, 780);
+                await PackagedDesktop.WaitAsync(() => desktop.FullyVisibleAsync("EventFilter"), TimeSpan.FromSeconds(10));
+                screenshots.Add(await desktop.ScreenshotAsync(Path.Combine(options.Output, "screenshots"), "search-packaged-second-page-resized.png"));
+                Require(await desktop.FullyVisibleAsync("ClearEventSearch"), "clear-search action remains fully visible after actual resize");
+                await desktop.SetTextAsync("EventFilter", "中文文件");
+                await PackagedDesktop.WaitAsync(async () => await desktop.TextAsync("EventsPage") == "共 1 条，显示第 1–1 条", TimeSpan.FromSeconds(30));
+                Require((await PackagedIds(desktop)).SequenceEqual(new[] { "synthetic-search-event-080" }), "visible header can change query after reading a second-page explanation");
+                await desktop.InvokeAsync("ClearEventSearch");
+                await PackagedDesktop.WaitAsync(async () => (await desktop.TextAsync("EventsPage")).Contains("偏移 0", StringComparison.Ordinal), TimeSpan.FromSeconds(30));
+                Require(await desktop.FullyVisibleAsync("EventFilter"), "search input stays fully visible after actual clear action");
                 await desktop.CloseAsync(); Require(desktop.ExitCode == 0, "actual EXE closes normally");
             });
             await Check(Plan[8], () => { Require(hashes.Count >= 4, "current and legacy source and copies fingerprinted"); foreach (var item in hashes) Require(Hash(item.Key) == item.Value, "queried database unchanged"); return Task.CompletedTask; });
