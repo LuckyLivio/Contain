@@ -18,7 +18,7 @@ public sealed class InstallDialogs : IInstallDialogs
 
     public string? ChooseWatchRoot(IWin32Window owner)
     {
-        using var dialog = new FolderBrowserDialog { Description = "选择已存在的观察目录（不会创建软件目标目录）", UseDescriptionForTitle = true, ShowNewFolderButton = false };
+        using var dialog = new FolderBrowserDialog { Description = "要观察哪个已有文件夹？", UseDescriptionForTitle = true, ShowNewFolderButton = false };
         return dialog.ShowDialog(owner) == DialogResult.OK ? dialog.SelectedPath : null;
     }
 

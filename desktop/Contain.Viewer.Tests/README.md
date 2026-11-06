@@ -1,5 +1,45 @@
 # Native desktop verification
 
+Beta 7 adds five mandatory configuration checks in
+`FirstUseConfigurationChecks.cs`, with `first-use-configuration-summary.json`.
+They exercise the frozen production forms using isolated missing/invalid scopes,
+personal-library conflicts, synthetic permission failures and advanced settings.
+The empty-library/no-implicit-creation checks are separate from the live capture.
+Native helper regressions distinguish a label's displayed HWND text from its
+stable accessibility name and verify real enabled/disabled click delivery.
+Disabled controls use child hit testing that includes disabled children while
+still rejecting covering siblings; enabled-control obstruction checks remain
+strict. These helper checks run before any live capture.
+
+The existing optional one-capture `InstallVerification` plan now starts from the
+actual packaged EXE's main **新建安装记录** button. Real keyboard input operates
+the initial EXE picker (including cancel) and the existing-folder picker. Cancel
+must preserve the exact previously selected record and event explanation. Missing
+scope disables Start; invalidated scope and a personal-database scope conflict
+must fail before session or installer creation and allow folder correction.
+The ordinary flow opens no advanced settings, changes no database path and never
+presses **检查环境**. After the explicit Start, duplicate clicks and the main task
+entry cannot start another task. The persisted scope is compared to the exact
+native-picker path, and the suggested EXE filename must be the saved name.
+
+This live scenario seeds three synthetic historical controls to retain the old
+same-name/exact-UUID association checks; `first_use.preexisting_session_count`
+states that distinction from an empty first-ever library. The one controlled
+fixture obtains its separately prepared installation target from the guarded
+fixture-only `CONTAIN_FIXTURE_ROOT`; no installer parameters are entered through
+advanced settings. Process/file ETW must be active, registry observation must
+remain `not_requested`, and the existing independent High file-event oracle,
+explain, export and cold restart checks remain mandatory.
+
+`install-summary.json.first_use` binds these actions, interaction counts, scope
+hashes, exact session and native Windows/DPI to the frozen package.
+`install-progress.json` retains only safe stage names, error types and counts.
+`install-first-use-configured.png` and `install-first-use-missing-folder.png`
+capture the actual owned InstallForm window, resolved from its control HWND;
+they do not accidentally capture its main owner. Real DPI is recorded separately
+from the existing 150%/200% simulated layout checks. No extra successful capture
+or retry is introduced for layout or failure-path verification.
+
 Beta 6 adds eight required search-export checks in `SearchExportVerification.cs`.
 The actual packaged EXE searches the same 53-match fixture, selects event 120
 on page two, invokes its export action and operates the native SaveFileDialog.

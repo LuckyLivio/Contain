@@ -1,3 +1,4 @@
+mod root_input;
 mod truth;
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
@@ -27,8 +28,11 @@ enum Role {
 
 #[derive(Parser)]
 struct Args {
-    #[arg(long)]
-    root: PathBuf,
+    #[arg(
+        long,
+        help = "Existing fixture root; otherwise use guarded CONTAIN_FIXTURE_ROOT"
+    )]
+    root: Option<PathBuf>,
     #[arg(long, value_enum, default_value = "parent")]
     role: Role,
     #[arg(long)]
@@ -65,6 +69,25 @@ fn checked_root(path: &Path) -> Result<(PathBuf, String)> {
     Ok((root, name))
 }
 
+fn configured_root(
+    explicit: Option<&Path>,
+    configured: Option<&std::ffi::OsStr>,
+    cleanup: bool,
+) -> Result<(PathBuf, String)> {
+    let (requested, from_environment) =
+        root_input::select_root(explicit, configured, cleanup).map_err(anyhow::Error::msg)?;
+    let (root, name) = checked_root(requested)?;
+    if from_environment {
+        // The zero-argument desktop fixture is opt-in only. Validate its marker
+        // before opening a truth journal, registry key or writable fixture file.
+        anyhow::ensure!(
+            fs::read(root.join(".contain-demo-marker"))? == b"Contain test fixture",
+            "environment fixture root marker mismatch"
+        );
+    }
+    Ok((root, name))
+}
+
 fn ensure_no_reparse_tree(root: &Path) -> Result<()> {
     for entry in fs::read_dir(root)? {
         let entry = entry?;
@@ -85,7 +108,8 @@ fn hold_for_observation() {
 
 fn run() -> Result<()> {
     let args = Args::parse();
-    let (root, name) = checked_root(&args.root)?;
+    let configured = std::env::var_os("CONTAIN_FIXTURE_ROOT");
+    let (root, name) = configured_root(args.root.as_deref(), configured.as_deref(), args.cleanup)?;
     let key_path = format!("Software\\Contain\\Demo\\{name}");
     if args.cleanup {
         if fs::read(root.join(".contain-demo-marker"))? != b"Contain test fixture" {
@@ -302,6 +326,47 @@ mod tests {
     fn fixture_rejects_outside_temp_and_traversal() {
         assert!(checked_root(&std::env::current_dir().unwrap()).is_err());
         assert!(checked_root(&std::env::temp_dir().join("..")).is_err());
+    }
+
+    #[test]
+    fn zero_argument_fixture_accepts_only_an_existing_marked_guarded_root() {
+        let args = Args::try_parse_from(["fixture"]).unwrap();
+        assert!(args.root.is_none());
+        assert!(configured_root(None, None, false).is_err());
+        assert!(configured_root(None, Some(std::env::temp_dir().as_os_str()), false).is_err());
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "contain-demo-root-input-{}-{unique}",
+            std::process::id()
+        ));
+        assert!(configured_root(None, Some(path.as_os_str()), false).is_err());
+        assert!(
+            !path.exists(),
+            "selecting a fixture root must not create it"
+        );
+        fs::create_dir(&path).unwrap();
+        struct OwnedRoot(PathBuf);
+        impl Drop for OwnedRoot {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.0);
+            }
+        }
+        let _owned = OwnedRoot(path.clone());
+        assert!(configured_root(None, Some(path.as_os_str()), false).is_err());
+        fs::write(path.join(".contain-demo-marker"), b"unmarked input").unwrap();
+        assert!(configured_root(None, Some(path.as_os_str()), false).is_err());
+        fs::write(path.join(".contain-demo-marker"), b"Contain test fixture").unwrap();
+        assert_eq!(
+            configured_root(None, Some(path.as_os_str()), false)
+                .unwrap()
+                .0,
+            path.canonicalize().unwrap()
+        );
+        assert!(configured_root(None, Some(path.as_os_str()), true).is_err());
+        assert_eq!(fs::read_dir(&path).unwrap().count(), 1);
     }
 
     #[test]

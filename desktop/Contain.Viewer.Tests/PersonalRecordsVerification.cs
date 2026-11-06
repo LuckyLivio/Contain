@@ -111,7 +111,7 @@ internal sealed class PersonalRecordsVerification(Options options, bool viewerCh
             var root = TestRecordIsolation.Create("external-read-only"); using var isolated = TestRecordIsolation.Use(root);
             var external = Path.Combine(root, "external.db"); File.Copy(Path.Combine(options.Fixtures, "finished.db"), external, false);
             var before = Hash(external); var dialogs = new TestDialogs { Database = external };
-            using var viewer = new ViewerForm(client, dialogs); viewer.Show(owner); await Idle(viewer);
+            using var viewer = new ViewerForm(client, dialogs, installDialogs: new ConfigurationTestDialogs { Installer = client.ExecutablePath }); viewer.Show(owner); await Idle(viewer);
             C<Button>(viewer, "OpenDatabase").PerformClick(); await Idle(viewer);
             Require(C<DataGridView>(viewer, "Sessions").Rows.Count == 1, "explicit external database still opens read-only");
             C<Button>(viewer, "NewInstall").PerformClick();

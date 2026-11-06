@@ -23,10 +23,20 @@ internal static class InstallProgressChecks
         if (!args.Contains("install") || !args.Contains("--status-json")) return null;
         var index = Array.IndexOf(args, "--db");
         if (index < 0 || index + 1 >= args.Length) return 93;
-        return WriteScenario(args[index + 1], scenario).GetAwaiter().GetResult();
+        if (scenario == "first_use_permissions")
+        {
+            var counter = Environment.GetEnvironmentVariable("CONTAIN_SYNTHETIC_FIRST_USE_INVOCATIONS")
+                ?? throw new InvalidDataException("First-use synthetic child needs its isolated invocation counter.");
+            var full = Path.GetFullPath(counter);
+            var prefix = Path.TrimEndingDirectorySeparator(TestRecordIsolation.Root) + Path.DirectorySeparatorChar;
+            if (!full.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Synthetic invocation counter must remain inside the marked test root.");
+            File.AppendAllText(full, JsonSerializer.Serialize(args) + "\n");
+        }
+        return WriteScenario(args[index + 1], scenario, args.Contains("--no-etw")).GetAwaiter().GetResult();
     }
 
-    private static async Task<int> WriteScenario(string database, string scenario)
+    private static async Task<int> WriteScenario(string database, string scenario, bool snapshotOnly)
     {
         Console.OutputEncoding = new UTF8Encoding(false);
         var id = Guid.NewGuid().ToString();
@@ -38,6 +48,12 @@ internal static class InstallProgressChecks
             var stopped = stage is "finalizing" or "finished" or "failed";
             var raw = Document(database, id, sequence, stage, started, exited, stopped,
                 stage != "preparing", step, (ulong)clock.ElapsedMilliseconds, count, error);
+            if (scenario == "first_use_permissions" && !snapshotOnly)
+            {
+                var node = JsonNode.Parse(raw)!;
+                node["data"]!["etw_requested"] = true;
+                raw = node.ToJsonString();
+            }
             if (scenario == "missing_measurement")
             {
                 var node = JsonNode.Parse(raw)!.AsObject();
@@ -49,12 +65,34 @@ internal static class InstallProgressChecks
         }
         Emit(1, "preparing", "database_open");
         await Task.Delay(60);
+        if (scenario == "first_use_permissions" && !snapshotOnly)
+        {
+            // Materialize a prior synthetic evidence file only after the real
+            // bridge's Start/preflight boundary. This is deliberately not a
+            // captured or newly saved session; it tests correction when a
+            // failed collector leaves an existing database path available.
+            var previousEvidence = Environment.GetEnvironmentVariable("CONTAIN_SYNTHETIC_FIRST_USE_EVIDENCE")
+                ?? throw new InvalidDataException("First-use permission case needs its isolated prior-evidence fixture.");
+            var prefix = Path.TrimEndingDirectorySeparator(TestRecordIsolation.Root) + Path.DirectorySeparatorChar;
+            var source = Path.GetFullPath(previousEvidence); var target = Path.GetFullPath(database);
+            if (!source.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || !target.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                || (File.GetAttributes(source) & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidDataException("Synthetic prior-evidence copy must remain inside the marked test root.");
+            File.Copy(source, target, overwrite: false);
+            var denied = JsonNode.Parse(Document(database, id, 2, "failed", false, false, true, false, "provider_start",
+                (ulong)clock.ElapsedMilliseconds, null, "Required ETW providers are unavailable; installer was not launched. Provider startup warnings: [ETW unavailable: IoError(Os { code: 5, kind: PermissionDenied, message: Access is denied. })]"))!;
+            denied["data"]!["etw_requested"] = true;
+            denied["data"]!["etw_process"] = "unavailable";
+            denied["data"]!["etw_file"] = "unavailable";
+            denied["data"]!["etw_registry"] = "not_requested";
+            Console.WriteLine(denied.ToJsonString()); Console.Out.Flush(); return 7;
+        }
         if (scenario == "prelaunch_missing") return 0;
         if (scenario == "prelaunch_malformed") { Console.WriteLine("SYNTHETIC malformed status"); Console.Out.Flush(); return 2; }
         if (scenario == "prelaunch_trusted_failure")
         {
             Console.WriteLine(Document(database, id, 2, "failed", false, false, false, false, "database_open",
-                (ulong)clock.ElapsedMilliseconds, null, "SYNTHETIC trusted prelaunch failure")); Console.Out.Flush(); return 7;
+                (ulong)clock.ElapsedMilliseconds, null, "SYNTHETIC 数据库位置不可写：trusted prelaunch failure")); Console.Out.Flush(); return 7;
         }
         Emit(2, "capturing", "installer_running");
         await Task.Delay(60);

@@ -30,7 +30,6 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
     private readonly TestDialogs viewerDialogs = new();
     private readonly CoreClient client = new(Path.Combine(options.Package, "contain.exe"));
     private ViewerForm? viewer;
-    private InstallForm? install;
     private InstallStatus? finalStatus;
     private string? root;
     private string? truthRoot;
@@ -46,7 +45,6 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
     private bool independentTruthVerified;
     private bool providersActive;
     private bool configured;
-    private bool nativePickerSelected;
     private string recordName = "";
     private readonly Dictionary<string, JsonElement> earlierSummaries = [];
     private int assertions;
@@ -63,9 +61,23 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
     private string? restartedSession;
     private string? restartedEvent;
     private string? initialOutcomeText;
+    private readonly List<ImageResult> firstUseScreenshots = [];
+    private uint? firstUseDpi;
+    private bool cancelPreservedSelection, missingScopeBlocked, configurationCreatedNoSession;
+    private bool invalidScopeBlocked, databaseConflictBlocked, correctionsPreservedConfiguration;
+    private bool keyboardFlowVerified, defaultNameMatchesExe, scopeExactMatch, activeEntryPreserved, duplicateCreatedOne;
+    private string? selectedScopeHash, persistedScopeHash;
+    private int savedScopeCount;
+    private readonly Stopwatch progressClock = Stopwatch.StartNew();
+    private readonly List<object> progressEntries = [];
+    private string currentPhase = "setup";
+    private string? previousFixtureRoot;
+    private string? previousFixtureTruth;
 
     public async Task<bool> RunAsync()
     {
+        previousFixtureRoot = Environment.GetEnvironmentVariable("CONTAIN_FIXTURE_ROOT");
+        previousFixtureTruth = Environment.GetEnvironmentVariable("CONTAIN_FIXTURE_TRUTH");
         try
         {
             await Check(Plan[0], TestProtocol);
@@ -79,21 +91,15 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         catch (Exception error) { privateLog.AppendLine(error.ToString()); }
         finally
         {
-            if (install is { IsActive: true })
-            {
-                // Never turn a harness timeout into an installer tree kill.
-                // Let the owned collector finish, keeping the same evidence and failure result.
-                try { await install.PendingOperation.WaitAsync(TimeSpan.FromMinutes(2)); }
-                catch (Exception error) { privateLog.AppendLine("Active task remained unfinished: " + error); }
-            }
-            if (install is not { IsActive: true }) { install?.Close(); viewer?.Close(); viewer?.Dispose(); }
+            viewer?.Close(); viewer?.Dispose();
             if (actualDesktop is not null)
             {
                 try { if (!actualDesktop.HasExited && session is not null) await actualDesktop.CloseAsync(); }
                 catch (Exception error) { privateLog.AppendLine("Actual desktop retained: " + error); }
                 actualDesktop.Dispose();
             }
-            Environment.SetEnvironmentVariable("CONTAIN_FIXTURE_TRUTH", null);
+            Environment.SetEnvironmentVariable("CONTAIN_FIXTURE_TRUTH", previousFixtureTruth);
+            Environment.SetEnvironmentVariable("CONTAIN_FIXTURE_ROOT", previousFixtureRoot);
             WriteSummary();
             liveIsolation?.Dispose();
         }
@@ -176,6 +182,7 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
 
     private async Task Configure()
     {
+        Phase("configure_isolated_fixture");
         Require(File.Exists(options.InstallFixture), "controlled installer exists");
         Require(Hash(options.InstallFixture!) == Hash(Path.Combine(options.Package, "contain-test-installer.exe")), "exact frozen installer fixture");
         var name = "contain-demo-desktop-" + options.Source[..12] + "-" + Guid.NewGuid().ToString("N")[..8];
@@ -185,89 +192,147 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         liveIsolation = TestRecordIsolation.Use(personalRoot);
         database = PersonalRecords.ForCurrentUser().DatabasePath;
         Require(!Directory.Exists(root) && !Directory.Exists(truthRoot) && !File.Exists(database), "new disposable scope and database");
-        Directory.CreateDirectory(root);
-        Directory.CreateDirectory(truthRoot);
-        Directory.CreateDirectory(Path.GetDirectoryName(database)!); // Explicit synthetic history seeding only.
+        Directory.CreateDirectory(root); Directory.CreateDirectory(truthRoot);
+        Directory.CreateDirectory(Path.GetDirectoryName(database)!); // Explicit synthetic historical controls only.
         await File.WriteAllTextAsync(Path.Combine(truthRoot, ".contain-demo-marker"), "Contain test fixture");
         await File.WriteAllTextAsync(Path.Combine(root, ".contain-demo-marker"), "Contain test fixture");
         foreach (var file in new[] { "settings.txt", "rename-me.txt", "delete-me.txt" })
             await File.WriteAllTextAsync(Path.Combine(root, file), "baseline");
         File.Copy(Path.Combine(options.Package, "samples", "viewer-demo.db"), database, false);
+        recordName = Path.GetFileNameWithoutExtension(options.InstallFixture!);
+        Require(recordName == "contain-test-installer", "fixed native fixture filename oracle");
+        RenameSyntheticHistory(database);
         var earlier = await client.ListAsync(database);
         foreach (var item in earlier.Data.EnumerateArray())
         {
             var id = Text(item, "id");
             earlierSummaries.Add(id, (await client.SummaryAsync(database, id)).Data.Clone());
-            recordName = Text(item, "name");
         }
-        Require(earlierSummaries.Count == 3 && recordName.Length > 0, "old and same-name records seeded before this launch");
+        Require(earlierSummaries.Count == 3, "old and same-name records seeded before this launch");
         await VerifyOfflineFailure();
+        previousFixtureTruth = Environment.GetEnvironmentVariable("CONTAIN_FIXTURE_TRUTH");
+        previousFixtureRoot = Environment.GetEnvironmentVariable("CONTAIN_FIXTURE_ROOT");
         Environment.SetEnvironmentVariable("CONTAIN_FIXTURE_TRUTH", truthRoot);
-        viewer = new ViewerForm(client, viewerDialogs);
-        viewer.Show();
-        await WaitIdle(viewer);
-        C<Button>(viewer, "NewInstall").PerformClick();
-        install = viewer.ActiveInstallForm ?? throw new InvalidOperationException("New record entry did not open production form.");
-        Require(!install.IsActive && (await client.ListAsync(database)).Data.GetArrayLength() == earlierSummaries.Count, "new form never launches a capture");
-        Require(!C<CheckBox>(install, "AdvancedToggle").Checked, "advanced options collapsed by default");
-        await TestNativePicker();
-        if (!nativePickerSelected) C<TextBox>(install, "InstallerPath").Text = options.InstallFixture!;
-        C<TextBox>(install, "RecordName").Text = recordName;
-        C<TextBox>(install, "WatchRoot").Text = root;
-        Require(install.Database == database && !C<CheckBox>(install, "CustomDatabaseToggle").Checked,
-            "existing synthetic history never redirects the default save location");
-        C<CheckBox>(install, "AdvancedToggle").Checked = true;
-        C<TextBox>(install, "InstallerArguments").Text = "--root\r\n" + root;
-        C<TextBox>(install, "RegistryKey").Text = "Software\\Contain\\Demo\\" + name;
-        C<CheckBox>(install, "SnapshotOnly").Checked = false;
-        Require(!Directory.EnumerateFiles(truthRoot, "ground-truth-*.jsonl").Any(), "selection and configuration do not start installer");
-        Screenshot(install, "install-new-record.png");
-        // All native capture actions below operate the actual packaged process.
-        // The in-process forms above supply only configuration/picker preflights.
-        install.Close(); install.Dispose(); install = null;
-        viewer.Close(); viewer.Dispose(); viewer = null;
+        Environment.SetEnvironmentVariable("CONTAIN_FIXTURE_ROOT", root);
+        selectedScopeHash = ScopeHash(root);
         initialWorkingDirectory = Path.Combine(personalRoot, "initial-working-directory"); Directory.CreateDirectory(initialWorkingDirectory);
         actualDesktop = new PackagedDesktop(options.Package, initialWorkingDirectory); actualFirstPid = actualDesktop.ProcessId;
+        actualDesktop.ConfigurationProgress = () => Progress("native_dialog");
         await actualDesktop.ReadyAsync();
+        firstUseDpi = await actualDesktop.DeviceDpiAsync();
         initialOutcomeText = await actualDesktop.TextAsync("CaptureOutcome");
-        await actualDesktop.InvokeAsync("NewInstall");
-        await PackagedDesktop.WaitAsync(() => actualDesktop.ExistsAsync("InstallerPath"), TimeSpan.FromSeconds(20));
-        await actualDesktop.SetTextAsync("InstallerPath", options.InstallFixture!);
-        await actualDesktop.SetTextAsync("RecordName", recordName);
-        await actualDesktop.SetTextAsync("WatchRoot", root);
-        await actualDesktop.ToggleAsync("AdvancedToggle", true);
-        await actualDesktop.SetTextAsync("InstallerArguments", "--root\r\n" + root);
-        await actualDesktop.SetTextAsync("RegistryKey", "Software\\Contain\\Demo\\" + name);
-        Require(!await actualDesktop.IsCheckedAsync("CustomDatabaseToggle") && actualDesktop.DatabasePathInteractions == 0,
-            "actual recording is configured without any database-path interaction");
-        Require(!await actualDesktop.IsCheckedAsync("SnapshotOnly"), "actual default recording requests ETW");
-        await actualDesktop.InvokeAsync("CheckEnvironment");
-        await PackagedDesktop.WaitAsync(() => actualDesktop.EnabledAsync("CheckEnvironment"), TimeSpan.FromSeconds(90));
+        // Keep an exact existing event selected while the first native EXE picker
+        // is cancelled. Selection is checked by identity, not its display name.
+        await PersonalRecordsVerification.VerifyExactUi(actualDesktop, "synthetic-interrupted", "synthetic-interrupted-event-2", 0);
+        var originalDatabaseHash = Hash(database);
+        Phase("native_initial_picker_cancel");
+        await actualDesktop.ChooseInstallerAsync(null);
+        await PackagedDesktop.WaitAsync(() => actualDesktop.EnabledAsync("NewInstall"), TimeSpan.FromSeconds(10));
+        Require(!await actualDesktop.ExistsAsync("StartRecording"), "cancelled initial picker returns without a configuration window");
+        Require(await actualDesktop.DescriptionAsync("SessionTitle") == "session:synthetic-interrupted"
+            && await actualDesktop.DescriptionAsync("EventDetails") == "event:synthetic-interrupted-event-2", "cancel preserves exact selected historical record and explanation");
+        Require(Hash(database) == originalDatabaseHash && !Directory.EnumerateFiles(truthRoot, "ground-truth-*.jsonl").Any(), "cancel starts no installer and changes no session");
+        cancelPreservedSelection = true;
+
+        Phase("native_initial_picker_select");
+        await actualDesktop.ChooseInstallerAsync(options.InstallFixture!);
+        await PackagedDesktop.WaitAsync(() => actualDesktop.ExistsAsync("StartRecording"), TimeSpan.FromSeconds(10));
+        Require(await actualDesktop.FocusedAsync("ChooseWatchRoot"), "EXE selection naturally focuses the observation-folder action");
+        firstUseDpi = await actualDesktop.ControlWindowDpiAsync("StartRecording");
+        Require(!await actualDesktop.IsCheckedAsync("AdvancedToggle"), "ordinary configuration starts with advanced settings collapsed");
+        Require((await actualDesktop.NativeVisibleTextAsync("InstallerFileName")).Contains(Path.GetFileName(options.InstallFixture!), StringComparison.Ordinal), "selected EXE filename is visible");
+        await actualDesktop.ToggleAsync("ShowInstallerPath", true);
+        Require(Normalize(await actualDesktop.TextAsync("InstallerPath")) == Normalize(options.InstallFixture!), "native picker selected the exact frozen EXE path");
+        await actualDesktop.ToggleAsync("ShowInstallerPath", false);
+        Require((await actualDesktop.TextAsync("WatchRoot")).Length == 0 && !await actualDesktop.EnabledAsync("StartRecording"), "EXE selection does not infer an observation directory and cannot start");
+        Require((await actualDesktop.TextAsync("WatchRootHint")).Contains("还需选择观察文件夹", StringComparison.Ordinal), "missing observation directory has an actionable explanation");
+        await actualDesktop.ClickTwiceAsync("StartRecording");
+        Require(Hash(database) == originalDatabaseHash && !Directory.EnumerateFiles(truthRoot, "ground-truth-*.jsonl").Any(), "missing directory cannot launch installer or create a session");
+        missingScopeBlocked = true;
+        firstUseScreenshots.Add(await actualDesktop.ScreenshotControlWindowAsync("StartRecording", Path.Combine(options.Output, "screenshots"), "install-first-use-missing-folder.png"));
+
+        Phase("native_observation_picker");
+        await actualDesktop.TabToAsync("ChooseWatchRoot");
+        await actualDesktop.ChooseWatchRootAsync(root);
+        await PackagedDesktop.WaitAsync(() => actualDesktop.EnabledAsync("StartRecording"), TimeSpan.FromSeconds(10));
+        Require(Normalize(await actualDesktop.TextAsync("WatchRoot")) == Normalize(root), "native folder picker preserves the exact user-selected existing scope");
+        Require(await actualDesktop.FullyVisibleAsync("StartRecording"), "ordinary primary action fits its actual native viewport");
+        await actualDesktop.TabToAsync("StartRecording");
+        keyboardFlowVerified = true;
+        firstUseScreenshots.Add(await actualDesktop.ScreenshotControlWindowAsync("StartRecording", Path.Combine(options.Output, "screenshots"), "install-first-use-configured.png"));
+        screenshots.AddRange(firstUseScreenshots);
+
+        // These two adverse starts fail configuration validation before a
+        // collector, installer or session exists. They do not consume a capture.
+        Phase("native_missing_directory_validation");
+        var unavailable = root + "-temporarily-unavailable";
+        Directory.Move(root, unavailable);
+        try
+        {
+            await actualDesktop.KeyboardActivateAsync("StartRecording", focus: false);
+            await PackagedDesktop.WaitAsync(async () => await actualDesktop.ExistsAsync("InstallStatus")
+                    && (await actualDesktop.TextAsync("InstallStatus")).Contains("重新选择", StringComparison.Ordinal)
+                || await actualDesktop.ExistsAsync("WatchRootHint")
+                    && (await actualDesktop.TextAsync("WatchRootHint")).Contains("重新选择", StringComparison.Ordinal), TimeSpan.FromSeconds(10));
+            Require(Hash(database) == originalDatabaseHash && !Directory.EnumerateFiles(truthRoot, "ground-truth-*.jsonl").Any(), "invalidated selected directory fails before installer or session creation");
+            invalidScopeBlocked = true;
+        }
+        finally { Directory.Move(unavailable, root); }
+        await actualDesktop.TabToAsync("ChooseWatchRoot");
+        await actualDesktop.ChooseWatchRootAsync(root);
+        Phase("native_personal_database_scope_conflict");
+        await actualDesktop.TabToAsync("ChooseWatchRoot");
+        await actualDesktop.ChooseWatchRootAsync(Path.GetDirectoryName(database)!);
+        await actualDesktop.TabToAsync("StartRecording");
+        await actualDesktop.KeyboardActivateAsync("StartRecording", focus: false);
+        await PackagedDesktop.WaitAsync(async () => await actualDesktop.ExistsAsync("ChangeSaveLocation")
+            && await actualDesktop.EnabledAsync("ChangeSaveLocation"), TimeSpan.FromSeconds(10));
+        Require(Hash(database) == originalDatabaseHash && !Directory.EnumerateFiles(truthRoot, "ground-truth-*.jsonl").Any(), "personal-library conflict fails before installer or session creation");
+        databaseConflictBlocked = true;
+        await actualDesktop.TabToAsync("ChooseWatchRoot");
+        await actualDesktop.ChooseWatchRootAsync(root);
+        await PackagedDesktop.WaitAsync(() => actualDesktop.EnabledAsync("StartRecording"), TimeSpan.FromSeconds(10));
+        Require(Normalize(await actualDesktop.TextAsync("WatchRoot")) == Normalize(root)
+            && (await actualDesktop.NativeVisibleTextAsync("InstallerFileName")).Contains(Path.GetFileName(options.InstallFixture!), StringComparison.Ordinal), "correcting the folder preserves the selected installer");
+        correctionsPreservedConfiguration = true;
+        Require(actualDesktop.AdvancedInteractions == 0 && actualDesktop.EnvironmentCheckInteractions == 0 && actualDesktop.DatabasePathInteractions == 0,
+            "ordinary flow never opens advanced settings, checks environment or chooses a database");
+        Require(!await actualDesktop.IsCheckedAsync("AdvancedToggle"), "ordinary flow remains collapsed before starting");
         Require((await client.ListAsync(database)).Data.GetArrayLength() == earlierSummaries.Count && !Directory.EnumerateFiles(truthRoot, "ground-truth-*.jsonl").Any(),
-            "actual environment probe never launches the installer or creates a session");
-        screenshots.Add(await actualDesktop.ScreenshotAsync(Path.Combine(options.Output, "screenshots"), "install-packaged-default-configured.png"));
+            "configuration and corrected prelaunch failures create no session and launch no installer");
+        configurationCreatedNoSession = true;
+        interactionChecks.Add(new("native_picker_navigation_and_cancel", "passed"));
         configured = true;
+        Phase("ordinary_configuration_ready");
     }
 
     private async Task Start()
     {
+        Phase("ordinary_start_once");
         Require(actualDesktop is not null, "configured actual packaged process");
-        Require(await actualDesktop!.EnabledAsync("StartRecording"), "actual start action available after explicit check");
-        await actualDesktop.InvokeAsync("StartRecording");
+        Require(await actualDesktop!.EnabledAsync("StartRecording"), "actual start action available without an environment-check detour");
+        await actualDesktop.TabToAsync("StartRecording");
+        await actualDesktop.KeyboardActivateAsync("StartRecording", focus: false);
         guiInitiated = true;
+        await PackagedDesktop.WaitAsync(async () => !await actualDesktop.EnabledAsync("StartRecording"), TimeSpan.FromSeconds(5));
         Require(!await actualDesktop.EnabledAsync("StartRecording"), "actual start disables before asynchronous work");
+        await actualDesktop.ClickTwiceAsync("StartRecording");
         var duplicateRefused = false;
         try { await actualDesktop.InvokeAsync("StartRecording"); }
         catch (System.Windows.Automation.ElementNotEnabledException) { duplicateRefused = true; }
         Require(duplicateRefused || !await actualDesktop.EnabledAsync("StartRecording"), "actual disabled start refuses a second launch");
         await actualDesktop.InvokeAsync("NewInstall");
         Require(!await actualDesktop.EnabledAsync("StartRecording"), "main entry preserves the same active recording");
+        Require(actualDesktop.InstallerPickerSelections == 1 && actualDesktop.InstallerPickerCancels == 1,
+            "active task entry does not reopen the installer picker");
+        activeEntryPreserved = true;
         actualCapture = true;
         defaultSaveWithoutPathInteraction = actualDesktop.DatabasePathInteractions == 0;
     }
 
     private async Task ObserveRuntime()
     {
+        Phase("observe_one_recording");
         Require(actualDesktop is not null, "actual record process exists");
         var clock = Stopwatch.StartNew();
         var closeChecked = false;
@@ -290,7 +355,7 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
                 foreach (var (caption, stage) in new[] { ("准备中", "preparing"), ("记录中", "capturing"), ("整理中", "finalizing") })
                     if (text.Contains(caption, StringComparison.Ordinal) && !observedStages.Contains(stage)) observedStages.Add(stage);
                 if (text.Contains("记录中", StringComparison.Ordinal) && !runningScreenshot)
-                { screenshots.Add(await actualDesktop.ScreenshotAsync(Path.Combine(options.Output, "screenshots"), "install-packaged-recording.png")); runningScreenshot = true; }
+                { screenshots.Add(await actualDesktop.ScreenshotControlWindowAsync("InstallStatus", Path.Combine(options.Output, "screenshots"), "install-packaged-recording.png")); runningScreenshot = true; }
             }
             await Task.Delay(50);
         }
@@ -317,7 +382,8 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
             Text(backend, "etw_registry"), Text(quality, "level"), quality.GetProperty("reasons").EnumerateArray().Select(item => item.GetString()!).ToArray(), null);
         Require(finalStatus.InstallerPid is > 0 && finalStatus.InstallerCreationTime is { Length: > 0 }, "stored managed installer identity retains PID plus exact birth");
         Require(finalStatus.InstallerExitCode == 0, "installer exit remains separate from collector and save outcome");
-        Require(finalStatus.EtwProcess == "active" && finalStatus.EtwFile == "active" && finalStatus.EtwRegistry == "active", "stored providers prove real ETW rather than fallback");
+        Require(finalStatus.EtwProcess == "active" && finalStatus.EtwFile == "active" && finalStatus.EtwRegistry == "not_requested",
+            "ordinary recording activates real process/file ETW without silently requesting registry observation or falling back");
         providersActive = true;
         screenshots.Add(await actualDesktop.ScreenshotAsync(Path.Combine(options.Output, "screenshots"), "install-packaged-result.png"));
         await actualDesktop.CloseAsync(); actualFirstExitCode = actualDesktop.ExitCode;
@@ -338,12 +404,18 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         var summary = await client.SummaryAsync(database!, session!);
         Require(summary.Data.GetProperty("id").GetString() == session && summary.Data.GetProperty("capture_state").GetString() == "finished", "read-only view confirms actual session persisted");
         Require(summary.Data.GetProperty("name").GetString() == recordName, "same name as an older record is preserved literally");
+        defaultNameMatchesExe = recordName == Path.GetFileNameWithoutExtension(options.InstallFixture!);
         var listed = await client.ListAsync(database!);
         Require(listed.Data.GetArrayLength() == earlierSummaries.Count + 1, "duplicate click launched only one additional session");
+        duplicateCreatedOne = true;
         Require(listed.Data.EnumerateArray().Count(item => Text(item, "name") == recordName) >= 2, "same-name records coexist without association by name");
         foreach (var earlier in earlierSummaries)
             Require(JsonView.JsonEqual(earlier.Value, (await client.SummaryAsync(database!, earlier.Key)).Data), "earlier finished and unfinished records remain unchanged");
         Require(summary.Data.GetProperty("watch_roots").GetArrayLength() == 1, "only explicit observation root");
+        savedScopeCount = summary.Data.GetProperty("watch_roots").GetArrayLength();
+        var savedScope = summary.Data.GetProperty("watch_roots")[0].GetString()!;
+        Require(Normalize(savedScope) == Normalize(root!), "saved scope exactly equals the directory selected through the native picker");
+        persistedScopeHash = ScopeHash(savedScope); scopeExactMatch = persistedScopeHash == selectedScopeHash;
         Require(summary.Data.GetProperty("backend").GetProperty("etw_file").GetString() == "active", "stored backend is real ETW");
         Screenshot(viewer!, "install-autoopened-session.png");
     }
@@ -461,7 +533,7 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
             File.Copy(database!, failureDatabase, false);
             var invalidInstaller = Path.Combine(Path.GetTempPath(), "contain-invalid-executable-" + Guid.NewGuid().ToString("N") + ".exe");
             await File.WriteAllTextAsync(invalidInstaller, "SYNTHETIC invalid EXE: the operating system must reject this fixture before launch.");
-            using var failureViewer = new ViewerForm(client, viewerDialogs);
+            using var failureViewer = new ViewerForm(client, viewerDialogs, installDialogs: new FixtureInstallDialogs(invalidInstaller));
             failureViewer.Show();
             var lockedDatabase = database + ".synthetic-readonly.db";
             File.Copy(database!, lockedDatabase, false);
@@ -585,79 +657,22 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
             && time <= ulong.Parse(Text(row, "end_ticks"), CultureInfo.InvariantCulture);
     }
 
-    private async Task TestNativePicker()
-    {
-        if (!Environment.UserInteractive)
-        { interactionChecks.Add(new("native_picker_navigation_and_cancel", "not_run", "interactive_desktop_unavailable")); return; }
-        try
-        {
-            await DrivePicker(cancel: true);
-            Require(C<TextBox>(install!, "InstallerPath").Text.Length == 0, "real native picker cancellation preserves empty selection");
-            await DrivePicker(cancel: false);
-            Require(string.Equals(Path.GetFullPath(C<TextBox>(install!, "InstallerPath").Text), Path.GetFullPath(options.InstallFixture!), StringComparison.OrdinalIgnoreCase), "native address navigation and file selection reach packaged fixture");
-            nativePickerSelected = true;
-            interactionChecks.Add(new("native_picker_navigation_and_cancel", "passed"));
-        }
-        catch (Exception error)
-        {
-            privateLog.AppendLine("Native picker interaction: " + error);
-            interactionChecks.Add(new("native_picker_navigation_and_cancel", "failed", error.GetType().Name, "attempted_native_navigation_failed_manual_handoff_required"));
-        }
-    }
-
-    private async Task DrivePicker(bool cancel)
-    {
-        Exception? workerError = null;
-        var complete = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var thread = new Thread(() =>
-        {
-            IntPtr dialog = IntPtr.Zero;
-            try
-            {
-                var clock = Stopwatch.StartNew();
-                while (clock.Elapsed < TimeSpan.FromSeconds(12))
-                {
-                    EnumWindows((window, _) =>
-                    {
-                        GetWindowThreadProcessId(window, out var process);
-                        var cls = new StringBuilder(80); GetClassName(window, cls, cls.Capacity);
-                        if (process == Environment.ProcessId && cls.ToString() == "#32770" && IsWindowVisible(window)) { dialog = window; return false; }
-                        return true;
-                    }, IntPtr.Zero);
-                    if (dialog != IntPtr.Zero) break;
-                    Thread.Sleep(40);
-                }
-                if (dialog == IntPtr.Zero) throw new TimeoutException("Native file picker did not appear.");
-                if (!SetForegroundWindow(dialog)) throw new InvalidOperationException("Native file picker could not receive keyboard focus.");
-                if (cancel) SendKeys.SendWait("{ESC}");
-                else
-                {
-                    SendKeys.SendWait("^l");
-                    SendKeys.SendWait(KeysLiteral(Path.GetDirectoryName(options.InstallFixture!)!));
-                    SendKeys.SendWait("{ENTER}");
-                    Thread.Sleep(300);
-                    SendKeys.SendWait("%n");
-                    SendKeys.SendWait(KeysLiteral(Path.GetFileName(options.InstallFixture!)));
-                    SendKeys.SendWait("{ENTER}");
-                }
-                var closing = Stopwatch.StartNew();
-                while (IsWindowVisible(dialog) && closing.Elapsed < TimeSpan.FromSeconds(6)) Thread.Sleep(40);
-                if (IsWindowVisible(dialog)) throw new TimeoutException("Native file picker did not accept the keyboard operation.");
-            }
-            catch (Exception error) { workerError = error; if (dialog != IntPtr.Zero) PostMessage(dialog, 0x0010, IntPtr.Zero, IntPtr.Zero); }
-            finally { complete.TrySetResult(); }
-        });
-        thread.SetApartmentState(ApartmentState.STA); thread.IsBackground = true; thread.Start();
-        C<Button>(install!, "ChooseInstaller").PerformClick();
-        await complete.Task.WaitAsync(TimeSpan.FromSeconds(20));
-        if (workerError is not null) throw workerError;
-    }
-
     private async Task Check(string name, Func<Task> action, Func<bool>? ready = null)
     {
         if (ready is not null && !ready()) { checks.Add(new(name, "not_run", "offline_or_runtime_prerequisite_failed")); return; }
-        try { await action(); checks.Add(new(name, "passed")); }
-        catch (Exception error) { checks.Add(new(name, "failed", error.GetType().Name, error is TestFailureException ? error.Message : null)); privateLog.AppendLine(name).AppendLine(error.ToString()); }
+        Phase(name);
+        try { await action(); checks.Add(new(name, "passed")); Progress("passed"); }
+        catch (Exception error) { checks.Add(new(name, "failed", error.GetType().Name, error is TestFailureException ? error.Message : "phase=" + currentPhase)); privateLog.AppendLine(name).AppendLine(error.ToString()); Progress("failed", error.GetType().Name); }
+    }
+    private void Phase(string name) { currentPhase = name; Progress("started"); }
+    private void Progress(string status, string? errorType = null)
+    {
+        progressEntries.Add(new { elapsed_ms = progressClock.ElapsedMilliseconds, phase = currentPhase, status, error_type = errorType,
+            dialog_stage = actualDesktop?.ConfigurationDialogStage, installer_selections = actualDesktop?.InstallerPickerSelections,
+            installer_cancels = actualDesktop?.InstallerPickerCancels, folder_selections = actualDesktop?.WatchPickerSelections });
+        Directory.CreateDirectory(options.Output);
+        File.WriteAllText(Path.Combine(options.Output, "install-progress.json"), JsonSerializer.Serialize(new
+        { schema_version = 1, source_sha = options.Source, entries = progressEntries }, new JsonSerializerOptions { WriteIndented = true }));
     }
     private bool Passed(string name) => checks.Any(check => check.Name == name && check.Status == "passed");
     private void Require(bool value, string reason) { if (!value) throw new TestFailureException(reason); assertions++; }
@@ -677,8 +692,30 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
     private static string Text(JsonElement value, string property) => value.TryGetProperty(property, out var field) ? field.ValueKind == JsonValueKind.String ? field.GetString()! : field.GetRawText() : "";
     private static string Hash(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
     private static string Normalize(string path) => path.Replace('/', '\\').Replace(@"\\?\", "", StringComparison.Ordinal).ToLowerInvariant();
+    private static string ScopeHash(string path) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Normalize(Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)))))).ToLowerInvariant();
+
+    private sealed class FixtureInstallDialogs(string installer) : IInstallDialogs
+    {
+        public string? ChooseInstaller(IWin32Window owner) => installer;
+        public string? ChooseWatchRoot(IWin32Window owner) => null;
+        public string? ChooseSaveDatabase(IWin32Window owner) => null;
+    }
+
+    private static void RenameSyntheticHistory(string database)
+    {
+        var safeRoot = Path.GetFullPath(TestRecordIsolation.Root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!Path.GetFullPath(database).StartsWith(safeRoot, StringComparison.OrdinalIgnoreCase) || !File.Exists(database))
+            throw new InvalidOperationException("Historical controls must remain inside marked test data.");
+        if (sqlite3_open_v2(database, out var connection, 2, IntPtr.Zero) != 0) throw new IOException("Could not open synthetic history controls.");
+        try
+        {
+            var result = sqlite3_exec(connection, "UPDATE applications SET name = 'contain-test-installer'", IntPtr.Zero, IntPtr.Zero, out var error);
+            try { if (result != 0) throw new IOException("Could not prepare same-name synthetic historical controls."); }
+            finally { if (error != IntPtr.Zero) sqlite3_free(error); }
+        }
+        finally { sqlite3_close(connection); }
+    }
     private static string Change(string raw, Action<JsonObject> action) { var node = JsonNode.Parse(raw)!.AsObject(); action(node); return node.ToJsonString(); }
-    private static string KeysLiteral(string value) => string.Concat(value.Select(character => "+^%~(){}[]".Contains(character) ? "{" + character + "}" : character.ToString()));
     private static string StatusDocument(string db, string id, int sequence, string stage, bool started = false, bool exited = false, bool finished = false) => JsonSerializer.Serialize(new
     {
         schema_version = 3, kind = "install_status", data = new
@@ -713,6 +750,28 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
             actual_packaged_executable_capture = actualCapture,
             default_database_used_without_path_interaction = defaultSaveWithoutPathInteraction,
             cold_restart_verified = coldRestartVerified, working_directory_changed = coldRestartVerified,
+            first_use = new
+            {
+                protocol_revision = "contain-first-install-flow-1", actual_packaged_executable = actualCapture,
+                windows_version = Environment.OSVersion.Version.ToString(), actual_device_dpi = firstUseDpi,
+                installer_picker_cancels = actualDesktop?.InstallerPickerCancels ?? 0,
+                installer_picker_selections = actualDesktop?.InstallerPickerSelections ?? 0,
+                observation_picker_selections = actualDesktop?.WatchPickerSelections ?? 0,
+                cancel_preserved_record_selection = cancelPreservedSelection, missing_scope_blocks_start = missingScopeBlocked,
+                configuration_created_no_session = configurationCreatedNoSession,
+                invalid_scope_blocked = invalidScopeBlocked, database_conflict_blocked = databaseConflictBlocked,
+                corrections_preserved_configuration = correctionsPreservedConfiguration,
+                ordinary_input_count = 2, advanced_interactions = actualDesktop?.AdvancedInteractions ?? 0,
+                preexisting_session_count = earlierSummaries.Count,
+                environment_check_interactions = actualDesktop?.EnvironmentCheckInteractions ?? 0,
+                database_path_interactions = actualDesktop?.DatabasePathInteractions ?? 0,
+                keyboard_flow_verified = keyboardFlowVerified, default_name_matches_exe = defaultNameMatchesExe,
+                default_database = defaultSaveWithoutPathInteraction,
+                selected_scope_sha256 = selectedScopeHash, persisted_scope_sha256 = persistedScopeHash,
+                scope_exact_match = scopeExactMatch, saved_scope_count = savedScopeCount, session_id = session,
+                main_entry_kept_active_task = activeEntryPreserved, duplicate_start_created_one_session = duplicateCreatedOne,
+                screenshots = firstUseScreenshots
+            },
             first_process_id = actualFirstPid, restarted_process_id = actualRestartPid, first_process_exit_code = actualFirstExitCode,
             restart_session_id = restartedSession, restart_event_id = restartedEvent, collector_process_id = actualCollectorPid,
             viewer_assembly_sha256 = Hash(Path.Combine(options.Package, "Contain.Viewer.dll")),
@@ -743,11 +802,8 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
         File.WriteAllText(Path.Combine(options.Output, "install-summary.json"), JsonSerializer.Serialize(summary, new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower }) + "\n");
     }
 
-    private delegate bool WindowCallback(IntPtr window, IntPtr parameter);
-    [DllImport("user32.dll")] private static extern bool EnumWindows(WindowCallback callback, IntPtr parameter);
-    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out int processId);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder text, int maximum);
-    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
-    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
-    [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl)] private static extern int sqlite3_open_v2([MarshalAs(UnmanagedType.LPUTF8Str)] string filename, out IntPtr database, int flags, IntPtr vfs);
+    [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl)] private static extern int sqlite3_exec(IntPtr database, [MarshalAs(UnmanagedType.LPUTF8Str)] string sql, IntPtr callback, IntPtr state, out IntPtr error);
+    [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl)] private static extern int sqlite3_close(IntPtr database);
+    [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl)] private static extern void sqlite3_free(IntPtr value);
 }

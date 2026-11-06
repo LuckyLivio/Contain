@@ -20,6 +20,13 @@ internal sealed class PackagedDesktop : IDisposable
     internal int DatabasePathInteractions { get; private set; }
     internal int ReportDialogInteractions { get; private set; }
     internal int ReportDialogSaves { get; private set; }
+    internal int InstallerPickerCancels { get; private set; }
+    internal int InstallerPickerSelections { get; private set; }
+    internal int WatchPickerSelections { get; private set; }
+    internal int AdvancedInteractions { get; private set; }
+    internal int EnvironmentCheckInteractions { get; private set; }
+    internal string ConfigurationDialogStage { get; private set; } = "not_started";
+    internal Action? ConfigurationProgress { get; set; }
     internal string ReportDialogStage { get; private set; } = "not_started";
     internal string ReportDialogDiagnostic { get; private set; } = string.Empty;
     internal Action? ReportDialogProgress { get; set; }
@@ -51,6 +58,26 @@ internal sealed class PackagedDesktop : IDisposable
     internal Task<bool> ExistsAsync(string id) => Ui(() => Find(id) is not null);
     internal Task<bool> EnabledAsync(string id) => Ui(() => Required(id).Current.IsEnabled);
     internal Task<string> TextAsync(string id) => Ui(() => Text(Required(id)));
+    // Static labels can expose a stable AccessibleName rather than their
+    // displayed filename. Keep that accessibility metadata intact and read
+    // the actual visible HWND caption for visual-text assertions.
+    internal Task<string> NativeVisibleTextAsync(string id) => Ui(() =>
+        NativeVisibleText(new IntPtr(Required(id).Current.NativeWindowHandle), process.Id));
+
+    internal static string NativeVisibleText(IntPtr window, int expectedProcessId)
+    {
+        GetWindowThreadProcessId(window, out var owner);
+        if (window == IntPtr.Zero || owner != expectedProcessId || !IsWindowVisible(window))
+            throw new InvalidOperationException("The requested visual caption has no visible owned HWND.");
+        if (SendMessageTimeoutValue(window, 0x000E, IntPtr.Zero, IntPtr.Zero, 0x0003, 2000, out var length) == IntPtr.Zero
+            || length.ToUInt64() > 65536)
+            throw new IOException("The visible caption length could not be read within its bound.");
+        var value = new System.Text.StringBuilder(checked((int)length.ToUInt64() + 1));
+        if (SendMessageTimeoutBuffer(window, 0x000D, new IntPtr(value.Capacity), value, 0x0003, 2000, out var copied) == IntPtr.Zero
+            || copied.ToUInt64() != length.ToUInt64() || value.Length != (int)length.ToUInt64())
+            throw new IOException("The complete visible caption could not be read consistently.");
+        return value.ToString();
+    }
     internal Task<uint> DeviceDpiAsync() => Ui(() => { process.Refresh(); return GetDpiForWindow(process.MainWindowHandle); });
     internal Task<bool> OnscreenAsync(string id) => Ui(() =>
     {
@@ -69,7 +96,7 @@ internal sealed class PackagedDesktop : IDisposable
         var window = new IntPtr(control.Current.NativeWindowHandle);
         if (control.Current.IsOffscreen || window == IntPtr.Zero || !GetWindowRect(window, out var bounds)
             || bounds.Right <= bounds.Left || bounds.Bottom <= bounds.Top) return false;
-        process.Refresh();
+        var root = GetAncestor(window, 2);
         for (var parent = GetParent(window); parent != IntPtr.Zero; parent = GetParent(parent))
         {
             if (!GetClientRect(parent, out var client)) return false;
@@ -77,7 +104,7 @@ internal sealed class PackagedDesktop : IDisposable
             if (!ClientToScreen(parent, ref origin)) return false;
             if (bounds.Left < origin.X || bounds.Top < origin.Y
                 || bounds.Right > origin.X + client.Right || bounds.Bottom > origin.Y + client.Bottom) return false;
-            if (parent == process.MainWindowHandle) return true;
+            if (parent == root) return true;
         }
         return false;
     });
@@ -110,7 +137,125 @@ internal sealed class PackagedDesktop : IDisposable
             throw new InvalidOperationException("The actual editable control lacks ValuePattern: " + id);
         ((Automation.ValuePattern)pattern).SetValue(text);
     });
-    internal Task InvokeAsync(string id) => Ui(() => Invoke(Required(id)));
+    internal Task InvokeAsync(string id) => Ui(() =>
+    {
+        if (id == "CheckEnvironment") EnvironmentCheckInteractions++;
+        Invoke(Required(id));
+    });
+
+    internal Task<bool> FocusedAsync(string id) => Ui(() => Required(id).Current.HasKeyboardFocus);
+
+    internal async Task KeyboardActivateAsync(string id, bool focus = true)
+    {
+        var root = await Ui(() =>
+        {
+            var element = Required(id);
+            var window = new IntPtr(element.Current.NativeWindowHandle);
+            var owner = GetAncestor(window, 2);
+            SetForegroundWindow(owner);
+            SetWindowPos(owner, IntPtr.Zero, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040);
+            if (focus) element.SetFocus();
+            return owner;
+        });
+        await WaitAsync(async () => GetForegroundWindow() == root && await FocusedAsync(id), TimeSpan.FromSeconds(5));
+        if (id == "CheckEnvironment") EnvironmentCheckInteractions++;
+        SendKeys.SendWait(" ");
+    }
+
+    internal async Task TabToAsync(string id)
+    {
+        for (var index = 0; index < 25; index++)
+        {
+            if (await FocusedAsync(id)) return;
+            SendKeys.SendWait("{TAB}");
+            await Task.Delay(40);
+        }
+        throw new InvalidOperationException("The ordinary keyboard tab order did not reach " + id + ".");
+    }
+
+    internal async Task ClickTwiceAsync(string id)
+    {
+        var window = await Ui(() => new IntPtr(Required(id).Current.NativeWindowHandle));
+        ClickNativeButton(window); ClickNativeButton(window);
+    }
+
+    internal Task<uint> ControlWindowDpiAsync(string id) => Ui(() => GetDpiForWindow(ControlRoot(id)));
+
+    internal Task<ImageResult> ScreenshotControlWindowAsync(string id, string directory, string name) => Ui(() =>
+        ScreenshotWindow(ControlRoot(id), directory, name));
+
+    private IntPtr ControlRoot(string id)
+    {
+        var root = GetAncestor(new IntPtr(Required(id).Current.NativeWindowHandle), 2);
+        GetWindowThreadProcessId(root, out var owner);
+        if (root == IntPtr.Zero || owner != process.Id) throw new InvalidOperationException("The configuration window is not owned by the actual test process.");
+        return root;
+    }
+
+    internal Task ChooseInstallerAsync(string? path) => ChooseConfigurationPathAsync("NewInstall", path, false);
+    internal Task ChooseWatchRootAsync(string path) => ChooseConfigurationPathAsync("ChooseWatchRoot", path, true);
+
+    private async Task ChooseConfigurationPathAsync(string action, string? path, bool folder)
+    {
+        IntPtr dialog = IntPtr.Zero;
+        try
+        {
+            Stage("activate_" + action);
+            await KeyboardActivateAsync(action, focus: action == "NewInstall");
+            Stage("wait_dialog");
+            await WaitAsync(() => { dialog = FindReportDialog(); return Task.FromResult(dialog != IntPtr.Zero); }, TimeSpan.FromSeconds(15));
+            SetForegroundWindow(dialog);
+            if (path is null)
+            {
+                Stage("cancel"); SendKeys.SendWait("{ESC}");
+            }
+            else
+            {
+                path = Path.GetFullPath(path);
+                if (folder ? !Directory.Exists(path) : !File.Exists(path)) throw new IOException("The native picker target must already exist.");
+                Stage("enter_path");
+                var controls = ReportControls(dialog);
+                var edits = controls.Where(control => IsWindowVisible(control.Window) && control.Class.Equals("Edit", StringComparison.OrdinalIgnoreCase)
+                    && control.Id is 1001 or 1148 or 1152).ToArray();
+                if (edits.Length != 1) throw new InvalidOperationException("The native configuration picker has no unique path entry.");
+                // Focus the actual native edit, then type literal keys. As with
+                // the report dialog, WM_SETTEXT alone is not an accepted path.
+                await Ui(() => Automation.AutomationElement.FromHandle(edits[0].Window).SetFocus());
+                await WaitAsync(() => Task.FromResult(HasNativeFocus(dialog, edits[0].Window)), TimeSpan.FromSeconds(5));
+                SendKeys.SendWait("^a"); SendKeys.SendWait(KeysLiteral(path));
+                await WaitAsync(() =>
+                {
+                    var value = new System.Text.StringBuilder(path.Length + 2);
+                    return Task.FromResult(SendMessageTimeoutBuffer(edits[0].Window, 0x000D, new IntPtr(value.Capacity), value,
+                        0x0003, 2000, out _) != IntPtr.Zero && value.ToString() == path);
+                }, TimeSpan.FromSeconds(5));
+                Stage("accept_path");
+                var accept = GetDlgItem(dialog, 1);
+                if (accept == IntPtr.Zero || !IsWindowVisible(accept))
+                    accept = controls.Single(control => control.Id == 1 && IsWindowVisible(control.Window)
+                        && control.Class.Equals("Button", StringComparison.OrdinalIgnoreCase)).Window;
+                for (var index = 0; index < 20 && !HasNativeFocus(dialog, accept); index++)
+                {
+                    if (GetForegroundWindow() != dialog) throw new InvalidOperationException("Native picker lost foreground ownership before acceptance.");
+                    SendKeys.SendWait("{TAB}"); await Task.Delay(40);
+                }
+                if (!HasNativeFocus(dialog, accept)) throw new InvalidOperationException("The native picker accept action is not keyboard reachable.");
+                SendKeys.SendWait(" ");
+            }
+            await WaitAsync(() => Task.FromResult(!IsWindowVisible(dialog)), TimeSpan.FromSeconds(15));
+            if (folder) WatchPickerSelections++;
+            else if (path is null) InstallerPickerCancels++;
+            else InstallerPickerSelections++;
+            Stage(path is null ? "cancelled" : "selected");
+        }
+        catch
+        {
+            Stage("failed_" + ConfigurationDialogStage);
+            if (dialog != IntPtr.Zero) PostMessage(dialog, 0x0010, IntPtr.Zero, IntPtr.Zero);
+            throw;
+        }
+        void Stage(string stage) { ConfigurationDialogStage = stage; ConfigurationProgress?.Invoke(); }
+    }
 
     /// <summary>Operate the real process's native SaveFileDialog, including cancel.</summary>
     internal async Task ExportReportAsync(string? outputPath)
@@ -226,11 +371,13 @@ internal sealed class PackagedDesktop : IDisposable
     private static string KeysLiteral(string value) => string.Concat(value.Select(character =>
         "+^%~(){}[]".Contains(character) ? "{" + character + "}" : character.ToString()));
 
-    private void ClickNativeButton(IntPtr button)
+    private void ClickNativeButton(IntPtr button) => SendNativeClick(button, process.Id);
+
+    internal static void SendNativeClick(IntPtr button, int expectedProcessId)
     {
         if (button == IntPtr.Zero || !IsWindowVisible(button)) throw new InvalidOperationException("The native test button is absent or invisible.");
         GetWindowThreadProcessId(button, out var owner);
-        if (owner != process.Id) throw new InvalidOperationException("The native test button belongs to another process.");
+        if (owner != expectedProcessId) throw new InvalidOperationException("The native test button belongs to another process.");
         var root = GetAncestor(button, 2);
         if (root == IntPtr.Zero) throw new InvalidOperationException("The native test button has no root window.");
         SetForegroundWindow(root);
@@ -239,9 +386,7 @@ internal sealed class PackagedDesktop : IDisposable
             throw new InvalidOperationException("The native test button has no clickable bounds.");
         var point = new NativePoint { X = rectangle.Left + (rectangle.Right - rectangle.Left) / 2,
             Y = rectangle.Top + (rectangle.Bottom - rectangle.Top) / 2 };
-        var hit = WindowFromPoint(point);
-        GetWindowThreadProcessId(hit, out var hitOwner);
-        if (hitOwner != process.Id || (hit != button && !IsChild(button, hit)))
+        if (!NativeClickTargetIsExposed(button, expectedProcessId))
             throw new InvalidOperationException("Another native control covers the test button's click point.");
         GetCursorPos(out var previous);
         try
@@ -251,6 +396,47 @@ internal sealed class PackagedDesktop : IDisposable
             mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
         }
         finally { SetCursorPos(previous.X, previous.Y); }
+    }
+
+    internal static bool NativeClickTargetIsExposed(IntPtr control, int expectedProcessId)
+    {
+        if (control == IntPtr.Zero || !IsWindowVisible(control) || !GetWindowRect(control, out var bounds)
+            || bounds.Right <= bounds.Left || bounds.Bottom <= bounds.Top) return false;
+        GetWindowThreadProcessId(control, out var owner);
+        var root = GetAncestor(control, 2);
+        if (owner != expectedProcessId || root == IntPtr.Zero) return false;
+        var point = new NativePoint { X = bounds.Left + (bounds.Right - bounds.Left) / 2,
+            Y = bounds.Top + (bounds.Bottom - bounds.Top) / 2 };
+        var hit = WindowFromPoint(point);
+        GetWindowThreadProcessId(hit, out var hitOwner);
+        if (hitOwner != expectedProcessId || GetAncestor(hit, 2) != root) return false;
+        // Preserve the enabled-control obstruction check exactly. Windows skips
+        // disabled controls in WindowFromPoint, so that case needs an explicit
+        // child hit test which still rejects an overlapping sibling.
+        if (IsWindowEnabled(control)) return hit == control || IsChild(control, hit);
+        for (var parent = GetParent(control); parent != IntPtr.Zero; parent = GetParent(parent))
+        {
+            if (!GetClientRect(parent, out var client)) return false;
+            var origin = new NativePoint();
+            if (!ClientToScreen(parent, ref origin) || bounds.Left < origin.X || bounds.Top < origin.Y
+                || bounds.Right > origin.X + client.Right || bounds.Bottom > origin.Y + client.Bottom) return false;
+            if (parent == root) break;
+        }
+        var current = root;
+        for (var depth = 0; depth < 64; depth++)
+        {
+            var local = point;
+            if (!ScreenToClient(current, ref local)) return false;
+            // CWP_SKIPINVISIBLE | CWP_SKIPTRANSPARENT; intentionally do not use
+            // CWP_SKIPDISABLED. Every parent/child in the path remains owned.
+            var child = ChildWindowFromPointEx(current, local, 0x0001 | 0x0004);
+            if (child == IntPtr.Zero) return false;
+            if (child == current) return current == control || IsChild(control, current);
+            GetWindowThreadProcessId(child, out var childOwner);
+            if (childOwner != expectedProcessId || !IsChild(current, child)) return false;
+            current = child;
+        }
+        return false;
     }
 
     private static List<(IntPtr Window, int Id, string Class)> ReportControls(IntPtr dialog)
@@ -289,6 +475,7 @@ internal sealed class PackagedDesktop : IDisposable
     internal Task ToggleAsync(string id, bool value) => Ui(() =>
     {
         if (id == "CustomDatabaseToggle") DatabasePathInteractions++;
+        if (id == "AdvancedToggle") AdvancedInteractions++;
         var element = Required(id);
         var toggle = (Automation.TogglePattern)element.GetCurrentPattern(Automation.TogglePattern.Pattern);
         if ((toggle.Current.ToggleState == Automation.ToggleState.On) != value) toggle.Toggle();
@@ -472,7 +659,11 @@ internal sealed class PackagedDesktop : IDisposable
     internal Task<ImageResult> ScreenshotAsync(string directory, string name) => Ui(() =>
     {
         process.Refresh();
-        var window = process.MainWindowHandle;
+        return ScreenshotWindow(process.MainWindowHandle, directory, name);
+    });
+
+    private static ImageResult ScreenshotWindow(IntPtr window, string directory, string name)
+    {
         if (window == IntPtr.Zero || !GetWindowRect(window, out var bounds)) throw new IOException("The actual process window has no bounds.");
         using var image = new Bitmap(bounds.Right - bounds.Left, bounds.Bottom - bounds.Top);
         using (var graphics = Graphics.FromImage(image))
@@ -485,7 +676,7 @@ internal sealed class PackagedDesktop : IDisposable
         var path = Path.Combine(directory, name);
         image.Save(path, ImageFormat.Png);
         return new ImageResult(name, Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant(), image.Width, image.Height);
-    });
+    }
 
     internal static async Task WaitAsync(Func<Task<bool>> condition, TimeSpan timeout)
     {
@@ -583,12 +774,17 @@ internal sealed class PackagedDesktop : IDisposable
     [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, WindowCallback callback, IntPtr parameter);
     [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern IntPtr SendMessageTimeoutBuffer(IntPtr window, uint message, IntPtr wParam, System.Text.StringBuilder text, uint flags, uint timeout, out UIntPtr result);
+    [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", SetLastError = true)]
+    private static extern IntPtr SendMessageTimeoutValue(IntPtr window, uint message, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out UIntPtr result);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo info);
     private delegate bool WindowCallback(IntPtr window, IntPtr parameter);
     [DllImport("user32.dll")] private static extern bool EnumWindows(WindowCallback callback, IntPtr parameter);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, System.Text.StringBuilder name, int maximum);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr window);
+    [DllImport("user32.dll")] private static extern IntPtr ChildWindowFromPointEx(IntPtr parent, NativePoint point, uint flags);
+    [DllImport("user32.dll")] private static extern bool ScreenToClient(IntPtr window, ref NativePoint point);
     [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr window, out WindowBounds bounds);
     [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr window, ref NativePoint point);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out WindowBounds bounds);

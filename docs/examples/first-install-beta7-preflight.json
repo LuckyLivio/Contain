@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "protocol": "contain-first-install-preflight-evidence-1",
+  "source_sha": "19af5fd85dc96921fc75a767b9fe598707e52f12",
+  "ci_run_url": "https://github.com/LuckyLivio/Contain/actions/runs/42165307599",
+  "scope": "Viewer-only preflight: production forms, isolated saved records and synthetic protocol children. No installer or ETW capture. Full first-use installation acceptance is a separate required run.",
+  "native_windows": true,
+  "windows_version": "10.0.26100.0",
+  "desktop_checks_passed": 74,
+  "suites": [
+    {
+      "summary": "export-summary.json",
+      "passed": 8,
+      "failed": 0,
+      "not_run": 0,
+      "sha256": "f5e05b664821706df33b4848b5787c367c22e3376f07955ff3c1c9b98838a637"
+    },
+    {
+      "summary": "first-use-configuration-summary.json",
+      "passed": 5,
+      "failed": 0,
+      "not_run": 0,
+      "sha256": "1c1e565a2e3f65de82723ec6a5700f4d9d79bab53bfb123582479d945dd05ce6"
+    },
+    {
+      "summary": "layout-summary.json",
+      "passed": 4,
+      "failed": 0,
+      "not_run": 0,
+      "sha256": "9c97d7d921e328cbc425d7b2306995a8fb486d740301ada1f03e94f724f1a57d"
+    },
+    {
+      "summary": "overview-summary.json",
+      "passed": 10,
+      "failed": 0,
+      "not_run": 0,
+      "sha256": "885ff4e8f67e851044a42c689e937ffed00d0ad7aabfce14411fe1a84ccfcbb2"
+    },
+    {
+      "summary": "personal-records-summary.json",
+      "passed": 8,
+      "failed": 0,
+      "not_run": 0,
+      "sha256": "7ad456b44ba0cbed09115b5681c5a866f88ae92eed25966b4903e1101127bee6"
+    },
+    {
+      "summary": "progress-summary.json",
+      "passed": 8,
+      "failed": 0,
+      "not_run": 0,
+      "sha256": "69b22228abe53ed9f4b9f53a056f221b8f7ca553d62b28090a3e065fdccff8aa"
+    },
+    {
+      "summary": "search-summary.json",
+      "passed": 9,
+      "failed": 0,
+      "not_run": 0,
+      "sha256": "3a48f39329eb38798c6f4a2b51f553214f5ab913796070ae4121f66d5b89d5f5"
+    },
+    {
+      "summary": "summary.json",
+      "passed": 22,
+      "failed": 0,
+      "not_run": 0,
+      "sha256": "e98db7af80cea65e617c5b1c986eaeb17c3a4a2dcab613f3c23dd58804333e20"
+    }
+  ],
+  "layout_conditions": [
+    {
+      "name": "native_default_layout_resize_maximize",
+      "device_dpi": 96,
+      "requested_scale": 1,
+      "test_method": "native_default",
+      "assertions": 957,
+      "system_high_dpi_verified": false
+    },
+    {
+      "name": "simulated_150_percent_layout",
+      "device_dpi": 96,
+      "requested_scale": 1.5,
+      "test_method": "simulated_native_controls",
+      "assertions": 957,
+      "system_high_dpi_verified": false
+    },
+    {
+      "name": "simulated_200_percent_layout",
+      "device_dpi": 96,
+      "requested_scale": 2,
+      "test_method": "simulated_native_controls",
+      "assertions": 957,
+      "system_high_dpi_verified": false
+    }
+  ],
+  "quality_required_gates_passed": true,
+  "quality_all_recorded_invocations_passed": true,
+  "nextest_junit": {
+    "producing_invocation": 1,
+    "source_revision": "19af5fd85dc96921fc75a767b9fe598707e52f12",
+    "producing_gate_exit_code": 0,
+    "testcase_entries": 356,
+    "passed": 356,
+    "failed": 0,
+    "errors": 0,
+    "skipped_entries": 0,
+    "scope": "JUnit entries only; nextest may omit ignored tests from JUnit. Use its console summary for the selected/skipped denominator."
+  },
+  "quality_summary_sha256": "0d0ed890827ba765f4cd60b68854cdbd150971117e9681ae6f8eaab42e8a86ea",
+  "native_captures": 0,
+  "real_user_records_accessed": false
+}

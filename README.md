@@ -8,14 +8,14 @@ Rust、Visual Studio、Python、PowerShell 7 或独立 .NET 运行库。
 
 ## 下载与使用
 
-**[直接下载 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.6/contain-0.3.2-beta.6-windows-x64.zip)** · [Beta Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.6) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.6/SHA256SUMS.txt)
+**[直接下载 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.7/contain-0.3.2-beta.7-windows-x64.zip)** · [Beta Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.7) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.7/SHA256SUMS.txt)
 
-版本 **0.3.2-beta.6**。[本版全部匹配结果导出、验证范围和已知限制](docs/search-export-beta6.md)。
+版本 **0.3.2-beta.7**。[本版新建记录流程、验证范围和已知限制](docs/simple-install-beta7.md)。
 发布页提供实际验收的 Windows x64 自包含 ZIP、SHA-256 和 `BUILD-IDENTITY.json`，
 其中记录冻结源码、Windows / DPI、原生验收结果和构建身份。
 
-1. **开始记录。** 完整解压 ZIP，运行 `Contain.Viewer.exe`，选择“新建安装记录”。
-2. **选择要观察的范围。** 选择安装器 EXE 和一个已有目录，确认后点击“开始记录”。名称自动建议，默认保存到“我的记录”。安装目标仍由你在安装器里选择；如果要观察目标目录，请让它位于所选范围内。“检查环境”可用于排查权限或来源问题，是可选步骤。
+1. **选择安装器。** 完整解压 ZIP，运行 `Contain.Viewer.exe`，点击“新建安装记录”，在弹出的选择器中选择 EXE。取消时返回原来的历史记录。
+2. **选择观察文件夹并开始。** 选择想观察的已有文件夹，再点击“开始记录”。Contain 记录该文件夹里的变化；要查看安装目标里的文件，请选择对应的已有文件夹。名称自动采用 EXE 文件名，默认保存到“我的记录”；需要修改名称、保存位置或记录选项时展开高级设置。安装目标仍由你在安装器里决定，Contain 不会替你创建目标或自动选择范围。
 3. **查看结果。** 安装结束并保存后，程序会打开本次记录。以后重开程序也能从“我的记录”找到它。在“事件与依据”里输入文件名，可搜索本次记录并把全部匹配结果导出为本地 HTML。
 
 想先看看界面，可以通过“打开记录数据库”打开包内的 `samples/viewer-demo.db`；其中是明确标记的合成演示数据。
@@ -63,7 +63,7 @@ Rust、Visual Studio、Python、PowerShell 7 或独立 .NET 运行库。
 没有通过禁止目录或全盘性能实验掩盖它；继续跟踪于 [Issue #5](https://github.com/LuckyLivio/Contain/issues/5)。
 
 原生 Windows CI、模拟缩放压力、用户手工反馈和未验证条件在
-[当前交付记录](docs/search-export-beta6.md)中分别列出。此前四个里程碑保持关闭；
+[当前交付记录](docs/simple-install-beta7.md)中分别列出。此前四个里程碑保持关闭；
 [历史交付与失败证据索引](docs/delivery-history.md)保留原始记录，旧包不再并列为当前下载。
 
 ## 开发与参考
