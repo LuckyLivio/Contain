@@ -114,7 +114,9 @@ public sealed class InstallForm : Form
         reviewCaptureMode.Click += (_, _) =>
         {
             advancedToggle.Checked = true;
-            var target = followMode.Checked ? (Control)manualMode : snapshot;
+            // Focusing an unchecked WinForms radio button can select it. Keep
+            // the current mode until the user explicitly chooses another one.
+            var target = followMode.Checked ? (Control)followMode : snapshot;
             RevealControl(target); target.Focus();
         };
         chooseInstaller.Click += (_, _) =>
@@ -553,7 +555,7 @@ public sealed class InstallForm : Form
         else if (followMode.Checked && (snapshot.Checked || !string.IsNullOrWhiteSpace(registryKey.Text)))
         {
             correctionHint.Text = "跟随记录需要 ETW 文件来源；快照或注册表需先明确选择“指定文件夹观察”。安装器未启动。";
-            correctionTarget = manualMode;
+            correctionTarget = followMode;
         }
         else if (manualMode.Checked && !Directory.Exists(watchRoot.Text))
         {

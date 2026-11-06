@@ -282,9 +282,12 @@ internal sealed class FirstUseConfigurationChecks(Options options, bool priorChe
         C<CheckBox>(form, "SnapshotOnly").Checked = true;
         var before = form.PendingOperation;
         start.PerformClick(); await form.PendingOperation.WaitAsync(TimeSpan.FromSeconds(20));
-        Require(follow.Checked && C<CheckBox>(form, "SnapshotOnly").Checked && form.LastStatus is null
-            && form.Result is null && !form.IsActive && !Directory.Exists(Path.GetDirectoryName(records.DatabasePath)),
-            "follow plus explicit snapshot is refused before a collector or session, without silently switching either selection");
+        Require(follow.Checked, "snapshot conflict never silently changes the selected follow mode");
+        Require(C<CheckBox>(form, "SnapshotOnly").Checked, "snapshot conflict preserves the user's explicit snapshot selection");
+        Require(form.LastStatus is null, "snapshot conflict is refused before any structured collector status or session");
+        Require(form.Result is null, "snapshot conflict is refused before returning a collector result");
+        Require(!form.IsActive, "snapshot conflict leaves no active recording after prelaunch refusal");
+        Require(!Directory.Exists(Path.GetDirectoryName(records.DatabasePath)), "snapshot conflict creates no personal-library directory");
         var correction = C<Label>(form, "InstallCorrectionHint").Text + C<TextBox>(form, "InstallStatus").Text
             + C<Label>(form, "CaptureModeNote").Text;
         Require(correction.Contains("指定文件夹", StringComparison.Ordinal) && correction.Contains("快照", StringComparison.Ordinal),

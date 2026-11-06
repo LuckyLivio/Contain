@@ -69,3 +69,17 @@ losses remain explicit and preserve the existing conservative attribution rules.
 The existing [finalizing issue #5](https://github.com/LuckyLivio/Contain/issues/5)
 is not declared solved for every workload. ARM64, Parallels, real monitor DPI
 transitions and broad third-party installer matrices remain unverified.
+
+## Retained product acceptance attempts
+
+The first product candidate `bd78e28d5c52c8f52ee96f49d4e13321646c015f`,
+[CI 42187315034](https://github.com/LuckyLivio/Contain/actions/runs/42187315034),
+failed a configuration regression before any installer or native capture started.
+The follow-plus-snapshot conflict correctly refused startup, but subsequent focus
+on the unchecked manual-mode RadioButton caused WinForms AutoCheck to change the
+selected mode. The strict no-silent-switch assertion caught this real UI bug.
+Four configuration checks passed, one failed; layout and five dependent native
+checks did not run. Other viewer, personal-record, overview, search, export and
+progress checks passed, as did the 54 quality gates. The diagnostic artifact is
+not a release candidate. The fix focuses the already checked mode and keeps the
+original assertions, split into individual diagnostic conditions.
