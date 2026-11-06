@@ -36,6 +36,7 @@ FIRST_USE_CONFIGURATION_REQUIRED_CHECKS = frozenset({
     "synthetic_permission_refusal_explicit_retry_and_single_start",
 })
 FIRST_USE_SCREENSHOTS = frozenset({"install-first-use-configured.png", "install-first-use-missing-folder.png"})
+FOLLOW_SCREENSHOTS = frozenset({"install-follow-configured.png"})
 SEARCH_EXPORT_VERIFICATION = "contain-desktop-search-export-verification-1"
 SEARCH_EXPORT_REQUIRED_CHECKS = frozenset({
     "frozen_export_package_identity", "actual_packaged_search_export_all_ids",
@@ -194,21 +195,24 @@ def usage(source, install=False, version=None):
 新建受控安装记录：
 
 1. 点击“新建安装记录”，选择已知受支持的独立 EXE 安装器。
-2. 选择“要记录哪个文件夹里的变化？”。通常选软件准备安装到的已有文件夹：安装包在“下载”里、软件准备装到 D 盘，就选 D 盘上对应的已有文件夹。这里的选择只决定 Contain 观察哪里。
-   名称默认来自 EXE 文件名，记录保存到“我的记录”，无需选择数据库。仅选 EXE 还不能开始。
+2. 默认选择“跟随安装器记录”，无需提前选择安装目录。记录由本次 EXE 及身份可验证的直接子进程发出的文件操作。
+   名称默认来自 EXE 文件名，记录保存到“我的记录”，无需选择数据库。
 3. 点击“开始记录”才会启动安装器。等待记录及整理结束，再自动打开本次准确会话。
 4. 浏览事件并点击查看依据，导出本地 HTML 报告。关闭后重新打开程序，“我的记录”会显示已保存的历史记录。
 
-普通流程只需 EXE 和已有观察文件夹。取消 EXE 选择器会回到原界面。
+普通流程只需选择 EXE，再明确点击“开始记录”。取消 EXE 选择器会回到原界面。
+跟随模式没有安装前基线，不提供文件前后状态对比；记录的历史名称不一定是当前路径，执行进程关联不代表最终归属。
+需要明确范围和前后状态对比时，改选“指定文件夹观察”，再选择“要记录哪个文件夹里的变化？”。
+通常选软件准备安装到的已有文件夹：安装包在“下载”里、软件准备装到 D 盘，就选 D 盘上对应的已有文件夹。这里的选择只决定 Contain 观察哪里。
 名称、自定义保存位置、参数、注册表、等待时间、快照模式和可选“检查环境”在默认折叠的高级设置中。
 修改高级选项后，主操作旁会显示实际生效设置。检查环境不是开始前的额外步骤。
 安装器所在目录不代表软件安装目标；程序不会替你选择范围、扫描全盘或创建软件目标目录。
 
-如默认保存位置与观察范围冲突或不可写，使用“更改保存位置”；高级参数中可明确启用
+如默认保存位置不可写，或手动目录模式的保存位置与观察范围冲突，使用“更改保存位置”；高级参数中可明确启用
 “使用自定义保存位置”，选择观察范围之外的数据库。打开外部数据库不会改变新记录的默认保存位置。
 
 高级参数按界面说明逐项传递，不是 shell 命令。默认 ETW 模式不可用时不会自动提权；
-可明确选择快照模式，但其观察范围及覆盖能力不同。记录结束、安装器退出、数据保存
+需要快照模式时，应先明确选择“指定文件夹观察”并选择已有文件夹；不会将跟随模式静默切换为快照。记录结束、安装器退出、数据保存
 和覆盖质量分别报告；退出码 0 不证明采集成功，当前后端不承诺完整软件足迹。
 活动任务期间请保持窗口打开；没有强杀安装器的取消操作。失败后的已保存记录仍可查看。
 本轮仅验证受控夹具；MSI、更新器及服务代理安装未获完整支持承诺。
@@ -218,7 +222,7 @@ def usage(source, install=False, version=None):
 
 无需终端的受控夹具试用：在资源管理器地址栏输入 `%TEMP%`，手动新建一个唯一的
 `contain-demo-<唯一名称>` 文件夹，仅将它用于本夹具。新建记录时选择本包根目录的
-`contain-test-installer.exe`，观察目录选择刚创建的现有文件夹，保持“保存到我的记录”。展开高级参数，
+`contain-test-installer.exe`，改选“指定文件夹观察”，观察目录选择刚创建的现有文件夹，保持“保存到我的记录”。展开高级参数，
 每行一个参数：第一行 `--root`，第二行填写该文件夹的绝对路径（不要加引号）。
 如需观察夹具的注册表状态差异，可填写 `Software\\Contain\\Demo\\<文件夹名>`。
 点击开始，等待整理结束，选择真实事件查看依据并导出。“检查环境”仅在需要诊断时主动使用。
@@ -804,13 +808,17 @@ def first_use_configuration_verification_matches(value, build, manifest_sha):
 
 
 def first_use_screenshots_match(value, summary_path):
+    return native_png_screenshots_match(value, summary_path, FIRST_USE_SCREENSHOTS)
+
+
+def native_png_screenshots_match(value, summary_path, required_names):
     """Read the exact native PNG bytes; metadata alone cannot supply the release examples."""
     if not isinstance(value, dict) or summary_path is None:
         return False
     screenshots = value.get("screenshots")
-    if (not isinstance(screenshots, list) or len(screenshots) != len(FIRST_USE_SCREENSHOTS)
+    if (not isinstance(screenshots, list) or len(screenshots) != len(required_names)
             or not all(isinstance(item, dict) and isinstance(item.get("name"), str) for item in screenshots)
-            or {item["name"] for item in screenshots} != FIRST_USE_SCREENSHOTS):
+            or {item["name"] for item in screenshots} != required_names):
         return False
     try:
         digests = set()
@@ -842,7 +850,7 @@ def first_use_screenshots_match(value, summary_path):
             if not has_image or not ended:
                 return False
             digests.add(item["sha256"])
-        return len(digests) == len(FIRST_USE_SCREENSHOTS)
+        return len(digests) == len(required_names)
     except (OSError, ValueError, struct.error):
         return False
 
@@ -854,6 +862,8 @@ def first_use_install_verification_matches(value, build, manifest_sha, summary_p
     first = value.get("first_use")
     if not isinstance(first, dict):
         return False
+    if first.get("protocol_revision") == "contain-follow-install-flow-1":
+        return follow_first_use_matches(value, summary_path)
     positive = ("actual_packaged_executable", "cancel_preserved_record_selection", "missing_scope_blocks_start",
         "configuration_created_no_session", "keyboard_flow_verified", "default_name_matches_exe", "default_database",
         "scope_exact_match", "main_entry_kept_active_task", "duplicate_start_created_one_session",
@@ -874,6 +884,86 @@ def first_use_install_verification_matches(value, build, manifest_sha, summary_p
         and first.get("persisted_scope_sha256") == first["selected_scope_sha256"]
         and first.get("session_id") == value["session_id"]
         and first_use_screenshots_match(first, summary_path))
+
+
+def follow_first_use_matches(value, summary_path):
+    """The single-input path is a distinct protocol; legacy manual checks stay intact."""
+    first = value.get("first_use", {})
+    positive = ("actual_packaged_executable", "cancel_preserved_record_selection", "configuration_created_no_session",
+        "keyboard_flow_verified", "default_name_matches_exe", "default_database", "default_follow", "no_watch_argument",
+        "follow_mode_persisted", "main_entry_kept_active_task", "duplicate_start_created_one_session")
+    return (first.get("protocol_revision") == "contain-follow-install-flow-1"
+        and all(first.get(key) is True for key in positive)
+        and isinstance(first.get("windows_version"), str) and bool(first["windows_version"].strip())
+        and type(first.get("actual_device_dpi")) is int and first["actual_device_dpi"] > 0
+        and all(type(first.get(key)) is int and first[key] == 1 for key in
+            ("installer_picker_cancels", "installer_picker_selections", "ordinary_input_count"))
+        and all(type(first.get(key)) is int and first[key] == 0 for key in
+            ("saved_scope_count", "observation_picker_selections", "advanced_interactions", "environment_check_interactions", "database_path_interactions"))
+        and first.get("session_id") == value.get("session_id")
+        and native_png_screenshots_match(first, summary_path, FOLLOW_SCREENSHOTS)
+        and follow_evidence_matches(value.get("follow_verification"), value.get("source_sha"), value.get("session_id"))
+        and value.get("event_id") == value["follow_verification"].get("selected_event_id"))
+
+
+def follow_evidence_matches(value, source, session):
+    """Require observed actor proofs and UI identity, not just a successful count."""
+    if not isinstance(value, dict):
+        return False
+    spec = importlib.util.spec_from_file_location("follow_oracle_plan", Path(__file__).with_name("verify-follow-installer-experiment.py"))
+    oracle = importlib.util.module_from_spec(spec); spec.loader.exec_module(oracle)
+    checks, observations = value.get("checks"), value.get("observations")
+    if not (value.get("protocol") == "contain-follow-installer-experiment-1" and value.get("source_sha") == source
+            and value.get("session_id") == session and value.get("accepted") is True
+            and value.get("synthetic") is False and value.get("controlled_fixture") is True
+            and type(value.get("maximum_native_captures")) is int and value["maximum_native_captures"] == 1
+            and type(value.get("retries")) is int and value["retries"] == 0
+            and all(value.get(key) is False for key in ("ownership_claim", "current_path_claim", "installation_before_baseline", "post_install_file_reads"))
+            and isinstance(checks, list) and len(checks) == len(oracle.PLAN) and all(isinstance(row, dict) for row in checks)
+            and [row.get("name") for row in checks] == oracle.PLAN and all(row.get("status") == "passed" for row in checks)
+            and type(value.get("passed")) is int and value["passed"] == len(oracle.PLAN)
+            and all(type(value.get(key)) is int and value[key] == 0 for key in ("failed", "not_run"))
+            and value.get("unresolved") == [] and isinstance(observations, list) and len(observations) == 3
+            and all(isinstance(row, dict) for row in observations) and [row.get("label") for row in observations] == ["parent", "child", "unrelated"]):
+        return False
+    uuid = r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}"
+    parent, child, other = observations
+    for row, rule in ((parent, "InstallerPid"), (child, "DescendantProcess")):
+        if not (isinstance(row.get("event_id"), str) and re.fullmatch(uuid, row["event_id"])
+                and row.get("operation") == "write_requested" and row.get("source") == "EtwFile"
+                and row.get("rule") == rule and row.get("confidence") == row.get("actor_confidence") == "High"
+                and row.get("completion") is True and row.get("state_validated") is False
+                and row.get("current_path_verified") is False and row.get("historical_name_source") == "file_object_cache"
+                and type(row.get("pid")) is int and row["pid"] > 0
+                and isinstance(row.get("creation_time"), str) and row["creation_time"].isdecimal() and int(row["creation_time"]) > 0
+                and isinstance(row.get("timestamp_ticks"), str) and row["timestamp_ticks"].isdecimal()
+                and int(row["timestamp_ticks"]) >= int(row["creation_time"]) and isinstance(row.get("recorded_name_sha256"), str)
+                and re.fullmatch(r"[0-9a-f]{64}", row["recorded_name_sha256"])):
+            return False
+    if parent["event_id"] == child["event_id"] or (parent["pid"], parent["creation_time"]) == (child["pid"], child["creation_time"]):
+        return False
+    if other.get("classification") == "unobserved":
+        if not (other.get("observed_event_count") == 0 and other.get("contextual_event_count") == 0
+                and other.get("event_id") is None and other.get("event_ids") == []
+                and other.get("outcome") == "not_retained_by_follow_scope; no_claim_no_system_event"):
+            return False
+    elif other.get("classification") != "Unknown" or other.get("outcome") != "retained_without_installer_attribution":
+        return False
+    counters, storage = value.get("follow_counters", {}), value.get("storage_counters", {})
+    fixed = {"direct_children_only": True, "baseline_available": False, "candidate_record_limit": 2048,
+        "candidate_byte_limit": 8388608, "resource_limit": 4096, "candidate_dropped": 0}
+    if not all(type(counters.get(key)) is type(expected) and counters[key] == expected for key, expected in fixed.items()):
+        return False
+    if not (type(counters.get("candidate_high_water_records")) is int and 0 <= counters["candidate_high_water_records"] <= 2048
+            and type(counters.get("candidate_high_water_bytes")) is int and 0 <= counters["candidate_high_water_bytes"] <= 8388608
+            and type(storage.get("quota_bytes")) is int and 0 < storage["quota_bytes"] <= 67108864
+            and type(storage.get("committed_bytes")) is int and 0 < storage["committed_bytes"] <= storage["quota_bytes"]
+            and type(storage.get("persisted")) is int and storage["persisted"] > 0
+            and all(type(storage.get(key)) is int and storage[key] == 0 for key in ("failed", "quota_dropped"))):
+        return False
+    return (all(value.get(key) == child["event_id"] for key in
+            ("selected_event_id", "copied_event_id", "explain_event_id", "restart_event_id"))
+        and all(value.get(key) == session for key in ("returned_session_id", "autoopened_session_id", "restart_session_id")))
 
 
 def finalize(args):

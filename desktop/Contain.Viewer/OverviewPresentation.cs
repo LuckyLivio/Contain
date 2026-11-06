@@ -27,7 +27,8 @@ internal sealed record OverviewPresentation(string Installer, string InstallerNo
         var directories = roots.ValueKind == JsonValueKind.Array && roots.GetArrayLength() != 0
             ? string.Join("\r\n", roots.EnumerateArray().Select(Value)) : "未记录 / 不可用";
         var registry = Text(summary, "registry_key");
-        var scope = "观察目录：\r\n" + directories;
+        var follow = RecordingScope.IsFollowInstaller(summary);
+        var scope = follow ? "跟随安装器记录\r\n本次安装器及已验证直接子进程的文件事件；未预设观察目录。" : "观察目录：\r\n" + directories;
         var registryScope = "注册表范围：" + (registry is null ? "未选择 / 未记录" : "HKEY_CURRENT_USER\\" + registry);
         var quality = Field(summary, "quality");
         var coverage = Text(quality, "level") switch
@@ -38,8 +39,8 @@ internal sealed record OverviewPresentation(string Installer, string InstallerNo
             { } value => "覆盖标签未识别：" + value,
             _ => "覆盖质量未记录 / 不可用"
         };
-        var changes = $"文件 {Count(diff, "files")} · 注册表值 {Count(diff, "registry")}\n其他配置 {Count(diff, "inventory")}";
-        var changesNote = finished
+        var changes = follow ? "文件状态对比：未采集安装前基线\n请在事件与依据查看文件操作。" : $"文件 {Count(diff, "files")} · 注册表值 {Count(diff, "registry")}\n其他配置 {Count(diff, "inventory")}";
+        var changesNote = follow ? "事件说明执行进程关联；未建立文件新增、当前路径或最终归属结论。" : finished
             ? "已保存的状态变化条目；0 项不等于没有发生变化。"
             : "仅列已保存的条目；最终状态差异尚未确认。";
         var backend = Field(summary, "backend");

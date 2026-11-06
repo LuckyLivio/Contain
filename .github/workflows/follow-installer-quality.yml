@@ -1,0 +1,110 @@
+name: Follow installer fuzz and benchmark checks
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/follow-installer-recording
+permissions:
+  contents: read
+jobs:
+  extended-quality:
+    if: ${{ github.repository == 'LuckyLivio/Contain' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[follow-quality]')) }}
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - name: Compare the existing in-memory benchmark on the same runner
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP ('follow-quality-' + $env:GITHUB_RUN_ID)
+          New-Item -ItemType Directory -Path $out | Out-Null
+          "FOLLOW_QUALITY_OUTPUT=$out" >> $env:GITHUB_ENV
+          $private = Join-Path $env:RUNNER_TEMP ('follow-quality-private-' + $env:GITHUB_RUN_ID)
+          New-Item -ItemType Directory -Path $private | Out-Null
+          function Publish-Benchmark([string]$InputFile, [string]$OutputFile, [string]$ExpectedSource) {
+            $raw = Get-Content -LiteralPath $InputFile -Raw | ConvertFrom-Json -AsHashtable
+            if ($raw.source_commit -ne $ExpectedSource -or $raw.profile -ne 'release') { throw 'Benchmark source/profile differs' }
+            $safe = [ordered]@{}
+            foreach ($key in @('schema_version','measurement_kind','etw_validation','etw_providers_started','sqlite_measured','profile','source_commit','compiler','os','os_version','arch','fixture_generation_timed','assertions_timed','notes')) { $safe[$key] = $raw[$key] }
+            $safe.working_tree_clean = $raw.working_tree_status -eq ''
+            $safe.results = @($raw.results | ForEach-Object {
+              $row = $_; $item = [ordered]@{}
+              foreach ($key in @('name','work_items_per_sample','input_records_per_sample','measured_samples','warmup_samples','median_ns_per_work_item','min_ns_per_work_item','p95_ns_per_work_item','median_work_items_per_second','sample_ns_per_work_item','validated_checksum')) { $item[$key] = $row[$key] }
+              $item
+            })
+            $safe | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $OutputFile -Encoding utf8
+          }
+          $baseline = Join-Path $env:RUNNER_TEMP ('follow-baseline-' + $env:GITHUB_RUN_ID)
+          git worktree add --detach $baseline a1f9876f4976c2e35b443d9634bbb06fa19f1927
+          if ($LASTEXITCODE -ne 0) { throw 'Baseline checkout failed' }
+          Push-Location $baseline
+          try {
+            cargo bench -p contain-core --bench event_pipeline --locked -- --events 20000 --samples 7 --output (Join-Path $private 'baseline-raw.json') *> (Join-Path $private 'baseline.log')
+            if ($LASTEXITCODE -ne 0) { throw 'Baseline benchmark failed' }
+          } finally { Pop-Location }
+          cargo bench -p contain-core --bench event_pipeline --locked -- --events 20000 --samples 7 --output (Join-Path $private 'candidate-raw.json') *> (Join-Path $private 'candidate.log')
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate benchmark failed' }
+          Publish-Benchmark (Join-Path $private 'baseline-raw.json') (Join-Path $out 'baseline-benchmark.json') 'a1f9876f4976c2e35b443d9634bbb06fa19f1927'
+          Publish-Benchmark (Join-Path $private 'candidate-raw.json') (Join-Path $out 'candidate-benchmark.json') $env:GITHUB_SHA
+          [ordered]@{schema_version=1;source_sha=$env:GITHUB_SHA;baseline_sha='a1f9876f4976c2e35b443d9634bbb06fa19f1927';same_runner=$true;scope='Existing synthetic event pipeline, same runner, seven release samples; not live ETW or new follow-buffer throughput';accepted=$true} | ConvertTo-Json | Set-Content (Join-Path $out 'benchmark-identity.json') -Encoding utf8
+      - name: Run the existing Windows ASan fuzz smoke targets
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.ASAN -property installationPath
+          if (-not $vs) { throw 'MSVC AddressSanitizer is unavailable; fuzz remains unverified' }
+          & (Join-Path $vs 'Common7/Tools/Launch-VsDevShell.ps1') -Arch amd64 -HostArch amd64
+          $env:CONTAIN_FUZZ_TOOLCHAIN = 'nightly-2026-11-05'
+          if (-not ((rustup toolchain list) -match '^nightly-2026-11-05-')) {
+            rustup toolchain install nightly-2026-11-05 --profile minimal --no-self-update
+            if ($LASTEXITCODE -ne 0) { throw 'Isolated nightly toolchain unavailable' }
+          }
+          cargo fuzz --version
+          if ($LASTEXITCODE -ne 0) {
+            cargo install cargo-fuzz --version 0.13.2 --locked
+            if ($LASTEXITCODE -ne 0) { throw 'Fuzz tool unavailable' }
+          }
+          $fuzzPrivate = Join-Path $env:RUNNER_TEMP ('follow-fuzz-' + $env:GITHUB_RUN_ID)
+          $passed = $false; $errorType = $null
+          try {
+            ./scripts/quality.ps1 -Mode Fuzz -FuzzSeconds 30 -OutputDirectory $fuzzPrivate *> (Join-Path $env:RUNNER_TEMP ('follow-fuzz-' + $env:GITHUB_RUN_ID + '.log'))
+            $passed = $LASTEXITCODE -eq 0
+          } catch { $errorType = $_.Exception.GetType().Name }
+          finally {
+            [ordered]@{schema_version=1;source_sha=$env:GITHUB_SHA;accepted=$passed;error_type=$errorType;toolchain=$env:CONTAIN_FUZZ_TOOLCHAIN;seconds_per_target=30;targets=@('event_json','lifetime_sequences','completion_correlation');scope='Actual Windows core and existing semantic targets; follow admission boundaries are covered by focused unit tests'} | ConvertTo-Json | Set-Content (Join-Path $env:FOLLOW_QUALITY_OUTPUT 'fuzz-identity.json') -Encoding utf8
+            # Inputs generated by the fuzzer contain synthetic model bytes only.
+            # Keep bounded reproductions, never raw capture or host inventories.
+            $seeds = Join-Path $env:FOLLOW_QUALITY_OUTPUT 'failure-seeds'
+            Get-ChildItem -LiteralPath $fuzzPrivate -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^(crash|timeout|oom|leak)-[0-9a-f]+$' -and $_.Length -le 65536 -and -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) } | ForEach-Object {
+              New-Item -ItemType Directory -Path $seeds -Force | Out-Null
+              Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $seeds $_.Name)
+            }
+          }
+          if (-not $passed) { throw 'Fuzz smoke failed; safe identity and bounded synthetic reproductions retained' }
+      - name: Preserve safe identity for setup failures or incomplete checks
+        if: always()
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP ('follow-quality-' + $env:GITHUB_RUN_ID)
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          "FOLLOW_QUALITY_OUTPUT=$out" >> $env:GITHUB_ENV
+          if (-not (Test-Path (Join-Path $out 'fuzz-identity.json'))) {
+            [ordered]@{schema_version=1;source_sha=$env:GITHUB_SHA;accepted=$false;error_type='SetupFailedOrCheckNotCompleted';toolchain='nightly-2026-11-05';seconds_per_target=30;targets=@('event_json','lifetime_sequences','completion_correlation');scope='No completed fuzz claim; inspect the failed or unexecuted CI step'} | ConvertTo-Json | Set-Content (Join-Path $out 'fuzz-identity.json') -Encoding utf8
+          }
+          if (-not (Test-Path (Join-Path $out 'benchmark-identity.json'))) {
+            [ordered]@{schema_version=1;source_sha=$env:GITHUB_SHA;baseline_sha='a1f9876f4976c2e35b443d9634bbb06fa19f1927';same_runner=$true;accepted=$false;scope='Benchmark comparison not completed'} | ConvertTo-Json | Set-Content (Join-Path $out 'benchmark-identity.json') -Encoding utf8
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: follow-installer-extended-quality
+          path: |
+            ${{ env.FOLLOW_QUALITY_OUTPUT }}/*.json
+            ${{ env.FOLLOW_QUALITY_OUTPUT }}/failure-seeds/*
+          if-no-files-found: warn

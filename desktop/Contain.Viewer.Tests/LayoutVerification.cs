@@ -22,6 +22,7 @@ internal sealed class LayoutVerification(Options options, bool viewerChecksPasse
     private readonly List<CheckResult> checks = [];
     private readonly List<ImageResult> screenshots = [];
     private readonly List<object> conditions = [];
+    private readonly List<object> followConditions = [];
     private readonly List<object> reachFailures = [];
     private readonly List<CheckResult> screenshotFailures = [];
     private readonly StringBuilder privateLog = new();
@@ -117,13 +118,17 @@ internal sealed class LayoutVerification(Options options, bool viewerChecksPasse
             install.WindowState = FormWindowState.Normal;
             install.Bounds = new Rectangle(area.Left + 12, area.Top + 12, Math.Min(area.Width - 24, (int)(740 * scale)), Math.Min(area.Height - 24, (int)(620 * scale)));
             await Settle(install);
+            currentPhase = "install_follow_default";
+            await VerifyFollowInstall(install, name, scale);
+            Screenshot(install, name + "-install-ordinary.png");
+            TestRecordIsolation.SelectManualObservation(install);
             currentPhase = "install_missing_observation";
             await VerifyOrdinaryInstall(install, null);
             Screenshot(install, name + "-install-missing-folder.png");
             C<TextBox>(install, "WatchRoot").Text = watch;
             currentPhase = "install_ordinary";
             await VerifyOrdinaryInstall(install, watch);
-            Screenshot(install, name + "-install-ordinary.png");
+            Screenshot(install, name + "-install-manual.png");
             C<TextBox>(install, "RecordName").Text = "SYNTHETIC 布局检查 & 逐项范围";
             var destination = Path.Combine(parent, "layout-save-not-started.db");
             TestRecordIsolation.SelectCustomDatabase(install, destination);
@@ -249,14 +254,15 @@ internal sealed class LayoutVerification(Options options, bool viewerChecksPasse
     private async Task VerifyOrdinaryInstall(InstallForm install, string? watch)
     {
         Require(!C<CheckBox>(install, "AdvancedToggle").Checked, "ordinary configuration starts and remains one collapsed page");
+        Require(C<RadioButton>(install, "ManualWatchMode").Checked && !C<RadioButton>(install, "FollowInstallerMode").Checked,
+            "legacy directory layout checks explicitly choose the supported manual mode");
         foreach (var name in new[] { "RecordName", "DatabaseSavePath", "ChooseSaveDatabase", "InstallerArguments", "RegistryKey", "SettleMilliseconds", "MaxDrainMilliseconds", "SnapshotOnly", "CheckEnvironment" })
             Require(!C<Control>(install, name).Visible, "optional setting is absent from ordinary flow: " + name);
         foreach (var name in new[] { "InstallerFileName", "ShowInstallerPath", "ChooseInstaller", "WatchRootLabel", "WatchRootNote", "WatchRoot", "ChooseWatchRoot", "StartRecording", "AdvancedToggle" })
             await Reach(C<Control>(install, name));
         Require(C<Label>(install, "WatchRootLabel").Text == "要记录哪个文件夹里的变化？"
-            && C<Label>(install, "WatchRootNote").Text.Contains("安装包在“下载”里", StringComparison.Ordinal)
-            && C<Label>(install, "WatchRootNote").Text.Contains("软件准备装到 D 盘", StringComparison.Ordinal)
-            && C<Label>(install, "WatchRootNote").Text.Contains("这里的选择只决定 Contain 观察哪里。", StringComparison.Ordinal),
+            && C<Label>(install, "WatchRootNote").Text.Contains("安装包的下载位置不代表安装目标", StringComparison.Ordinal)
+            && C<Label>(install, "WatchRootNote").Text.Contains("这里仅决定观察范围。", StringComparison.Ordinal),
             "reachable ordinary text explains download location, installation target and observation-only scope");
         Require(C<Button>(install, "StartRecording").Enabled == (watch is not null), "missing scope visibly prevents Start without optional diagnostic steps");
         if (watch is null)
@@ -286,6 +292,49 @@ internal sealed class LayoutVerification(Options options, bool viewerChecksPasse
         ValidateText(install);
     }
 
+    private async Task VerifyFollowInstall(InstallForm install, string condition, float scale)
+    {
+        Require(C<RadioButton>(install, "FollowInstallerMode").Checked && !C<RadioButton>(install, "ManualWatchMode").Checked,
+            "a new record defaults to installer following without a directory wizard");
+        Require(!C<CheckBox>(install, "AdvancedToggle").Checked && !C<Control>(install, "ManualObservation").Visible
+            && C<TextBox>(install, "WatchRoot").Text.Length == 0 && C<Button>(install, "StartRecording").Enabled,
+            "default follow makes explicit Start available from the executable while optional directory and advanced inputs remain hidden");
+        foreach (var id in new[] { "InstallerFileName", "ChooseInstaller", "ShowInstallerPath", "CopyInstallerPath",
+            "FollowInstallerMode", "ManualWatchMode", "FollowScopeNote", "CaptureModeNote", "StartRecording", "AdvancedToggle" })
+            await Reach(C<Control>(install, id));
+        var note = C<Label>(install, "CaptureModeNote");
+        var follow = C<Label>(install, "FollowScopeNote");
+        Require(follow.Text.Contains("直接子进程", StringComparison.Ordinal) && follow.Text.Contains("文件操作", StringComparison.Ordinal)
+            && note.Text.Contains("安装前", StringComparison.Ordinal) && note.Text.Contains("归属", StringComparison.Ordinal),
+            "follow capability and its missing-before-state/ownership limits are expressed in reachable text");
+        var action = BoundsOnForm(C<Button>(install, "StartRecording"), install);
+        var mode = BoundsOnForm(note, install);
+        var advanced = BoundsOnForm(C<CheckBox>(install, "AdvancedToggle"), install);
+        Require(action.Top + 3 >= mode.Bottom && action.Top - mode.Bottom <= install.Font.Height * 5 + 24 * scale
+            && action.Top < advanced.Top, "the single primary action sits near its mode explanation and before optional advanced settings");
+        C<Button>(install, "CopyInstallerPath").PerformClick();
+        Require(Clipboard.GetText() == C<TextBox>(install, "InstallerPath").Text,
+            "the exact long installer path remains copyable without expanding technical settings");
+        C<CheckBox>(install, "ShowInstallerPath").Checked = true;
+        await Reach(C<TextBox>(install, "InstallerPath"));
+        Require(C<TextBox>(install, "InstallerPath").ReadOnly && C<TextBox>(install, "InstallerPath").Text.EndsWith(".exe", StringComparison.OrdinalIgnoreCase),
+            "expanded installer path is fully inspectable and protected against accidental editing");
+        C<CheckBox>(install, "ShowInstallerPath").Checked = false;
+        C<RadioButton>(install, "FollowInstallerMode").Focus();
+        var keyboardReachedStart = false;
+        for (var step = 0; step < 40; step++)
+        {
+            if (C<Button>(install, "StartRecording").Focused) { keyboardReachedStart = true; break; }
+            install.SelectNextControl(install.ActiveControl, true, true, true, true);
+        }
+        Require(keyboardReachedStart, "keyboard navigation reaches follow Start without entering optional settings");
+        ValidateText(install);
+        followConditions.Add(new { name = condition, actual_device_dpi = install.DeviceDpi, requested_scale = scale,
+            window_width = install.Width, window_height = install.Height, default_follow = true,
+            no_scope_required = true, start_near_mode = true, primary_before_advanced = true,
+            manual_available = true, path_copy_exact = true, keyboard_start_reachable = true });
+    }
+
     private void ValidateText(System.Windows.Forms.Control root)
     {
         foreach (var control in Descendants(root).Where(control => control.Visible))
@@ -302,7 +351,7 @@ internal sealed class LayoutVerification(Options options, bool viewerChecksPasse
     private void ValidateCaption(ButtonBase button)
     {
         var text = TextRenderer.MeasureText(button.Text, button.Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
-        Require(button.ClientSize.Width + 2 >= text.Width + (button is CheckBox ? 20 : 8), "button caption width fits: " + SafeName(button));
+        Require(button.ClientSize.Width + 2 >= text.Width + (button is CheckBox or RadioButton ? 20 : 8), "button caption width fits: " + SafeName(button));
         Require(button.ClientSize.Height + 2 >= text.Height + 4, "button caption height fits: " + SafeName(button));
     }
 
@@ -477,6 +526,8 @@ internal sealed class LayoutVerification(Options options, bool viewerChecksPasse
             viewer_assembly_sha256 = Hash(Path.Combine(options.Package, "Contain.Viewer.dll")),
             viewer_launcher_sha256 = Hash(Path.Combine(options.Package, "Contain.Viewer.exe")), contain_sha256 = Hash(Path.Combine(options.Package, "contain.exe")),
             planned_checks = Plan, checks, conditions, screenshots, reach_failures = reachFailures,
+            follow_page_verification = new { protocol_revision = "contain-follow-layout-verification-1",
+                accepted = followConditions.Count == 3 && Accepted, conditions = followConditions },
             screenshot_failures = screenshotFailures, assertions_passed = assertions,
             passed = checks.Count(check => check.Status == "passed"), failed = checks.Count(check => check.Status == "failed"), skipped = 0, not_run = checks.Count(check => check.Status == "not_run"),
             manual_checks = new[] { new { name = "windows_11_parallels_actual_high_dpi", status = "not_run", reason = "CI Windows Server display is not the user's Windows 11/Parallels monitor; guest architecture and original DPI are unconfirmed." } },

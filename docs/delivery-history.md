@@ -15,6 +15,7 @@ Use the [README](../README.md) for the current Windows download and quick start.
 | Export all matching events, Beta 6 | Released | [Export and release verification](search-export-beta6.md) |
 | One-page new installation record, Beta 7 | Released | [First-use flow and Windows verification](simple-install-beta7.md) |
 | Folder choice and finished-task guidance, Beta 8 | Released | [Focused fixes and native verification](install-guidance-beta8.md) |
+| Follow the launched EXE without guessing a directory, Beta 9 | Released | [Source evidence, page and package verification](follow-installer-beta9.md) |
 
 [Architecture](architecture.md), [JSON contract](json-contract.md),
 [measured performance limits](performance.md) and [formal unexecuted stabilization

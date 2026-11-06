@@ -78,7 +78,13 @@ public sealed class CoreResponse
                 Array(data, "files");
                 Array(data, "registry");
                 Array(data, "inventory");
-                OptionalObject(data, "backend");
+                var backend = OptionalObject(data, "backend");
+                if (backend.ValueKind == JsonValueKind.Object && backend.TryGetProperty("follow_installer", out var follow) && follow.ValueKind != JsonValueKind.Null)
+                {
+                    Require(follow.ValueKind == JsonValueKind.Object, "跟随记录元数据必须是对象。");
+                    foreach (var flag in new[] { "direct_children_only", "baseline_available" })
+                        Require(follow.TryGetProperty(flag, out var value) && value.ValueKind is JsonValueKind.True or JsonValueKind.False, "跟随记录边界必须是布尔值。");
+                }
                 OptionalObject(data, "stats");
                 OptionalObject(data, "quality");
                 var counts = OptionalObject(data, "summary_counts");

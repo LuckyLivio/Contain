@@ -1,5 +1,18 @@
 # Native desktop verification
 
+Beta 9's default configuration follows the selected installer. The existing
+first-use plan now verifies that an EXE enables Start without a directory, emits
+an explicit follow argument with no hidden watch scope, preserves an explicitly
+selected manual folder across mode changes, and refuses a follow/snapshot conflict
+before any collector or library creation. Legacy directory and synthetic progress
+cases explicitly select the real manual-mode control; no production test-default
+switch is used. `follow_configuration_verification` records the exercised actions.
+The layout plan captures the new default page at the same 740 x 620 / actual 96-DPI
+condition as the retained before image, with 150%/200% simulation reported
+separately. It verifies the primary action near its mode explanation, optional
+manual controls, exact path copy and keyboard reachability. These form checks
+remain separate from the one actual packaged-EXE follow recording.
+
 Beta 8 reuses the viewer-only plan for folder guidance and task next steps. The
 progress checks compare the actual status control, clipboard action and native
 details window through held synthetic lifecycle checkpoints, including a nonzero

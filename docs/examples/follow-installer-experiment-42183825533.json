@@ -1,0 +1,292 @@
+{
+  "schema_version": 1,
+  "protocol": "contain-follow-installer-experiment-1",
+  "source_sha": "749447e3f896fe779a297cc12737b6e99bc21940",
+  "synthetic": false,
+  "controlled_fixture": true,
+  "maximum_native_captures": 1,
+  "retries": 0,
+  "session_id": "1a51a489-dab1-4ce7-80fe-77d36af2601e",
+  "checks": [
+    {
+      "name": "independent_fixed_answers",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "capture_and_fixture_finished",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "no_predetermined_scope_and_runtime_directory",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "bounded_follow_admission",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "bounded_storage",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "self_io_excluded",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "finished_saved_session",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "no_preset_watch_roots",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "actual_sources_and_loss_accounting",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "parent_independent_write",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "parent_content",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "child_independent_write",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "child_content",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "unrelated_independent_write",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "unrelated_content",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "distinct_process_instances",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "parent_verified_source_write",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "parent_reopened_explanation",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "parent_missing_baseline_explicit",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "child_verified_source_write",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "child_reopened_explanation",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "child_missing_baseline_explicit",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "direct_child_parent_instance",
+      "status": "passed",
+      "reason": null
+    },
+    {
+      "name": "unrelated_never_attributed",
+      "status": "passed",
+      "reason": null
+    }
+  ],
+  "observations": [
+    {
+      "label": "parent",
+      "event_id": "35da64dd-eba3-42c7-a060-1194cb98e5af",
+      "operation": "write_requested",
+      "timestamp_ticks": "134384253033920463",
+      "pid": 6264,
+      "creation_time": "134384253033844729",
+      "rule": "InstallerPid",
+      "confidence": "High",
+      "actor_confidence": "High",
+      "source": "EtwFile",
+      "completion": true,
+      "state_validated": false,
+      "recorded_name_sha256": "edac0ff9aae0d62aee26c2cffe8bd64e8561c58d1e772acff51d87b29205b2f5",
+      "current_path_verified": false,
+      "historical_name_source": "file_object_cache"
+    },
+    {
+      "label": "child",
+      "event_id": "4de44c60-230b-4490-98f0-c1cd0f22d70c",
+      "operation": "write_requested",
+      "timestamp_ticks": "134384253038019869",
+      "pid": 5736,
+      "creation_time": "134384253033930286",
+      "rule": "DescendantProcess",
+      "confidence": "High",
+      "actor_confidence": "High",
+      "source": "EtwFile",
+      "completion": true,
+      "state_validated": false,
+      "recorded_name_sha256": "9c651919ca99ef2c4012048e717b51ea8c23f213f581fa0b7eafda6abc093e6d",
+      "current_path_verified": false,
+      "historical_name_source": "file_object_cache"
+    },
+    {
+      "label": "unrelated",
+      "observed_event_count": 0,
+      "contextual_event_count": 0,
+      "event_ids": [],
+      "outcome": "not_retained_by_follow_scope; no_claim_no_system_event",
+      "event_id": null,
+      "classification": "unobserved"
+    }
+  ],
+  "ownership_claim": false,
+  "current_path_claim": false,
+  "installation_before_baseline": false,
+  "post_install_file_reads": false,
+  "accepted": true,
+  "follow_counters": {
+    "direct_children_only": true,
+    "baseline_available": false,
+    "candidate_record_limit": 2048,
+    "candidate_byte_limit": 8388608,
+    "resource_limit": 4096,
+    "candidates": 2535,
+    "admitted": 176,
+    "excluded_other": 2250,
+    "unresolved": 109,
+    "excluded_self_io": 0,
+    "candidate_dropped": 0,
+    "candidate_high_water_records": 86,
+    "candidate_high_water_bytes": 100827
+  },
+  "storage_counters": {
+    "quota_bytes": 67108864,
+    "committed_bytes": 294239,
+    "persisted": 274,
+    "failed": 0,
+    "quota_dropped": 0
+  },
+  "candidate_evidence": [
+    {
+      "label": "parent",
+      "events": [
+        {
+          "event_id": "6920b80d-b1d0-40be-91c7-a2e529b71bcf",
+          "operation": "open_requested",
+          "confidence": "High",
+          "pid": 6264,
+          "creation_time": "134384253033844729",
+          "rule": "InstallerPid",
+          "source": "EtwFile"
+        },
+        {
+          "event_id": "627ca186-1e44-41b2-8e9a-e24011ff8afc",
+          "operation": "create_new_file",
+          "confidence": "High",
+          "pid": 6264,
+          "creation_time": "134384253033844729",
+          "rule": "InstallerPid",
+          "source": "EtwFile"
+        },
+        {
+          "event_id": "35da64dd-eba3-42c7-a060-1194cb98e5af",
+          "operation": "write_requested",
+          "confidence": "High",
+          "pid": 6264,
+          "creation_time": "134384253033844729",
+          "rule": "InstallerPid",
+          "source": "EtwFile"
+        },
+        {
+          "event_id": "925d2316-f7f3-4990-9a16-96bedde33f25",
+          "operation": "write_requested",
+          "confidence": "Unknown",
+          "pid": null,
+          "creation_time": null,
+          "rule": "MissingWriter",
+          "source": "EtwFile"
+        }
+      ]
+    },
+    {
+      "label": "child",
+      "events": [
+        {
+          "event_id": "9ea4569e-031b-4b86-9e24-52717872658c",
+          "operation": "open_requested",
+          "confidence": "High",
+          "pid": 5736,
+          "creation_time": "134384253033930286",
+          "rule": "DescendantProcess",
+          "source": "EtwFile"
+        },
+        {
+          "event_id": "7357cdf8-4540-4972-b7e8-9942789c8ea3",
+          "operation": "create_new_file",
+          "confidence": "High",
+          "pid": 5736,
+          "creation_time": "134384253033930286",
+          "rule": "DescendantProcess",
+          "source": "EtwFile"
+        },
+        {
+          "event_id": "4de44c60-230b-4490-98f0-c1cd0f22d70c",
+          "operation": "write_requested",
+          "confidence": "High",
+          "pid": 5736,
+          "creation_time": "134384253033930286",
+          "rule": "DescendantProcess",
+          "source": "EtwFile"
+        },
+        {
+          "event_id": "2cab5255-2395-404f-bcd8-b38b202a7680",
+          "operation": "write_requested",
+          "confidence": "Unknown",
+          "pid": null,
+          "creation_time": null,
+          "rule": "MissingWriter",
+          "source": "EtwFile"
+        }
+      ]
+    }
+  ],
+  "passed": 24,
+  "failed": 0,
+  "not_run": 0,
+  "unresolved": []
+}

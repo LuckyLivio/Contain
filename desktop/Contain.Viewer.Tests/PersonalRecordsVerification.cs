@@ -140,6 +140,7 @@ internal sealed class PersonalRecordsVerification(Options options, bool viewerCh
             Reject(() => records.PrepareForRecording(request));
             Require(!Directory.Exists(Path.GetDirectoryName(records.DatabasePath)), "scope refusal precedes default-directory creation");
             using var form = NewForm(); form.Show(owner);
+            TestRecordIsolation.SelectManualObservation(form);
             C<TextBox>(form, "InstallerPath").Text = client.ExecutablePath;
             C<TextBox>(form, "WatchRoot").Text = root;
             C<Button>(form, "StartRecording").PerformClick(); await form.PendingOperation.WaitAsync(TimeSpan.FromSeconds(20));

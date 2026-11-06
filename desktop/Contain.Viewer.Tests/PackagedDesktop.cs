@@ -181,6 +181,16 @@ internal sealed class PackagedDesktop : IDisposable
 
     internal Task<uint> ControlWindowDpiAsync(string id) => Ui(() => GetDpiForWindow(ControlRoot(id)));
 
+    internal async Task ResizeControlWindowAsync(string id, int width, int height)
+    {
+        await Ui(() =>
+        {
+            if (!SetWindowPos(ControlRoot(id), IntPtr.Zero, 0, 0, width, height, 0x0002 | 0x0004))
+                throw new IOException("The owned configuration window could not resize.");
+        });
+        await Task.Delay(150);
+    }
+
     internal Task<ImageResult> ScreenshotControlWindowAsync(string id, string directory, string name) => Ui(() =>
         ScreenshotWindow(ControlRoot(id), directory, name));
 
@@ -481,7 +491,14 @@ internal sealed class PackagedDesktop : IDisposable
         if ((toggle.Current.ToggleState == Automation.ToggleState.On) != value) toggle.Toggle();
     });
     internal Task<bool> IsCheckedAsync(string id) => Ui(() =>
-        ((Automation.TogglePattern)Required(id).GetCurrentPattern(Automation.TogglePattern.Pattern)).Current.ToggleState == Automation.ToggleState.On);
+    {
+        var element = Required(id);
+        if (element.TryGetCurrentPattern(Automation.TogglePattern.Pattern, out var toggle))
+            return ((Automation.TogglePattern)toggle).Current.ToggleState == Automation.ToggleState.On;
+        if (element.TryGetCurrentPattern(Automation.SelectionItemPattern.Pattern, out var selection))
+            return ((Automation.SelectionItemPattern)selection).Current.IsSelected;
+        throw new InvalidOperationException("The native choice has no check/selection pattern: " + id);
+    });
 
     internal Task SelectIdentityAsync(string identity) => Ui(() =>
     {

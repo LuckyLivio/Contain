@@ -1,8 +1,8 @@
 # Follow-installer research candidate
 
-Status: **prototype awaiting a controlled Windows experiment**. The current
-supported download remains Beta 8. There is no Beta 9 product release or desktop
-follow-mode claim at this stage.
+Status: **controlled capability experiment passed**. Product-page and packaged-EXE
+acceptance are recorded separately in the [Beta 9 delivery](follow-installer-beta9.md)
+and its immutable release build identity.
 
 ## Existing behavior and failure boundary
 
@@ -69,3 +69,33 @@ accessed 2026-11-06. No code, icons, fonts or new runtime dependencies were adop
 The implementation and its validation are Contain's work. Existing WinForms and
 the pinned vendored ferrisetw retain their existing licenses and notices; this
 experiment does not replace them with PerfView/TraceEvent.
+
+## Frozen capability result
+
+[Windows experiment 42183825533](https://github.com/LuckyLivio/Contain/actions/runs/42183825533),
+source `749447e3f896fe779a297cc12737b6e99bc21940`, passed all 24 checks in one
+capture with no retries. [Reviewed aggregate](examples/follow-installer-experiment-42183825533.json).
+Saved session: `1a51a489-dab1-4ce7-80fe-77d36af2601e`.
+
+| Answer | Actual event | Process-instance proof | Result |
+| --- | --- | --- | --- |
+| Root write in A | `35da64dd-eba3-42c7-a060-1194cb98e5af` | PID 6264, creation FILETIME `134384253033844729` | `write_requested`, High, InstallerPid, completion true |
+| Direct child write in newly created B | `4de44c60-230b-4490-98f0-c1cd0f22d70c` | PID 5736, creation FILETIME `134384253033930286`; exact parent instance checked | `write_requested`, High, DescendantProcess, completion true |
+| Independent writer in A | No retained event ID | Independent syscall truth and content check passed | Excluded/unobserved in this session; no claim that no system operation occurred |
+
+Both selected events were reread with identical explanations in fresh CLI
+processes. Both have `state_validated=false`, `current_path_verified=false`, and a
+historical `file_object_cache` name. Each target also retained a separate
+MissingWriter/Unknown write; those were not promoted. There is no before baseline
+or final ownership claim.
+
+Admission accounted for 2,535 candidates: 176 admitted, 2,250 excluded and 109
+unresolved, with zero candidate drops. High water was 86 records / 100,827 bytes.
+The raw journal persisted 274 records / 294,239 bytes under the 64 MiB limit, with
+no persistence/quota loss. The self-I/O counter was zero; absence of retained
+private I/O passed, but zero does not prove such I/O never occurred.
+
+The separate quality run 42183825660 passed 53 gates, 366 nextest cases (7 skipped),
+including all six new Windows-only tests. Workspace line/function coverage was
+75.8090%/76.9184%; original-package coverage 72.8887%/75.4015%. These include inline
+tests. Unit coverage is not the source of the live ETW acceptance claim.
