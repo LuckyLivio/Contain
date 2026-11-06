@@ -155,6 +155,12 @@ class PairTests(unittest.TestCase):
         self.assertFalse(result["workload_complete"])
         self.assertFalse(result["background"]["window"]["all_noise_within_root_lifetime"])
 
+    def test_lingering_owned_process_blocks_pair_acceptance(self):
+        self.write("private/worker-termination.json", dict(all_owned_processes_exited=False))
+        result = self.summarize()
+        self.assertFalse(result["accepted"])
+        self.assertFalse(result["workload_complete"])
+
     def test_noise_does_not_span_child_write_is_not_comparable(self):
         for row in self.fixture.truth:
             if row.get("role") == "noise":
