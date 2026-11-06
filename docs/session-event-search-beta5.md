@@ -34,8 +34,11 @@ Native DPI and simulated 150%/200% scaling are separate measurements.
 
 Linux checks use the production storage/model modules in `contain-offline` and
 cross-compile the desktop. Windows quality gates and native acceptance are
-required for release. Results and immutable package identity are recorded below
-after the final accepted CI run.
+required for release. The [Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.5)
+includes `BUILD-IDENTITY.json` with the exact accepted CI/source, native Windows
+version and DPI, fixed oracle IDs and immutable package hashes. The accepted ZIP
+is uploaded unchanged after these gates pass; source and delivery-documentation
+commits are distinguished in its identity.
 
 ## Limits
 
