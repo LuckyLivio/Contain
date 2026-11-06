@@ -1,4 +1,6 @@
-# Beta 10 diagnostic preview — acceptance blocked
+> 本页保留上一轮交付及所有失败历史。本轮原 ZIP 的采集修复、六次对照与仍未解除的桌面阻塞见[最新交付报告](beta10-capture-reliability-result.md)。
+
+# 历史报告：上一轮 3c2e068 诊断预览
 
 **诊断预览，不是已验收的 Beta.10。** [下载 Windows ZIP](https://github.com/LuckyLivio/Contain/actions/runs/42216843544/artifacts/13501998007)（需登录 GitHub；先解开产物外层，再解开内层 Windows ZIP）。
 产物保留至 2027-02-04。源码：`3c2e06871d28acd199ba1813605afecc9074738d`。

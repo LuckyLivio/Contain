@@ -185,3 +185,17 @@ accepted original ZIP as v0.3.2-beta.10 prerelease with checksums/source/limits.
 If still blocked, deliver a new diagnostic ZIP plus the new stage and identity
 evidence and remaining failures. Keep the user's private Parallels root cause
 separate until its saved count breakdown exists. No 0.4 work.
+
+## Recorded D4 outcome (no release substitution)
+
+D4 run 42231290678 used the original C1 ZIP unchanged and completed the declared
+order exactly once. Both candidate captures passed the unchanged zero receive /
+candidate loss, identity, completion, independent workload, unrelated attribution,
+accounting and fresh-process readback gates. Beta9 receive losses were
+69,520/34,540 and candidate losses 37,269/38,539; previous-3c losses were
+5,770/7,617 and 6,675/5,812. All six handoff/save/ETW/decode loss counts were zero.
+Personal-only checks passed 8/8; Ready samples 492/532/558 ms did not reproduce
+the original C1 full-desktop timeout. Its cause remains unexplained. D4 is not
+formal acceptance, release_accepted stays false, and PR 15 remains draft. See
+[the current result](beta10-capture-reliability-result.md) for complete identities,
+limits, download, target event IDs and retained attempts.
