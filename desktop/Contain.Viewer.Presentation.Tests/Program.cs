@@ -76,3 +76,4 @@ historical["backend"]!["context_losses"] = 3;
 Require(Details(historical).Contains("上下文丢失总数：3", StringComparison.Ordinal), "positive legacy context loss remains visible");
 
 Console.WriteLine($"Saved loss presentation: {checks} passed, 0 failed (synthetic projection only).");
+ReadyDiagnosticsChecks.Run();

@@ -29,6 +29,7 @@ internal sealed class PersonalRecordsVerification(Options options, bool viewerCh
     internal static int RunStandalone(string package, string fixtures, string output)
     {
         Directory.CreateDirectory(output); var privateOutput = Path.Combine(output, "private"); Directory.CreateDirectory(privateOutput);
+        ReadyDiagnostics.Configure(Path.GetFullPath(output));
         var options = new Options(Path.GetFullPath(package), Path.GetFullPath(fixtures), Path.GetFullPath(output),
             Path.GetFullPath(privateOutput), "working-tree", null);
         var passed = false;
@@ -200,7 +201,7 @@ internal sealed class PersonalRecordsVerification(Options options, bool viewerCh
                 using var desktop = new PackagedDesktop(options.Package, workingA);
                 try
                 {
-                    await desktop.ReadyAsync(); actualExecutable = true;
+                    await desktop.ReadyAsync("default_history"); actualExecutable = true;
                     await PackagedDesktop.WaitAsync(async () => (await desktop.TextAsync("Status")).Contains("记录", StringComparison.Ordinal), TimeSpan.FromSeconds(30));
                     Require(!(await desktop.NamesAsync("Sessions")).Any(name => name.StartsWith("session:", StringComparison.Ordinal)), "fresh actual EXE shows no invented history");
                     Require(!Directory.Exists(Path.GetDirectoryName(records.DatabasePath)), "actual cold startup does not create an empty database");
@@ -223,7 +224,7 @@ internal sealed class PersonalRecordsVerification(Options options, bool viewerCh
                 {
                     try
                     {
-                        firstPid = first.ProcessId; await first.ReadyAsync();
+                        firstPid = first.ProcessId; await first.ReadyAsync("seeded_first");
                         await VerifyExactUi(first, restartedSession, restartedEvent);
                         await first.CloseAsync(); Require(first.HasExited, "record-view process terminated before restart"); firstExitCode = first.ExitCode;
                     }
@@ -234,7 +235,7 @@ internal sealed class PersonalRecordsVerification(Options options, bool viewerCh
                 using var second = new PackagedDesktop(movedPackage, workingB);
                 try
                 {
-                    restartPid = second.ProcessId; await second.ReadyAsync();
+                    restartPid = second.ProcessId; await second.ReadyAsync("seeded_restart");
                     await VerifyExactUi(second, restartedSession, restartedEvent);
                     Require(second.WorkingDirectory != workingA && second.Executable != Path.Combine(options.Package, "Contain.Viewer.exe"), "restart uses moved package and different working directory");
                     screenshots.Add(await second.ScreenshotAsync(Path.Combine(options.Output, "screenshots"), "personal-cold-restart-exact-event.png"));

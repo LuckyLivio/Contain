@@ -199,3 +199,45 @@ the original C1 full-desktop timeout. Its cause remains unexplained. D4 is not
 formal acceptance, release_accepted stays false, and PR 15 remains draft. See
 [the current result](beta10-capture-reliability-result.md) for complete identities,
 limits, download, target event IDs and retained attempts.
+
+## D5: full-desktop startup diagnosis, declared before execution
+
+The next attempt runs the **full** existing Windows desktop harness once, in its
+original order, against C1's original ZIP (product source
+`b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4`, SHA-256
+`a7ef3faed3c42aada77fe5619b732fe092b8787f89311047105ff6082b132656`).
+Only the separate test harness gains diagnostics; no product binary, capture
+algorithm, fixture, timeout, assertion, dependency gate or cleanup is changed.
+Record the current harness/script revision separately from the product revision,
+and verify the original production DLL loaded by the harness and every package
+manifest member. Use isolated marked empty/seeded libraries and the existing
+special-character paths; never inspect a user's records.
+
+Preserve the two 40-second readiness waits, the nested 20-second UIA deadline,
+the ten-minute harness deadline and all original failure propagation. A bounded
+native-only observer records process launch/early exit and first owned main-window
+appearance. Fixed readiness milestones record the target control's first discovery
+and enabled observation. Fixed UIA operation names, ordinals and elapsed times
+identify the in-flight call at a deadline. No captions, edit values, window tree,
+private paths, database contents or exception messages enter public diagnostics.
+Flush safe checkpoints before cleanup so a later hang cannot erase the stage.
+
+There is one full-harness invocation and at most its existing one actual installer
+capture; no retry and no additional load matrix in D5. All prerequisites remain:
+if startup checks fail, dependent installation checks stay failed/not run. If they
+pass, continue through the existing actual installation, independent source-truth
+checks, session end/save, original-event explanation and process exit/reopen.
+The D4 six-case same-ZIP capture comparison remains retained separately and is not
+rerun to select better results. Preserve every new attempt, including unavailable,
+failed and not-run outcomes, together with the original C1 full-desktop failure.
+
+After D5, select a behavioral change only if evidence identifies a faulty layer.
+A successful observation alone does not explain the original intermittent timeout.
+If D5 fails or leaves the fault unresolved, record the exact observed stage and
+the remaining uncertainty before choosing any further experiment. A further
+experiment requires a new written hypothesis and fixed attempt plan; do not repeat
+unchanged runs to obtain green output. If a test-only repair is justified, validate
+the complete desktop flow with the unchanged C1 ZIP. If product bytes must change,
+freeze a new ZIP and bind full desktop and necessary capture comparison to that
+new package. Release remains conditional on all applicable gates and reviewed
+diagnosis; never rewrite the original ZIP's failed embedded validation manifest.

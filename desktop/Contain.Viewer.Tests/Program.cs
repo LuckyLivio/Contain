@@ -40,6 +40,7 @@ internal static class Program
         if (args.Length == 4 && args[0] == "--event-selection-probe")
             return PackagedDesktop.DiagnoseSelection(args[1], args[2], args[3], events: true);
         var options = Options.Parse(args);
+        ReadyDiagnostics.Configure(options.Output);
         var runner = new Runner(options);
         var progressAccepted = false;
         var personalAccepted = false;

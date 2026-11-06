@@ -9,5 +9,6 @@
   <ItemGroup>
     <Compile Include="../Contain.Viewer/OverviewPresentation.cs" Link="OverviewPresentation.cs" />
     <Compile Include="../Contain.Viewer/RecordingScope.cs" Link="RecordingScope.cs" />
+    <Compile Include="../Contain.Viewer.Tests/ReadyDiagnostics.cs" Link="ReadyDiagnostics.cs" />
   </ItemGroup>
 </Project>
