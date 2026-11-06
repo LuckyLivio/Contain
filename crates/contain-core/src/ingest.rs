@@ -157,9 +157,35 @@ impl Queue {
 
 struct LiveState {
     cache: LifetimeCache,
+    follow_cache_updated: bool,
     last_activity: Instant,
     received: u64,
     follow: Option<crate::follow::FollowBuffer>,
+}
+impl LiveState {
+    fn seed(&mut self, record: ProcessRecord) {
+        // Repeated observer polling refreshes last_seen only. It must not make
+        // every idle page recheck the complete provisional backlog.
+        let changed = record.creation_time.is_some_and(|birth| {
+            self.cache
+                .processes
+                .get(&(record.pid, birth))
+                .is_none_or(|old| {
+                    (!record.image.is_empty() && record.image != old.image)
+                        || (record.parent_pid.is_some() && record.parent_pid != old.parent_pid)
+                        || (record.parent_creation_time.is_some()
+                            && record.parent_creation_time != old.parent_creation_time)
+                        || record
+                            .ended_at
+                            .is_some_and(|end| old.ended_at.is_none_or(|old_end| end < old_end))
+                        || (matches!(record.confidence, Confidence::Certain | Confidence::High)
+                            && (record.confidence != old.confidence
+                                || record.evidence != old.evidence))
+                })
+        });
+        self.follow_cache_updated |= changed;
+        self.cache.seed(record);
+    }
 }
 pub(crate) struct LiveCapture(Arc<Mutex<LiveState>>);
 impl LiveCapture {
@@ -176,6 +202,7 @@ impl LiveCapture {
         if live.follow.is_none() {
             return;
         }
+        live.follow_cache_updated |= !records.is_empty() || !threads.is_empty();
         for (record, at) in records {
             live.cache.seed_snapshot(record.clone(), *at);
         }
@@ -193,7 +220,7 @@ impl LiveCapture {
     pub(crate) fn bind_follow_root(&self, record: ProcessRecord, session: &str) {
         let mut live = self.0.lock().unwrap();
         let root = (record.pid, record.creation_time.unwrap_or(0));
-        live.cache.seed(record);
+        live.seed(record);
         if let Some(follow) = &mut live.follow {
             follow.bind(root, session);
         }
@@ -214,7 +241,7 @@ impl LiveCapture {
         let candidates = {
             let mut live = self.0.lock().unwrap();
             for record in records {
-                live.cache.seed(record);
+                live.seed(record);
             }
             live.cache.attach(root, session);
             if live.cache.dropped > 0 {
@@ -283,6 +310,7 @@ fn record_while_mode<T>(
     let done = Arc::new(AtomicBool::new(false));
     let live = LiveCapture(Arc::new(Mutex::new(LiveState {
         cache: LifetimeCache::default(),
+        follow_cache_updated: false,
         last_activity: Instant::now(),
         received: 0,
         follow: follow.then(Default::default),
@@ -346,6 +374,8 @@ fn record_while_mode<T>(
                             // Resolve the page against all lifecycle facts received in
                             // it, including thread starts delivered after file records.
                             for event in &page {
+                                live.follow_cache_updated |=
+                                    event.evidence.source == EvidenceSource::EtwProcess;
                                 live.cache.ingest(event);
                             }
                             let mut follow_candidates = Vec::new();
@@ -365,7 +395,12 @@ fn record_while_mode<T>(
                                 }
                             }
                             if let Some(mut follow) = live.follow.take() {
-                                let selected = follow.receive(follow_candidates, &mut live.cache);
+                                let cache_updated = std::mem::take(&mut live.follow_cache_updated);
+                                let selected = follow.receive(
+                                    follow_candidates,
+                                    &mut live.cache,
+                                    cache_updated,
+                                );
                                 if selected.iter().any(|e| e.event_type == "file") {
                                     live.last_activity = Instant::now();
                                 }
@@ -469,6 +504,36 @@ mod tests {
             id: sequence.to_string(),
             ..Default::default()
         }
+    }
+    #[test]
+    fn observer_last_seen_refresh_does_not_dirty_follow_context_but_new_evidence_does() {
+        let mut live = LiveState {
+            cache: LifetimeCache::default(),
+            follow_cache_updated: false,
+            last_activity: Instant::now(),
+            received: 0,
+            follow: Some(Default::default()),
+        };
+        let mut record = ProcessRecord {
+            pid: 1,
+            creation_time: Some(100),
+            image: "installer.exe".into(),
+            confidence: Confidence::Certain,
+            ..Default::default()
+        };
+        live.seed(record.clone());
+        assert!(std::mem::take(&mut live.follow_cache_updated));
+        record.last_seen = "later polling sample".into();
+        live.seed(record.clone());
+        assert!(!live.follow_cache_updated);
+        record.ended_at = Some(300);
+        live.seed(record.clone());
+        assert!(std::mem::take(&mut live.follow_cache_updated));
+        live.seed(record.clone());
+        assert!(!live.follow_cache_updated);
+        record.parent_pid = Some(2);
+        live.seed(record);
+        assert!(live.follow_cache_updated);
     }
     #[test]
     fn stop_failure_releases_waiting_workers_without_claiming_completion() {

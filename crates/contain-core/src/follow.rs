@@ -1,7 +1,7 @@
 //! Bounded provisional admission for follow-installer capture. No path or PID
 //! alone is an actor proof; all retained candidates are re-resolved after STOP.
 use crate::{lifetime::LifetimeCache, model::*};
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 pub(crate) const CANDIDATE_RECORDS: usize = 2048;
 pub(crate) const CANDIDATE_BYTES: usize = 8 * 1024 * 1024;
@@ -17,6 +17,14 @@ pub(crate) struct FollowBuffer {
     resources: BTreeSet<String>,
     requests: BTreeSet<String>,
     pending_ids: BTreeSet<String>,
+    // Retry hints only: each entry is backed by at least one bounded pending
+    // completion. They never supply writer identity or completion success.
+    pending_completion_requests: BTreeMap<String, usize>,
+    selection_generation: u64,
+    last_retry_generation: u64,
+    cache_dirty: bool,
+    #[cfg(test)]
+    retry_visits: u64,
     pub stats: FollowInstallerStats,
 }
 impl Default for FollowBuffer {
@@ -29,6 +37,12 @@ impl Default for FollowBuffer {
             resources: BTreeSet::new(),
             requests: BTreeSet::new(),
             pending_ids: BTreeSet::new(),
+            pending_completion_requests: BTreeMap::new(),
+            selection_generation: 0,
+            last_retry_generation: 0,
+            cache_dirty: false,
+            #[cfg(test)]
+            retry_visits: 0,
             stats: FollowInstallerStats {
                 candidate_record_limit: CANDIDATE_RECORDS as u64,
                 candidate_byte_limit: CANDIDATE_BYTES as u64,
@@ -51,6 +65,42 @@ impl FollowBuffer {
         if self.root.is_none() && root.1 != 0 {
             self.root = Some(root);
             self.session = session.into();
+            self.cache_dirty = true;
+            self.changed();
+        }
+    }
+    fn changed(&mut self) {
+        self.selection_generation = self.selection_generation.wrapping_add(1);
+    }
+    fn request_candidate_removed(&mut self, id: &str) {
+        if self.pending_completion_requests.contains_key(id) {
+            self.changed();
+        }
+    }
+    fn track_pending(&mut self, event: SystemEvent, size: usize) {
+        if event.event_type == "completion"
+            && let Some(id) = &event.raw.related_event
+        {
+            *self
+                .pending_completion_requests
+                .entry(id.clone())
+                .or_default() += 1;
+        }
+        self.bytes += size;
+        self.pending_ids.insert(event.id.clone());
+        self.pending.push_back((event, size));
+    }
+    fn untrack_pending(&mut self, event: &SystemEvent, size: usize) {
+        self.bytes -= size;
+        self.pending_ids.remove(&event.id);
+        if event.event_type == "completion"
+            && let Some(id) = &event.raw.related_event
+        {
+            let count = self.pending_completion_requests.get_mut(id).unwrap();
+            *count -= 1;
+            if *count == 0 {
+                self.pending_completion_requests.remove(id);
+            }
         }
     }
     #[cfg(test)]
@@ -76,6 +126,7 @@ impl FollowBuffer {
     fn buffer(&mut self, event: SystemEvent) {
         let Some(size) = Self::serialized_size(&event) else {
             self.stats.candidate_dropped += 1;
+            self.request_candidate_removed(&event.id);
             return;
         };
         if size > CANDIDATE_RECORD_BYTES
@@ -83,11 +134,10 @@ impl FollowBuffer {
             || self.bytes.saturating_add(size) > CANDIDATE_BYTES
         {
             self.stats.candidate_dropped += 1;
+            self.request_candidate_removed(&event.id);
             return;
         }
-        self.bytes += size;
-        self.pending_ids.insert(event.id.clone());
-        self.pending.push_back((event, size));
+        self.track_pending(event, size);
         self.stats.candidate_high_water_records = self
             .stats
             .candidate_high_water_records
@@ -102,42 +152,79 @@ impl FollowBuffer {
         &mut self,
         incoming: Vec<SystemEvent>,
         cache: &mut LifetimeCache,
+        cache_updated: bool,
     ) -> Vec<SystemEvent> {
+        self.cache_dirty |= cache_updated;
+        if self.cache_dirty {
+            if let Some(root) = self.root {
+                cache.attach(root, &self.session);
+            }
+            self.cache_dirty = false;
+            self.changed();
+        }
         // A completion can precede its request in this page. Register all IDs
         // before classification, just as when the whole page was buffered first.
         for event in &incoming {
             self.pending_ids.insert(event.id.clone());
         }
-        let mut admitted = self.flush(cache, false);
+        let mut admitted = self.retry_changed(cache);
         for event in incoming {
             self.stats.candidates += 1;
             self.pending_ids.remove(&event.id);
             match self.select(&event, cache, false, false) {
-                Selection::Admit => admitted.push(event),
-                Selection::Discard => {}
+                Selection::Admit => {
+                    self.request_candidate_removed(&event.id);
+                    admitted.push(event);
+                }
+                Selection::Discard => self.request_candidate_removed(&event.id),
                 Selection::Pending => self.buffer(event),
             }
+        }
+        // A current request can release a historical completion, and a newly
+        // selected resource can release an earlier competing writer. Each
+        // receive performs at most two bounded scans. Changes during the last
+        // scan remain dirty for the next page or the forced STOP passes.
+        admitted.extend(self.retry_changed(cache));
+        admitted
+    }
+    fn retry_changed(&mut self, cache: &LifetimeCache) -> Vec<SystemEvent> {
+        let mut admitted = Vec::new();
+        if self.last_retry_generation != self.selection_generation {
+            // Snapshot before scanning: facts admitted during this scan must
+            // still release earlier candidates on the next bounded pass.
+            self.last_retry_generation = self.selection_generation;
+            admitted.extend(self.scan_pending(cache, false));
         }
         admitted
     }
     pub fn flush(&mut self, cache: &mut LifetimeCache, final_pass: bool) -> Vec<SystemEvent> {
-        let mut admitted = Vec::new();
+        // STOP always rechecks the complete retained context, even if no live
+        // notification marked it dirty. This is not an attribution cache.
         if let Some(root) = self.root {
             cache.attach(root, &self.session);
         }
+        self.cache_dirty = false;
+        self.changed();
+        self.last_retry_generation = self.selection_generation;
+        self.scan_pending(cache, final_pass)
+    }
+    fn scan_pending(&mut self, cache: &LifetimeCache, final_pass: bool) -> Vec<SystemEvent> {
+        let mut admitted = Vec::new();
         let count = self.pending.len();
         for _ in 0..count {
+            #[cfg(test)]
+            {
+                self.retry_visits += 1;
+            }
             let (event, bytes) = self.pending.pop_front().unwrap();
-            self.bytes -= bytes;
-            self.pending_ids.remove(&event.id);
+            self.untrack_pending(&event, bytes);
             match self.select(&event, cache, final_pass, true) {
-                Selection::Admit => admitted.push(event),
-                Selection::Discard => {}
-                Selection::Pending => {
-                    self.bytes += bytes;
-                    self.pending_ids.insert(event.id.clone());
-                    self.pending.push_back((event, bytes));
+                Selection::Admit => {
+                    self.request_candidate_removed(&event.id);
+                    admitted.push(event);
                 }
+                Selection::Discard => self.request_candidate_removed(&event.id),
+                Selection::Pending => self.track_pending(event, bytes),
             }
         }
         admitted
@@ -183,6 +270,9 @@ impl FollowBuffer {
         let completion = event.event_type == "completion";
         let related = event.raw.related_event.as_ref();
         let completion_match = completion && related.is_some_and(|id| self.requests.remove(id));
+        if completion_match {
+            self.changed();
+        }
         let unrelated_completion = completion
             && !completion_match
             && !related.is_some_and(|id| self.pending_ids.contains(id));
@@ -204,6 +294,7 @@ impl FollowBuffer {
                     return Selection::Discard;
                 }
                 self.resources.insert(event.resource.clone());
+                self.changed();
             }
             if !completion
                 && event.raw.irp.is_some()
@@ -216,7 +307,9 @@ impl FollowBuffer {
                     self.stats.candidate_dropped += 1;
                     return Selection::Discard;
                 }
-                self.requests.insert(event.id.clone());
+                if self.requests.insert(event.id.clone()) {
+                    self.changed();
+                }
             }
             self.stats.admitted += 1;
             Selection::Admit
@@ -479,7 +572,8 @@ mod tests {
                         (start..start + 256)
                             .map(|i| file(&format!("unknown-{i}"), 99))
                             .collect(),
-                        &mut cache
+                        &mut cache,
+                        false,
                     )
                     .is_empty()
             );
@@ -487,6 +581,7 @@ mod tests {
         let admitted = follow.receive(
             vec![file("root", 7), file("child", 8), file("background", 9)],
             &mut cache,
+            true,
         );
         assert_eq!(
             admitted.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
@@ -536,13 +631,13 @@ mod tests {
         };
         let mut competitor = file("competitor", 99);
         competitor.resource = request.resource.clone();
-        let admitted = follow.receive(vec![completion, request, competitor], &mut cache);
+        let admitted = follow.receive(vec![completion, request, competitor], &mut cache, true);
         assert_eq!(
             admitted.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
-            ["root", "competitor"]
+            ["root", "competitor", "end"]
         );
         assert_eq!(admitted[1].confidence, Confidence::Unknown);
-        assert_eq!(follow.flush(&mut cache, true)[0].id, "end");
+        assert!(follow.flush(&mut cache, true).is_empty());
         assert_eq!(follow.stats.candidate_dropped, 0);
         assert!(follow.pending.is_empty());
     }
@@ -560,7 +655,9 @@ mod tests {
             150,
         ));
         cache.ingest(&lifecycle("thread_start", 2, None, None, Some(8), 151));
-        let mut event = follow.receive(vec![file("child", 8)], &mut cache).remove(0);
+        let mut event = follow
+            .receive(vec![file("child", 8)], &mut cache, true)
+            .remove(0);
         cache.ingest(&lifecycle(
             "process_start",
             2,
@@ -585,7 +682,7 @@ mod tests {
             .collect();
         assert!(
             follow
-                .receive(vec![file("new-resource", 7)], &mut cache)
+                .receive(vec![file("new-resource", 7)], &mut cache, true)
                 .is_empty()
         );
         assert_eq!(follow.stats.candidate_dropped, 1);
@@ -594,7 +691,7 @@ mod tests {
         follow.requests = (0..REQUEST_LIMIT).map(|i| format!("request-{i}")).collect();
         let mut request = file("new-request", 7);
         request.raw.irp = Some("irp".into());
-        assert!(follow.receive(vec![request], &mut cache).is_empty());
+        assert!(follow.receive(vec![request], &mut cache, true).is_empty());
         assert_eq!(follow.stats.candidate_dropped, 2);
         assert_eq!(follow.requests.len(), REQUEST_LIMIT);
     }
@@ -615,16 +712,246 @@ mod tests {
         );
         let mut oversized = event.clone();
         oversized.resource.push('x');
-        assert!(follow.receive(vec![oversized], &mut cache).is_empty());
+        assert!(follow.receive(vec![oversized], &mut cache, true).is_empty());
         assert_eq!(follow.stats.candidate_dropped, 1);
         assert!(follow.resources.is_empty());
         assert!(follow.requests.is_empty());
         assert!(follow.pending.is_empty());
-        let admitted = follow.receive(vec![event], &mut cache);
+        let admitted = follow.receive(vec![event], &mut cache, true);
         assert_eq!(admitted.len(), 1);
         assert_eq!(follow.resources.len(), 1);
         assert_eq!(follow.requests.len(), 1);
         assert_eq!(follow.stats.candidate_dropped, 1);
+    }
+    #[test]
+    fn pure_background_pages_do_not_rescan_saturated_unknown_candidates() {
+        let mut follow = FollowBuffer::default();
+        follow.bind((1, 100), "s");
+        let mut cache = cache();
+        cache.ingest(&lifecycle(
+            "process_start",
+            3,
+            Some(150),
+            Some(99),
+            None,
+            150,
+        ));
+        cache.ingest(&lifecycle("thread_start", 3, None, None, Some(9), 151));
+        for start in (0..CANDIDATE_RECORDS).step_by(256) {
+            assert!(
+                follow
+                    .receive(
+                        (start..start + 256)
+                            .map(|i| file(&format!("unknown-{i}"), 99))
+                            .collect(),
+                        &mut cache,
+                        false
+                    )
+                    .is_empty()
+            );
+        }
+        let before = follow.retry_visits;
+        for page in 0..100 {
+            assert!(
+                follow
+                    .receive(
+                        (0..256)
+                            .map(|i| file(&format!("background-{page}-{i}"), 9))
+                            .collect(),
+                        &mut cache,
+                        false
+                    )
+                    .is_empty()
+            );
+        }
+        assert_eq!(follow.retry_visits, before);
+        assert_eq!(follow.pending.len(), CANDIDATE_RECORDS);
+        assert_eq!(follow.stats.excluded_other, 25_600);
+        assert_eq!(follow.stats.candidate_dropped, 0);
+        assert_eq!(follow.stats.candidates, CANDIDATE_RECORDS as u64 + 25_600);
+        assert!(follow.bytes <= CANDIDATE_BYTES);
+        // The explicit STOP pass still checks every candidate and accounts for
+        // every unresolved record without a new lifecycle notification.
+        assert!(follow.flush(&mut cache, true).is_empty());
+        assert!(follow.retry_visits >= before + CANDIDATE_RECORDS as u64);
+        assert_eq!(follow.stats.unresolved, CANDIDATE_RECORDS as u64);
+        assert!(follow.pending_completion_requests.is_empty());
+    }
+    #[test]
+    fn dirty_lifecycle_and_forced_stop_each_recover_late_thread_evidence() {
+        for notify in [true, false] {
+            let mut follow = FollowBuffer::default();
+            follow.bind((1, 100), "s");
+            let mut cache = cache();
+            assert!(
+                follow
+                    .receive(vec![file("late", 7)], &mut cache, false)
+                    .is_empty()
+            );
+            let before = follow.retry_visits;
+            assert!(follow.receive(Vec::new(), &mut cache, false).is_empty());
+            assert_eq!(follow.retry_visits, before);
+            cache.ingest(&lifecycle("thread_start", 1, None, None, Some(7), 110));
+            let admitted = if notify {
+                follow.receive(Vec::new(), &mut cache, true)
+            } else {
+                follow.flush(&mut cache, true)
+            };
+            assert_eq!(
+                admitted.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+                ["late"]
+            );
+            assert!(admitted[0].evidence.process_creation_time.is_none());
+        }
+    }
+    #[test]
+    fn root_bind_and_current_request_release_historical_completion_without_new_lifecycle() {
+        let mut follow = FollowBuffer::default();
+        let mut cache = cache();
+        cache.ingest(&lifecycle("thread_start", 1, None, None, Some(7), 110));
+        let completion = SystemEvent {
+            id: "historical-end".into(),
+            event_type: "completion".into(),
+            raw: RawEvidence {
+                related_event: Some("root".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(
+            follow
+                .receive(vec![completion, file("before-bind", 7)], &mut cache, false)
+                .is_empty()
+        );
+        follow.bind((1, 100), "s");
+        let mut request = file("root", 7);
+        request.raw.irp = Some("irp".into());
+        let admitted = follow.receive(vec![request], &mut cache, false);
+        assert_eq!(
+            admitted.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+            ["before-bind", "root", "historical-end"]
+        );
+        assert!(follow.pending.is_empty());
+        assert!(follow.pending_completion_requests.is_empty());
+    }
+    #[test]
+    fn new_resource_retries_an_earlier_unknown_competitor_without_new_lifecycle() {
+        let mut follow = FollowBuffer::default();
+        follow.bind((1, 100), "s");
+        let mut cache = cache();
+        cache.ingest(&lifecycle("thread_start", 1, None, None, Some(7), 110));
+        let target = file("target", 7);
+        let mut competitor = file("competitor", 99);
+        competitor.resource = target.resource.clone();
+        assert!(
+            follow
+                .receive(vec![competitor], &mut cache, false)
+                .is_empty()
+        );
+        let admitted = follow.receive(vec![target], &mut cache, false);
+        assert_eq!(
+            admitted.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+            ["target", "competitor"]
+        );
+        assert_eq!(admitted[1].confidence, Confidence::Unknown);
+        assert!(admitted[1].evidence.process_creation_time.is_none());
+        assert!(follow.pending.is_empty());
+    }
+    #[test]
+    fn admitted_metadata_releases_orphan_completion_on_current_or_historical_page() {
+        for historical in [false, true] {
+            let mut follow = FollowBuffer::default();
+            follow.bind((1, 100), "s");
+            let mut cache = cache();
+            cache.ingest(&lifecycle("thread_start", 1, None, None, Some(7), 110));
+            let seed = file("seed", 7);
+            let resource = seed.resource.clone();
+            assert_eq!(follow.receive(vec![seed], &mut cache, false).len(), 1);
+            let mut metadata = file("metadata", 7);
+            metadata.operation = "open_requested".into();
+            metadata.resource = resource;
+            let completion = SystemEvent {
+                id: "orphan-end".into(),
+                event_type: "completion".into(),
+                raw: RawEvidence {
+                    related_event: Some("metadata".into()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let incoming = if historical {
+                // Retained before its matching metadata became available.
+                follow.push(completion);
+                vec![metadata]
+            } else {
+                vec![completion, metadata]
+            };
+            let admitted = follow.receive(incoming, &mut cache, false);
+            assert_eq!(
+                admitted.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+                ["metadata"]
+            );
+            assert!(follow.pending.is_empty());
+            assert!(follow.pending_completion_requests.is_empty());
+            assert_eq!(follow.stats.unresolved, 1);
+            assert_eq!(follow.stats.candidate_dropped, 0);
+        }
+    }
+    #[test]
+    fn forced_scan_keeps_new_relationships_dirty_for_earlier_competitors() {
+        let mut follow = FollowBuffer::default();
+        let mut cache = cache();
+        cache.ingest(&lifecycle("thread_start", 1, None, None, Some(7), 110));
+        let target = file("target", 7);
+        let mut competitor = file("competitor", 99);
+        competitor.resource = target.resource.clone();
+        follow.push(competitor);
+        follow.push(target);
+        follow.bind((1, 100), "s");
+        let first = follow.flush(&mut cache, false);
+        assert_eq!(
+            first.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+            ["target"]
+        );
+        assert_ne!(follow.selection_generation, follow.last_retry_generation);
+        let second = follow.receive(Vec::new(), &mut cache, false);
+        assert_eq!(
+            second.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+            ["competitor"]
+        );
+        assert_eq!(second[0].confidence, Confidence::Unknown);
+        assert!(follow.pending.is_empty());
+    }
+    #[test]
+    fn dropping_an_incoming_request_releases_its_historical_completion_slot() {
+        let mut follow = FollowBuffer::default();
+        let mut cache = cache();
+        let completion = SystemEvent {
+            id: "end".into(),
+            event_type: "completion".into(),
+            raw: RawEvidence {
+                related_event: Some("request".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        follow.push(completion);
+        for i in 1..CANDIDATE_RECORDS {
+            follow.push(file(&format!("unknown-{i}"), 99));
+        }
+        follow.bind((1, 100), "s");
+        assert!(
+            follow
+                .receive(vec![file("request", 99)], &mut cache, false)
+                .is_empty()
+        );
+        assert_eq!(follow.stats.candidate_dropped, 1);
+        assert_eq!(follow.stats.unresolved, 1);
+        assert_eq!(follow.pending.len(), CANDIDATE_RECORDS - 1);
+        assert!(follow.pending_completion_requests.is_empty());
+        let before = follow.retry_visits;
+        assert!(follow.receive(Vec::new(), &mut cache, false).is_empty());
+        assert_eq!(follow.retry_visits, before);
     }
     #[test]
     fn unresolved_candidates_are_bounded_and_overflow_is_counted_not_retried() {
