@@ -395,8 +395,6 @@ internal sealed class InstallVerification(Options options, bool viewerChecksPass
             next.PerformClick(); await WaitIdle(viewer!);
         }
         var grid = C<DataGridView>(viewer!, "Events");
-        C<TextBox>(viewer!, "EventFilter").Text = Text(sourceEvent.Value, "resource");
-        await WaitIdle(viewer!);
         var row = grid.Rows.Cast<DataGridViewRow>().Single(item => Text((JsonElement)item.Tag!, "id") == selectedEvent);
         grid.ClearSelection(); row.Selected = true; grid.CurrentCell = row.Cells[0];
         await WaitIdle(viewer!);

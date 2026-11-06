@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 
 namespace Contain.Viewer;
 
@@ -41,15 +42,42 @@ public sealed class CoreClient
         return response;
     }
 
-    public async Task<CoreResponse> HistoryAsync(string database, string id, int limit, long offset, CancellationToken cancellationToken = default)
+    public Task<CoreResponse> HistoryAsync(string database, string id, int limit, long offset, CancellationToken cancellationToken = default) =>
+        HistoryAsync(database, id, limit, offset, null, cancellationToken);
+
+    public async Task<CoreResponse> HistoryAsync(string database, string id, int limit, long offset, string? search, CancellationToken cancellationToken = default)
     {
         if (limit is < 1 or > 4096) throw new ArgumentOutOfRangeException(nameof(limit));
         if (offset < 0) throw new ArgumentOutOfRangeException(nameof(offset));
-        var response = await QueryAsync(database, "history", "history", ["--json", "--limit",
-            limit.ToString(CultureInfo.InvariantCulture), "--offset", offset.ToString(CultureInfo.InvariantCulture), "--", Identity(id)], cancellationToken);
+        if (search?.Contains('\0') == true) throw new CoreClientException("invalid_search", "搜索内容不能包含空字符。");
+        var arguments = new List<string> { "--json", "--limit", limit.ToString(CultureInfo.InvariantCulture),
+            "--offset", offset.ToString(CultureInfo.InvariantCulture) };
+        // Keep whitespace and option-looking input literal, including %, _ and --.
+        if (search is not null) arguments.Add("--search=" + search);
+        arguments.Add("--");
+        arguments.Add(Identity(id));
+        var response = await QueryAsync(database, "history", "history", arguments, cancellationToken);
         EnsureIdentity(response.Data.GetProperty("app_id").GetString(), id);
-        if (response.Data.GetProperty("events").GetArrayLength() > limit)
+        var count = response.Data.GetProperty("events").GetArrayLength();
+        if (count > limit)
             throw new CoreClientException("page_contract", "CLI 返回的事件数量超过请求页大小。");
+        if (search is not null)
+        {
+            var data = response.Data;
+            if (!data.TryGetProperty("search", out var actualSearch) || actualSearch.ValueKind != JsonValueKind.String || actualSearch.GetString() != search ||
+                !data.TryGetProperty("limit", out var actualLimit) || actualLimit.ValueKind != JsonValueKind.Number || !actualLimit.TryGetInt32(out var returnedLimit) || returnedLimit != limit ||
+                !data.TryGetProperty("offset", out var actualOffset) || actualOffset.ValueKind != JsonValueKind.Number || !actualOffset.TryGetInt64(out var returnedOffset) || returnedOffset != offset ||
+                !data.TryGetProperty("matched_total", out var total) || total.ValueKind != JsonValueKind.Number || !total.TryGetInt64(out var matchedTotal) || matchedTotal < 0 ||
+                count != Math.Min((long)limit, Math.Max(0, matchedTotal - offset)))
+                throw new CoreClientException("page_contract", "CLI 返回的搜索条件、总数或分页范围与请求不一致。");
+        }
+        return response;
+    }
+
+    public async Task<CoreResponse> ExplainAsync(string database, string sessionId, string eventId, CancellationToken cancellationToken = default)
+    {
+        var response = await ExplainAsync(database, eventId, cancellationToken);
+        EnsureIdentity(response.Data.GetProperty("app_id").GetString(), sessionId);
         return response;
     }
 

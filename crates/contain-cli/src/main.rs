@@ -121,6 +121,11 @@ enum Commands {
         limit: Option<u32>,
         #[arg(long, default_value_t = 0)]
         offset: u64,
+        #[arg(
+            long,
+            help = "Search this session before pagination: literal substring, ASCII case-insensitive; default search page size 50"
+        )]
+        search: Option<String>,
     },
     Remove {
         app: String,
@@ -354,14 +359,21 @@ fn run_cli(cli: Cli) -> Result<()> {
             json,
             limit,
             offset,
+            search,
         } => {
             let storage = open()?;
-            let mut capture = if limit.is_some() {
+            let mut capture = if limit.is_some() || search.is_some() {
                 storage.load_summary(&app)?
             } else {
                 storage.load(&app)?
             };
-            if let Some(limit) = limit {
+            let mut search_metadata = None;
+            if let Some(search) = search {
+                let limit = limit.unwrap_or(50);
+                let page = storage.events_search(&capture.id, &search, offset, limit)?;
+                capture.events = page.events;
+                search_metadata = Some((search, page.matched_total, limit));
+            } else if let Some(limit) = limit {
                 capture.events = if cli.read_only {
                     storage.events_page_compatible(&capture.id, offset, limit)?
                 } else {
@@ -369,13 +381,14 @@ fn run_cli(cli: Cli) -> Result<()> {
                 };
             }
             if json {
-                println!(
-                    "{}",
-                    envelope(
-                        "history",
-                        serde_json::json!({"app_id":capture.id,"events":capture.events})
-                    )?
-                );
+                let mut data = serde_json::json!({"app_id":capture.id,"events":capture.events});
+                if let Some((search, total, limit)) = search_metadata {
+                    data["search"] = search.into();
+                    data["matched_total"] = total.into();
+                    data["limit"] = limit.into();
+                    data["offset"] = offset.into();
+                }
+                println!("{}", envelope("history", data)?);
             } else {
                 render::history(&capture);
             }
@@ -457,6 +470,42 @@ mod command_tests {
     }
     #[test]
     fn additive_view_options_preserve_original_defaults() {
+        let history = Cli::try_parse_from(["contain", "history", "sample", "--json"]).unwrap();
+        assert!(matches!(
+            history.command,
+            Commands::History {
+                search: None,
+                limit: None,
+                offset: 0,
+                ..
+            }
+        ));
+        let searched = Cli::try_parse_from([
+            "contain",
+            "history",
+            "sample",
+            "--search",
+            r"C:\中文 path\100%_file",
+            "--limit",
+            "50",
+            "--offset",
+            "50",
+            "--json",
+        ])
+        .unwrap();
+        match searched.command {
+            Commands::History {
+                search,
+                limit,
+                offset,
+                ..
+            } => {
+                assert_eq!(search.as_deref(), Some(r"C:\中文 path\100%_file"));
+                assert_eq!(limit, Some(50));
+                assert_eq!(offset, 50);
+            }
+            _ => panic!("expected history"),
+        }
         let base = Cli::try_parse_from(["contain", "inspect", "sample", "--json"]).unwrap();
         assert!(!base.read_only);
         assert!(matches!(

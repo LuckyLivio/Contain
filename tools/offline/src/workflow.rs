@@ -232,6 +232,7 @@ pub fn generate_viewer(directory: &Path) -> Result<()> {
         }));
     }
     drop(combined);
+    generate_search_fixture(directory)?;
     drop(Storage::open(&directory.join("empty.db"))?);
     let mut databases = Vec::new();
     for name in [
@@ -265,6 +266,61 @@ pub fn generate_viewer(directory: &Path) -> Result<()> {
     std::fs::write(
         directory.join("metadata.json"),
         serde_json::to_vec_pretty(&metadata)?,
+    )?;
+    Ok(())
+}
+
+/// An independent input oracle: only positions 70..122 contain "Needle".
+/// All timestamps tie, so sequence/ID ordering must survive search and pagination.
+fn generate_search_fixture(directory: &Path) -> Result<()> {
+    let path = directory.join("search.db");
+    let mut db = Storage::open(&path)?;
+    for case in ["search", "search-other"] {
+        let mut c = capture(case);
+        c.name = "SYNTHETIC 同名搜索记录".into();
+        let pattern = events(&c, false)[0].clone();
+        let raw = (0..130_u64)
+            .map(|index| {
+                let mut event = pattern.clone();
+                event.id = format!("{}-event-{index:03}", c.id);
+                event.sequence = index + 1;
+                event.timestamp_ticks = BIRTH + 10;
+                event.resource = if (70..123).contains(&index) {
+                    format!(r"C:\synthetic\含 空格\Needle 文件-{index:03}.txt")
+                } else {
+                    format!(r"C:\synthetic\ordinary\plain-{index:03}.txt")
+                };
+                if index == 80 {
+                    event.resource = r"C:\synthetic\含 空格\Needle 中文文件 100%_done.txt".into();
+                }
+                event.operation = if index == 100 {
+                    "rename_requested"
+                } else {
+                    "write_requested"
+                }
+                .into();
+                if let Some(name) = event.raw.file_name.as_mut() {
+                    name.observed_ticks = event.timestamp_ticks;
+                    name.source_event_id = event.id.clone();
+                }
+                event
+            })
+            .collect();
+        persist_in_storage(&mut db, c, raw, false)?;
+    }
+    drop(db);
+    // A supported schema v3 observation store without the modern document index.
+    // Generate through production save, then remove only post-v3 storage additions.
+    let legacy_path = directory.join("search-legacy.db");
+    let mut old = capture("search-legacy");
+    old.finished_at = "2026-10-01T00:00:02Z".into();
+    old.events = events(&old, true);
+    old.events.truncate(1);
+    old.events[0].resource = r"C:\synthetic\Needle 中文 100%_legacy.txt".into();
+    Storage::open(&legacy_path)?.save(&old)?;
+    let legacy = rusqlite::Connection::open(legacy_path)?;
+    legacy.execute_batch(
+        "DELETE FROM event_documents; DROP TABLE raw_ingest; PRAGMA user_version=3;",
     )?;
     Ok(())
 }
@@ -455,6 +511,67 @@ pub fn generate(directory: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn viewer_search_fixture_matches_fixed_oracle_and_legacy_readonly() {
+        let directory =
+            std::env::temp_dir().join(format!("contain-search-model-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        generate_search_fixture(&directory).unwrap();
+        for (name, session, needle, expected) in [
+            (
+                "search.db",
+                "synthetic-search",
+                "needle",
+                (70..123)
+                    .map(|i| format!("synthetic-search-event-{i:03}"))
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                "search-legacy.db",
+                "synthetic-search-legacy",
+                "100%_legacy",
+                vec!["synthetic-search-legacy-event-0".into()],
+            ),
+        ] {
+            let path = directory.join(name);
+            let before = std::fs::read(&path).unwrap();
+            let db = Storage::open_read_only(&path).unwrap();
+            if name == "search.db" {
+                for (query, count) in [
+                    ("High", 130),
+                    ("_", 130),
+                    ("%", 1),
+                    ("%_", 1),
+                    ("中文文件", 1),
+                    ("RENAME_REQUESTED", 1),
+                ] {
+                    assert_eq!(
+                        db.events_search(session, query, 0, 50)
+                            .unwrap()
+                            .matched_total,
+                        count,
+                        "{query}"
+                    );
+                }
+            }
+            let first = db.events_search(session, needle, 0, 50).unwrap();
+            let second = db.events_search(session, needle, 50, 50).unwrap();
+            assert_eq!(first.matched_total as usize, expected.len());
+            assert_eq!(first.events.len(), expected.len().min(50));
+            assert_eq!(second.events.len(), expected.len().saturating_sub(50));
+            let actual: Vec<_> = first
+                .events
+                .into_iter()
+                .chain(second.events)
+                .map(|e| e.id)
+                .collect();
+            assert_eq!(actual, expected);
+            drop(db);
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+        }
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn viewer_fixtures_page_reopen_and_explain_without_fabricating_ownership() {

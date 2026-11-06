@@ -39,7 +39,9 @@ public sealed class ViewerForm : Form
     private readonly TextBox _eventDetails = ReadText("EventDetails");
     private readonly TextBox _rawDetails = ReadText("RawDetails");
     private readonly TextBox _changeDetails = ReadText("ChangeDetails");
-    private readonly TextBox _eventFilter = new() { Name = "EventFilter", Dock = DockStyle.Fill, PlaceholderText = "筛选当前页的操作、名称或置信标签" };
+    private readonly TextBox _eventFilter = new() { Name = "EventFilter", Dock = DockStyle.Fill, PlaceholderText = "搜索本次记录：文件名、路径、操作或置信标签" };
+    private readonly Button _clearEventSearch = Button("ClearEventSearch", "清除搜索");
+    private readonly Label _eventsScope = Label("EventsScope", "", Muted);
     private readonly TextBox _changeFilter = new() { Name = "ChangeFilter", Dock = DockStyle.Fill, PlaceholderText = "筛选本记录全部状态变化" };
     private readonly Button _previousEvents = Button("PreviousEvents", "上一页");
     private readonly Button _nextEvents = Button("NextEvents", "下一页");
@@ -57,6 +59,7 @@ public sealed class ViewerForm : Form
     private bool _rendering;
     private bool _sessionSelectionQueued;
     private bool _recordQuery;
+    private bool _eventQuery;
     private string? _database;
     private string? _recordId;
     private string? _selectedEventId;
@@ -65,6 +68,7 @@ public sealed class ViewerForm : Form
     private long _eventOffset;
     private int _changeOffset;
     private bool _moreEvents;
+    private long? _matchedEvents;
     private bool _moreChanges;
     private InstallRunResult? _lastRun;
 
@@ -196,27 +200,41 @@ public sealed class ViewerForm : Form
         changeLayout.Controls.Add(Pager(_previousChanges, _changesPage, _nextChanges), 0, 4);
         AddScrollableContent(changeTab, changeLayout);
         _tabs.TabPages.Add(changeTab);
-        var eventsTab = new TabPage("事件与依据") { Name = "EventsTab", BackColor = Color.White, Padding = new Padding(12), AutoScroll = true };
-        var eventLayout = Rows(0, 0, -45, 0, 0, -55);
+        var eventsTab = new TabPage("事件与依据") { Name = "EventsTab", BackColor = Color.White, Padding = new Padding(12) };
+        // Keep the query and its scope outside the scrollable results. Native
+        // focus on a result or Copy ID may scroll its containing viewport; it
+        // must not move the active query and Clear action under the tab header.
+        var eventTabLayout = Rows(0, 0, -100);
+        eventTabLayout.Name = "EventTabLayout";
+        eventTabLayout.Margin = Padding.Empty;
+        eventsTab.Controls.Add(eventTabLayout);
+        var eventViewport = new Panel { Name = "EventResultsViewport", Dock = DockStyle.Fill, AutoScroll = true, Margin = Padding.Empty };
+        eventTabLayout.Controls.Add(eventViewport, 0, 2);
+        var eventLayout = Rows(-45, 0, 0, -55);
         eventLayout.Name = "EventsLayout";
-        eventLayout.MinimumSize = new Size(0, 400);
-        eventLayout.Controls.Add(_eventFilter, 0, 0);
-        eventLayout.Controls.Add(Label("EventsScope", $"仅筛选当前页（最多 {_pageSize} 条），不会搜索其他页。报告包含：本记录全部状态变化、当前未筛选事件页、所选事件解释。", Muted), 0, 1);
+        eventLayout.MinimumSize = new Size(0, 300);
+        var searchTools = new TableLayoutPanel { Name = "EventSearchTools", Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+        searchTools.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        searchTools.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        searchTools.Controls.Add(_eventFilter, 0, 0);
+        searchTools.Controls.Add(_clearEventSearch, 1, 0);
+        eventTabLayout.Controls.Add(searchTools, 0, 0);
+        eventTabLayout.Controls.Add(_eventsScope, 0, 1);
         var eventTime = Column("Time", "观测时间", 175);
         eventTime.CellTemplate = new IdentityTextBoxCell();
         _events.Columns.Add(eventTime);
         _events.Columns.Add(Column("Operation", "操作", 145));
         _events.Columns.Add(Column("Resource", "记录名称 / 资源", 250));
         _events.Columns.Add(Column("Confidence", "应用关联", 90));
-        eventLayout.Controls.Add(_events, 0, 2);
-        eventLayout.Controls.Add(Pager(_previousEvents, _eventsPage, _nextEvents), 0, 3);
+        eventLayout.Controls.Add(_events, 0, 0);
+        eventLayout.Controls.Add(Pager(_previousEvents, _eventsPage, _nextEvents), 0, 1);
         var detailTools = new FlowLayoutPanel { Name = "EventDetailTools", Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, Margin = Padding.Empty };
         _copyEvent.Dock = DockStyle.None;
         _copyEvent.Margin = new Padding(0, 3, 12, 3);
         _rawToggle.Margin = new Padding(0, 8, 0, 3);
         detailTools.Controls.Add(_copyEvent);
         detailTools.Controls.Add(_rawToggle);
-        eventLayout.Controls.Add(detailTools, 0, 4);
+        eventLayout.Controls.Add(detailTools, 0, 2);
         _detailHost.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         _detailHost.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         _detailHost.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
@@ -224,11 +242,11 @@ public sealed class ViewerForm : Form
         _detailHost.Controls.Add(_eventDetails, 0, 0);
         _detailHost.Controls.Add(_rawDetails, 0, 1);
         ShowEventDetails(false);
-        eventLayout.Controls.Add(_detailHost, 0, 5);
+        eventLayout.Controls.Add(_detailHost, 0, 3);
         // Fixed logical minima do not account for wrapped native grid headers or
         // preferred-height action rows at a real monitor DPI. Reserve enough of
         // the 45% grid row for a complete header and readable data row; let the
-        // existing tab viewport scroll the resulting content extent.
+        // results viewport scroll the resulting content extent.
         var sizingEvents = false;
         eventLayout.Layout += (_, _) =>
         {
@@ -237,8 +255,8 @@ public sealed class ViewerForm : Form
             try
             {
                 var heights = eventLayout.GetRowHeights();
-                if (heights.Length != 6) return;
-                var automaticRows = heights[0] + heights[1] + heights[3] + heights[4];
+                if (heights.Length != 4) return;
+                var automaticRows = heights[1] + heights[2];
                 var gridRow = _events.ColumnHeadersHeight + Math.Max(_events.Font.Height * 2,
                     _events.RowTemplate.Height + _events.DefaultCellStyle.Padding.Vertical) + _events.Margin.Vertical;
                 var explanation = _eventDetails.Font.Height * 3 + _detailHost.Margin.Vertical;
@@ -250,12 +268,12 @@ public sealed class ViewerForm : Form
             finally { sizingEvents = false; }
         };
         _events.ColumnHeadersHeightChanged += (_, _) => eventLayout.PerformLayout();
-        AddScrollableContent(eventsTab, eventLayout);
+        AddScrollableContent(eventViewport, eventLayout);
         _tabs.TabPages.Add(eventsTab);
         _status.AutoEllipsis = true;
         _status.Padding = new Padding(4, 6, 4, 0);
         root.Controls.Add(_status, 0, 4);
-        _tips.SetToolTip(_export, "导出本记录全部状态变化、当前未筛选的事件页和所选事件解释。筛选框不会改变报告范围。报告不是全部事件历史。");
+        _tips.SetToolTip(_export, "导出本记录全部状态变化、普通浏览的当前事件页和所选事件解释。清除搜索后可导出普通浏览页。");
     }
 
     private void WireEvents()
@@ -291,14 +309,14 @@ public sealed class ViewerForm : Form
         };
         _sessions.SelectionChanged += (_, _) =>
         {
-            if (_rendering || (IsBusy && !_recordQuery) || _sessions.SelectedRows.Count == 0) return;
+            if (_rendering || (IsBusy && !_recordQuery && !_eventQuery) || _sessions.SelectedRows.Count == 0) return;
             // Native focus can briefly select row zero before applying the row
             // the user actually invoked. Starting a query and disabling the grid
             // inside that first notification would discard the intended row.
             // UIA can deliver its final selection across a later COM boundary,
             // even after BeginInvoke. Keep record selection available during this
             // query and cancel superseded reads so the final selection wins.
-            if (_recordQuery) _operationCancellation?.Cancel();
+            if (_recordQuery || _eventQuery) _operationCancellation?.Cancel();
             if (_sessionSelectionQueued) return;
             var database = _database;
             ResetRecord();
@@ -308,16 +326,16 @@ public sealed class ViewerForm : Form
             BeginInvoke((Action)(() =>
             {
                 _sessionSelectionQueued = false;
-                if (IsDisposed || Disposing || _rendering || (IsBusy && !_recordQuery) || _database != database || _sessions.SelectedRows.Count == 0) return;
+                if (IsDisposed || Disposing || _rendering || (IsBusy && !_recordQuery && !_eventQuery) || _database != database || _sessions.SelectedRows.Count == 0) return;
                 var record = (JsonElement)_sessions.SelectedRows[0].Tag!;
                 StartOperation(token => OpenRecordAsync(record, token), recordQuery: true);
             }));
         };
         _events.SelectionChanged += (_, _) =>
         {
-            if (_rendering || IsBusy || _events.SelectedRows.Count == 0) return;
+            if (_rendering || (IsBusy && !_eventQuery) || _events.SelectedRows.Count == 0) return;
             var item = (JsonElement)_events.SelectedRows[0].Tag!;
-            StartOperation(token => ExplainAsync(item, token));
+            StartOperation(token => ExplainAsync(item, token), eventQuery: true);
         };
         _changes.SelectionChanged += (_, _) =>
         {
@@ -327,7 +345,8 @@ public sealed class ViewerForm : Form
         };
         _previousEvents.Click += (_, _) => ChangeEventPage(Math.Max(0, _eventOffset - _pageSize));
         _nextEvents.Click += (_, _) => ChangeEventPage(checked(_eventOffset + _pageSize));
-        _eventFilter.TextChanged += (_, _) => { if (!_rendering) RenderEvents(); };
+        _eventFilter.TextChanged += (_, _) => { if (!_rendering) ChangeEventPage(0, debounce: true); };
+        _clearEventSearch.Click += (_, _) => _eventFilter.Clear();
         _changeFilter.TextChanged += (_, _) => { _changeOffset = 0; RenderChanges(); };
         _previousChanges.Click += (_, _) => { _changeOffset = Math.Max(0, _changeOffset - _pageSize); RenderChanges(); };
         _nextChanges.Click += (_, _) => { _changeOffset += _pageSize; RenderChanges(); };
@@ -340,7 +359,7 @@ public sealed class ViewerForm : Form
         };
         _export.Click += (_, _) =>
         {
-            if (_database is null || _recordId is null) return;
+            if (_database is null || _recordId is null || _eventFilter.Text.Length != 0) return;
             var path = _dialogs.ChooseReport(this, $"Contain-report-{DateTime.Now:yyyyMMdd-HHmmss}.html");
             if (path is null) return;
             var db = _database;
@@ -484,60 +503,84 @@ public sealed class ViewerForm : Form
         }
     }
 
-    private void ChangeEventPage(long offset)
+    private void ChangeEventPage(long offset, bool debounce = false)
     {
-        if (_recordId is null || _database is null || IsBusy) return;
+        if (_recordId is null || _database is null || (IsBusy && !_eventQuery)) return;
+        var database = _database;
+        var recordId = _recordId;
+        var search = _eventFilter.Text.Length == 0 ? null : _eventFilter.Text;
         StartOperation(async token =>
         {
-            await LoadEventsAsync(offset, token);
-            token.ThrowIfCancellationRequested();
-            SetStatus("事件页已加载。筛选仅作用于当前页，点击事件查看依据。", false);
-        });
-    }
-
-    private async Task LoadEventsAsync(long offset, CancellationToken token)
-    {
-        var history = await _client.HistoryAsync(_database!, _recordId!, _pageSize + 1, offset, token);
-        token.ThrowIfCancellationRequested();
-        ShowEvents(history, offset);
+            _pageEvents = [];
+            _matchedEvents = null;
+            _moreEvents = false;
+            RenderEvents();
+            _eventsPage.Text = "正在查询…";
+            _eventDetails.Text = "正在查询当前记录的事件…";
+            try
+            {
+                // The cancellation/version boundary starts immediately; the short
+                // delay coalesces typing without leaving old rows selectable.
+                if (debounce) await Task.Delay(180, token);
+                var history = await _client.HistoryAsync(database, recordId, search is null ? _pageSize + 1 : _pageSize, offset, search, token);
+                token.ThrowIfCancellationRequested();
+                ShowEvents(history, offset);
+                SetStatus(search is null ? "事件页已加载，点击事件查看依据。" : "已搜索本次记录的全部事件，点击结果查看同一事件的依据。", false);
+            }
+            catch (Exception error) when (!token.IsCancellationRequested)
+            {
+                _eventsPage.Text = "查询失败";
+                _eventDetails.Text = "查询失败：" + error.Message + "\r\n可修改搜索条件、清除搜索或重新选择记录重试。";
+                throw;
+            }
+        }, eventQuery: true);
     }
 
     private void ShowEvents(CoreResponse history, long offset)
     {
         var rows = Array(Field(history.Data, "events")).ToList();
         _eventOffset = offset;
-        _moreEvents = rows.Count > _pageSize;
+        _matchedEvents = history.Data.TryGetProperty("matched_total", out var total) ? total.GetInt64() : null;
+        _moreEvents = _matchedEvents is { } matched ? matched > offset + rows.Count : rows.Count > _pageSize;
         _pageEvents = rows.Take(_pageSize).Select(row => row.Clone()).ToList();
-        _rendering = true;
-        try { _eventFilter.Clear(); }
-        finally { _rendering = false; }
         RenderEvents();
     }
 
     private async Task ExplainAsync(JsonElement item, CancellationToken token)
     {
         ClearExplanation();
+        var database = _database!;
+        var recordId = _recordId!;
         var eventId = FieldText(item, "id");
-        var explanation = await _client.ExplainAsync(_database!, eventId, token);
-        token.ThrowIfCancellationRequested();
-        var explained = Field(explanation.Data, "event");
-        if (FieldText(explanation.Data, "app_id") != _recordId || FieldText(explained, "id") != eventId || !JsonView.JsonEqual(item, explained))
-            throw new InvalidDataException("事件详情与当前记录或当前页不一致；未展示可能误关联的依据。请重新打开记录。");
-        _selectedEventId = eventId;
-        _eventDetails.AccessibleDescription = "event:" + eventId;
-        _eventDetails.Text = ExplainText(explanation.Data);
-        _rawDetails.Text = Pretty(explanation.Envelope);
-        SetStatus("已读取此事件的生产 explain 结果。High 表示源证据关联，不表示安全删除。", false);
+        _eventDetails.Text = "正在读取所选事件的解释…";
+        try
+        {
+            var explanation = await _client.ExplainAsync(database, recordId, eventId, token);
+            token.ThrowIfCancellationRequested();
+            var explained = Field(explanation.Data, "event");
+            if (_database != database || _recordId != recordId || FieldText(explanation.Data, "app_id") != recordId ||
+                FieldText(explained, "id") != eventId || !JsonView.JsonEqual(item, explained))
+                throw new InvalidDataException("事件详情与当前记录或当前页不一致；未展示可能误关联的依据。请重新打开记录。");
+            _selectedEventId = eventId;
+            _eventDetails.AccessibleDescription = "event:" + eventId;
+            _eventDetails.Text = ExplainText(explanation.Data);
+            _rawDetails.Text = Pretty(explanation.Envelope);
+            SetStatus("已读取此事件的生产 explain 结果。High 表示源证据关联，不表示安全删除。", false);
+        }
+        catch (Exception error) when (!token.IsCancellationRequested)
+        {
+            _eventDetails.Text = "解释查询失败：" + error.Message;
+            throw;
+        }
     }
 
     private void RenderEvents()
     {
-        var filter = _eventFilter.Text.Trim();
         _rendering = true;
         try
         {
             _events.Rows.Clear();
-            foreach (var item in _pageEvents.Where(item => Matches(item, filter, "operation", "resource", "confidence", "id", "event_type")))
+            foreach (var item in _pageEvents)
             {
                 var index = _events.Rows.Add(FieldText(item, "timestamp"), FieldText(item, "operation"), FieldText(item, "resource"), Confidence(FieldText(item, "confidence")));
                 _events.Rows[index].Tag = item;
@@ -548,10 +591,11 @@ public sealed class ViewerForm : Form
         }
         finally { _rendering = false; }
         ClearExplanation();
-        _eventsPage.Text = _recordId is null ? "尚未加载事件" : _pageEvents.Count == 0
-            ? $"偏移 {_eventOffset} · 此页没有事件"
-            : $"偏移 {_eventOffset} · 本页 {_pageEvents.Count} 条 / 筛选后 {_events.Rows.Count} 条";
-        if (_events.Rows.Count == 0 && _pageEvents.Count > 0) _eventDetails.Text = "当前页没有符合筛选的事件。可清空筛选或翻页；尚未搜索其他页面。";
+        _eventsPage.Text = _recordId is null ? "尚未加载事件" : _matchedEvents is { } matched
+            ? matched == 0 ? "共 0 条，没有匹配项" : _pageEvents.Count == 0 ? $"共 {matched} 条，此页没有匹配项"
+                : $"共 {matched} 条，显示第 {_eventOffset + 1}–{_eventOffset + _pageEvents.Count} 条"
+            : _pageEvents.Count == 0 ? $"偏移 {_eventOffset} · 此页没有事件" : $"偏移 {_eventOffset} · 本页 {_pageEvents.Count} 条";
+        if (_matchedEvents == 0) _eventDetails.Text = "没有匹配项。搜索已覆盖本次记录的全部事件，可修改条件或清除搜索。";
         UpdateEnabled();
     }
 
@@ -587,6 +631,7 @@ public sealed class ViewerForm : Form
         _eventOffset = 0;
         _changeOffset = 0;
         _moreEvents = false;
+        _matchedEvents = null;
         _moreChanges = false;
         _pageEvents = [];
         _allChanges = [];
@@ -611,13 +656,14 @@ public sealed class ViewerForm : Form
         _rawToggle.Checked = false;
     }
 
-    private void StartOperation(Func<CancellationToken, Task> operation, bool recordQuery = false)
+    private void StartOperation(Func<CancellationToken, Task> operation, bool recordQuery = false, bool eventQuery = false)
     {
         _operationCancellation?.Cancel();
         _operationCancellation?.Dispose();
         _operationCancellation = new CancellationTokenSource();
         var version = ++_operationVersion;
         _recordQuery = recordQuery;
+        _eventQuery = eventQuery;
         PendingOperation = RunOperationAsync(operation, _operationCancellation.Token, version);
     }
 
@@ -646,6 +692,7 @@ public sealed class ViewerForm : Form
             {
                 IsBusy = false;
                 _recordQuery = false;
+                _eventQuery = false;
                 UpdateEnabled();
             }
         }
@@ -655,16 +702,20 @@ public sealed class ViewerForm : Form
     {
         _newInstall.Enabled = !IsBusy;
         _newInstall.Text = ActiveInstallForm is null ? "新建安装记录" : "本次任务状态";
-        _myRecords.Enabled = !IsBusy && ActiveInstallForm is not { IsActive: true };
-        _sessions.Enabled = (!IsBusy || _recordQuery) && _database is not null;
+        _myRecords.Enabled = (!IsBusy || _eventQuery) && ActiveInstallForm is not { IsActive: true };
+        _sessions.Enabled = (!IsBusy || _recordQuery || _eventQuery) && _database is not null;
         // Keep tab-page ownership and visibility stable during read-only work.
         // Disabling the entire tab tree also disables inactive page windows;
         // only the controls that can start another query need to be gated.
-        _events.Enabled = !IsBusy;
+        _events.Enabled = !IsBusy || _eventQuery;
         _changes.Enabled = !IsBusy;
-        _eventFilter.Enabled = !IsBusy;
+        _eventFilter.Enabled = _recordId is not null && (!IsBusy || _eventQuery);
+        _clearEventSearch.Enabled = _eventFilter.Enabled && _eventFilter.Text.Length != 0;
         _changeFilter.Enabled = !IsBusy;
-        _export.Enabled = !IsBusy && _database is not null && _recordId is not null;
+        _export.Enabled = !IsBusy && _database is not null && _recordId is not null && _eventFilter.Text.Length == 0;
+        _eventsScope.Text = _eventFilter.Text.Length != 0
+            ? "搜索本次记录全部事件 · 英文字母忽略大小写，其他字符精确包含匹配。清除搜索后可导出普通浏览页。"
+            : $"搜索本次记录全部事件（每页最多 {_pageSize} 条）· 英文字母忽略大小写，其他字符精确包含匹配。普通报告包含本记录状态变化、当前事件页和所选解释。";
         _previousEvents.Enabled = !IsBusy && _recordId is not null && _eventOffset > 0;
         _nextEvents.Enabled = !IsBusy && _recordId is not null && _moreEvents;
         _previousChanges.Enabled = !IsBusy && _recordId is not null && _changeOffset > 0;

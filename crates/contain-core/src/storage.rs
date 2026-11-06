@@ -20,6 +20,9 @@ mod perf;
 mod read_only_tests;
 #[path = "storage/reliability.rs"]
 mod reliability;
+#[path = "storage/search.rs"]
+mod search;
+pub use search::{EventSearch, EventSearchPage};
 #[cfg(test)]
 #[path = "storage/state_validation_tests.rs"]
 mod state_validation_tests;

@@ -185,7 +185,7 @@ class ViewerPackageTests(unittest.TestCase):
             current_required_gates_passed=True,all_recorded_invocations_passed=True,
             coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
         verification=self.root/'verification.json';verification.write_text(json.dumps(self.valid_verification(build)))
-        args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+        args=argparse.Namespace(package=self.package,search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
             overview_verification=self.overview_verification_file(build),
             personal_records_verification=self.personal_verification_file(build),output=self.root/'diagnostic.zip')
         self.assertEqual(VIEWER.finalize(args),2)
@@ -202,7 +202,7 @@ class ViewerPackageTests(unittest.TestCase):
             coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
         verification=self.root/'verification.json';verification.write_text(json.dumps(self.valid_verification(build)))
         install=self.root/'install.json';install.write_text(json.dumps(self.valid_install_verification(build)))
-        args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+        args=argparse.Namespace(package=self.package,search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
             overview_verification=self.overview_verification_file(build),
             personal_records_verification=self.personal_verification_file(build),
             install_verification=install,output=self.root/'install.zip')
@@ -233,7 +233,7 @@ class ViewerPackageTests(unittest.TestCase):
         result=self.valid_install_verification(build)
         result['manual_checks']=[dict(name='native_picker_navigation_and_cancel',status='passed')]
         install=self.root/'install.json';install.write_text(json.dumps(result))
-        args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+        args=argparse.Namespace(package=self.package,search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
             overview_verification=self.overview_verification_file(build),
             personal_records_verification=self.personal_verification_file(build),
             install_verification=install,output=self.root/'install.zip')
@@ -253,7 +253,7 @@ class ViewerPackageTests(unittest.TestCase):
         result=self.valid_install_verification(build)
         result['manual_checks']=[dict(name='native_picker_navigation_and_cancel',status='failed',reason='wrong_selection')]
         install=self.root/'install.json';install.write_text(json.dumps(result))
-        args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+        args=argparse.Namespace(package=self.package,search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
             overview_verification=self.overview_verification_file(build),
             personal_records_verification=self.personal_verification_file(build),
             install_verification=install,output=self.root/'install-failed.zip')
@@ -310,7 +310,7 @@ class ViewerPackageTests(unittest.TestCase):
         quality=self.root/'quality.json';quality.write_text(json.dumps(dict(source_revision=self.source,
             current_required_gates_passed=True,all_recorded_invocations_passed=True,
             coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
-        args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+        args=argparse.Namespace(package=self.package,search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
             overview_verification=self.overview_verification_file(build),
             personal_records_verification=self.personal_verification_file(build),
             layout_verification=self.root/'layout-missing.json',output=self.root/'layout-diagnostic.zip')
@@ -328,7 +328,7 @@ class ViewerPackageTests(unittest.TestCase):
             current_required_gates_passed=True,all_recorded_invocations_passed=True,
             coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
         evidence=self.valid_layout_verification(build);layout=self.root/'layout.json';layout.write_text(json.dumps(evidence))
-        args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+        args=argparse.Namespace(package=self.package,search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
             overview_verification=self.overview_verification_file(build),
             personal_records_verification=self.personal_verification_file(build),
             layout_verification=layout,output=self.root/'layout-verified.zip')
@@ -395,7 +395,7 @@ class ViewerPackageTests(unittest.TestCase):
         quality=self.root/'quality.json';quality.write_text(json.dumps(dict(source_revision=self.source,
             current_required_gates_passed=True,all_recorded_invocations_passed=True,
             coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
-        args=argparse.Namespace(package=self.package,quality_summary=quality,verification=self.root/'missing.json',
+        args=argparse.Namespace(package=self.package,search_verification=self.search_verification_file(build),quality_summary=quality,verification=self.root/'missing.json',
             overview_verification=self.overview_verification_file(build),
             personal_records_verification=self.personal_verification_file(build),output=self.root/'diagnostic.zip')
         self.assertEqual(VIEWER.finalize(args),2)
@@ -412,7 +412,7 @@ class ViewerPackageTests(unittest.TestCase):
         quality=self.root/'quality.json';quality.write_text(json.dumps(dict(source_revision=self.source,
             current_required_gates_passed=True,all_recorded_invocations_passed=True,
             coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
-        args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+        args=argparse.Namespace(package=self.package,search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
             overview_verification=self.overview_verification_file(build),
             personal_records_verification=self.personal_verification_file(build),output=self.root/'viewer.zip')
         self.assertEqual(VIEWER.finalize(args),0)
@@ -547,7 +547,7 @@ class ViewerPackageTests(unittest.TestCase):
                 evidence=self.valid_personal_records_verification(build)
                 if mode=='failed': evidence['cold_restart_verified']=False
                 if mode!='missing': personal.write_text(json.dumps(evidence))
-                args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+                args=argparse.Namespace(package=self.package,search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
                     overview_verification=self.overview_verification_file(build),
                     personal_records_verification=personal,output=self.root/(mode+'-personal.zip'))
                 self.assertEqual(VIEWER.finalize(args),0 if mode=='passed' else 2)
@@ -568,7 +568,7 @@ class ViewerPackageTests(unittest.TestCase):
         personal=self.personal_verification_file(build)
         self.assertTrue(VIEWER.personal_records_verification_matches(
             VIEWER.read(personal),build,VIEWER.sha(self.package/'BUILD.json')))
-        args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+        args=argparse.Namespace(package=self.package,search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
             overview_verification=self.overview_verification_file(build),
             output=self.root/'personal-argument-omitted.zip')
         self.assertFalse(hasattr(args,'personal_records_verification'))
@@ -659,7 +659,7 @@ class ViewerPackageTests(unittest.TestCase):
                 evidence=self.valid_overview_verification(build)
                 if mode=='failed': evidence['cold_restart_verified']=False
                 if mode!='missing': overview.write_text(json.dumps(evidence))
-                args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+                args=argparse.Namespace(package=self.package,search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
                     personal_records_verification=self.personal_verification_file(build),
                     overview_verification=overview,output=self.root/(mode+'-overview.zip'))
                 self.assertEqual(VIEWER.finalize(args),0 if mode=='passed' else 2)
@@ -681,7 +681,7 @@ class ViewerPackageTests(unittest.TestCase):
         overview=self.overview_verification_file(build)
         self.assertTrue(VIEWER.overview_verification_matches(
             VIEWER.read(overview),build,VIEWER.sha(self.package/'BUILD.json')))
-        args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+        args=argparse.Namespace(package=self.package,search_verification=self.search_verification_file(build),quality_summary=quality,verification=verification,
             personal_records_verification=self.personal_verification_file(build),
             output=self.root/'overview-argument-omitted.zip')
         self.assertFalse(hasattr(args,'overview_verification'))
@@ -696,6 +696,106 @@ class ViewerPackageTests(unittest.TestCase):
             self.assertEqual(result['native_overview_verification'],{})
             self.assertIsNone(result['overview_verification_summary_sha256'])
             self.assertIn('samples/viewer-demo.db',archive.namelist())
+
+    def valid_search_verification(self, build):
+        expected = {entry['path']: entry['sha256'] for entry in build['files']}
+        ids = [f"synthetic-search-event-{index:03d}" for index in range(70, 123)]
+        return dict(schema_version=1, protocol_revision=VIEWER.SEARCH_VERIFICATION,
+            source_sha=self.source, native_windows=True, synthetic=True, real_etw_executed=False,
+            completed=True, accepted=True, actual_packaged_executable=True,
+            real_user_records_accessed=False, retries=0, actual_device_dpi=96, windows_version='10.0.26100',
+            total_matches=53, first_page_count=50, second_page_count=3,
+            expected_ids=ids, first_page_ids=ids[:50], second_page_ids=ids[50:],
+            selected_event_id='synthetic-search-event-120', explain_event_id='synthetic-search-event-120',
+            copied_event_id='synthetic-search-event-120',
+            package_manifest_sha256=VIEWER.sha(self.package/'BUILD.json'),
+            viewer_assembly_sha256=expected['Contain.Viewer.dll'], viewer_launcher_sha256=expected['Contain.Viewer.exe'],
+            contain_sha256=expected['contain.exe'], planned_checks=sorted(VIEWER.SEARCH_REQUIRED_CHECKS),
+            checks=[dict(name=name,status='passed') for name in sorted(VIEWER.SEARCH_REQUIRED_CHECKS)],
+            passed=9, failed=0, skipped=0, not_run=0)
+
+    def search_verification_file(self, build):
+        path=self.root/(self.package.name+'-search-verification.json')
+        path.write_text(json.dumps(self.valid_search_verification(build)))
+        return path
+
+    def test_search_evidence_requires_exact_pages_native_package_and_explain_identity(self):
+        build=self.prepare();good=self.valid_search_verification(build);manifest=VIEWER.sha(self.package/'BUILD.json')
+        self.assertTrue(VIEWER.search_verification_matches(good,build,manifest))
+        mutations = [
+            ('schema_version',True), ('protocol_revision',VIEWER.OVERVIEW_VERIFICATION),
+            ('source_sha','0'*40), ('native_windows',False), ('synthetic',False), ('real_etw_executed',True),
+            ('completed',False), ('accepted',False), ('actual_packaged_executable',False),
+            ('real_user_records_accessed',True), ('retries',1), ('retries',False),
+            ('actual_device_dpi',0), ('actual_device_dpi',True), ('windows_version',' '),
+            ('package_manifest_sha256','0'*64), ('viewer_assembly_sha256','0'*64),
+            ('viewer_launcher_sha256','0'*64), ('contain_sha256','0'*64),
+            ('total_matches',130), ('first_page_count',53), ('second_page_count',0),
+            ('total_matches',True), ('selected_event_id','wrong'), ('copied_event_id','wrong'),
+            ('explain_event_id','synthetic-search-other-event-120'), ('expected_ids',[]),
+            ('first_page_ids',good['second_page_ids']), ('second_page_ids',good['first_page_ids']),
+            ('passed',8), ('passed',True), ('failed',1), ('skipped',1), ('not_run',1), ('failed',False),
+            ('checks',None), ('checks',[None]), ('checks',[dict(name=[],status='passed')]),
+            ('planned_checks',None), ('planned_checks',[{}]),
+        ]
+        for field,wrong in mutations:
+            with self.subTest(field=field,wrong=wrong):
+                changed=copy.deepcopy(good);changed[field]=wrong
+                self.assertFalse(VIEWER.search_verification_matches(changed,build,manifest))
+        for field in good:
+            with self.subTest(missing=field):
+                changed=copy.deepcopy(good);changed.pop(field)
+                self.assertFalse(VIEWER.search_verification_matches(changed,build,manifest))
+        for mutate in [lambda x:x['checks'].pop(), lambda x:x['checks'].append(x['checks'][0]),
+                       lambda x:x['checks'][0].update(status='failed'), lambda x:x['checks'][0].update(status='not_run'),
+                       lambda x:x['planned_checks'].pop(), lambda x:x['planned_checks'].append(x['planned_checks'][0])]:
+            changed=copy.deepcopy(good);mutate(changed)
+            self.assertFalse(VIEWER.search_verification_matches(changed,build,manifest))
+
+    def test_search_required_plan_matches_actual_harness(self):
+        source=(Path(__file__).parent.parent/'desktop/Contain.Viewer.Tests/SearchVerification.cs').read_text(encoding='utf-8')
+        section=source.split('Plan =',1)[1].split('];',1)[0]
+        names=VIEWER.re.findall(r'"([a-z_]+)"',section)
+        self.assertEqual(len(names),9)
+        self.assertEqual(len(names),len(set(names)))
+        self.assertEqual(set(names),VIEWER.SEARCH_REQUIRED_CHECKS)
+
+    def test_search_gate_requires_valid_evidence_and_retains_failure(self):
+        for mode in ('passed','missing','failed','omitted'):
+            with self.subTest(mode=mode):
+                self.package=self.root/('search-package-'+mode)
+                build=self.prepare();manifest=VIEWER.sha(self.package/'BUILD.json')
+                verification=self.root/(mode+'-viewer.json');verification.write_text(json.dumps(self.valid_verification(build)))
+                quality=self.root/(mode+'-quality.json');quality.write_text(json.dumps(dict(source_revision=self.source,
+                    current_required_gates_passed=True,all_recorded_invocations_passed=True,
+                    coverage_floors=dict(lines_percent=66.5,functions_percent=70))))
+                search=self.root/(mode+'-search.json')
+                evidence=self.valid_search_verification(build)
+                if mode=='failed': evidence['explain_event_id']='synthetic-search-other-event-120'
+                if mode!='missing': search.write_text(json.dumps(evidence))
+                args=argparse.Namespace(package=self.package,quality_summary=quality,verification=verification,
+                    personal_records_verification=self.personal_verification_file(build),
+                    overview_verification=self.overview_verification_file(build),output=self.root/(mode+'-search.zip'))
+                if mode!='omitted': args.search_verification=search
+                self.assertEqual(VIEWER.finalize(args),0 if mode=='passed' else 2)
+                with zipfile.ZipFile(args.output) as archive:
+                    result=json.loads(archive.read('VALIDATION.json'))
+                    self.assertTrue(result['checks']['native_ui_cli_and_export'])
+                    self.assertTrue(result['checks']['native_personal_records_and_cold_restart'])
+                    self.assertTrue(result['checks']['native_persisted_overview_and_navigation'])
+                    self.assertEqual(result['checks']['native_session_event_search'],mode=='passed')
+                    self.assertEqual(result['native_search_verification'],evidence if mode not in ('missing','omitted') else {})
+                    self.assertEqual(result['search_verification_summary_sha256'],VIEWER.sha(search) if mode not in ('missing','omitted') else None)
+                    self.assertEqual(result['build_manifest_sha256'],manifest)
+                    self.assertEqual(result['viewer_verified'],mode=='passed')
+                    self.assertIn('samples/viewer-demo.db',archive.namelist())
+
+    def test_try_guidance_defines_current_session_search_and_report_boundary(self):
+        usage=VIEWER.usage(self.source)
+        for required in ('搜索本次记录','全部事件','ASCII','% 和 _','清除搜索后可导出普通浏览页','Beta.6'):
+            self.assertIn(required,usage)
+        self.assertNotIn('事件筛选作用于当前页',usage)
+        self.assertNotIn('当前页筛选不会搜索全库',usage)
 
     def test_try_guidance_uses_personal_history_and_explicit_advanced_location(self):
         usage=VIEWER.usage(self.source,install=True)

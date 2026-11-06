@@ -1025,6 +1025,22 @@
         "app_id": {
           "type": "string"
         },
+        "search": {
+          "type": "string"
+        },
+        "matched_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
         "events": {
           "type": "array",
           "items": {

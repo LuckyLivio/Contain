@@ -44,6 +44,7 @@ internal static class Program
         var progressAccepted = false;
         var personalAccepted = false;
         var overviewAccepted = false;
+        var searchAccepted = false;
         using var form = new ViewerForm(runner.Client, runner.Dialogs);
         form.Shown += async (_, _) =>
         {
@@ -52,16 +53,17 @@ internal static class Program
                 await runner.RunAsync(form);
                 personalAccepted = await new PersonalRecordsVerification(options, runner.Success).RunAsync(form);
                 overviewAccepted = await new OverviewVerification(options, runner.Success && personalAccepted).RunAsync(form);
+                searchAccepted = await new SearchVerification(options, runner.Success && personalAccepted && overviewAccepted).RunAsync(form);
                 progressAccepted = await InstallProgressChecks.RunAsync(options.Output, options.Source, form, options.Package, options.PrivateOutput);
-                runner.LayoutAccepted = await new LayoutVerification(options, runner.Success && progressAccepted && personalAccepted && overviewAccepted).RunAsync();
+                runner.LayoutAccepted = await new LayoutVerification(options, runner.Success && progressAccepted && personalAccepted && overviewAccepted && searchAccepted).RunAsync();
                 if (options.InstallFixture is not null)
-                    runner.InstallAccepted = await new InstallVerification(options, runner.Success && runner.LayoutAccepted && progressAccepted && personalAccepted && overviewAccepted).RunAsync();
+                    runner.InstallAccepted = await new InstallVerification(options, runner.Success && runner.LayoutAccepted && progressAccepted && personalAccepted && overviewAccepted && searchAccepted).RunAsync();
             }
             catch (Exception error) { runner.RecordUnhandled(error); }
             finally { runner.Finish(); form.Close(); }
         };
         Application.Run(form);
-        return runner.Success && progressAccepted && personalAccepted && overviewAccepted && runner.LayoutAccepted && runner.InstallAccepted ? 0 : 1;
+        return runner.Success && progressAccepted && personalAccepted && overviewAccepted && searchAccepted && runner.LayoutAccepted && runner.InstallAccepted ? 0 : 1;
     }
 }
 
@@ -111,7 +113,7 @@ internal sealed class Runner
         "ui_open_finished_record_and_overview",
         "ui_state_changes_filter_and_reason",
         "ui_page_then_select_and_explain_same_event",
-        "ui_filter_explicitly_applies_to_current_page",
+        "ui_search_empty_and_clear_restores_first_page",
         "ui_local_report_matches_current_record_page_and_event",
         "ui_historical_name_and_unknown_evidence",
         "ui_unfinished_and_unavailable_metrics",
@@ -404,17 +406,19 @@ internal sealed class Runner
             Screenshot(form, "event-explanation.png");
             eventPageReady = true;
         }, () => finishedOpen && selectedEvent is not null);
-        await Check("ui_filter_explicitly_applies_to_current_page", async () =>
+        await Check("ui_search_empty_and_clear_restores_first_page", async () =>
         {
             var filter = Control<TextBox>(form, "EventFilter");
             filter.Text = "no-such-synthetic-event-unique";
             await WaitIdle(form);
             Require(Control<DataGridView>(form, "Events").Rows.Count == 0, "filter empty result");
-            Require(AllText(form).Contains("本页", StringComparison.Ordinal), "current-page filter scope visible");
+            Require(Control<TextBox>(form, "EventFilter").PlaceholderText.Contains("搜索本次记录", StringComparison.Ordinal), "whole-record search scope visible");
             filter.Text = string.Empty;
             await WaitIdle(form);
             var grid = Control<DataGridView>(form, "Events");
-            Require(grid.Rows.Count == 10, "clearing filter restores same page");
+            Require(grid.Rows.Count == 50, "clearing search restores first ordinary page");
+            Control<Button>(form, "NextEvents").PerformClick(); await WaitIdle(form);
+            Require(grid.Rows.Count == 10, "ordinary next page restored for existing report regression");
             grid.Rows[0].Selected = true; grid.CurrentCell = grid.Rows[0].Cells[0];
             await WaitIdle(form);
         }, () => eventPageReady);

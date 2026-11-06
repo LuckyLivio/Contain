@@ -269,7 +269,6 @@ internal sealed class PersonalRecordsVerification(Options options, bool viewerCh
             await PackagedDesktop.WaitAsync(async () => (await desktop.TextAsync("EventsPage")).Contains("偏移 " + offset, StringComparison.Ordinal), TimeSpan.FromSeconds(30));
             await PackagedDesktop.WaitAsync(() => desktop.EnabledAsync("NewInstall"), TimeSpan.FromSeconds(30));
         }
-        await desktop.SetTextAsync("EventFilter", eventId);
         await PackagedDesktop.WaitAsync(async () => (await desktop.NamesAsync("Events")).Any(name => name == "event:" + eventId || name.EndsWith("；event:" + eventId, StringComparison.Ordinal)), TimeSpan.FromSeconds(30));
         await desktop.SelectIdentityAsync("event:" + eventId);
         await PackagedDesktop.WaitAsync(async () => (await desktop.TextAsync("EventDetails")).Contains(eventId, StringComparison.Ordinal), TimeSpan.FromSeconds(30));

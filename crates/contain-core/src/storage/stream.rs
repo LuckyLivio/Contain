@@ -364,7 +364,7 @@ impl Storage {
         }
         Ok(())
     }
-    fn raw_table(&self, session: &str) -> Result<&'static str> {
+    pub(super) fn raw_table(&self, session: &str) -> Result<&'static str> {
         let staged: bool = self.connection.query_row(
             "SELECT EXISTS(SELECT 1 FROM raw_ingest WHERE session_id=?1)",
             [session],
@@ -782,7 +782,7 @@ impl Storage {
     }
 }
 
-fn suppress_unfinished(event: &mut SystemEvent) {
+pub(super) fn suppress_unfinished(event: &mut SystemEvent) {
     event.confidence = Confidence::Unknown;
     // These are conclusions of final association, not raw provider fields.
     // Keep the original header/status/identity payload for later inspection.

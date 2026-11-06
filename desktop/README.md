@@ -7,8 +7,8 @@ Graphical recording is a separate [implementation and validation milestone](../d
 
 ## Current download
 
-Use the [Beta 4 release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.4).
-Its [record overview, validation scope and known issues](../docs/record-overview-beta4.md) distinguish
+Use the [Beta 5 release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.5).
+Its [session event search, validation scope and known issues](../docs/session-event-search-beta5.md) distinguish
 native Windows results, simulated layout stress and user-reported trials.
 The entries below retain historical evidence rather than additional current downloads.
 
@@ -47,12 +47,18 @@ non-system runtime for the exact `contain.exe` sidecar.
 3. Use **状态变化** for file, registry and configuration differences. The filter
    applies to this record's loaded state differences; rendering is paginated.
 4. Use **事件与依据** for the timeline, including source operations, lifecycle
-   and state observations. Each page displays at most 50 events. Its text filter
-   applies only to the current page. Select an event to read the core's explain
-   result, copy its ID, or expand the original JSON.
+   and state observations. **搜索本次记录** searches every event in the selected database and session,
+   then displays at most 50 matches per page with the total and visible range.
+   It matches operation, recorded resource name/path, confidence label and the
+   existing ID/type fields. ASCII letters ignore case; other characters match
+   exactly. Spaces, Chinese, `%` and `_` are literal text. Changing the query
+   returns to page one; **清除搜索** returns to ordinary browsing. Select a result
+   to explain or copy that row's original event ID.
 5. Choose **导出本页报告** and a new `.html` filename. The report contains the
    selected record's summary and state differences, the current unfiltered event
-   page, and the selected event's explanation. It states that page scope and
+   page, and the selected event's explanation. During search the viewer displays
+   **清除搜索后可导出普通浏览页** and offers **清除搜索**. Complete matching-result
+   export is deferred to Beta 6. It states that page scope and
    retains the CLI JSON. It is self-contained, has no scripts or network requests,
    and remains local. Original paths and evidence are included, so review it
    before sharing.
