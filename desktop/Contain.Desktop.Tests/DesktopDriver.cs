@@ -14,9 +14,10 @@ internal sealed record Probe(string Stage, string Control, long ElapsedMs, bool 
 internal sealed record ActionProbe(string Control, string Pattern, bool Passed, string? ErrorType);
 internal sealed record ClickDiagnostic(string Control, string? TargetRole, string? HitRole, bool NativeOwned,
     string[] AncestorRoles, HitTargetGuard.Identity[] Ancestors, int? FixedIdMatches,
-    bool TargetMatched, string Result, long ElapsedMs, string? ErrorType);
+    bool FromPointObserved, bool TargetMatched, string? FromPointResult, HitTargetGuard.Viewport[] Viewports,
+    bool GeometryReady, string Result, long ElapsedMs, string? ErrorType);
 internal sealed record ClickReadinessDiagnostic(string Control, int Attempts, ClickDiagnostic? First,
-    ClickDiagnostic? Last, bool Clicked, long ElapsedMs, int SharedPickerDeadlineMs, string? ErrorType);
+    ClickDiagnostic? Last, bool PhysicalInputSent, long ElapsedMs, int SharedPickerDeadlineMs, string? ErrorType);
 internal sealed record CloseDiagnostic(long RequestElapsedMs, long WaitElapsedMs, int WaitDeadlineMs,
     bool ProcessAlive, int? ExitCode, string? ErrorType);
 
@@ -211,11 +212,12 @@ internal sealed class DesktopDriver : IDisposable
         ClickTarget? readyTarget = null;
         try
         {
+            if (NativeDialog() != IntPtr.Zero) throw new UnexpectedNativeDialogException();
             await Ui(id, () => SetForegroundWindow(MainWindow()));
             await ObservedWait.ActOnceAsync(async () =>
             {
                 attempts++;
-                readyTarget = await ProbeClickAsync(id, diagnostic => { first ??= diagnostic; last = diagnostic; });
+                readyTarget = await ProbeClickAsync(id, attempts == 1, diagnostic => { first ??= diagnostic; last = diagnostic; });
                 return readyTarget is not null;
             }, () => Ui(id, () =>
             {
@@ -226,14 +228,19 @@ internal sealed class DesktopDriver : IDisposable
                 if (!ready.Element.Current.IsEnabled || !Visible(ready.Element)
                     || ready.Element.Current.BoundingRectangle != ready.Rectangle)
                     throw new ClickTargetUnavailableException(id);
-                var freshMatches = AutomationElement.FromHandle(MainWindow()).FindAll(TreeScope.Element | TreeScope.Descendants,
+                var mainWindow = MainWindow();
+                var freshMatches = AutomationElement.FromHandle(mainWindow).FindAll(TreeScope.Element | TreeScope.Descendants,
                     new PropertyCondition(AutomationElement.AutomationIdProperty, id));
                 HitTargetGuard.RequireUniqueCount(freshMatches.Count);
                 if (freshMatches[0].Current.ProcessId != process.Id || freshMatches[0].Current.ControlType != ControlType.Button
+                    || !freshMatches[0].Current.IsEnabled || !Visible(freshMatches[0])
                     || freshMatches[0].Current.BoundingRectangle != ready.Rectangle)
+                    throw new ClickTargetUnavailableException(id);
+                if (!CheckTargetGeometry(freshMatches[0], ready.Rectangle, ready.Point, mainWindow, _ => { }).Matches)
                     throw new ClickTargetUnavailableException(id);
                 GetWindowThreadProcessId(WindowFromPoint(ready.Point), out var owner);
                 if (owner != process.Id) throw new ClickTargetUnavailableException(id);
+                if (NativeDialog() != IntPtr.Zero) throw new UnexpectedNativeDialogException();
                 if (sharedClock.Elapsed >= deadline) throw new TimeoutException("Native click exceeded the shared picker deadline.");
                 GetCursorPos(out var old);
                 try
@@ -254,11 +261,14 @@ internal sealed class DesktopDriver : IDisposable
         }
     }
 
-    private Task<ClickTarget?> ProbeClickAsync(string id, Action<ClickDiagnostic> observe) => Ui<ClickTarget?>(id, () =>
+    private Task<ClickTarget?> ProbeClickAsync(string id, bool observeHit, Action<ClickDiagnostic> observe) => Ui<ClickTarget?>(id, () =>
     {
         var clock = Stopwatch.StartNew(); var identities = new List<HitTargetGuard.Identity>();
+        var viewports = new List<HitTargetGuard.Viewport>();
         string? targetRole = null, hitRole = null, errorType = null;
+        string? fromPointResult = null;
         int? fixedIdMatches = null;
+        var geometryReady = false; var fromPointObserved = false;
         var nativeOwned = false; var matched = false; var result = "find_target";
         try
         {
@@ -282,24 +292,30 @@ internal sealed class DesktopDriver : IDisposable
             result = "native_owner";
             if (!nativeOwned) return null;
 
-            // A WPF child can be clipped by a ScrollViewer while its rectangle is still
-            // inside the main HWND. Require the actual hit target, not merely window ownership.
-            result = "uia_hit_target";
-            var hit = AutomationElement.FromPoint(clickPoint);
-            HitTargetGuard.Identity? currentIdentity = null;
-            var match = HitTargetGuard.Check(element, hit, _ => currentIdentity!.Owned,
-                (_, _) => currentIdentity!.Matches, TreeWalker.RawViewWalker.GetParent, e =>
-                {
-                    var current = e.Current;
-                    var role = current.ControlType.ProgrammaticName;
-                    currentIdentity = new(role, current.ProcessId == process.Id, current.AutomationId == id,
-                        current.ControlType == ControlType.Button, current.BoundingRectangle == rect,
-                        current.IsEnabled, Visible(e), current.BoundingRectangle.Contains(clickPoint),
-                        Automation.Compare(element, e));
-                    hitRole ??= role; identities.Add(currentIdentity);
-                });
-            matched = match.Matches; result = match.Reason;
-            return matched ? new ClickTarget(element, rect, point) : null;
+            var geometry = CheckTargetGeometry(element, rect, point, window, viewports.Add);
+            geometryReady = geometry.Matches; result = geometry.Reason;
+            // M8 retained 101 contradictory FromPoint observations over the original 15 s.
+            // Keep one observation honestly; physical action eligibility uses target ancestry
+            // clipping and the exact modal result, not this provider's contradictory hit branch.
+            if (observeHit)
+            {
+                fromPointObserved = true;
+                var hit = AutomationElement.FromPoint(clickPoint);
+                HitTargetGuard.Identity? currentIdentity = null;
+                var match = HitTargetGuard.Check(element, hit, _ => currentIdentity!.Owned,
+                    (_, _) => currentIdentity!.Matches, TreeWalker.RawViewWalker.GetParent, e =>
+                    {
+                        var current = e.Current;
+                        var role = current.ControlType.ProgrammaticName;
+                        currentIdentity = new(role, current.ProcessId == process.Id, current.AutomationId == id,
+                            current.ControlType == ControlType.Button, current.BoundingRectangle == rect,
+                            current.IsEnabled, Visible(e), current.BoundingRectangle.Contains(clickPoint),
+                            Automation.Compare(element, e));
+                        hitRole ??= role; identities.Add(currentIdentity);
+                    });
+                matched = match.Matches; fromPointResult = match.Reason;
+            }
+            return geometryReady ? new ClickTarget(element, rect, point) : null;
         }
         catch (Exception error) { errorType = error.GetType().Name; LastErrorType = errorType; throw; }
         finally
@@ -308,9 +324,30 @@ internal sealed class DesktopDriver : IDisposable
             // follow-up provider queries that could replace it or expose unrelated desktop text.
             observe(new(id, targetRole, hitRole, nativeOwned,
                 identities.Select(item => item.Role).ToArray(), identities.ToArray(), fixedIdMatches,
-                matched, result, clock.ElapsedMilliseconds, errorType));
+                fromPointObserved, matched, fromPointResult, viewports.ToArray(), geometryReady,
+                result, clock.ElapsedMilliseconds, errorType));
         }
     });
+
+    private HitTargetGuard.Result CheckTargetGeometry(AutomationElement element, System.Windows.Rect rectangle,
+        Point point, IntPtr mainWindow, Action<HitTargetGuard.Viewport> observe)
+    {
+        if (!GetWindowRect(mainWindow, out var window)) throw new IOException("Owned window bounds unavailable.");
+        static HitTargetGuard.Rectangle BoundsOf(System.Windows.Rect value) => new(value.X, value.Y, value.Width, value.Height);
+        var target = BoundsOf(rectangle);
+        return HitTargetGuard.CheckGeometry(element, target,
+            new(window.Left, window.Top, window.Right - window.Left, window.Bottom - window.Top), point.X, point.Y,
+            ancestor =>
+            {
+                var state = ancestor.Current;
+                var bounds = BoundsOf(state.BoundingRectangle);
+                var isViewport = state.ClassName is "ScrollViewer" or "ScrollContentPresenter"
+                    || ancestor.TryGetCurrentPattern(ScrollPattern.Pattern, out _);
+                return new(state.ControlType.ProgrammaticName, state.ProcessId == process.Id, isViewport,
+                    bounds.Contains(target), bounds.Contains(point.X, point.Y),
+                    state.NativeWindowHandle == mainWindow.ToInt64() && state.ControlType == ControlType.Window);
+            }, TreeWalker.RawViewWalker.GetParent, observe);
+    }
 
     internal async Task ChooseFileAsync(string action, string? path, bool save = false, bool existingRefusal = false)
     {
@@ -337,6 +374,7 @@ internal sealed class DesktopDriver : IDisposable
             if (NativeText(dialog) != expectedTitle) throw new UnexpectedNativeDialogException();
             return Task.FromResult(true);
         }, remaining);
+        Record("expected_native_dialog_confirmed", action, pickerClock.ElapsedMilliseconds, null);
         ChooserInteractions++;
         try
         {

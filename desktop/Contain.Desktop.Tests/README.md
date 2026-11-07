@@ -40,23 +40,31 @@ without collecting unrelated desktop elements or exception text.
 Native picker actions use a physical click to avoid synchronously blocking in a
 modal `InvokePattern` call. Before sending input, the driver requires an enabled,
 visible button, a unique fixed AutomationId in the owned main window, native
-window ownership, and a UIA hit ancestor with that exact ID, button role and
-current bounds containing the click point within 16 inspected nodes. Runtime ID
-equality is recorded separately. This rejects a control clipped behind another
-part of the same window. Eligibility is polled without input; one physical click
-is allowed only after the strict target check succeeds. Readiness and the exact
+window ownership, and finite positive target bounds fully inside the main window
+and every exposed ScrollViewer/ScrollContentPresenter or scrolling ancestor.
+Target ancestry must reach the exact owned main HWND within 16 inspected nodes.
+This rejects M5's toolbar clipped above its event viewport even though it remains
+inside the window. Eligibility is polled without input; fresh unique identity,
+state, bounds and clipping are rechecked immediately before one physical click.
+An existing owned native modal is rejected. Readiness and the exact
 action-specific native dialog title share the original 15-second discovery
 budget. Duplicate IDs and unexpected provider errors fail immediately; persistent
 mismatches time out without clicking. There is no fallback or repeated click.
 Cached per-launch diagnostics retain the attempt count and first/last observations
 with only the fixed action ID, roles, identity/geometry comparison booleans,
-bounded ancestry, match outcome and original exception type. The real
-guard is also exercised with duplicate IDs, wrong IDs/bounds, exact/child hits,
-covered/missing/foreign targets, an overlong ancestor chain and an unexpected
-provider exception. M6 did not capture the hit ancestor's ID/bounds; it does not
+bounded ancestry, match outcome and original exception type. The actual geometry
+guard rejects a clipped toolbar, wrong viewport, foreign or missing main window,
+nonfinite/outside bounds and overlong ancestry. Duplicate IDs and unexpected
+provider exceptions retain their failures. M6 did not capture the hit ancestor's
+ID/bounds; it does not
 establish that the observed Button was the required action or a provider bug.
 M7 found mismatching hit geometry in one immediate probe; it did not establish
-persistence or an animation cause. The actual action-wait engine additionally
+persistence or an animation cause. M8 retained 101 contradictory read-only
+FromPoint observations over 15 seconds without clicking. FromPoint's first
+observation is now retained as diagnostic evidence, including a false match;
+it is not substituted for the geometry gate or exact native-modal postcondition.
+Physical input sent and expected dialog confirmed are reported separately.
+No product/provider root cause is claimed. The actual action-wait engine additionally
 tests transient mismatch before an exact hit, persistent wrong/foreign hits,
 one input only, unchanged exception types and the original deadline.
 

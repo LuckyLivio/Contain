@@ -251,3 +251,36 @@ match, persistent mismatch/foreign hit, original exception and single-click
 behavior. One viewing preview, zero installations, no increased timeout and no
 repeated click. This tests a possible transition without claiming animation or
 a provider bug as the cause of M6/M7.
+
+M8 source `9356cde03697091b690709c9904cd90de59d6040`,
+[run 42341966951](https://github.com/LuckyLivio/Contain/actions/runs/42341966951),
+**failed** before input: 1 fixed group passed, 1 failed, 12 not run, zero
+installations. Across 101 read-only probes and exactly 15,000 ms, the unique
+owned target remained present but the FromPoint branch did not contain the point
+or match its ID/bounds. First and last observations agree; no click was sent.
+This establishes persistence for this run and rejects simply waiting longer.
+The provider/coordinate implementation cause is not established. The original
+summary is archived as `M8.json`; its failure is not converted to a pass.
+
+## M9 — verify physical operation independently of contradictory point queries
+
+Predeclared before execution: test-only adaptation; product code remains
+identical to M6. The workflow still freezes a new build tied to this test-source
+SHA; this does not claim equal ZIP/binary hashes across those runs.
+The required user behavior is a visible, correct action, not equality with a
+provider's contradictory FromPoint branch. Require one fixed-ID enabled Button
+under the exact owned main HWND, finite current geometry inside the window and
+its actual ScrollViewer/scroll-content viewports, bounded target ancestry reaching
+that exact window, no preexisting native modal, and native point ownership.
+Recheck current state/geometry immediately before one physical click. Before any
+filename entry or cancellation, require the newly opened owned native dialog's
+exact fixed title for that action. Existing exact-path, cancel, protected-file,
+report-content and session assertions remain mandatory.
+
+Retain FromPoint observations as diagnostics, including mismatches; unexpected
+provider exceptions still fail. Do not call the physical input a confirmed action
+until its expected dialog/result is observed. The original shared 15-second
+budget remains. Controlled geometry regressions must reject the M5 clipped
+same-window toolbar case, wrong viewport, missing/duplicate ID, foreign window,
+invalid/moved bounds and exhausted ancestry. One viewing preview, zero
+installations, no repeated click, no product change or data-correctness relaxation.
