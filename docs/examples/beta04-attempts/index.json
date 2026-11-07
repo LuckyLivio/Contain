@@ -81,6 +81,15 @@
       "file": "M10.json",
       "sha256": "84db225a8485cc44ceb0e74dcf34a79d8924804b12131a2015aa58913ec5215f",
       "accepted": false
+    },
+    {
+      "attempt": "M11",
+      "run": 42343947561,
+      "source_sha": "28fc2fc4ee7edd1bec3f525f4f5a6d98a233f80d",
+      "file": "M11.json",
+      "sha256": "16ff772f28b8d097185e5290b508493b9888cf6177c69feee281008a1ad0e3a6",
+      "accepted": false,
+      "kind": "navigation-control-prerequisite; product_not_frozen"
     }
   ]
 }

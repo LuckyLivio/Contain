@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Markup;
 using Contain.Desktop.Controls;
 using Wpf.Ui.Controls;
@@ -41,6 +42,10 @@ internal static class ExternalProbe
         var status = new System.Windows.Controls.TextBlock { Text = "NewInstall=0;ControlButton=0", Margin = new Thickness(12) };
         AutomationProperties.SetAutomationId(status, "ProbeStatus");
         var actionClicks = 0; var ordinaryClicks = 0;
+        var spaceDown = 0; var spaceUp = 0; var downOnAction = 0; var upOnAction = 0;
+        void PublishKeyboard() => AutomationProperties.SetHelpText(status,
+            $"SpaceDown={spaceDown};SpaceUp={spaceUp};DownOnAction={downOnAction};UpOnAction={upOnAction}");
+        PublishKeyboard();
         action.Click += (_, _) => status.Text = $"NewInstall={++actionClicks};ControlButton={ordinaryClicks}";
         ordinary.Click += (_, _) =>
         {
@@ -60,6 +65,20 @@ internal static class ExternalProbe
             Title = "Contain controlled external UIA probe", Width = 800, Height = 600, ExtendsContentIntoTitleBar = true,
             WindowStartupLocation = WindowStartupLocation.CenterScreen, Content = grid
         };
+        // Only this controlled Space gesture is observed. No other keys, text or desktop
+        // information are recorded, and the real routed event remains unmodified.
+        window.AddHandler(Keyboard.PreviewKeyDownEvent, new KeyEventHandler((_, e) =>
+        {
+            if (e.Key != Key.Space) return;
+            spaceDown++; if (ReferenceEquals(Keyboard.FocusedElement, action.ActionButton)) downOnAction++;
+            PublishKeyboard();
+        }), true);
+        window.AddHandler(Keyboard.PreviewKeyUpEvent, new KeyEventHandler((_, e) =>
+        {
+            if (e.Key != Key.Space) return;
+            spaceUp++; if (ReferenceEquals(Keyboard.FocusedElement, action.ActionButton)) upOnAction++;
+            PublishKeyboard();
+        }), true);
         return app.Run(window);
     }
 
@@ -73,6 +92,7 @@ internal static class ExternalProbe
             schema_version = 1, protocol = "contain-wpf-external-navigation-plan-1", source_sha = Environment.GetEnvironmentVariable("GITHUB_SHA"),
             fixed_ids = TargetIds, hosts = 1, maximum_matches_per_id = 8, maximum_owned_windows = 4, maximum_ancestor_depth = 3,
             discovery_deadline_ms = 20000, uia_call_deadline_ms = 10000, click_observation_deadline_ms = 5000, close_deadline_ms = 5000,
+            keyboard_focus_deadline_ms = 5000, keyboard_dispatch_deadline_ms = 5000, keyboard_key = "Space", maximum_keyboard_gestures = 1,
             native_windows = true, synthetic = true, real_etw_executed = false, actual_packaged_executable = false,
             product_control_source = "desktop/Contain.Desktop/Controls/ActionNavigationItem.cs", retries = 0, regression_gate = gate,
             purpose = gate ? "Verify the actual production action composition from another process before packaged desktop acceptance."
@@ -91,6 +111,13 @@ internal static class ExternalProbe
         var snapshots = new List<object>(); var invocation = new List<object>();
         var gateChecks = new List<object>(); var gatePassed = 0; var gateFailed = false;
         var completed = false; string? errorType = null; var normalExit = false; var forcedExit = false; var reproduced = false;
+        var keyboardClock = new Stopwatch(); var keyboardPhase = "not_run";
+        var keyboardSamples = new List<KeyboardSample>();
+        KeyboardSample? focusFirst = null, focusLast = null, counterFirst = null, counterLast = null;
+        var focusObservations = 0; var counterObservations = 0;
+        bool? foregroundRequestReturned = null;
+        var focusCallReturned = false; var spaceAttempted = false; var spaceReturned = false;
+        string? keyboardError = null;
         try
         {
             await Wait(host, async () => await Uia(() => Find(host.Id, "NewInstall").Length > 0), TimeSpan.FromSeconds(20));
@@ -130,15 +157,44 @@ internal static class ExternalProbe
                 });
                 await Check(GatePlan[4], async () =>
                 {
-                    await Uia(() => { host.Refresh(); SetForegroundWindow(host.MainWindowHandle); Find(host.Id, "NewInstall").Single().SetFocus(); return true; });
-                    await Wait(host, async () => await Uia(() => Find(host.Id, "NewInstall").Single().Current.HasKeyboardFocus), TimeSpan.FromSeconds(5));
-                    await Sta(() =>
+                    keyboardClock.Start();
+                    try
                     {
-                        GetWindowThreadProcessId(GetForegroundWindow(), out var owner);
-                        Require(owner == host.Id, "Keyboard belongs to exact host.");
-                        System.Windows.Forms.SendKeys.SendWait(" ");
-                    });
-                    await Counter(3, 2);
+                        keyboardPhase = "foreground_and_focus_request";
+                        await Uia(() =>
+                        {
+                            keyboardSamples.Add(ObserveKeyboard(host, keyboardClock, "before_focus_request"));
+                            host.Refresh(); foregroundRequestReturned = SetForegroundWindow(host.MainWindowHandle);
+                            Find(host.Id, "NewInstall").Single().SetFocus(); focusCallReturned = true;
+                            keyboardSamples.Add(ObserveKeyboard(host, keyboardClock, "focus_call_returned"));
+                            return true;
+                        });
+                        keyboardPhase = "focus_acknowledgement";
+                        await Wait(host, async () => await Uia(() =>
+                        {
+                            var sample = ObserveKeyboard(host, keyboardClock, keyboardPhase);
+                            focusFirst ??= sample; focusLast = sample; focusObservations++;
+                            return sample.target_has_keyboard_focus;
+                        }), TimeSpan.FromSeconds(5));
+                        keyboardPhase = "space_dispatch";
+                        await Sta(() =>
+                        {
+                            keyboardSamples.Add(ObserveKeyboard(host, keyboardClock, "before_space_dispatch"));
+                            GetWindowThreadProcessId(GetForegroundWindow(), out var owner);
+                            Require(owner == host.Id, "Keyboard belongs to exact host.");
+                            spaceAttempted = true; System.Windows.Forms.SendKeys.SendWait(" "); spaceReturned = true;
+                        });
+                        keyboardPhase = "click_counter_observation";
+                        await Wait(host, async () => await Uia(() =>
+                        {
+                            var sample = ObserveKeyboard(host, keyboardClock, keyboardPhase);
+                            counterFirst ??= sample; counterLast = sample; counterObservations++;
+                            return sample.action_clicks == 3 && sample.control_clicks == 2;
+                        }), TimeSpan.FromSeconds(5));
+                        keyboardPhase = "completed";
+                    }
+                    catch (Exception error) { keyboardError = error.GetType().Name; throw; }
+                    finally { keyboardClock.Stop(); }
                 });
                 completed = true;
             }
@@ -198,6 +254,21 @@ internal static class ExternalProbe
                 { gateChecks.Add(new { name = GatePlan[5], status = "failed", error_type = "normal_exit_failed" }); gateFailed = true; }
                 foreach (var name in GatePlan.Skip(gateChecks.Count)) gateChecks.Add(new { name, status = "not_run", error_type = "prerequisite_failed" });
             }
+            await Write(Path.Combine(output, "navigation-keyboard-diagnostics.json"), new
+            {
+                schema_version = 1, protocol = "contain-wpf-keyboard-diagnosis-1", source_sha = Environment.GetEnvironmentVariable("GITHUB_SHA"),
+                synthetic = true, actual_packaged_executable = false, real_etw_executed = false,
+                expected_host_process_id = host.Id, fixed_target_id = "NewInstall", keyboard_key = "Space",
+                phase = keyboardPhase, error_type = keyboardError, elapsed_ms = keyboardClock.ElapsedMilliseconds,
+                foreground_request_returned = foregroundRequestReturned, focus_call_returned = focusCallReturned,
+                focus_observation_count = focusObservations, focus_first = focusFirst, focus_last = focusLast,
+                space_dispatch_attempted = spaceAttempted, space_dispatch_returned = spaceReturned,
+                click_observation_count = counterObservations, counter_first = counterFirst, counter_last = counterLast,
+                samples = keyboardSamples, normal_exit = normalExit, forced_exit = forcedExit,
+                focus_deadline_ms = 5000, dispatch_deadline_ms = 5000, click_observation_deadline_ms = 5000,
+                maximum_keyboard_gestures = 1, retries = 0,
+                note = "Staged diagnosis only; no historical cause or product fix is claimed. Cached samples are retained without UIA queries after failure."
+            });
             await Write(summaryPath, new
             {
                 schema_version = 1, protocol = "contain-wpf-external-navigation-probe-1", source_sha = Environment.GetEnvironmentVariable("GITHUB_SHA"),
@@ -266,6 +337,51 @@ internal static class ExternalProbe
                 };
             }).ToArray()
         };
+    }
+    private sealed record KeyboardSample(string stage, long elapsed_ms, bool host_alive,
+        int foreground_process_id, bool foreground_is_owned_main, bool target_has_keyboard_focus,
+        string focused_fixed_id, int action_clicks, int control_clicks,
+        int space_down, int space_up, int space_down_on_action, int space_up_on_action);
+
+    private static KeyboardSample ObserveKeyboard(Process host, Stopwatch clock, string stage)
+    {
+        host.Refresh();
+        if (host.HasExited) throw new InvalidOperationException("Controlled host exited during keyboard observation.");
+        var foreground = GetForegroundWindow();
+        GetWindowThreadProcessId(foreground, out var foregroundOwner);
+        var target = Find(host.Id, "NewInstall").Single();
+        var focused = AutomationElement.FocusedElement;
+        var focusId = "none";
+        if (focused is not null)
+        {
+            var info = focused.Current;
+            focusId = info.ProcessId != host.Id ? "foreign_process" : info.AutomationId switch
+            {
+                "NewInstall" => "NewInstall", "ControlButton" => "ControlButton", _ => "other_owned_control"
+            };
+        }
+        var status = Find(host.Id, "ProbeStatus").Single().Current;
+        var clicks = FixedCounters(status.Name, ["NewInstall", "ControlButton"]);
+        var keys = FixedCounters(status.HelpText, ["SpaceDown", "SpaceUp", "DownOnAction", "UpOnAction"]);
+        return new(stage, clock.ElapsedMilliseconds, true, foregroundOwner,
+            foregroundOwner == host.Id && foreground == host.MainWindowHandle, target.Current.HasKeyboardFocus,
+            focusId, clicks[0], clicks[1], keys[0], keys[1], keys[2], keys[3]);
+    }
+
+    private static int[] FixedCounters(string text, string[] names)
+    {
+        if (text.Length > 128) throw new InvalidOperationException("Controlled numeric status exceeds its fixed bound.");
+        var parts = text.Split(';');
+        if (parts.Length != names.Length) throw new InvalidOperationException("Controlled numeric status has an unexpected shape.");
+        var result = new int[names.Length];
+        for (var index = 0; index < names.Length; index++)
+        {
+            var prefix = names[index] + "=";
+            if (!parts[index].StartsWith(prefix, StringComparison.Ordinal)
+                || !int.TryParse(parts[index].AsSpan(prefix.Length), out result[index]) || result[index] < 0)
+                throw new InvalidOperationException("Controlled numeric status does not match its fixed fields.");
+        }
+        return result;
     }
     private static AutomationElement[] Find(int processId, string id)
     {

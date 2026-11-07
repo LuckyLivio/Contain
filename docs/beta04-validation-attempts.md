@@ -372,3 +372,30 @@ and zero retries, then review all actual screenshots. Preserve M10's failed resu
 and its separate successful live predicates. The unchanged core still reuses
 Beta.10 D4; no new heavy-load matrix is needed. Only the exact fully accepted ZIP
 can be published, with no rebuilding or repackaging afterward.
+
+M11 source `28fc2fc4ee7edd1bec3f525f4f5a6d98a233f80d`,
+[push run 42343947561](https://github.com/LuckyLivio/Contain/actions/runs/42343947561),
+**failed before product freeze**. Model34 and the shared presentation checks
+passed. The independent navigation regression had 10 passed, 1 failed, 1 not run:
+`keyboard_navigation_invokes_once` raised TimeoutException. The exact synthetic
+host exited normally with code0. No packaged desktop test or installation ran,
+and no product ZIP was produced. `M11.json` preserves the original combined
+control result. The same-source PR check 42343950976 passed, but is not substituted
+for this failed push attempt.
+
+The code already waits for HasKeyboardFocus and checks foreground ownership before
+sending one Space key. The old aggregate does not identify whether the timeout
+occurred while acquiring focus or while observing the resulting click. Neither
+cause is established; do not claim a product keyboard defect or missing focus wait.
+
+## M12 — identify the keyboard prerequisite stage without an installation
+
+Predeclared before execution: add bounded, redacted stage observations to the
+existing one-host external navigation check, retaining its original discovery,
+UIA, focus/click and cleanup deadlines. Record only the known host, fixed control
+ID/focus, foreground ownership, whether the one Space input was sent and the
+expected counter observation. Do not log unrelated window names, paths or typed
+content. Keep all 12 checks and fail on unexpected UIA errors, persistent state
+mismatch or early exit. Ordinary push/PR checks will run; no native acceptance
+marker, no product freeze and no installation. Use the result to choose any
+necessary test or product correction before the final complete desktop run.
