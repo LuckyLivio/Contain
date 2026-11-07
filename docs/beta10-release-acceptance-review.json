@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "protocol": "contain-beta10-release-policy-review-1",
+  "policy_id": "2026-11-07-known-beta-risks-accepted",
+  "product_source_sha": "b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4",
+  "zip_sha256": "a7ef3faed3c42aada77fe5619b732fe092b8787f89311047105ff6082b132656",
+  "reviewed_harness_source_sha": "d1bca0b109d722ceaf0ab4ecf89c1d8e17d0b77b",
+  "accepted_full_desktop_run": 42325883947,
+  "test_contract": "unchanged_d6_reused",
+  "historical_failures_retained": true,
+  "historical_unknowns_are_release_blockers": false,
+  "product_binaries_changed": false,
+  "resource_limits_changed": false,
+  "timeout_limits_changed": false,
+  "assertions_weakened": false,
+  "cleanup_weakened": false,
+  "repeat_until_green": false,
+  "unresolved_new_acceptance_failure": false,
+  "known_reproducible_integrity_defect": false,
+  "contract_review": {
+    "control_id": "SessionTitle",
+    "absence_is_legal_transition": false,
+    "stale_description_waited": true,
+    "provisional_guid_is_final_acceptance": false,
+    "exact_task_session_checked_before_readback": true,
+    "historical_cause_claimed": false
+  },
+  "known_risk_tracking": {
+    "C1_ready_timeout_cause_unknown": "https://github.com/LuckyLivio/Contain/issues/16",
+    "D5_required_control_cause_unknown": "https://github.com/LuckyLivio/Contain/issues/17",
+    "Parallels_57767_original_breakdown_unavailable": "https://github.com/LuckyLivio/Contain/issues/18"
+  }
+}

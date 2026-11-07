@@ -1,0 +1,33 @@
+name: Upload the original Beta 10 ZIP with separate final acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      main_run:
+        description: Successful CI run for exact current merged main
+        required: true
+      tag_source:
+        description: Exact merged main commit tagged v0.3.2-beta.10 (product source remains separately frozen)
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: upload-verified-v0.3.2-beta.10
+  cancel-in-progress: false
+jobs:
+  upload:
+    if: ${{ github.repository == 'LuckyLivio/Contain' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERIFIED_MAIN_RUN: ${{ inputs.main_run }}
+      VERIFIED_TAG_SOURCE: ${{ inputs.tag_source }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify original ZIP, preserved native gates, policy and current main; upload without overwrite and read back
+        run: python3 scripts/upload-beta10-frozen-assets.py --main-run "$VERIFIED_MAIN_RUN" --tag-source "$VERIFIED_TAG_SOURCE" --upload
