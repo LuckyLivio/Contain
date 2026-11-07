@@ -223,3 +223,31 @@ IDs and per-node match/ownership/geometry booleans. No arbitrary desktop names,
 paths or content IDs are collected. M6 remains failed; its unrecorded hit-ID and
 geometry cannot be inferred retroactively. If current identity is ambiguous,
 the next attempt must fail before clicking rather than fall back or retry.
+
+M7 source `eb512ce59ab7758f9941f7fe66c4f721beba6121`,
+[run 42341344681](https://github.com/LuckyLivio/Contain/actions/runs/42341344681),
+**failed** before the first chooser click: 1 fixed group passed, 1 failed,
+12 not run, zero installations. The target fixed ID was unique and native
+ownership passed. The FromPoint Text/Button/Group ancestors had neither the
+required ID nor matching bounds, and their rectangles did not contain the queried
+point. This rules out treating the result as only a runtime-ID alias. It does
+not establish why the provider returned that branch or whether it persists:
+both M6 and M7 took one immediate probe. Product bytes were unchanged during
+execution. The original public summary is archived as `M7.json`.
+
+## M8 — bounded actionability under the original chooser deadline
+
+Predeclared before execution: no product change and no relaxation of the strict
+unique-ID/role/geometry/owned-hit predicate. Wait for that read-only actionability
+state before clicking, sharing the existing 15-second chooser budget between
+readiness and discovery of the owned native dialog. Cap each probe by remaining
+time; click once only after a match. Record counts plus bounded first/last
+mismatches. Duplicate IDs, unexpected UIA errors and early process exit fail;
+persistent geometric mismatch times out. The modal must also have the exact
+fixed title for its requested action, not merely belong to the process.
+
+Controlled sequences exercise the actual waiting path, including mismatch then
+match, persistent mismatch/foreign hit, original exception and single-click
+behavior. One viewing preview, zero installations, no increased timeout and no
+repeated click. This tests a possible transition without claiming animation or
+a provider bug as the cause of M6/M7.

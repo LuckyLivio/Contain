@@ -43,13 +43,22 @@ visible button, a unique fixed AutomationId in the owned main window, native
 window ownership, and a UIA hit ancestor with that exact ID, button role and
 current bounds containing the click point within 16 inspected nodes. Runtime ID
 equality is recorded separately. This rejects a control clipped behind another
-part of the same window. There is no fallback or repeated click. Cached per-launch
-diagnostics contain only the fixed action ID, roles, identity/geometry comparison
-booleans, bounded ancestry, match outcome and original exception type. The real
+part of the same window. Eligibility is polled without input; one physical click
+is allowed only after the strict target check succeeds. Readiness and the exact
+action-specific native dialog title share the original 15-second discovery
+budget. Duplicate IDs and unexpected provider errors fail immediately; persistent
+mismatches time out without clicking. There is no fallback or repeated click.
+Cached per-launch diagnostics retain the attempt count and first/last observations
+with only the fixed action ID, roles, identity/geometry comparison booleans,
+bounded ancestry, match outcome and original exception type. The real
 guard is also exercised with duplicate IDs, wrong IDs/bounds, exact/child hits,
 covered/missing/foreign targets, an overlong ancestor chain and an unexpected
 provider exception. M6 did not capture the hit ancestor's ID/bounds; it does not
 establish that the observed Button was the required action or a provider bug.
+M7 found mismatching hit geometry in one immediate probe; it did not establish
+persistence or an animation cause. The actual action-wait engine additionally
+tests transient mismatch before an exact hit, persistent wrong/foreign hits,
+one input only, unchanged exception types and the original deadline.
 
 The actual wait engine also runs controlled sequences for temporary absence plus
 an old session followed by the correct session, permanent absence, a permanent

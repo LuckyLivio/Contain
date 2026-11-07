@@ -48,6 +48,14 @@
       "file": "M6.json",
       "sha256": "f4d13435b97904988380d1eed59941c053d89ef7fbc9f6a0af9e3ed32aa6affb",
       "accepted": false
+    },
+    {
+      "attempt": "M7",
+      "run": 42341344681,
+      "source_sha": "eb512ce59ab7758f9941f7fe66c4f721beba6121",
+      "file": "M7.json",
+      "sha256": "2d0d194744e98b0a34c5316b5c2e0a64be2718f38695320df4e5a15deaa178de",
+      "accepted": false
     }
   ]
 }

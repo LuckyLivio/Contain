@@ -15,6 +15,8 @@ internal sealed record ActionProbe(string Control, string Pattern, bool Passed, 
 internal sealed record ClickDiagnostic(string Control, string? TargetRole, string? HitRole, bool NativeOwned,
     string[] AncestorRoles, HitTargetGuard.Identity[] Ancestors, int? FixedIdMatches,
     bool TargetMatched, string Result, long ElapsedMs, string? ErrorType);
+internal sealed record ClickReadinessDiagnostic(string Control, int Attempts, ClickDiagnostic? First,
+    ClickDiagnostic? Last, bool Clicked, long ElapsedMs, int SharedPickerDeadlineMs, string? ErrorType);
 internal sealed record CloseDiagnostic(long RequestElapsedMs, long WaitElapsedMs, int WaitDeadlineMs,
     bool ProcessAlive, int? ExitCode, string? ErrorType);
 
@@ -24,14 +26,14 @@ internal sealed class DesktopDriver : IDisposable
     private readonly Process process;
     private readonly List<Probe> probes = [];
     private readonly List<ActionProbe> actions = [];
-    private readonly List<ClickDiagnostic> clicks = [];
+    private readonly List<ClickReadinessDiagnostic> clicks = [];
     private readonly Stopwatch lifetime = Stopwatch.StartNew();
     internal int ProcessId => process.Id;
     internal bool HasExited => process.HasExited;
     internal int ExitCode => process.ExitCode;
     internal IReadOnlyList<Probe> Probes => probes;
     internal IReadOnlyList<ActionProbe> Actions => actions;
-    internal IReadOnlyList<ClickDiagnostic> Clicks => clicks;
+    internal IReadOnlyList<ClickReadinessDiagnostic> Clicks => clicks;
     internal CloseDiagnostic? CloseObservation { get; private set; }
     internal string Stage { get; private set; } = "launch";
     internal string? LastControl { get; private set; }
@@ -200,9 +202,60 @@ internal sealed class DesktopDriver : IDisposable
     internal Task<bool> CheckedAsync(string id) => Ui(id, () =>
         ((TogglePattern)Required(id).GetCurrentPattern(TogglePattern.Pattern)).Current.ToggleState == ToggleState.On);
 
-    internal Task ClickAsync(string id) => Ui(id, () =>
+    private async Task ClickAsync(string id, Stopwatch sharedClock, TimeSpan deadline)
     {
-        Stage = "native_click";
+        Stage = "native_click_readiness"; LastControl = id;
+        var attempts = 0; var clicked = false;
+        ClickDiagnostic? first = null, last = null;
+        string? errorType = null;
+        ClickTarget? readyTarget = null;
+        try
+        {
+            await Ui(id, () => SetForegroundWindow(MainWindow()));
+            await ObservedWait.ActOnceAsync(async () =>
+            {
+                attempts++;
+                readyTarget = await ProbeClickAsync(id, diagnostic => { first ??= diagnostic; last = diagnostic; });
+                return readyTarget is not null;
+            }, () => Ui(id, () =>
+            {
+                var ready = readyTarget!;
+                // Readiness polling sends no input. Recheck geometry immediately before the
+                // one permitted click and prevent a delayed provider call from sending late input.
+                if (sharedClock.Elapsed >= deadline) throw new TimeoutException("Native click exceeded the shared picker deadline.");
+                if (!ready.Element.Current.IsEnabled || !Visible(ready.Element)
+                    || ready.Element.Current.BoundingRectangle != ready.Rectangle)
+                    throw new ClickTargetUnavailableException(id);
+                var freshMatches = AutomationElement.FromHandle(MainWindow()).FindAll(TreeScope.Element | TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.AutomationIdProperty, id));
+                HitTargetGuard.RequireUniqueCount(freshMatches.Count);
+                if (freshMatches[0].Current.ProcessId != process.Id || freshMatches[0].Current.ControlType != ControlType.Button
+                    || freshMatches[0].Current.BoundingRectangle != ready.Rectangle)
+                    throw new ClickTargetUnavailableException(id);
+                GetWindowThreadProcessId(WindowFromPoint(ready.Point), out var owner);
+                if (owner != process.Id) throw new ClickTargetUnavailableException(id);
+                if (sharedClock.Elapsed >= deadline) throw new TimeoutException("Native click exceeded the shared picker deadline.");
+                GetCursorPos(out var old);
+                try
+                {
+                    SetCursorPos(ready.Point.X, ready.Point.Y);
+                    mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero); mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+                    clicked = true;
+                }
+                finally { SetCursorPos(old.X, old.Y); }
+            }), EnsureAlive, deadline, () => sharedClock.Elapsed, Task.Delay);
+        }
+        catch (Exception error) { errorType = error.GetType().Name; throw; }
+        finally
+        {
+            Record("native_click_readiness", id, sharedClock.ElapsedMilliseconds, errorType);
+            if (clicks.Count < 128) clicks.Add(new(id, attempts, first, last, clicked,
+                sharedClock.ElapsedMilliseconds, (int)deadline.TotalMilliseconds, errorType));
+        }
+    }
+
+    private Task<ClickTarget?> ProbeClickAsync(string id, Action<ClickDiagnostic> observe) => Ui<ClickTarget?>(id, () =>
+    {
         var clock = Stopwatch.StartNew(); var identities = new List<HitTargetGuard.Identity>();
         string? targetRole = null, hitRole = null, errorType = null;
         int? fixedIdMatches = null;
@@ -214,20 +267,20 @@ internal sealed class DesktopDriver : IDisposable
             var matches = AutomationElement.FromHandle(window).FindAll(TreeScope.Element | TreeScope.Descendants,
                 new PropertyCondition(AutomationElement.AutomationIdProperty, id));
             fixedIdMatches = matches.Count;
+            if (matches.Count == 0) { result = "missing_fixed_id"; return null; }
             HitTargetGuard.RequireUniqueCount(matches.Count);
             var element = matches[0];
             targetRole = element.Current.ControlType.ProgrammaticName;
             result = "visible_enabled";
             if (element.Current.ProcessId != process.Id || element.Current.ControlType != ControlType.Button
-                || !element.Current.IsEnabled || !Visible(element)) throw new ClickTargetUnavailableException(id);
+                || !element.Current.IsEnabled || !Visible(element)) return null;
             var rect = element.Current.BoundingRectangle;
-            SetForegroundWindow(window);
             var point = new Point { X = (int)(rect.X + rect.Width / 2), Y = (int)(rect.Y + rect.Height / 2) };
             var clickPoint = new System.Windows.Point(point.X, point.Y);
             GetWindowThreadProcessId(WindowFromPoint(point), out var owner);
             nativeOwned = owner == process.Id;
             result = "native_owner";
-            if (!nativeOwned) throw new ClickTargetUnavailableException(id);
+            if (!nativeOwned) return null;
 
             // A WPF child can be clipped by a ScrollViewer while its rectangle is still
             // inside the main HWND. Require the actual hit target, not merely window ownership.
@@ -246,18 +299,14 @@ internal sealed class DesktopDriver : IDisposable
                     hitRole ??= role; identities.Add(currentIdentity);
                 });
             matched = match.Matches; result = match.Reason;
-            if (!matched) throw new ClickTargetUnavailableException(id);
-            GetCursorPos(out var old);
-            try { SetCursorPos(point.X, point.Y); mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero); mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero); }
-            finally { SetCursorPos(old.X, old.Y); }
-            result = "clicked_exact_target";
+            return matched ? new ClickTarget(element, rect, point) : null;
         }
         catch (Exception error) { errorType = error.GetType().Name; LastErrorType = errorType; throw; }
         finally
         {
             // Cached fields only: failed UIA calls retain their original exception, with no
             // follow-up provider queries that could replace it or expose unrelated desktop text.
-            if (clicks.Count < 128) clicks.Add(new(id, targetRole, hitRole, nativeOwned,
+            observe(new(id, targetRole, hitRole, nativeOwned,
                 identities.Select(item => item.Role).ToArray(), identities.ToArray(), fixedIdMatches,
                 matched, result, clock.ElapsedMilliseconds, errorType));
         }
@@ -270,9 +319,24 @@ internal sealed class DesktopDriver : IDisposable
             throw new IOException("Existing-target refusal requires a deliberate existing save target.");
         if (path is not null && (save ? !Directory.Exists(Path.GetDirectoryName(path)) || (File.Exists(path) && !existingRefusal) : !File.Exists(path)))
             throw new IOException("Picker test target violates isolated existing/new-file precondition.");
-        await ClickAsync(action); // InvokePattern may synchronously block in the product's modal ShowDialog.
+        var expectedTitle = action switch
+        {
+            "PickInstaller" => "选择要记录的安装器", "OpenDatabase" => "打开外部记录库（只读）",
+            "ExportMatches" => "导出全部匹配结果", "ExportPage" => "导出本页报告",
+            _ => throw new InvalidOperationException("No fixed native picker title contract for this action.")
+        };
+        var pickerClock = Stopwatch.StartNew(); var pickerDeadline = TimeSpan.FromSeconds(15);
+        await ClickAsync(action, pickerClock, pickerDeadline); // Modal InvokePattern can synchronously block.
         IntPtr dialog = IntPtr.Zero;
-        await UntilAsync("native_picker_discovery", action, () => Task.FromResult((dialog = NativeDialog()) != IntPtr.Zero), TimeSpan.FromSeconds(15));
+        var remaining = pickerDeadline - pickerClock.Elapsed;
+        if (remaining <= TimeSpan.Zero) throw new TimeoutException("Native picker readiness exhausted the original discovery deadline.");
+        await UntilAsync("native_picker_discovery", action, () =>
+        {
+            dialog = NativeDialog();
+            if (dialog == IntPtr.Zero) return Task.FromResult(false);
+            if (NativeText(dialog) != expectedTitle) throw new UnexpectedNativeDialogException();
+            return Task.FromResult(true);
+        }, remaining);
         ChooserInteractions++;
         try
         {
@@ -472,6 +536,8 @@ internal sealed class DesktopDriver : IDisposable
     internal sealed class RequiredControlMissingException(string id) : InvalidOperationException("Required control missing: " + id);
     internal sealed class RequiredInvokePatternMissingException(string id) : InvalidOperationException("Navigation action lacks required InvokePattern: " + id);
     internal sealed class ClickTargetUnavailableException(string id) : InvalidOperationException("Required click target is clipped, disabled, or obstructed: " + id);
+    internal sealed class UnexpectedNativeDialogException() : InvalidOperationException("Owned native dialog does not match the fixed action title.");
+    private sealed record ClickTarget(AutomationElement Element, System.Windows.Rect Rectangle, Point Point);
     [StructLayout(LayoutKind.Sequential)] private struct Bounds { internal int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] private struct Point { internal int X, Y; }
     private delegate bool WindowCallback(IntPtr window, IntPtr parameter);
