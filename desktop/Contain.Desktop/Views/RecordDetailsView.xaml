@@ -46,14 +46,14 @@
                 </ScrollViewer>
             </TabItem>
             <TabItem Header="文件操作" AutomationProperties.AutomationId="EventsTab">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,16,0,0">
-                    <StackPanel>
+                <Grid Margin="0,16,0,0">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                         <DockPanel Margin="0,0,0,12" IsEnabled="{Binding Records.HasRecord}">
                             <ui:Button DockPanel.Dock="Right" Content="清除" Appearance="Transparent" Margin="8,0,0,0" Click="OnClearSearch" AutomationProperties.AutomationId="ClearSearch" />
                             <ui:Button DockPanel.Dock="Right" Content="搜索" Margin="8,0,0,0" Click="OnSearch" AutomationProperties.AutomationId="SearchEvents" />
                             <ui:TextBox x:Name="SearchBox" Text="{Binding Records.SearchDraft, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="搜索本次记录中的路径、操作或事件 ID" KeyDown="OnSearchKeyDown" AutomationProperties.AutomationId="SearchText" AutomationProperties.Name="搜索本次记录" />
                         </DockPanel>
-                        <WrapPanel Margin="0,0,0,12">
+                        <WrapPanel Grid.Row="1" Margin="0,0,0,4">
                             <TextBlock Text="{Binding Records.EventPageText}" VerticalAlignment="Center" Margin="0,0,16,8" AutomationProperties.AutomationId="EventPageLabel" />
                             <ui:Button Content="上一页" Click="OnPreviousEvents" IsEnabled="{Binding Records.CanPreviousEvents}" Margin="0,0,8,8" AutomationProperties.AutomationId="PreviousEvents" />
                             <ui:Button Content="下一页" Click="OnNextEvents" IsEnabled="{Binding Records.CanNextEvents}" Margin="0,0,16,8" AutomationProperties.AutomationId="NextEvents" />
@@ -61,12 +61,13 @@
                             <ui:Button Content="{Binding Records.MatchExportLabel}" Appearance="Transparent" Click="OnExportMatches" IsEnabled="{Binding Records.CanExportMatches}" Margin="0,0,0,8" AutomationProperties.AutomationId="ExportMatches" />
                             <ui:Button Content="停止导出" Appearance="Transparent" Click="OnCancelExport" Margin="8,0,0,8" Visibility="{Binding Records.IsExporting, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="CancelExport" />
                         </WrapPanel>
+                      <ScrollViewer x:Name="EventBodyScroll" Grid.Row="2" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Disabled" SizeChanged="OnBodySizeChanged">
                         <Grid x:Name="EventColumns">
                             <Grid.ColumnDefinitions><ColumnDefinition x:Name="ListColumn" Width="3*" /><ColumnDefinition x:Name="ExplanationColumn" Width="2*" /></Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                            <Border x:Name="EventListSurface" Style="{StaticResource Surface}" Padding="8" Margin="0,0,16,16">
+                            <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="0" /></Grid.RowDefinitions>
+                            <Border x:Name="EventListSurface" Style="{StaticResource Surface}" Padding="8" Margin="0,0,16,0">
                                 <Grid>
-                                    <ListBox x:Name="EventList" Height="390" ItemsSource="{Binding Records.Events}" BorderThickness="0" Background="Transparent"
+                                    <ListBox x:Name="EventList" ItemsSource="{Binding Records.Events}" BorderThickness="0" Background="Transparent"
                                              SelectedValuePath="Id" SelectedValue="{Binding Records.SelectedEventId, Mode=OneWay}"
                                              ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
                                              AutomationProperties.AutomationId="EventList" AutomationProperties.Name="当前会话文件操作列表" SelectionChanged="OnEventSelectionChanged">
@@ -95,25 +96,30 @@
                                     <TextBlock Text="本页没有事件。可以清除搜索或换一个关键词。" Style="{StaticResource MutedText}" TextAlignment="Center" VerticalAlignment="Center" Margin="20" Visibility="{Binding Records.Events.Count, Converter={StaticResource ZeroVisibility}}" AutomationProperties.AutomationId="EmptyEvents" />
                                 </Grid>
                             </Border>
-                            <Border x:Name="ExplanationSurface" Grid.Column="1" Style="{StaticResource Surface}" Padding="16">
-                                <StackPanel>
+                            <Border x:Name="ExplanationSurface" Grid.Column="1" Style="{StaticResource Surface}" Padding="16" Margin="0">
+                                <Grid>
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                     <TextBlock Text="事件依据" Style="{StaticResource SectionTitle}" />
-                                    <TextBox Style="{StaticResource SelectableText}" Text="{Binding Records.EventExplanation, Mode=OneWay}" MinHeight="80" MaxHeight="260" AutomationProperties.AutomationId="EventDetails" AutomationProperties.Name="所选事件依据" AutomationProperties.HelpText="{Binding Records.EventIdentity}" />
+                                  <ScrollViewer x:Name="ExplanationScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                   <StackPanel>
+                                    <TextBox Style="{StaticResource SelectableText}" Text="{Binding Records.EventExplanation, Mode=OneWay}" MinHeight="80" AutomationProperties.AutomationId="EventDetails" AutomationProperties.Name="所选事件依据" AutomationProperties.HelpText="{Binding Records.EventIdentity}" />
                                     <TextBlock Text="记录中的完整资源路径" Style="{StaticResource FieldLabel}" />
                                     <TextBox Style="{StaticResource SelectableText}" Text="{Binding Records.SelectedEventResource, Mode=OneWay}" MaxHeight="100" AutomationProperties.AutomationId="EventResource" AutomationProperties.Name="所选事件完整资源路径" />
-                                    <WrapPanel Margin="0,12,0,0">
-                                        <ui:Button Content="复制事件 ID" Appearance="Transparent" Padding="8,6" Margin="0,0,8,8" Click="OnCopyEventId" IsEnabled="{Binding Records.CanCopyEvent}" AutomationProperties.AutomationId="CopyEventId" />
-                                        <ui:Button Content="复制完整路径" Appearance="Transparent" Padding="8,6" Margin="0,0,0,8" Click="OnCopyEventPath" IsEnabled="{Binding Records.CanCopyEvent}" AutomationProperties.AutomationId="CopyEventPath" />
-                                    </WrapPanel>
-                                    <Expander Header="原始操作与完整 JSON" Margin="0,8,0,0" AutomationProperties.AutomationId="RawExplanationExpander">
+                                    <Expander Header="原始操作与完整 JSON" Margin="0,8,0,0" Collapsed="OnRawCollapsed" AutomationProperties.AutomationId="RawExplanationExpander">
                                         <TextBox Style="{StaticResource SelectableText}" Text="{Binding Records.RawExplanation, Mode=OneWay}" MaxHeight="400" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" Margin="0,12,0,0" AutomationProperties.AutomationId="EventRawJson" AutomationProperties.Name="所选事件原始 JSON" />
                                     </Expander>
-                                </StackPanel>
+                                   </StackPanel>
+                                  </ScrollViewer>
+                                    <WrapPanel Grid.Row="2" Margin="0,12,0,0">
+                                        <ui:Button Content="复制事件 ID" Appearance="Transparent" Padding="8,6" Margin="0,0,8,0" Click="OnCopyEventId" IsEnabled="{Binding Records.CanCopyEvent}" AutomationProperties.AutomationId="CopyEventId" />
+                                        <ui:Button Content="复制完整路径" Appearance="Transparent" Padding="8,6" Click="OnCopyEventPath" IsEnabled="{Binding Records.CanCopyEvent}" AutomationProperties.AutomationId="CopyEventPath" />
+                                    </WrapPanel>
+                                </Grid>
                             </Border>
                         </Grid>
-                        <TextBlock Text="搜索覆盖当前会话的全部事件；列表每页最多 50 条。路径是记录时的名称，不表示已验证的当前路径。" Style="{StaticResource MutedText}" Margin="0,0,0,16" />
-                    </StackPanel>
-                </ScrollViewer>
+                      </ScrollViewer>
+                        <TextBlock Grid.Row="3" Text="搜索覆盖当前会话的全部事件；列表每页最多 50 条。路径是记录时的名称，不表示已验证的当前路径。" Style="{StaticResource MutedText}" Margin="0,12,0,0" />
+                </Grid>
             </TabItem>
             <TabItem Header="状态对比" AutomationProperties.AutomationId="ChangesTab">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,16,0,0">

@@ -151,3 +151,39 @@ the one same-name transition that previously made an immediate required lookup;
 this preserves its exact identity assertion and deadline, without retrying a
 failed action or accepting an old session. Full Windows controls and the actual
 empty-store normal close remain mandatory before downstream viewing checks.
+
+M5 source `94ec2a274b47616b3dba645e15a43704c57f488d`,
+[run 42340263767](https://github.com/LuckyLivio/Contain/actions/runs/42340263767),
+**failed**: 4 complete fixed groups passed, 1 failed, 9 not run, zero installations.
+The actual empty and loaded windows now exited normally with code 0 in 83 ms and
+71 ms, within the original 20-second bound. Finished, nonzero, incomplete and
+missing-value presentation passed. The 130-event fixture returned the exact
+53 matching IDs in order across 50 + 3 pages; selected explanation and copied
+ID were also correct. The first full-match export then timed out discovering
+a native picker (15 seconds).
+
+The screenshot shows that selecting/copying the explanation scrolled the whole
+events page, moving its search/pagination/export controls behind the fixed page
+header. The test's click check only compared bounds to the main window and
+process, so it did not reject a location covered by another part of the same
+window. This is evidence of a layout and hit-target verification defect; it does
+not establish a broken SaveFileDialog or exporter. The frozen package remained
+unchanged. All original reports and screenshots are retained by that run.
+
+## M6 — fixed event operations and verified click targets
+
+Predeclared before execution: keep the event search, pagination and export
+controls outside the scrollable event/explanation body. Preserve all query,
+selection and export contracts. Before a native chooser click, require that UIA
+hit-testing identifies that exact action or one of its descendants, with bounded
+ancestor traversal. Do not fall back to a blind coordinate or another control.
+Use the same single viewing preview and zero installations, retaining existing
+deadlines and all M5 results. Inspect actual screenshots before final capture.
+
+The M5 repository CI [42340263909](https://github.com/LuckyLivio/Contain/actions/runs/42340263909)
+(and M4 CI 42339828397) found a separate test-tool portability error: the new publisher schema
+regression read UTF-8 C# source using Windows' default CP1252 codec. The test now
+requests UTF-8 explicitly for its source/report reads. Its 26 checks pass locally
+both normally and with Python UTF-8 mode and locale coercion disabled under the
+C locale; the next Windows CI must verify the actual platform. No product or
+core behavior, assertion or acceptance threshold changes for this correction.

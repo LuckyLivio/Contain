@@ -52,6 +52,7 @@
             <Style x:Key="SelectableText" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
                 <Setter Property="IsReadOnly" Value="True" />
                 <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="TextAlignment" Value="Left" />
                 <Setter Property="BorderThickness" Value="0" />
                 <Setter Property="Background" Value="Transparent" />
                 <Setter Property="Padding" Value="0" />

@@ -160,6 +160,7 @@ internal sealed class NativeSuite(Options options)
     private async Task VerifyIdentity()
     {
         await ObservedWait.VerifyContractAsync();
+        HitTargetGuard.VerifyContract();
         Require(options.Source.Length == 40 && options.Source.All(Uri.IsHexDigit), "source SHA shape");
         foreach (var file in new[] { "Contain.Viewer.exe", "Contain.Viewer.dll", "contain.exe", "BUILD.json" }) Track(Path.Combine(options.Package, file));
         using var build = JsonDocument.Parse(File.ReadAllText(Path.Combine(options.Package, "BUILD.json")));
@@ -550,7 +551,7 @@ internal sealed class NativeSuite(Options options)
     private void PreserveLaunch()
     {
         if (desktop is null) return;
-        launches.Add(new { process_id = desktop.ProcessId, probes = desktop.Probes.ToArray(), actions = desktop.Actions.ToArray(), last_stage = desktop.Stage, last_control = desktop.LastControl,
+        launches.Add(new { process_id = desktop.ProcessId, probes = desktop.Probes.ToArray(), actions = desktop.Actions.ToArray(), clicks = desktop.Clicks.ToArray(), last_stage = desktop.Stage, last_control = desktop.LastControl,
             last_error_type = desktop.LastErrorType, process_exited = desktop.HasExited, normal_close = desktop.CloseObservation });
     }
     private async Task Shot(string name, string kind) => screenshots.Add(await D.CaptureAsync(Path.Combine(options.Output, "screenshots"), name, kind));

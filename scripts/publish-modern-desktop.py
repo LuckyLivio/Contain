@@ -1,7 +1,8 @@
 """Verify and upload one accepted WPF package to an existing empty draft.
 
 Main-only delivery: no build, repack, tag creation, asset replacement or release
-publication. The caller publishes the reviewed draft after public readback.
+publication. The caller reviews authenticated draft readback, publishes, then
+verifies the public download separately.
 """
 import argparse
 import hashlib

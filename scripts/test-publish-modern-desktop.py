@@ -95,7 +95,7 @@ def emitted_summary_fields(path="desktop/Contain.Desktop.Tests/Program.cs", mark
     Nested expressions, anonymous objects and string literals cannot contribute
     names. The acceptance fixture must explicitly account for every real field.
     """
-    source = (DELIVERY.ROOT / path).read_text()
+    source = (DELIVERY.ROOT / path).read_text(encoding="utf-8")
     start = source.index('{', source.index(marker))
     braces, parentheses, brackets = 1, 0, 0
     quoted = escaped = False
@@ -249,13 +249,13 @@ class ModernReleaseGates(unittest.TestCase):
         directory = DELIVERY.ROOT / "desktop/Contain.Desktop.Controls.Tests"
         local = emitted_summary_fields("desktop/Contain.Desktop.Controls.Tests/Program.cs",
                                       'File.WriteAllText(Path.Combine(output, "navigation-control-summary.json"), JsonSerializer.Serialize(new')
-        source = (directory / "ExternalProbe.cs").read_text()
+        source = (directory / "ExternalProbe.cs").read_text(encoding="utf-8")
         combine = source.split("private static async Task Combine(", 1)[1].split("private static object Snapshot(", 1)[0]
         assigned = set(re.findall(r'local\["([a-z_]+)"\]\s*=', combine))
         self.assertEqual(set(controls()), set(local) | assigned)
         for filename, name, expected in [("Program.cs", "Plan", DELIVERY.CONTROL_CHECKS[:6]),
                                          ("ExternalProbe.cs", "GatePlan", DELIVERY.CONTROL_CHECKS[6:])]:
-            source = (directory / filename).read_text()
+            source = (directory / filename).read_text(encoding="utf-8")
             plan = re.search(r'\b' + name + r'\s*=\s*\[(.*?)\];', source, re.S)
             self.assertIsNotNone(plan)
             self.assertEqual(tuple(re.findall(r'"([a-z_]+)"', plan.group(1))), expected)
@@ -394,8 +394,8 @@ class ModernReleaseGates(unittest.TestCase):
         self.assertEqual(result["delivery_source_sha"], args.tag_source_sha)
         self.assertEqual(result["native_control_passed"], 12)
         self.assertFalse(any((output / name).exists() for name in ["private.db", "raw.log", "unreviewed.html"]))
-        self.assertNotIn("D:/SYNTHETIC", (output / "DEPENDENCY-REVIEW.json").read_text())
-        sums = (output / "SHA256SUMS.txt").read_text().splitlines()
+        self.assertNotIn("D:/SYNTHETIC", (output / "DEPENDENCY-REVIEW.json").read_text(encoding="utf-8"))
+        sums = (output / "SHA256SUMS.txt").read_text(encoding="utf-8").splitlines()
         self.assertEqual(len(sums), len(list(output.iterdir())) - 1)
         for line in sums:
             expected, name = line.split("  ", 1)

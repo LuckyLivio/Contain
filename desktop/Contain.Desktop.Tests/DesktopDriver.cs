@@ -12,6 +12,8 @@ namespace Contain.Desktop.Tests;
 internal sealed record Screenshot(string Name, string Sha256, int Width, int Height, uint Dpi, string DataKind);
 internal sealed record Probe(string Stage, string Control, long ElapsedMs, bool ProcessAlive, string? ErrorType);
 internal sealed record ActionProbe(string Control, string Pattern, bool Passed, string? ErrorType);
+internal sealed record ClickDiagnostic(string Control, string? TargetRole, string? HitRole, bool NativeOwned,
+    string[] AncestorRoles, bool TargetMatched, string Result, long ElapsedMs, string? ErrorType);
 internal sealed record CloseDiagnostic(long RequestElapsedMs, long WaitElapsedMs, int WaitDeadlineMs,
     bool ProcessAlive, int? ExitCode, string? ErrorType);
 
@@ -21,12 +23,14 @@ internal sealed class DesktopDriver : IDisposable
     private readonly Process process;
     private readonly List<Probe> probes = [];
     private readonly List<ActionProbe> actions = [];
+    private readonly List<ClickDiagnostic> clicks = [];
     private readonly Stopwatch lifetime = Stopwatch.StartNew();
     internal int ProcessId => process.Id;
     internal bool HasExited => process.HasExited;
     internal int ExitCode => process.ExitCode;
     internal IReadOnlyList<Probe> Probes => probes;
     internal IReadOnlyList<ActionProbe> Actions => actions;
+    internal IReadOnlyList<ClickDiagnostic> Clicks => clicks;
     internal CloseDiagnostic? CloseObservation { get; private set; }
     internal string Stage { get; private set; } = "launch";
     internal string? LastControl { get; private set; }
@@ -197,16 +201,49 @@ internal sealed class DesktopDriver : IDisposable
 
     internal Task ClickAsync(string id) => Ui(id, () =>
     {
-        var element = Required(id);
-        if (!element.Current.IsEnabled || !Visible(element)) throw new InvalidOperationException("Action is not visibly enabled: " + id);
-        var rect = element.Current.BoundingRectangle;
-        var window = MainWindow(); SetForegroundWindow(window);
-        var point = new Point { X = (int)(rect.X + rect.Width / 2), Y = (int)(rect.Y + rect.Height / 2) };
-        GetWindowThreadProcessId(WindowFromPoint(point), out var owner);
-        if (owner != process.Id) throw new InvalidOperationException("Action is obstructed by another process.");
-        GetCursorPos(out var old);
-        try { SetCursorPos(point.X, point.Y); mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero); mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero); }
-        finally { SetCursorPos(old.X, old.Y); }
+        Stage = "native_click";
+        var clock = Stopwatch.StartNew(); var roles = new List<string>();
+        string? targetRole = null, hitRole = null, errorType = null;
+        var nativeOwned = false; var matched = false; var result = "find_target";
+        try
+        {
+            var element = Required(id);
+            targetRole = element.Current.ControlType.ProgrammaticName;
+            result = "visible_enabled";
+            if (!element.Current.IsEnabled || !Visible(element)) throw new ClickTargetUnavailableException(id);
+            var rect = element.Current.BoundingRectangle;
+            SetForegroundWindow(MainWindow());
+            var point = new Point { X = (int)(rect.X + rect.Width / 2), Y = (int)(rect.Y + rect.Height / 2) };
+            GetWindowThreadProcessId(WindowFromPoint(point), out var owner);
+            nativeOwned = owner == process.Id;
+            result = "native_owner";
+            if (!nativeOwned) throw new ClickTargetUnavailableException(id);
+
+            // A WPF child can be clipped by a ScrollViewer while its rectangle is still
+            // inside the main HWND. Require the actual hit target, not merely window ownership.
+            result = "uia_hit_target";
+            var hit = AutomationElement.FromPoint(new System.Windows.Point(point.X, point.Y));
+            var match = HitTargetGuard.Check(element, hit, e => e.Current.ProcessId == process.Id,
+                Automation.Compare, TreeWalker.RawViewWalker.GetParent, e =>
+                {
+                    var role = e.Current.ControlType.ProgrammaticName;
+                    hitRole ??= role; roles.Add(role);
+                });
+            matched = match.Matches; result = match.Reason;
+            if (!matched) throw new ClickTargetUnavailableException(id);
+            GetCursorPos(out var old);
+            try { SetCursorPos(point.X, point.Y); mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero); mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero); }
+            finally { SetCursorPos(old.X, old.Y); }
+            result = "clicked_exact_target";
+        }
+        catch (Exception error) { errorType = error.GetType().Name; LastErrorType = errorType; throw; }
+        finally
+        {
+            // Cached fields only: failed UIA calls retain their original exception, with no
+            // follow-up provider queries that could replace it or expose unrelated desktop text.
+            if (clicks.Count < 128) clicks.Add(new(id, targetRole, hitRole, nativeOwned, roles.ToArray(),
+                matched, result, clock.ElapsedMilliseconds, errorType));
+        }
     });
 
     internal async Task ChooseFileAsync(string action, string? path, bool save = false, bool existingRefusal = false)
@@ -417,6 +454,7 @@ internal sealed class DesktopDriver : IDisposable
     internal sealed class ProductExitedException(int code) : IOException("Packaged product exited before required state; exit=" + code);
     internal sealed class RequiredControlMissingException(string id) : InvalidOperationException("Required control missing: " + id);
     internal sealed class RequiredInvokePatternMissingException(string id) : InvalidOperationException("Navigation action lacks required InvokePattern: " + id);
+    internal sealed class ClickTargetUnavailableException(string id) : InvalidOperationException("Required click target is clipped, disabled, or obstructed: " + id);
     [StructLayout(LayoutKind.Sequential)] private struct Bounds { internal int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] private struct Point { internal int X, Y; }
     private delegate bool WindowCallback(IntPtr window, IntPtr parameter);

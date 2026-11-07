@@ -45,15 +45,23 @@ public partial class RecordDetailsView : UserControl
         if (ChangeList.SelectedItem is ChangeRow row) Shell.Records.SelectChange(row);
     }
     private void OnCopyDiagnostics(object sender, RoutedEventArgs e) => Shell.CopyText(Shell.Records.DiagnosticSummary);
-    private void OnSizeChanged(object sender, SizeChangedEventArgs e)
+    private void OnRawCollapsed(object sender, RoutedEventArgs e) => ExplanationScroll?.ScrollToTop();
+    private void OnSizeChanged(object sender, SizeChangedEventArgs e) => UpdateEventLayout();
+    private void OnBodySizeChanged(object sender, SizeChangedEventArgs e) => UpdateEventLayout();
+    private void UpdateEventLayout()
     {
-        if (EventColumns is null) return;
+        if (EventColumns is null || EventBodyScroll is null) return;
         var compact = ActualWidth < 760;
         ListColumn.Width = new GridLength(compact ? 1 : 3, GridUnitType.Star);
         ExplanationColumn.Width = compact ? new GridLength(0) : new GridLength(2, GridUnitType.Star);
         Grid.SetColumn(ExplanationSurface, compact ? 0 : 1);
         Grid.SetRow(ExplanationSurface, compact ? 1 : 0);
-        EventListSurface.Margin = new Thickness(0, 0, compact ? 0 : 16, 16);
-        EventList.Height = compact ? 260 : 390;
+        EventColumns.RowDefinitions[0].Height = compact ? GridLength.Auto : new GridLength(1, GridUnitType.Star);
+        EventColumns.RowDefinitions[1].Height = compact ? GridLength.Auto : new GridLength(0);
+        EventBodyScroll.VerticalScrollBarVisibility = compact ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled;
+        EventColumns.Height = compact ? double.NaN : Math.Max(0, EventBodyScroll.ActualHeight);
+        EventListSurface.Margin = new Thickness(0, 0, compact ? 0 : 16, compact ? 16 : 0);
+        EventList.Height = compact ? 260 : double.NaN;
+        ExplanationSurface.Height = compact ? 360 : double.NaN;
     }
 }
