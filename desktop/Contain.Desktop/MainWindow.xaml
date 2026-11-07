@@ -14,7 +14,7 @@
         <ui:NavigationView x:Name="Navigation" Grid.Row="1" OpenPaneLength="192"
                            IsPaneToggleVisible="True" PaneDisplayMode="Left" IsPaneOpen="True"
                            IsBackButtonVisible="Collapsed" IsTopSeparatorVisible="False"
-                           IsFooterSeparatorVisible="False" FrameMargin="0" Padding="0">
+                           IsFooterSeparatorVisible="False" FrameMargin="0" Padding="0" Transition="None">
             <ui:NavigationView.MenuItems>
                 <controls:ActionNavigationItem x:Name="RecordsNavigation" Caption="我的记录" Symbol="DocumentMultiple24" Click="OnMyRecords" ActionId="MyRecords" IsActive="True" />
                 <controls:ActionNavigationItem x:Name="NewNavigation" Caption="新建记录" Symbol="DocumentAdd24" Click="OnNewRecord" ActionId="NewInstall" />

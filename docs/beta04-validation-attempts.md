@@ -284,3 +284,42 @@ budget remains. Controlled geometry regressions must reject the M5 clipped
 same-window toolbar case, wrong viewport, missing/duplicate ID, foreign window,
 invalid/moved bounds and exhausted ancestry. One viewing preview, zero
 installations, no repeated click, no product change or data-correctness relaxation.
+
+M9 source `c5e4b856b1edf2643bc6caa3b4ae8cd5687dabb5`,
+[run 42342627378](https://github.com/LuckyLivio/Contain/actions/runs/42342627378),
+**passed its viewing preview**: 10 fixed groups, 933 assertions, zero failures;
+4 installation groups deliberately not run. `accepted=false` remains correct.
+The frozen ZIP SHA-256 is
+`52718ccba4aa78fbd224b9b4c97bb1f5c4b0d26656e1ad613ed6ed4d1ec8a790`.
+All seven chooser actions used one eligible physical click and the exact new
+modal title. All 53 exported IDs match `synthetic-search-event-070` through
+`-122` in order. Cancel/existing-target protection, external read-only bytes,
+same-name identity, compact controls and different-directory cold startup passed.
+Four viewers exited normally with code 0 in 94/83/98/87 ms. The contradictory
+FromPoint observations remain in the report; the new action evidence is not
+reported as a repair of that provider behavior. Original aggregate: `M9.json`.
+
+Actual 96-DPI screenshots at 1024 × 720 and 820 × 640 were reviewed. The fixed
+event toolbar, list, explanation and copy controls are readable and usable.
+The compact new-record screenshot caught the component's default page fade,
+making text temporarily pale. Disable that optional page transition for this
+first release; preserve all button states and other component behavior. This
+visual decision does not explain M8's persistent point-query inconsistency.
+
+## M10 — final frozen package and one real GUI installation
+
+Predeclared before execution: the only product change after M9 is the explicit
+`Navigation.Transition="None"` setting. Build and freeze one new package, then
+run all 14 native groups against that same package: the complete M9 viewing
+sequence, one explicit GUI fixture installation using default personal/follow
+settings, active-task close/duplicate-start protection, exact saved UUID, parent
+and verified direct-child writes/completion/identity, no unrelated attribution,
+original strict loss predicates, event explanation/export, normal exit and cold
+restart from another working directory. Maximum installations: one; retries:
+zero; all original deadlines and failure retention remain.
+
+Use the unchanged Beta.10 core's D4 evidence for its bounded heavy-load capture
+behavior; do not rerun a broad historical matrix. The new WPF/CLI live integration
+and all 13 actual screenshots remain required. Review the final screenshots,
+source identities and ZIP hash before making PR #19 mergeable. Release must reuse
+that exact accepted ZIP, without rebuilding or repackaging it.
