@@ -1,5 +1,7 @@
 # Beta.10 采集修复候选：同 ZIP 对照通过，正式发布仍阻塞
 
+最新进展见 [D6 完整桌面验收与 D7 定向诊断](beta10-final-desktop-diagnosis-result.md)：同一原 ZIP 已完成安装、保存、解释与冷启动，80 项检查通过；历史 C1/D5 间歇失败仍未解释，正式发布继续阻塞。以下保留采集修复及当时失败记录。
+
 后续 [D5 完整桌面启动诊断](beta10-startup-diagnosis-result.md) 使用同一原 ZIP：空历史启动 394 ms、10 次 Ready 均通过，原超时未复现；完整验收在安装结果观察阶段缺少必需控件而失败。该新结果不替换下列原始失败，正式发布仍阻塞。
 
 [下载 Windows x64 诊断预览 ZIP](https://github.com/LuckyLivio/Contain/actions/runs/42227112910/artifacts/13506927140)（需登录 GitHub；解开产物外层后再解开内层 ZIP；保留至 2027-02-04）。这是一份新候选，**不是正式 Beta.10 发布**。

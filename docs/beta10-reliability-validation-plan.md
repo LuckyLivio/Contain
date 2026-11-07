@@ -387,3 +387,24 @@ failure is fixed. If it occurs, distinguish original UIA lookup, native/window
 availability and the later direct observation before selecting any repair. Only
 a subsequently justified change can be followed by separately predeclared full
 same-ZIP validation; D7 cannot replace full desktop or capture acceptance.
+
+### Recorded D7 outcome
+
+The one declared run 42327363195 at harness source
+6cc91f3e5f72cd12efb5bf6660088fea33e00187 completed the 100 fixed transitions in
+83,089 ms, with 101 selections including setup and no retry. It recorded 101
+description polls, with one non-target sample in case 30; no required-control
+miss or alternate comparison occurred. Every case took 729–1,241 ms. Original
+ZIP/member/binary and copied/source database hashes remained unchanged; Viewer
+exited normally and no owned processes remained.
+
+The seeded startup took 9,141 ms: the native observer first saw a visible owned
+top-level window at 8,592 ms, NewInstall was found at 9,098 ms and enabled at
+9,140 ms. Maximum completed root/window-enumeration UIA calls were 1,904/3,551 ms;
+no deadline fired. This different runner instance and seeded history cannot
+establish the cause of the historical empty-library timeout. Only one transition
+sampled a non-target state, so unsampled short states and the omitted combined
+installation-completion path remain untested. D7 is diagnostic only, with
+release_accepted=false; C1 and D5 remain unexplained. No further retry is planned
+to select a successful outcome. Detailed evidence is retained in
+[the D6/D7 report](beta10-final-desktop-diagnosis-result.md).

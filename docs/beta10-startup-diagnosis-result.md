@@ -1,5 +1,7 @@
 # Beta 10：冻结 ZIP 的完整桌面启动诊断（D5）
 
+本页保留 D5 的失败结果。后续 [D6 完整桌面检查通过，D7 定向诊断未复现缺失](beta10-final-desktop-diagnosis-result.md)；新结果没有替换本页失败，也未证明 C1/D5 的根因或行为修复。
+
 [下载冻结 Windows x64 ZIP](https://github.com/LuckyLivio/Contain/actions/runs/42227112910/artifacts/13506927140) · [下载本次运行计划、来源与结果](https://github.com/LuckyLivio/Contain/actions/runs/42249868473/artifacts/13520640899) · [下载完整桌面诊断证据](https://github.com/LuckyLivio/Contain/actions/runs/42249868473/artifacts/13520930735)。GitHub Actions 下载需登录；ZIP 仍为诊断预览，未发布正式 Beta.10。
 
 **本轮没有复现原来的 ReadyAsync 超时，也没有确认可修复的启动缺陷。完整验收在后续安装结果观察阶段失败，因此 PR #15 继续保持草稿，未合并、未发布。** 没有修改产品二进制或采集代码，没有延长等待、放宽断言或追加重跑。
