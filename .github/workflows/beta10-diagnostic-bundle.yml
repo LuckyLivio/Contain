@@ -1,0 +1,25 @@
+name: Bundle the frozen Beta 10 preview and D6-D7 diagnosis
+on:
+  push:
+    branches:
+      - fix/beta10-capture-loss
+permissions:
+  contents: read
+  actions: read
+jobs:
+  diagnostic-bundle:
+    if: ${{ github.repository == 'LuckyLivio/Contain' && github.ref == 'refs/heads/fix/beta10-capture-loss' && github.run_attempt == 1 && contains(github.event.head_commit.message, '[beta10-diagnostic-bundle]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copy the original ZIP and only reviewed D6-D7 public evidence
+        shell: bash
+        run: python3 scripts/bundle-beta10-diagnosis.py --output "$RUNNER_TEMP/contain-beta10-d6-d7-bundle"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: contain-beta10-diagnostic-preview-D6-D7
+          path: ${{ runner.temp }}/contain-beta10-d6-d7-bundle/
+          if-no-files-found: error
