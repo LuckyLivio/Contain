@@ -21,14 +21,17 @@ No previous WinForms report establishes acceptance of this WPF desktop.
   personal database was created. The following `NewInstall` automation action
   raised `InvalidOperationException`. It was not a startup timeout.
 
-The pinned WPF UI 4.3.0 source explains the action mismatch: its
+The pinned WPF UI 4.3.0 source exposes a reproducible action-contract defect: its
 `NavigationViewItemAutomationPeer` exposes `SelectionItem`, whose `Select` calls
 `NavigationView.NavigateInternal`. That path requires a `TargetPageType`; our
 action navigation instead used `Click` handlers and `ReplaceContent`. The
 component's ordinary `OnClick` supports this action-only case, but its selection
-peer does not. The correction therefore belongs in Contain's action-navigation
-automation peer, preserving the actual component, keyboard behavior, and click
-handler. It must not be hidden by weakening the native test to mouse fallback.
+peer does not. Contain's action-navigation peer corrects that contract while
+preserving the actual component, keyboard behavior, and click handler. It must
+not be hidden by weakening the native test to mouse fallback. **M1 did not log
+which external pattern was available or selected.** The later direct-control
+reproduction proves this contract defect, but does not by itself confirm the
+original external M1 exception's precise cause. M2/M3 retain that distinction.
 
 Pinned upstream evidence:
 [peer](https://github.com/lepoco/wpfui/blob/153baadeaf475875a81a4605881ca5c2dbe53972/src/Wpf.Ui/Controls/NavigationView/NavigationViewItemAutomationPeer.cs),
@@ -64,3 +67,28 @@ bounded transition. Required actions/text remain strict; unexpected UIA errors,
 permanent absence, wrong session and early process exit still fail. New action
 diagnostics retain the exact invoked pattern with a fixed 128-row bound and no
 extra UIA queries. M1 is retained regardless of M2's outcome.
+
+M2 source `08827096f893ad271bba0593e954329eae039343`,
+[run 42338017143](https://github.com/LuckyLivio/Contain/actions/runs/42338017143),
+also **failed**: 1 fixed check passed, 1 failed, 12 not run, zero installations.
+The six Windows in-process control contracts passed, including reproduction of
+the original null-target selection exception. The actual executable reached
+Ready in 1,838 ms, but the separate UIA client reported
+`RequiredInvokePatternMissingException` for `NewInstall`. This is not repaired
+merely because the direct control peer test passes. The failure screenshot
+confirms white, readable primary-button text at actual 96 DPI / 1024 × 720.
+[Evidence artifact 13560701084](https://github.com/LuckyLivio/Contain/actions/runs/42338017143/artifacts/13560701084)
+and [unchanged frozen package artifact 13560825660](https://github.com/LuckyLivio/Contain/actions/runs/42338017143/artifacts/13560825660)
+remain available. Full viewing and installation acceptance remain incomplete.
+
+## M3 — one bounded external control diagnosis
+
+Predeclared before execution: one isolated `FluentWindow` host with the actual
+M2 action-navigation source, the same WPF UI version and a standard button for
+comparison. A separate process probes only those two fixed IDs, records their
+class/role/patterns, duplicate count and up to three ancestor classes, and invokes
+each supported action once. A normal-close deadline bounds cleanup. There is no
+personal database, core launch, packaged desktop suite, installer or ETW capture.
+`completed` means the diagnostic ran; it cannot mean product `accepted`. The
+original failing code is unchanged during this observation. Another product
+patch and full preview require evidence from this discrepancy.

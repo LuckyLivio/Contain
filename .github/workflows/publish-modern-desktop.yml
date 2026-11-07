@@ -1,0 +1,54 @@
+name: Upload the accepted modern desktop to an existing draft
+on:
+  workflow_dispatch:
+    inputs:
+      accepted_run_id:
+        description: Successful full native Modern desktop push run (first attempt)
+        required: true
+      product_source_sha:
+        description: Exact source of the frozen and accepted WPF product
+        required: true
+      zip_sha256:
+        description: SHA-256 of the original accepted ZIP, not an artifact wrapper
+        required: true
+      tag_source_sha:
+        description: Reviewed current main commit targeted by the existing Beta.1 tag
+        required: true
+      main_quality_run_id:
+        description: Successful CI push run on exact merged main
+        required: true
+      main_desktop_run_id:
+        description: Successful Modern desktop push run on exact merged main
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: upload-verified-v0.4.0-beta.1
+  cancel-in-progress: false
+jobs:
+  upload:
+    if: ${{ github.repository == 'LuckyLivio/Contain' && github.ref == 'refs/heads/main' && github.run_attempt == 1 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ACCEPTED_RUN_ID: ${{ inputs.accepted_run_id }}
+      PRODUCT_SOURCE_SHA: ${{ inputs.product_source_sha }}
+      ZIP_SHA256: ${{ inputs.zip_sha256 }}
+      TAG_SOURCE_SHA: ${{ inputs.tag_source_sha }}
+      MAIN_QUALITY_RUN_ID: ${{ inputs.main_quality_run_id }}
+      MAIN_DESKTOP_RUN_ID: ${{ inputs.main_desktop_run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify immutable product, native acceptance and main; upload without overwrite and read back
+        run: |
+          python3 scripts/publish-modern-desktop.py \
+            --accepted-run-id "$ACCEPTED_RUN_ID" --product-source-sha "$PRODUCT_SOURCE_SHA" \
+            --zip-sha256 "$ZIP_SHA256" --tag-source-sha "$TAG_SOURCE_SHA" \
+            --main-quality-run-id "$MAIN_QUALITY_RUN_ID" --main-desktop-run-id "$MAIN_DESKTOP_RUN_ID"

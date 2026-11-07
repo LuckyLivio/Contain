@@ -273,6 +273,44 @@ internal sealed class DesktopDriver : IDisposable
     });
     internal static Task<string> ClipboardAsync() => Sta(Forms.Clipboard.GetText);
     internal static Task SetClipboardAsync(string value) => Sta(() => Forms.Clipboard.SetText(value));
+    internal Task<object> NavigationDiagnosticsAsync() => Ui<object>("fixed_navigation_diagnostics", () =>
+    {
+        var windows = AutomationElement.RootElement.FindAll(TreeScope.Children,
+            new PropertyCondition(AutomationElement.ProcessIdProperty, process.Id));
+        if (windows.Count > 4) throw new InvalidOperationException("Owned diagnostic window bound exceeded.");
+        var rows = new List<object>();
+        foreach (var id in new[] { "NewInstall", "MyRecords", "CurrentTask", "OpenDatabase", "About" })
+        {
+            var matches = new List<object>();
+            foreach (AutomationElement window in windows)
+            {
+                var ownedRoot = window.Current;
+                if (ownedRoot.ProcessId != process.Id) throw new InvalidOperationException("Diagnostic root ownership differs.");
+                foreach (AutomationElement item in window.FindAll(TreeScope.Element | TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.AutomationIdProperty, id)))
+                {
+                    if (matches.Count >= 8) throw new InvalidOperationException("Exact-ID diagnostic match bound exceeded.");
+                    var info = item.Current; var ancestors = new List<object>(); var parent = item;
+                    for (var depth = 0; depth < 3; depth++)
+                    {
+                        parent = TreeWalker.RawViewWalker.GetParent(parent);
+                        if (parent is null || parent.Current.ProcessId != process.Id) break;
+                        ancestors.Add(new { depth = depth + 1, class_name = parent.Current.ClassName,
+                            control_type = parent.Current.ControlType.ProgrammaticName, automation_id = parent.Current.AutomationId });
+                    }
+                    matches.Add(new
+                    {
+                        automation_id = info.AutomationId, class_name = info.ClassName, control_type = info.ControlType.ProgrammaticName,
+                        name = info.Name, process_id = info.ProcessId, enabled = info.IsEnabled, offscreen = info.IsOffscreen,
+                        owned_root_process_id = ownedRoot.ProcessId, owned_root_class = ownedRoot.ClassName,
+                        patterns = item.GetSupportedPatterns().Select(pattern => pattern.ProgrammaticName).Order().ToArray(), ancestors
+                    });
+                }
+            }
+            rows.Add(new { id, matched_count = matches.Count, matches });
+        }
+        return new { fixed_ids_only = true, maximum_owned_windows = 4, maximum_matches_per_id = 8, maximum_ancestor_depth = 3, rows };
+    });
 
     private Task<T?> OptionalAsync<T>(string id, Func<AutomationElement, T> action) => Ui<T?>(id, () =>
     {

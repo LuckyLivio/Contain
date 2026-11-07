@@ -24,6 +24,9 @@ internal static class Program
     private static int Main(string[] args)
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Native WPF STA required.");
+        if (args.Length == 2 && args[0] == "--external-probe")
+            return ExternalProbe.RunAsync(Path.GetFullPath(args[1])).GetAwaiter().GetResult();
+        if (args.Length == 1 && args[0] == "--external-host") return ExternalProbe.RunHost();
         if (args.Length != 1) throw new ArgumentException("Expected one new public output directory.");
         var output = Path.GetFullPath(args[0]); Directory.CreateDirectory(output);
         var results = new List<object>(); var passed = 0; var failed = false;

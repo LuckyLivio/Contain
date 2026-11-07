@@ -46,6 +46,7 @@ internal sealed class NativeSuite(Options options)
     private readonly List<Screenshot> screenshots = [];
     private readonly List<object> launches = [];
     private readonly List<object> failureScreenshots = [];
+    private readonly List<object> navigationDiagnostics = [];
     private readonly Dictionary<string, string> hashes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, JsonElement> earlierLiveRecords = new(StringComparer.Ordinal);
     private readonly string[] expected = Enumerable.Range(70, 53).Select(i => $"synthetic-search-event-{i:000}").ToArray();
@@ -118,6 +119,7 @@ internal sealed class NativeSuite(Options options)
                 core_sha256 = HashIfPresent(Core), package_manifest_sha256 = HashIfPresent(Path.Combine(options.Package, "BUILD.json")),
                 planned_checks = Plan, checks, assertions, passed = checks.Count(c => c.Status == "passed"), failed = checks.Count(c => c.Status == "failed"),
                 not_run = checks.Count(c => c.Status == "not_run"), retries = 0, screenshots, launches, failure_screenshots = failureScreenshots,
+                navigation_diagnostics = navigationDiagnostics,
                 search = new { expected_ids = expected, first_page_ids = actualFirst, second_page_ids = actualSecond, exported_ids = exportedIds, selected_event_id = selectedId },
                 live = new { session_id = liveSession, selected_event_id = liveEvent, accounting = liveAccounting, follow_oracle = followOracle },
                 scope = "One native WPF package, isolated synthetic stores and at most one real follow-installer capture. Native DPI is measured per screenshot. No simulated scaling is reported as physical DPI."
@@ -134,6 +136,11 @@ internal sealed class NativeSuite(Options options)
             checks.Add(new(name, "failed", error.GetType().Name, desktop?.Stage, desktop?.LastControl,
                 error is AssertionException ? error.Message : null, SafeCallSites(error)));
             privateErrors.AppendLine(name).AppendLine(error.ToString());
+            if (desktop is not null && !desktop.HasExited && desktop.LastControl is "NewInstall" or "MyRecords" or "CurrentTask" or "OpenDatabase" or "About")
+            {
+                try { navigationDiagnostics.Add(await desktop.NavigationDiagnosticsAsync()); }
+                catch (Exception diagnosticError) { navigationDiagnostics.Add(new { captured = false, error_type = diagnosticError.GetType().Name }); }
+            }
             // Preserve the original check failure before this one optional,
             // bounded screenshot. It never retries the action or changes its result.
             if (desktop is not null && !desktop.HasExited)
