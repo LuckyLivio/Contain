@@ -268,8 +268,7 @@ internal sealed class NativeSuite(Options options)
     }
     private async Task SameNames()
     {
-        await D.InvokeAsync("MyRecords"); await D.SelectAsync("record:synthetic-search-other");
-        await D.UntilAsync("exact_other_session", "SessionTitle", async () => await D.TryHelpAsync("SessionTitle") == "session:synthetic-search-other");
+        await D.InvokeAsync("MyRecords"); await OpenRecord("synthetic-search-other");
         await Events(); await Search("needle", 53, 1);
         Require((await D.RowIdsAsync("EventList", "event:")).All(id => id.StartsWith("synthetic-search-other-event-", StringComparison.Ordinal)), "same name retains other exact UUID");
         await D.InvokeAsync("MyRecords"); await OpenRecord("synthetic-search"); await Events();
@@ -552,7 +551,7 @@ internal sealed class NativeSuite(Options options)
     {
         if (desktop is null) return;
         launches.Add(new { process_id = desktop.ProcessId, probes = desktop.Probes.ToArray(), actions = desktop.Actions.ToArray(), last_stage = desktop.Stage, last_control = desktop.LastControl,
-            last_error_type = desktop.LastErrorType, process_exited = desktop.HasExited });
+            last_error_type = desktop.LastErrorType, process_exited = desktop.HasExited, normal_close = desktop.CloseObservation });
     }
     private async Task Shot(string name, string kind) => screenshots.Add(await D.CaptureAsync(Path.Combine(options.Output, "screenshots"), name, kind));
     private void Track(string path) { Require(File.Exists(path), "identity file exists"); hashes.TryAdd(path, Hash(path)); }

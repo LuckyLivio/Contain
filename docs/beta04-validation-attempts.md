@@ -117,3 +117,37 @@ The queued-disable boundary remains covered by the deterministic local cases.
 Only if this gate passes may one new frozen packaged viewing preview proceed;
 it still requests zero installations. All control failure summaries are retained
 even when they stop packaging. M1, M2, and M3 evidence remain unchanged.
+
+M4 source `63f264a0b397e7cf582b25505e1ba095e0d1b6fd`,
+[run 42339828453](https://github.com/LuckyLivio/Contain/actions/runs/42339828453),
+**failed** after its 12 control regressions passed. The actual package reached
+Ready in 1,513 ms; Invoke, native EXE-picker cancellation, return navigation and
+keyboard navigation all completed. The first product close then exceeded its
+unchanged 20-second deadline. The failure screenshot shows WPF's explicit
+`InvalidOperationException` rejecting `Close` while the window is already
+closing. `Records.CloseAsync()` can complete synchronously for the empty store;
+the handler then calls `Close()` before the original Closing event has returned.
+This is a new product lifecycle error, not a navigation failure or an explanation
+of historical C1/D5. The summary's last stage still says keyboard navigation;
+its call site identifies `CloseAsync`, and that phase label will be corrected.
+
+The run passed 1 complete fixed group, failed 1 and left 12 unexecuted. There
+were zero installations. Its screenshot also exposes a long configuration form
+with the primary action below the visible content. Evidence
+[13561162276](https://github.com/LuckyLivio/Contain/actions/runs/42339828453/artifacts/13561162276)
+and the unchanged frozen package
+[13560724531](https://github.com/LuckyLivio/Contain/actions/runs/42339828453/artifacts/13560724531)
+remain retained.
+
+## M5 — defer final close and keep the primary action visible
+
+Predeclared before execution: defer the final close to the dispatcher after the
+cancelled Closing event returns, retaining the active-task guard, read/export
+cleanup and existing deadlines. Keep Start in a fixed task footer while the
+configuration and advanced options scroll. The next single frozen-package
+viewing preview performs the same checks and zero installations. Label the
+normal-close phase accurately. Use the existing exact-record bounded helper at
+the one same-name transition that previously made an immediate required lookup;
+this preserves its exact identity assertion and deadline, without retrying a
+failed action or accepting an old session. Full Windows controls and the actual
+empty-store normal close remain mandatory before downstream viewing checks.

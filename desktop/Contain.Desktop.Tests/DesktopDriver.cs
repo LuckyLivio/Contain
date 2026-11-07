@@ -12,6 +12,8 @@ namespace Contain.Desktop.Tests;
 internal sealed record Screenshot(string Name, string Sha256, int Width, int Height, uint Dpi, string DataKind);
 internal sealed record Probe(string Stage, string Control, long ElapsedMs, bool ProcessAlive, string? ErrorType);
 internal sealed record ActionProbe(string Control, string Pattern, bool Passed, string? ErrorType);
+internal sealed record CloseDiagnostic(long RequestElapsedMs, long WaitElapsedMs, int WaitDeadlineMs,
+    bool ProcessAlive, int? ExitCode, string? ErrorType);
 
 /// <summary>Only talks to a separately launched, exact packaged executable. No product assembly reference.</summary>
 internal sealed class DesktopDriver : IDisposable
@@ -25,6 +27,7 @@ internal sealed class DesktopDriver : IDisposable
     internal int ExitCode => process.ExitCode;
     internal IReadOnlyList<Probe> Probes => probes;
     internal IReadOnlyList<ActionProbe> Actions => actions;
+    internal CloseDiagnostic? CloseObservation { get; private set; }
     internal string Stage { get; private set; } = "launch";
     internal string? LastControl { get; private set; }
     internal string? LastErrorType { get; private set; }
@@ -252,9 +255,22 @@ internal sealed class DesktopDriver : IDisposable
     internal Task RequestCloseAsync() => Ui("window", () => PostMessage(MainWindow(), 0x0010, IntPtr.Zero, IntPtr.Zero));
     internal async Task CloseAsync()
     {
-        await RequestCloseAsync();
-        await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(20));
-        if (process.ExitCode != 0) throw new ProductExitedException(process.ExitCode);
+        Stage = "normal_close"; LastControl = "window";
+        var request = Stopwatch.StartNew(); var wait = new Stopwatch(); string? errorType = null;
+        try
+        {
+            await RequestCloseAsync(); request.Stop(); wait.Start();
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(20));
+            if (process.ExitCode != 0) throw new ProductExitedException(process.ExitCode);
+        }
+        catch (Exception error) { errorType = error.GetType().Name; throw; }
+        finally
+        {
+            request.Stop(); wait.Stop();
+            CloseObservation = new(request.ElapsedMilliseconds, wait.ElapsedMilliseconds, 20000,
+                !process.HasExited, process.HasExited ? process.ExitCode : null, errorType);
+            Record("normal_close", "window", request.ElapsedMilliseconds + wait.ElapsedMilliseconds, errorType);
+        }
     }
     internal Task<Screenshot> CaptureAsync(string output, string name, string kind) => Ui("window", () =>
     {

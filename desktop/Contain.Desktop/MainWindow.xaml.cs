@@ -279,8 +279,13 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         try
         {
             await Records.CloseAsync();
-            closeCommitted = true;
-            Close();
+            // Empty-library cleanup can complete synchronously inside Closing.
+            // Commit the second Close only after this cancelled event unwinds.
+            _ = Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
+            {
+                closeCommitted = true;
+                Close();
+            }));
         }
         catch (Exception error)
         {
