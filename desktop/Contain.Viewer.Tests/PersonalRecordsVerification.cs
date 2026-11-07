@@ -30,6 +30,7 @@ internal sealed class PersonalRecordsVerification(Options options, bool viewerCh
     {
         Directory.CreateDirectory(output); var privateOutput = Path.Combine(output, "private"); Directory.CreateDirectory(privateOutput);
         ReadyDiagnostics.Configure(Path.GetFullPath(output));
+        RequiredLookupDiagnostics.Configure(Path.GetFullPath(output));
         var options = new Options(Path.GetFullPath(package), Path.GetFullPath(fixtures), Path.GetFullPath(output),
             Path.GetFullPath(privateOutput), "working-tree", null);
         var passed = false;

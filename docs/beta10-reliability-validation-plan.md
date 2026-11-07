@@ -255,3 +255,62 @@ event explanation and cold restart remain unverified. Both original ZIP and
 all extracted package members stayed unchanged. All owned Viewer/core processes
 exited; the harness exited 1 within its original deadline. No retry or speculative
 behavioral fix was made. See [the D5 evidence report](beta10-startup-diagnosis-result.md).
+
+## D6: required-control lookup diagnosis, declared before execution
+
+D5's full flow failed during result observation, after all ten Ready invocations
+passed. Its saved phases and completed running screenshot narrow the required
+lookup to `SessionTitle`, but that control ID was inferred from code flow, not
+recorded directly. The control belongs to the main form above its tabs; switching
+to the follow-record Events tab does not itself hide it. There is not yet evidence
+for a product change or a test lookup fallback.
+
+D6 tests this specific hypothesis: the existing desktop-root UIA enumeration or
+target lookup may omit a still-available control in the retained product process.
+The competing outcome is that the native target/window or its accessibility
+provider is also unavailable. Record the original lookup's fixed control ID,
+stage, bounded timing and window counts, then compare only when a required lookup
+actually fails. A native ownership check and a separately identified UIA
+`FromHandle` observation provide diagnostic evidence; they never replace the
+original lookup's missing result, suppress its exception or satisfy an assertion.
+An unavailable comparison remains unknown, not proof of a product or harness fault.
+
+Run the full existing desktop suite exactly once in its original order, using the
+same original C1 ZIP, source b0d2510 and SHA-256 a7ef3faed3c42aada77fe5619b732fe092b8787f89311047105ff6082b132656.
+Record the new harness/script source separately. The committed workflow is
+triggered only by `[frozen-lookup-diagnosis]`, on the existing branch, first run
+attempt only. Preserve the exact original package bytes, production DLL loaded by
+the separate harness, independent fixtures, existing native predicates and
+pre/post member hashes. No build or repack of product binaries is part of D6.
+
+The diagnostic recognizes only `SessionTitle` and `NewInstall`, with at most one
+alternate probe per launched Viewer and four per harness. It adds no UIA calls to
+successful lookups: the SessionTitle cache reuses its existing description read's
+native-handle property; NewInstall can use the already-running native readiness
+observer's root-window candidate, explicitly not proof of control availability.
+After an original miss, at most 16 original-window native-handle metadata UIA
+reads and four direct-comparison UIA calls are allowed, 20 added UIA calls total
+per probe. It verifies native window ownership against the retained Viewer
+process. The comparison happens after the original miss, so it does not prove
+that the two observations were simultaneous. Extra observations share the original
+UIA operation's remaining 20-second deadline; no new wait or retry is granted.
+Keep the original two 40-second Ready waits, three-minute runtime
+observation bound, ten-minute harness deadline, cleanup and failure propagation.
+Retain bounded safe checkpoints before cleanup. Publish fixed IDs/stages, counts,
+timings and native/lookup booleans only, never captions, edit text, paths, UIA
+trees, databases or raw exception messages.
+
+The safe public checkpoint is `packaged-lookup-diagnostics.json`, protocol
+`contain-required-lookup-diagnostics-1`. Preserve the original missing-control
+observation before making added queries; separate the cache/comparison work from
+the original lookup, including any incomplete or timed-out diagnostic stage.
+
+There is one full harness invocation, at most its existing one actual installer
+capture, no retry and no new background-load matrix. Existing failed prerequisites
+keep dependent checks not run. If the full flow proceeds, require the original
+installation, exact session, save, event explanation and cold-reopen checks.
+Preserve the C1, D4 and D5 runs and every outcome from D6. The D4 same-ZIP six-case
+matrix remains separate retained evidence; a diagnostic alternate lookup cannot
+convert a failing full suite into acceptance. The original C1 Ready timeout remains
+unexplained until evidence supports a conclusion; later successful Ready calls
+alone do not clear it. Choose any behavioral repair only after reviewing D6.

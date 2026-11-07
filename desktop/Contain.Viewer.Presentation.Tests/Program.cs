@@ -77,3 +77,4 @@ Require(Details(historical).Contains("上下文丢失总数：3", StringComparis
 
 Console.WriteLine($"Saved loss presentation: {checks} passed, 0 failed (synthetic projection only).");
 ReadyDiagnosticsChecks.Run();
+RequiredLookupDiagnosticsChecks.Run();

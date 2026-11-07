@@ -1,4 +1,4 @@
-name: Frozen Beta 10 complete desktop startup diagnosis
+name: Frozen Beta 10 complete desktop lookup diagnosis
 on:
   push:
     branches:
@@ -8,7 +8,7 @@ permissions:
   actions: read
 jobs:
   frozen-desktop:
-    if: ${{ github.repository == 'LuckyLivio/Contain' && github.ref == 'refs/heads/fix/beta10-capture-loss' && github.run_attempt == 1 && contains(github.event.head_commit.message, '[frozen-desktop]') }}
+    if: ${{ github.repository == 'LuckyLivio/Contain' && github.ref == 'refs/heads/fix/beta10-capture-loss' && github.run_attempt == 1 && contains(github.event.head_commit.message, '[frozen-lookup-diagnosis]') }}
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -29,12 +29,16 @@ jobs:
             candidate=@{source_sha='b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4';run_id=42227112910;artifact_id=13506927140;zip_sha256='a7ef3faed3c42aada77fe5619b732fe092b8787f89311047105ff6082b132656'}
             original_full_gui=@{run_id=42227112910;accepted=$false;failed_check='packaged_executable_default_history';error_type='TimeoutException';retained=$true}
             previous_subset_diagnosis=@{run_id=42231290678;full_desktop=$false;substitute_for_full_desktop=$false;retained=$true}
-            purpose='one_full_existing_desktop_suite_with_bounded_startup_stage_diagnostics'
+            diagnostic_stage='D6'
+            previous_full_gui=@{run_id=42249868473;harness_source_sha='ad8c6b5894a1964d972d08d23d2d8159a3acb8b4';accepted=$false;failed_check='gui_runtime_stages_and_close_guard';failed_phase='observe_one_recording';error_type='RequiredProductControlMissingException';missing_control_inferred='SessionTitle';missing_control_directly_recorded=$false;ready_timeouts=0;retained=$true}
+            purpose='one_full_existing_desktop_suite_with_bounded_required_lookup_diagnostics'
+            hypothesis='global_uia_window_enumeration_or_target_lookup_vs_same_process_native_window_availability'
+            lookup_diagnosis=@{protocol='contain-required-lookup-diagnostics-1';filename='packaged-lookup-diagnostics.json';control_ids=@('SessionTitle','NewInstall');maximum_alternate_probes_per_launch=1;maximum_alternate_probes_per_harness=4;maximum_success_cache_uia_calls_per_launch=0;maximum_original_window_metadata_uia_calls_per_probe=16;maximum_comparison_uia_calls_per_probe=4;maximum_added_uia_calls_per_probe=20;shares_existing_uia_deadline=$true;uia_deadline_ms=20000;require_owned_window_and_retained_process=$true;alternate_query_after_original_miss=$true;alternate_query_is_evidence_only=$true;original_lookup_failure_preserved=$true;changes_acceptance_result=$false}
             full_entrypoint=$true;personal_subset_only=$false;harness_runs=1;maximum_native_captures=1;retries=0
             order=@('synthetic_actual_forms_and_packaged_cli','personal_records_empty_and_seeded_cold_start','persisted_overview','session_event_search','search_export','progress_and_failure_feedback','first_use_configuration','native_layout_and_simulated_scale','one_actual_gui_follow_install_save_explain_exit_reopen')
             ready_discovery_deadline_ms=40000;ready_enabled_deadline_ms=40000;uia_call_deadline_ms=20000;harness_deadline_ms=600000;owned_process_quiescence_deadline_ms=45000
             capture_code_changed=$false;original_zip_must_remain_unchanged=$true;repack_allowed=$false;native_gate_relaxation_allowed=$false
-            release_accepted=$false;release_note='This attempt supplies complete new desktop evidence; the original failed attempt remains separately recorded. Release requires all independent gates and an evidence-backed startup conclusion.'
+            release_accepted=$false;release_note='D6 diagnoses required-control lookup without replacing its original result. C1 and D5 failures remain separate; the original Ready timeout is not cleared by later successful observations.'
           } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $out 'public/plan.json') -Encoding utf8
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -145,7 +149,7 @@ jobs:
           "FROZEN_GUI_PACKAGE=$package" >> $env:GITHUB_ENV
           "FROZEN_GUI_FIXTURES=$fixtures" >> $env:GITHUB_ENV
           "FROZEN_GUI_HARNESS=$harness" >> $env:GITHUB_ENV
-      - name: One complete original desktop suite with bounded startup diagnostics
+      - name: One complete original desktop suite with bounded required lookup diagnostics
         id: gui
         if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
         timeout-minutes: 12
@@ -283,6 +287,7 @@ jobs:
             ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/export-progress.json
             ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/first-use-configuration-summary.json
             ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/packaged-ready-diagnostics.json
+            ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/packaged-lookup-diagnostics.json
             ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/screenshots/*.png
             ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/reports/*.html
           if-no-files-found: warn

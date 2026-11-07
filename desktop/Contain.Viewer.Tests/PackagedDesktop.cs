@@ -13,6 +13,11 @@ internal sealed class PackagedDesktop : IDisposable
     private readonly bool savedRecordsOnly;
     private readonly long startedAt;
     private readonly ReadyTrace readyTrace;
+    private readonly int lookupLaunch = RequiredLookupDiagnostics.BeginLaunch();
+    private int lookupFailureSampled;
+    private IntPtr nativeReadyRoot;
+    private sealed record CachedControl(IntPtr Root, IntPtr Target);
+    private CachedControl? sessionTitleCache;
     internal int ProcessId => process.Id;
     internal bool HasExited => process.HasExited;
     internal int ExitCode => process.ExitCode;
@@ -183,6 +188,7 @@ internal sealed class PackagedDesktop : IDisposable
                 present = window != IntPtr.Zero && owner == process.Id;
                 if (present == true)
                 {
+                    Interlocked.CompareExchange(ref nativeReadyRoot, window, IntPtr.Zero);
                     visible = IsWindowVisible(window);
                     enabled = IsWindowEnabled(window);
                     hung = IsHungAppWindow(window);
@@ -296,6 +302,17 @@ internal sealed class PackagedDesktop : IDisposable
     {
         var element = Required(id);
         var nativeWindow = new IntPtr(element.Current.NativeWindowHandle);
+        // Reuse this pre-existing read. Diagnosis adds no UIA call to a
+        // successful lookup, and never retains the element or its text.
+        if (id == "SessionTitle" && sessionTitleCache is null)
+        {
+            var root = GetAncestor(nativeWindow, 2);
+            GetWindowThreadProcessId(nativeWindow, out var targetOwner);
+            GetWindowThreadProcessId(root, out var rootOwner);
+            if (nativeWindow != IntPtr.Zero && root != IntPtr.Zero
+                && targetOwner == process.Id && rootOwner == process.Id)
+                Interlocked.CompareExchange(ref sessionTitleCache, new(root, nativeWindow), null);
+        }
         if (nativeWindow != IntPtr.Zero)
         {
             var iid = new Guid("618736e0-3c3d-11cf-810c-00aa00389b71");
@@ -884,12 +901,14 @@ internal sealed class PackagedDesktop : IDisposable
         throw new TimeoutException("The actual packaged UI did not reach the expected condition.");
     }
 
-    private Automation.AutomationElement? Find(string? id, string? name = null, ReadyTrace? trace = null)
+    private Automation.AutomationElement? Find(string? id, string? name = null, ReadyTrace? trace = null,
+        Action<Automation.AutomationElementCollection>? captureWindows = null)
     {
         T Observe<T>(string operation, Func<T> action) => trace is null ? action() : trace.Call(operation, action);
         var root = Observe("desktop_root_element", () => Automation.AutomationElement.RootElement);
         var windows = Observe("find_owned_windows", () => root.FindAll(Automation.TreeScope.Children,
             new Automation.PropertyCondition(Automation.AutomationElement.ProcessIdProperty, process.Id)));
+        captureWindows?.Invoke(windows);
         var condition = id is not null
             ? new Automation.PropertyCondition(Automation.AutomationElement.AutomationIdProperty, id)
             : new Automation.PropertyCondition(Automation.AutomationElement.NameProperty, name!);
@@ -907,7 +926,119 @@ internal sealed class PackagedDesktop : IDisposable
         return null;
     }
 
-    private Automation.AutomationElement Required(string id) => Find(id) ?? throw new RequiredProductControlMissingException(id);
+    private Automation.AutomationElement Required(string id)
+    {
+        Automation.AutomationElementCollection? windows = null;
+        var fixedId = RequiredLookupDiagnostics.IsFixedId(id);
+        var found = Find(id, captureWindows: fixedId ? value => windows = value : null);
+        if (found is not null) return found;
+        var original = new RequiredProductControlMissingException(id);
+        if (fixedId && RequiredLookupDiagnostics.Current is { } invocation
+            && RequiredLookupDiagnostics.TrySampleLaunch(ref lookupFailureSampled))
+        {
+            // Publish the original failure BEFORE even native diagnosis or disk
+            // checkpoints can consume the remaining original Ui deadline.
+            invocation.Preserve(original);
+            var cached = id == "SessionTitle" ? sessionTitleCache : null;
+            var root = cached?.Root ?? nativeReadyRoot;
+            var target = cached?.Target ?? IntPtr.Zero;
+            var before = LookupNativeState(root, target);
+            var trace = RequiredLookupDiagnostics.BeginFailure(lookupLaunch, id, windows?.Count ?? 0, before,
+                target == IntPtr.Zero ? "native_readiness_root_candidate" : "prior_same_control_native_handle",
+                invocation.OriginalMissElapsedMs, invocation.OriginalMissRemainingMs);
+            if (trace is not null)
+            {
+                invocation.Attach(trace);
+                DiagnoseRequiredMiss(id, root, target, windows, before, trace, invocation);
+            }
+        }
+        throw original;
+    }
+
+    private RequiredLookupTrace.NativeState LookupNativeState(IntPtr root, IntPtr target)
+    {
+        bool? alive = null, rootExists = null, rootOwned = null, rootVisible = null,
+            rootEnabled = null, rootHung = null, targetExists = null, targetOwned = null,
+            targetVisible = null, targetRoot = null;
+        var available = false;
+        try
+        {
+            var wait = WaitForSingleObject(process.Handle, 0);
+            alive = wait == 0x00000102 ? true : wait == 0 ? false : null;
+            if (alive is null) return new(null, root != IntPtr.Zero, null, null, null, null, null,
+                target != IntPtr.Zero, null, null, null, null, false);
+            rootExists = root != IntPtr.Zero ? IsWindow(root) : null;
+            if (rootExists == true)
+            {
+                GetWindowThreadProcessId(root, out var owner); rootOwned = owner == process.Id && alive == true;
+                rootVisible = IsWindowVisible(root); rootEnabled = IsWindowEnabled(root); rootHung = IsHungAppWindow(root);
+            }
+            targetExists = target != IntPtr.Zero ? IsWindow(target) : null;
+            if (targetExists == true)
+            {
+                GetWindowThreadProcessId(target, out var owner); targetOwned = owner == process.Id && alive == true;
+                targetVisible = IsWindowVisible(target); targetRoot = GetAncestor(target, 2) == root;
+            }
+            available = true;
+        }
+        catch (Exception) { }
+        return new(alive, root != IntPtr.Zero, rootExists, rootOwned, rootVisible, rootEnabled, rootHung,
+            target != IntPtr.Zero, targetExists, targetOwned, targetVisible, targetRoot, available);
+    }
+
+    private void DiagnoseRequiredMiss(string id, IntPtr root, IntPtr target,
+        Automation.AutomationElementCollection? windows, RequiredLookupTrace.NativeState before,
+        RequiredLookupTrace trace, LookupUiInvocation invocation)
+    {
+        trace.Budget(invocation.RemainingMs);
+        try
+        {
+            if (before.ProcessAlive != true || before.RootOwned != true || windows is null)
+            { trace.Finish("owned_cached_root_unavailable", false, null); return; }
+            var count = Math.Min(windows.Count, RequiredLookupDiagnostics.WindowMetadataLimit);
+            var included = false;
+            var complete = windows.Count <= RequiredLookupDiagnostics.WindowMetadataLimit;
+            for (var index = 0; index < count; index++)
+            {
+                try
+                {
+                    var captured = index;
+                    var handle = trace.Call("original_window_native_handle", () => windows[captured].Current.NativeWindowHandle);
+                    included |= new IntPtr(handle) == root;
+                }
+                catch (Automation.ElementNotAvailableException) { complete = false; }
+                var allRead = complete && index + 1 == windows.Count;
+                trace.Metadata(index + 1, included ? true : allRead ? false : null, allRead);
+            }
+            if (count == 0) trace.Metadata(0, false, true);
+            // Recheck retained-process ownership immediately before passing any
+            // cached HWND to UIA. A later observation is explicitly diagnostic.
+            var current = LookupNativeState(root, target);
+            if (current.ProcessAlive != true || current.RootOwned != true)
+            { trace.After(current); trace.Finish("owned_cached_root_changed", false, null); return; }
+            var directRoot = trace.Call("from_cached_owned_root", () => Automation.AutomationElement.FromHandle(root));
+            var direct = trace.Call("find_target_from_cached_root", () => directRoot.FindFirst(
+                Automation.TreeScope.Element | Automation.TreeScope.Descendants,
+                new Automation.PropertyCondition(Automation.AutomationElement.AutomationIdProperty, id)));
+            if (direct is null) trace.Direct(false, null, null, null, null);
+            else
+            {
+                var matches = trace.Call("direct_target_id", () => direct.Current.AutomationId == id);
+                var handle = new IntPtr(trace.Call("direct_target_native_handle", () => direct.Current.NativeWindowHandle));
+                GetWindowThreadProcessId(handle, out var owner);
+                trace.Direct(true, matches, handle == IntPtr.Zero ? null : owner == process.Id,
+                    handle == IntPtr.Zero ? null : GetAncestor(handle, 2) == root,
+                    handle == IntPtr.Zero || target == IntPtr.Zero ? null : handle == target);
+            }
+            trace.After(LookupNativeState(root, target));
+            trace.Finish("comparison_completed_original_failure_preserved", true, null);
+        }
+        catch (Exception error)
+        {
+            trace.After(LookupNativeState(root, target));
+            trace.Finish(invocation.RemainingMs <= 0 ? "existing_ui_deadline" : "comparison_failed_original_failure_preserved", false, error);
+        }
+    }
     // Public summaries already report exception type. Use a fixed type for this
     // harness failure without exposing the control id or a raw exception message.
     internal sealed class RequiredProductControlMissingException(string id)
@@ -932,8 +1063,8 @@ internal sealed class PackagedDesktop : IDisposable
         if (element.TryGetCurrentPattern(Automation.InvokePattern.Pattern, out var invoke)) ((Automation.InvokePattern)invoke).Invoke();
         else throw new InvalidOperationException("The actual control cannot be invoked.");
     }
-    private static async Task<T> Ui<T>(Func<T> action) => await Task.Run(action).WaitAsync(TimeSpan.FromSeconds(20));
-    private static async Task Ui(Action action) => await Task.Run(action).WaitAsync(TimeSpan.FromSeconds(20));
+    private static Task<T> Ui<T>(Func<T> action) => RequiredLookupDiagnostics.RunUiAsync(action, TimeSpan.FromSeconds(20));
+    private static Task Ui(Action action) => RequiredLookupDiagnostics.RunUiAsync(() => { action(); return true; }, TimeSpan.FromSeconds(20));
 
     public void Dispose()
     {
@@ -974,6 +1105,7 @@ internal sealed class PackagedDesktop : IDisposable
         public WindowBounds CaretBounds;
     }
     [DllImport("user32.dll")] private static extern IntPtr GetParent(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr window);
     [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr window, uint command);
     [DllImport("kernel32.dll")] private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
     [DllImport("kernel32.dll")] private static extern bool GetExitCodeProcess(IntPtr handle, out uint exitCode);
