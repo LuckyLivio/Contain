@@ -83,6 +83,7 @@ internal sealed class DesktopDriver : IDisposable
     internal Task<string> TextAsync(string id) => Ui(id, () => Text(Required(id)));
     internal Task<string> HelpAsync(string id) => Ui(id, () => Required(id).Current.HelpText);
     internal Task<bool> EnabledAsync(string id) => Ui(id, () => Required(id).Current.IsEnabled);
+    internal Task<bool> SupportsInvokeAsync(string id) => Ui(id, () => Required(id).TryGetCurrentPattern(InvokePattern.Pattern, out _));
     internal Task<bool> ExistsAsync(string id) => OptionalAsync(id, _ => true);
     internal Task<string?> TryHelpAsync(string id) => OptionalAsync(id, e => e.Current.HelpText);
     internal Task<string?> TryTextAsync(string id) => OptionalAsync(id, Text);

@@ -8,6 +8,7 @@ using System.Windows.Markup;
 using System.Windows.Threading;
 using Contain.Desktop.Controls;
 using Wpf.Ui.Controls;
+using Application = System.Windows.Application;
 
 namespace Contain.Desktop.Controls.Tests;
 
@@ -37,10 +38,10 @@ internal static class Program
             </ResourceDictionary>
             """);
         var old = new NavigationViewItem { Content = "SYNTHETIC previous action" };
-        var action = new ActionNavigationItem { Content = "SYNTHETIC accessible action" };
-        AutomationProperties.SetAutomationId(action, "SyntheticAction");
+        var action = new ActionNavigationItem { Caption = "SYNTHETIC accessible action", ActionId = "SyntheticAction" };
         var navigation = new NavigationView { PaneDisplayMode = NavigationViewPaneDisplayMode.Left, IsPaneOpen = true };
         navigation.MenuItems.Add(old); navigation.MenuItems.Add(action);
+        ActionNavigationItem.ConfigureNavigation(navigation);
         var window = new Window { Title = "Contain isolated control contract", Width = 640, Height = 480, Content = navigation };
         var clicks = 0; action.Click += (_, _) => clicks++;
         window.Loaded += async (_, _) =>
@@ -48,7 +49,7 @@ internal static class Program
             try
             {
                 var oldPeer = UIElementAutomationPeer.CreatePeerForElement(old) ?? throw new InvalidOperationException("Original peer missing.");
-                var peer = UIElementAutomationPeer.CreatePeerForElement(action) ?? throw new InvalidOperationException("Action peer missing.");
+                var peer = UIElementAutomationPeer.CreatePeerForElement(action.ActionButton) ?? throw new InvalidOperationException("Actual inner action button peer missing.");
                 var invoke = peer.GetPattern(PatternInterface.Invoke) as IInvokeProvider ?? throw new InvalidOperationException("Invoke provider missing.");
                 await Check(Plan[0], () =>
                 {
@@ -110,7 +111,9 @@ internal static class Program
                 catch (Exception error) { results.Add(new { name, status = "failed", error_type = error.GetType().Name }); throw; }
             }
         };
-        return app.Run(window);
+        var localExit = app.Run(window);
+        if (localExit != 0) return localExit;
+        return ExternalProbe.RunAsync(output, gate: true).GetAwaiter().GetResult();
     }
     private static Task Pump() => Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
     private static void Require(bool value, string reason) { if (!value) throw new InvalidOperationException(reason); }

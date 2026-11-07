@@ -36,6 +36,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         Records.PropertyChanged += OnModelChanged;
         Install.PropertyChanged += OnModelChanged;
         InitializeComponent();
+        Controls.ActionNavigationItem.ConfigureNavigation(Navigation);
         DataContext = this;
         // Use the actual working area rather than a large fixed minimum at high DPI.
         Width = Math.Min(Width, SystemParameters.WorkArea.Width);

@@ -6,6 +6,7 @@ import importlib.util
 import json
 import io
 from pathlib import Path
+import re
 import struct
 import shutil
 import tempfile
@@ -31,6 +32,18 @@ def checks(names):
     return dict(checks=[dict(name=name, status="passed") for name in names], passed=len(names), failed=0, not_run=0)
 
 
+def controls(source=SOURCE):
+    return dict(schema_version=1, protocol="contain-wpf-action-navigation-regression-2", source_sha=source,
+        native_windows=True, synthetic=True, real_etw_executed=False, actual_packaged_executable=False,
+        external_uia=True, host_count=1, normal_exit=True, forced_exit=False,
+        external_snapshots=[dict(id=identifier, expected_process_id=1234, matched_count=1, matches=[dict(
+            automation_id=identifier, class_name="Button", control_type="ControlType.Button", name="SYNTHETIC action",
+            process_id=1234, enabled=True, offscreen=False, patterns=["InvokePatternIdentifiers.Pattern"], ancestors=[])])
+            for identifier in ["NewInstall", "ControlButton"]],
+        production_source_link="desktop/Contain.Desktop/Controls/ActionNavigationItem.cs", wpf_ui_version="4.3.0",
+        planned_checks=list(DELIVERY.CONTROL_CHECKS), accepted=True, retries=0, **checks(DELIVERY.CONTROL_CHECKS))
+
+
 def native_inputs(archive):
     storage = dict(failed=0, quota_dropped=0, quota_bytes=67108864, persisted=100, committed_bytes=10000)
     oracle = dict(schema_version=1, protocol="contain-follow-installer-experiment-1", source_sha=SOURCE,
@@ -50,7 +63,12 @@ def native_inputs(archive):
         framework="WPF + WPF UI", architecture="X64", windows_version="10.0.26100.0", product_process_only=True,
         real_user_records_accessed=False, accepted=True, preview_checks_passed=True, native_install_requested=True,
         actual_etw=True, cold_restart_verified=True, retries=0, planned_checks=list(DELIVERY.NATIVE_CHECKS),
-        **checks(DELIVERY.NATIVE_CHECKS), assertions=100, launches=[dict(process_exited=True) for _ in range(4)],
+        **checks(DELIVERY.NATIVE_CHECKS), assertions=100,
+        launches=[dict(process_id=1000 + i, probes=[dict(stage="ready", control="NewInstall", elapsed_ms=100,
+                        process_alive=True, error_type=None)], actions=[dict(control="NewInstall", pattern="Invoke", passed=True, error_type=None)],
+                       last_stage="close", last_control="window", last_error_type=None, process_exited=True) for i in range(4)],
+        screenshots=[], failure_screenshots=[], navigation_diagnostics=[],
+        scope="One native WPF package, isolated synthetic stores and at most one real follow-installer capture. Native DPI is measured per screenshot. No simulated scaling is reported as physical DPI.",
         search=dict(expected_ids=expected, first_page_ids=expected[:50], second_page_ids=expected[50:], exported_ids=expected,
                     selected_event_id="synthetic-search-event-120"),
         live=dict(session_id=SESSION, selected_event_id=EVENT, follow_oracle=oracle, accounting=dict(
@@ -68,6 +86,44 @@ def native_inputs(archive):
                 fixture=dict(event_count=130, matches=53, first_page=50, second_page=3, selected_event="synthetic-search-event-120"))
     build = dict(source_sha=SOURCE, core_sha256=DELIVERY.PACKAGE.CORE_SHA)
     return native, plan, build
+
+
+def emitted_summary_fields(path="desktop/Contain.Desktop.Tests/Program.cs", marker='await Write("modern-desktop-summary.json", new'):
+    """Read only top-level members of the real C# JSON emitter.
+
+    This is a schema-drift tripwire, not another implementation of release gates.
+    Nested expressions, anonymous objects and string literals cannot contribute
+    names. The acceptance fixture must explicitly account for every real field.
+    """
+    source = (DELIVERY.ROOT / path).read_text()
+    start = source.index('{', source.index(marker))
+    braces, parentheses, brackets = 1, 0, 0
+    quoted = escaped = False
+    segment = []
+    fields = []
+    for char in source[start + 1:]:
+        if quoted:
+            segment.append(char)
+            if escaped: escaped = False
+            elif char == "\\": escaped = True
+            elif char == '"': quoted = False
+            continue
+        if char == '"': quoted = True
+        if char == '{': braces += 1
+        if char == '}': braces -= 1
+        if char == '(': parentheses += 1
+        if char == ')': parentheses -= 1
+        if char == '[': brackets += 1
+        if char == ']': brackets -= 1
+        if braces == 0 or char == ',' and braces == 1 and parentheses == brackets == 0:
+            match = re.match(r"\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:=|$)", ''.join(segment))
+            if not match: raise AssertionError("Unsupported native summary emitter member")
+            fields.append(match[1])
+            segment.clear()
+            if braces == 0: return fields
+        else:
+            segment.append(char)
+    raise AssertionError("Native summary emitter did not close")
 
 
 class ModernReleaseGates(unittest.TestCase):
@@ -90,6 +146,26 @@ class ModernReleaseGates(unittest.TestCase):
         self.verify()
         self.assertEqual(len(DELIVERY.NATIVE_CHECKS), 14)
         self.assertEqual(len(DELIVERY.MODEL_CHECKS), 34)
+
+    def test_accepted_fixture_accounts_for_every_current_native_emitter_field(self):
+        native, _, _ = native_inputs(self.archive)
+        fields = emitted_summary_fields()
+        self.assertEqual(len(fields), len(set(fields)))
+        self.assertEqual(set(native), set(fields))
+        self.assertEqual(native["navigation_diagnostics"], [])
+        self.verify(native)
+
+    def test_navigation_diagnostics_are_preserved_and_cannot_be_accepted(self):
+        for diagnostics in [None, {}, [dict(check="empty_personal_library_and_native_picker_cancel", captured=True)]]:
+            native, _, _ = native_inputs(self.archive)
+            native["navigation_diagnostics"] = diagnostics
+            before = copy.deepcopy(native)
+            with self.subTest(diagnostics=diagnostics), self.assertRaisesRegex(ValueError, "navigation diagnostic"):
+                self.verify(native)
+            self.assertEqual(native, before)
+        native, _, _ = native_inputs(self.archive)
+        native.pop("navigation_diagnostics")
+        with self.assertRaisesRegex(ValueError, "navigation diagnostic"): self.verify(native)
 
     def test_preview_linux_missing_etw_and_incomplete_checks_fail(self):
         for key, val in [("accepted", False), ("native_windows", False), ("actual_etw", False),
@@ -162,14 +238,40 @@ class ModernReleaseGates(unittest.TestCase):
             with self.subTest(mode=mode), self.assertRaises(ValueError): DELIVERY.verify_model(value)
 
     def test_control_fixture_is_native_source_bound_and_not_package_acceptance(self):
-        good = dict(schema_version=1, protocol="contain-wpf-action-navigation-regression-1", source_sha=SOURCE,
-            native_windows=True, synthetic=True, real_etw_executed=False, actual_packaged_executable=False,
-            production_source_link="desktop/Contain.Desktop/Controls/ActionNavigationItem.cs", wpf_ui_version="4.3.0",
-            planned_checks=list(DELIVERY.CONTROL_CHECKS), accepted=True, retries=0, **checks(DELIVERY.CONTROL_CHECKS))
+        good = controls()
         DELIVERY.verify_controls(good, SOURCE)
         for key, value in [("source_sha", "2" * 40), ("native_windows", False), ("checks", []),
-                           ("actual_packaged_executable", True), ("real_etw_executed", True)]:
+                           ("actual_packaged_executable", True), ("real_etw_executed", True), ("external_uia", False),
+                           ("host_count", 0), ("host_count", 2), ("normal_exit", False), ("forced_exit", True)]:
             with self.subTest(key=key), self.assertRaises(ValueError): DELIVERY.verify_controls({**good, key: value}, SOURCE)
+
+    def test_control_fixture_tracks_actual_combined_emitter_and_fixed_plans(self):
+        directory = DELIVERY.ROOT / "desktop/Contain.Desktop.Controls.Tests"
+        local = emitted_summary_fields("desktop/Contain.Desktop.Controls.Tests/Program.cs",
+                                      'File.WriteAllText(Path.Combine(output, "navigation-control-summary.json"), JsonSerializer.Serialize(new')
+        source = (directory / "ExternalProbe.cs").read_text()
+        combine = source.split("private static async Task Combine(", 1)[1].split("private static object Snapshot(", 1)[0]
+        assigned = set(re.findall(r'local\["([a-z_]+)"\]\s*=', combine))
+        self.assertEqual(set(controls()), set(local) | assigned)
+        for filename, name, expected in [("Program.cs", "Plan", DELIVERY.CONTROL_CHECKS[:6]),
+                                         ("ExternalProbe.cs", "GatePlan", DELIVERY.CONTROL_CHECKS[6:])]:
+            source = (directory / filename).read_text()
+            plan = re.search(r'\b' + name + r'\s*=\s*\[(.*?)\];', source, re.S)
+            self.assertIsNotNone(plan)
+            self.assertEqual(tuple(re.findall(r'"([a-z_]+)"', plan.group(1))), expected)
+        DELIVERY.verify_controls(controls(), SOURCE)
+
+    def test_local_six_or_an_external_only_control_run_cannot_replace_combined_regression(self):
+        for names in [DELIVERY.CONTROL_CHECKS[:6], DELIVERY.CONTROL_CHECKS[6:]]:
+            report = controls()
+            report.update(checks(names), planned_checks=list(names))
+            with self.subTest(names=names), self.assertRaises(ValueError): DELIVERY.verify_controls(report, SOURCE)
+        report = controls()
+        report["protocol"] = "contain-wpf-action-navigation-regression-1"
+        with self.assertRaises(ValueError): DELIVERY.verify_controls(report, SOURCE)
+        report = controls()
+        report["checks"][-1] = report["checks"][0]
+        with self.assertRaises(ValueError): DELIVERY.verify_controls(report, SOURCE)
 
     def test_dependency_audit_removes_runner_path_and_rejects_vulnerability(self):
         value = dict(version=1, parameters="--vulnerable --include-transitive", sources=["https://api.nuget.org/v3/index.json"],
@@ -271,11 +373,6 @@ class ModernReleaseGates(unittest.TestCase):
                 previous_failures_retained=True, old_winforms_acceptance_is_not_new_desktop_evidence=True, zip_frozen_before_native=True)
             dependencies = dict(version=1, parameters="--vulnerable --include-transitive", sources=["https://api.nuget.org/v3/index.json"],
                 projects=[dict(path="D:/SYNTHETIC/desktop/Contain.Desktop/Contain.Desktop.csproj")])
-            def controls(source):
-                return dict(schema_version=1, protocol="contain-wpf-action-navigation-regression-1", source_sha=source,
-                    native_windows=True, synthetic=True, real_etw_executed=False, actual_packaged_executable=False,
-                    production_source_link="desktop/Contain.Desktop/Controls/ActionNavigationItem.cs", wpf_ui_version="4.3.0",
-                    planned_checks=list(DELIVERY.CONTROL_CHECKS), accepted=True, retries=0, **checks(DELIVERY.CONTROL_CHECKS))
             for name, value in {"modern-desktop-summary.json": native, "modern-desktop-plan.json": native_plan,
                                 "plan.json": plan, "model-checks.json": model(), "navigation-control-summary.json": controls(SOURCE),
                                 "dotnet-dependencies.json": dependencies}.items(): DELIVERY.write_json(evidence / name, value)
@@ -295,7 +392,7 @@ class ModernReleaseGates(unittest.TestCase):
         self.assertEqual(DELIVERY.digest(package), sha)
         self.assertEqual(result["product_source_sha"], SOURCE)
         self.assertEqual(result["delivery_source_sha"], args.tag_source_sha)
-        self.assertEqual(result["native_control_passed"], 6)
+        self.assertEqual(result["native_control_passed"], 12)
         self.assertFalse(any((output / name).exists() for name in ["private.db", "raw.log", "unreviewed.html"]))
         self.assertNotIn("D:/SYNTHETIC", (output / "DEPENDENCY-REVIEW.json").read_text())
         sums = (output / "SHA256SUMS.txt").read_text().splitlines()

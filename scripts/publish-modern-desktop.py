@@ -94,7 +94,9 @@ SHOTS = {
 CONTROL_CHECKS = (
     "library_selection_route_reproduces_null_target_failure", "action_peer_has_name_id_button_and_invoke",
     "action_invoke_routes_exactly_one_existing_click", "disabled_action_rejects_invoke",
-    "queued_action_disabled_before_dispatch_does_not_click", "reenabled_action_remains_usable")
+    "queued_action_disabled_before_dispatch_does_not_click", "reenabled_action_remains_usable",
+    "external_unique_button_identity", "uia_navigation_invokes_exactly_once", "disabled_navigation_refuses_invoke",
+    "reenabled_navigation_invokes_once", "keyboard_navigation_invokes_once", "owned_host_normal_exit")
 PROTECTED_PREFIXES = ("desktop/Contain.Desktop/", "desktop/Contain.Desktop.Model/", "desktop/Contain.Desktop.Tests/",
                       "desktop/Contain.Desktop.Model.Tests/", "desktop/Contain.Desktop.Controls.Tests/", "desktop/Contain.Viewer/",
                       "desktop/Contain.Viewer.Presentation.Tests/", "crates/", "tools/offline/", "licenses/")
@@ -140,8 +142,9 @@ def verify_model(value):
 
 
 def verify_controls(value, source):
-    exact(value, dict(schema_version=1, protocol="contain-wpf-action-navigation-regression-1", source_sha=source,
+    exact(value, dict(schema_version=1, protocol="contain-wpf-action-navigation-regression-2", source_sha=source,
           native_windows=True, synthetic=True, real_etw_executed=False, actual_packaged_executable=False,
+          external_uia=True, host_count=1, normal_exit=True, forced_exit=False,
           production_source_link="desktop/Contain.Desktop/Controls/ActionNavigationItem.cs", wpf_ui_version="4.3.0",
           planned_checks=list(CONTROL_CHECKS), accepted=True, retries=0), "native production navigation-control regression missing")
     successful_checks(value, CONTROL_CHECKS)
@@ -168,8 +171,9 @@ def verify_native(value, plan, build, archive, source):
                   "product_process_only", "real_user_records_accessed", "accepted", "preview_checks_passed", "native_install_requested",
                   "actual_etw", "cold_restart_verified", "viewer_exe_sha256", "viewer_dll_sha256", "core_sha256", "package_manifest_sha256",
                   "planned_checks", "checks", "assertions", "passed", "failed", "not_run", "retries", "screenshots", "launches",
-                  "failure_screenshots", "search", "live", "scope"}
+                  "failure_screenshots", "navigation_diagnostics", "search", "live", "scope"}
     require(set(value) <= public_keys and not value.get("failure_screenshots"), "unreviewed native fields or failure screenshot")
+    require(value.get("navigation_diagnostics") == [], "accepted native report must have an empty navigation diagnostic list")
     exact(value, dict(schema_version=1, protocol="contain-wpf-native-verification-1", source_sha=source,
                       native_windows=True, framework="WPF + WPF UI", product_process_only=True,
                       real_user_records_accessed=False, accepted=True, preview_checks_passed=True,

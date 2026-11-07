@@ -92,3 +92,28 @@ personal database, core launch, packaged desktop suite, installer or ETW capture
 `completed` means the diagnostic ran; it cannot mean product `accepted`. The
 original failing code is unchanged during this observation. Another product
 patch and full preview require evidence from this discrepancy.
+
+M3 source `431fd92ac44c10bbc61cc50c51c6781077835fde`,
+[run 42338832102](https://github.com/LuckyLivio/Contain/actions/runs/42338832102),
+completed the diagnostic with `accepted=false`, one host, normal exit 0, no
+forced exit, no retries and no ETW. The unique, enabled, onscreen `NewInstall`
+match was **`ItemsControlItem` / `ControlType.DataItem`**, under the component's
+`NavigationItems` ItemsControl. It exposed only SynchronizedInput. The standard
+button in that same process exposed Invoke and recorded exactly one click.
+This directly identifies the external item-wrapper path masking the custom
+element peer; it is not a general failure of UIA or the .NET 10 button provider.
+It establishes the current M2 discrepancy; the unlogged original M1 pattern
+selection remains separate.
+
+## M4 — real button inside component navigation, then viewing preview
+
+Predeclared before execution: retain WPF UI NavigationView and its responsive
+pane, move the fixed action identity and operation onto an actual WPF UI button
+inside each navigation item, and preserve selected, focus and disabled states.
+The Windows gate combines the six deterministic local control cases with six
+external-process cases, including unique button identity, exactly-once invoke,
+disabled/refused action, reenabled action, keyboard activation and normal exit.
+The queued-disable boundary remains covered by the deterministic local cases.
+Only if this gate passes may one new frozen packaged viewing preview proceed;
+it still requests zero installations. All control failure summaries are retained
+even when they stop packaging. M1, M2, and M3 evidence remain unchanged.

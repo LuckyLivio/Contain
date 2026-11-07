@@ -1,54 +1,93 @@
+using System.Windows;
 using System.Windows.Automation;
-using System.Windows.Automation.Peers;
-using System.Windows.Automation.Provider;
-using System.Windows.Threading;
+using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Markup;
 using Wpf.Ui.Controls;
+using Button = Wpf.Ui.Controls.Button;
+using TextBlock = System.Windows.Controls.TextBlock;
 
 namespace Contain.Desktop.Controls;
 
 /// <summary>
-/// A WPF UI navigation item whose Click handler performs an application action.
-/// The library's 4.3.0 selection peer requires TargetPageType; these entries use
-/// the shell's existing page instances or a file dialog instead. Expose the same
-/// Click path to assistive technology that mouse and keyboard activation use.
+/// A WPF UI navigation entry with a real, accessible action button. WPF's
+/// ItemsControl data-item peer masks patterns on the outer navigation entry,
+/// so the stable action identity belongs to its child button instead.
 /// </summary>
 public sealed class ActionNavigationItem : NavigationViewItem
 {
-    protected override AutomationPeer OnCreateAutomationPeer() => new ActionNavigationItemPeer(this);
+    private readonly TextBlock caption = new() { Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+    private readonly SymbolIcon symbol = new() { FontSize = 16, VerticalAlignment = VerticalAlignment.Center };
 
-    private void InvokeAction()
+    public ActionNavigationItem()
     {
-        // An accepted request can be queued just before the shell disables
-        // navigation for shutdown. Do not execute an action after that boundary.
-        if (IsEnabled) OnClick();
+        Focusable = false;
+        IsTabStop = false;
+        var content = new StackPanel { Orientation = Orientation.Horizontal };
+        content.Children.Add(symbol);
+        content.Children.Add(caption);
+        caption.SetBinding(VisibilityProperty, new Binding(nameof(IsPaneOpen))
+        {
+            Source = this, Converter = new BooleanToVisibilityConverter()
+        });
+        ActionButton = new Button
+        {
+            Appearance = ControlAppearance.Transparent, Content = content,
+            Padding = new Thickness(12, 8, 8, 8), MinHeight = 40,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            HorizontalAlignment = HorizontalAlignment.Stretch, BorderThickness = new Thickness(0)
+        };
+        ActionButton.Click += (_, args) =>
+        {
+            // Prevent the inner routed event and the forwarded outer event from
+            // executing the shell handler twice. Also recheck a queued UIA click
+            // after navigation was disabled for shutdown.
+            args.Handled = true;
+            if (IsEnabled && ActionButton.IsEnabled) OnClick();
+        };
+        Content = ActionButton;
     }
 
-    private sealed class ActionNavigationItemPeer(ActionNavigationItem owner)
-        : FrameworkElementAutomationPeer(owner), IInvokeProvider
+    public Button ActionButton { get; }
+    public string Caption
     {
-        protected override string GetClassNameCore() => nameof(ActionNavigationItem);
-        protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Button;
+        get => caption.Text;
+        set { caption.Text = value; AutomationProperties.SetName(ActionButton, value); ToolTip = value; }
+    }
+    public SymbolRegular Symbol { get => symbol.Symbol; set => symbol.Symbol = value; }
+    public string ActionId
+    {
+        get => AutomationProperties.GetAutomationId(ActionButton);
+        set { AutomationProperties.SetAutomationId(ActionButton, value); TargetPageTag = value; }
+    }
 
-        protected override string GetNameCore()
-        {
-            var name = base.GetNameCore();
-            return string.IsNullOrEmpty(name) ? owner.Content as string ?? "" : name;
-        }
-
-        public override object? GetPattern(PatternInterface patternInterface) =>
-            patternInterface == PatternInterface.Invoke ? this : base.GetPattern(patternInterface);
-
-        void IInvokeProvider.Invoke()
-        {
-            if (owner.Dispatcher.HasShutdownStarted) throw new ElementNotAvailableException();
-            owner.Dispatcher.Invoke(() =>
-            {
-                if (!owner.IsEnabled) throw new ElementNotEnabledException();
-                // Return to UI Automation before the handler may show a native
-                // modal chooser. The queued action uses the normal protected
-                // OnClick implementation, not the library's null-target route.
-                _ = owner.Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(owner.InvokeAction));
-            });
-        }
+    /// <summary>
+    /// Use the same composition in the shell and the isolated external UIA test.
+    /// The library's default compact template hides its Content presenter; here
+    /// only the caption collapses, keeping the actual icon button operable.
+    /// </summary>
+    public static void ConfigureNavigation(NavigationView navigation)
+    {
+        navigation.ItemTemplate = (ControlTemplate)XamlReader.Parse("""
+            <ControlTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                TargetType="{x:Type ui:NavigationViewItem}">
+              <Border x:Name="Surface" Background="Transparent" CornerRadius="6">
+                <Grid>
+                  <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Stretch" />
+                  <Border x:Name="Selection" Width="3" Height="16" CornerRadius="2" HorizontalAlignment="Left"
+                      VerticalAlignment="Center" Background="{DynamicResource NavigationViewSelectionIndicatorForeground}"
+                      Visibility="Collapsed" IsHitTestVisible="False" />
+                </Grid>
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsActive" Value="True">
+                  <Setter TargetName="Selection" Property="Visibility" Value="Visible" />
+                  <Setter TargetName="Surface" Property="Background" Value="{DynamicResource NavigationViewItemBackgroundSelected}" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+            """);
     }
 }

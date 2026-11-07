@@ -290,6 +290,14 @@ internal sealed class NativeSuite(Options options)
     private async Task Compact()
     {
         await D.ResizeAsync(820, 640);
+        foreach (var id in new[] { "MyRecords", "NewInstall", "OpenDatabase", "About" })
+        {
+            await D.UntilAsync("compact_navigation_visible", id, () => D.VisibleAsync(id), TimeSpan.FromSeconds(10));
+            Require(await D.EnabledAsync(id) && await D.SupportsInvokeAsync(id), "compact primary and footer navigation retain enabled Invoke actions");
+        }
+        await D.KeyboardReachAsync("OpenDatabase");
+        await D.ChooseFileAsync("OpenDatabase", null);
+        Require(await D.HelpAsync("SessionTitle") == "session:synthetic-search", "compact external-picker cancel preserves exact current session");
         foreach (var id in new[] { "SearchText", "SearchEvents", "ClearSearch", "NextEvents" })
             await D.UntilAsync("compact_visible", id, () => D.VisibleAsync(id), TimeSpan.FromSeconds(10));
         await D.KeyboardReachAsync("SearchText");

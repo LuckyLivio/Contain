@@ -53,9 +53,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Shared evidence presentation regression failed' }
           dotnet restore desktop/Contain.Desktop.Controls.Tests --locked-mode
           if ($LASTEXITCODE -ne 0) { throw 'Locked control regression restore failed' }
-          dotnet run --project desktop/Contain.Desktop.Controls.Tests -c Release --no-restore -- "$env:MODERN_OUTPUT/public/controls"
-          if ($LASTEXITCODE -ne 0) { throw 'Actual WPF action-navigation regression failed' }
-          Copy-Item -LiteralPath "$env:MODERN_OUTPUT/public/controls/navigation-control-summary.json" -Destination "$env:MODERN_OUTPUT/public/navigation-control-summary.json"
+          if ('${{ steps.plan.outputs.control_probe }}' -ne 'true') {
+            dotnet run --project desktop/Contain.Desktop.Controls.Tests -c Release --no-restore -- "$env:MODERN_OUTPUT/public/controls"
+            $controlExit = $LASTEXITCODE
+            if (Test-Path -LiteralPath "$env:MODERN_OUTPUT/public/controls/navigation-control-summary.json") {
+              Copy-Item -LiteralPath "$env:MODERN_OUTPUT/public/controls/navigation-control-summary.json" -Destination "$env:MODERN_OUTPUT/public/navigation-control-summary.json"
+            }
+            if ($controlExit -ne 0) { throw 'Actual WPF action-navigation regression failed' }
+          }
           dotnet restore desktop/Contain.Desktop -p:RuntimeIdentifier=win-x64 -p:RuntimeIdentifiers=win-x64 -p:SelfContained=true --locked-mode
           if ($LASTEXITCODE -ne 0) { throw 'Locked WPF restore failed' }
           dotnet publish desktop/Contain.Desktop -c Release -r win-x64 --self-contained true --no-restore -o "$env:MODERN_OUTPUT/viewer"
@@ -141,6 +146,8 @@ jobs:
           name: modern-desktop-evidence
           path: |
             ${{ env.MODERN_OUTPUT }}/public/*.json
+            ${{ env.MODERN_OUTPUT }}/public/controls/*.json
+            ${{ env.MODERN_OUTPUT }}/public/control-probe/*.json
             ${{ env.MODERN_OUTPUT }}/public/screenshots/*.png
             ${{ env.MODERN_OUTPUT }}/public/reports/*.html
           if-no-files-found: warn
