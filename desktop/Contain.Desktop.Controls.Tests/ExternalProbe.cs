@@ -84,6 +84,7 @@ internal static class ExternalProbe
 
     internal static async Task<int> RunAsync(string output, bool gate = false)
     {
+        await KeyboardDispatchGate.VerifyContractAsync();
         Directory.CreateDirectory(output);
         var summaryPath = Path.Combine(output, gate ? "navigation-external-checks.json" : "navigation-external-probe.json");
         if (File.Exists(summaryPath)) throw new IOException("Previous external probe evidence must not be overwritten.");
@@ -113,6 +114,7 @@ internal static class ExternalProbe
         var completed = false; string? errorType = null; var normalExit = false; var forcedExit = false; var reproduced = false;
         var keyboardClock = new Stopwatch(); var keyboardPhase = "not_run";
         var keyboardSamples = new List<KeyboardSample>();
+        var keyboardSync = new object(); var keyboardClosed = false;
         KeyboardSample? focusFirst = null, focusLast = null, counterFirst = null, counterLast = null;
         var focusObservations = 0; var counterObservations = 0;
         bool? foregroundRequestReturned = null;
@@ -163,38 +165,54 @@ internal static class ExternalProbe
                         keyboardPhase = "foreground_and_focus_request";
                         await Uia(() =>
                         {
-                            keyboardSamples.Add(ObserveKeyboard(host, keyboardClock, "before_focus_request"));
-                            host.Refresh(); foregroundRequestReturned = SetForegroundWindow(host.MainWindowHandle);
-                            Find(host.Id, "NewInstall").Single().SetFocus(); focusCallReturned = true;
-                            keyboardSamples.Add(ObserveKeyboard(host, keyboardClock, "focus_call_returned"));
+                            var before = ObserveKeyboard(host, keyboardClock, "before_focus_request");
+                            UpdateKeyboard(() => keyboardSamples.Add(before));
+                            host.Refresh(); var foreground = SetForegroundWindow(host.MainWindowHandle);
+                            UpdateKeyboard(() => foregroundRequestReturned = foreground);
+                            Find(host.Id, "NewInstall").Single().SetFocus();
+                            UpdateKeyboard(() => focusCallReturned = true);
+                            var returned = ObserveKeyboard(host, keyboardClock, "focus_call_returned");
+                            UpdateKeyboard(() => keyboardSamples.Add(returned));
                             return true;
                         });
                         keyboardPhase = "focus_acknowledgement";
                         await Wait(host, async () => await Uia(() =>
                         {
                             var sample = ObserveKeyboard(host, keyboardClock, keyboardPhase);
-                            focusFirst ??= sample; focusLast = sample; focusObservations++;
+                            UpdateKeyboard(() => { focusFirst ??= sample; focusLast = sample; focusObservations++; });
                             return sample.target_has_keyboard_focus;
                         }), TimeSpan.FromSeconds(5));
                         keyboardPhase = "space_dispatch";
-                        await Sta(() =>
+                        var dispatchClock = Stopwatch.StartNew();
+                        var dispatchGate = new KeyboardDispatchGate(TimeSpan.FromSeconds(5), () => dispatchClock.Elapsed);
+                        try
                         {
-                            keyboardSamples.Add(ObserveKeyboard(host, keyboardClock, "before_space_dispatch"));
-                            GetWindowThreadProcessId(GetForegroundWindow(), out var owner);
-                            Require(owner == host.Id, "Keyboard belongs to exact host.");
-                            spaceAttempted = true; System.Windows.Forms.SendKeys.SendWait(" "); spaceReturned = true;
-                        });
+                            await Sta(() =>
+                            {
+                                var before = ObserveKeyboard(host, keyboardClock, "before_space_dispatch");
+                                UpdateKeyboard(() => keyboardSamples.Add(before));
+                                GetWindowThreadProcessId(GetForegroundWindow(), out var owner);
+                                Require(owner == host.Id, "Keyboard belongs to exact host.");
+                                dispatchGate.SendOnce(() =>
+                                {
+                                    UpdateKeyboard(() => spaceAttempted = true);
+                                    System.Windows.Forms.SendKeys.SendWait(" ");
+                                    UpdateKeyboard(() => spaceReturned = true);
+                                });
+                            });
+                        }
+                        finally { dispatchGate.Abandon(); }
                         keyboardPhase = "click_counter_observation";
                         await Wait(host, async () => await Uia(() =>
                         {
                             var sample = ObserveKeyboard(host, keyboardClock, keyboardPhase);
-                            counterFirst ??= sample; counterLast = sample; counterObservations++;
+                            UpdateKeyboard(() => { counterFirst ??= sample; counterLast = sample; counterObservations++; });
                             return sample.action_clicks == 3 && sample.control_clicks == 2;
                         }), TimeSpan.FromSeconds(5));
                         keyboardPhase = "completed";
                     }
                     catch (Exception error) { keyboardError = error.GetType().Name; throw; }
-                    finally { keyboardClock.Stop(); }
+                    finally { keyboardClock.Stop(); lock (keyboardSync) keyboardClosed = true; }
                 });
                 completed = true;
             }
@@ -254,21 +272,27 @@ internal static class ExternalProbe
                 { gateChecks.Add(new { name = GatePlan[5], status = "failed", error_type = "normal_exit_failed" }); gateFailed = true; }
                 foreach (var name in GatePlan.Skip(gateChecks.Count)) gateChecks.Add(new { name, status = "not_run", error_type = "prerequisite_failed" });
             }
-            await Write(Path.Combine(output, "navigation-keyboard-diagnostics.json"), new
+            object keyboardReport;
+            lock (keyboardSync)
             {
-                schema_version = 1, protocol = "contain-wpf-keyboard-diagnosis-1", source_sha = Environment.GetEnvironmentVariable("GITHUB_SHA"),
-                synthetic = true, actual_packaged_executable = false, real_etw_executed = false,
-                expected_host_process_id = host.Id, fixed_target_id = "NewInstall", keyboard_key = "Space",
-                phase = keyboardPhase, error_type = keyboardError, elapsed_ms = keyboardClock.ElapsedMilliseconds,
-                foreground_request_returned = foregroundRequestReturned, focus_call_returned = focusCallReturned,
-                focus_observation_count = focusObservations, focus_first = focusFirst, focus_last = focusLast,
-                space_dispatch_attempted = spaceAttempted, space_dispatch_returned = spaceReturned,
-                click_observation_count = counterObservations, counter_first = counterFirst, counter_last = counterLast,
-                samples = keyboardSamples, normal_exit = normalExit, forced_exit = forcedExit,
-                focus_deadline_ms = 5000, dispatch_deadline_ms = 5000, click_observation_deadline_ms = 5000,
-                maximum_keyboard_gestures = 1, retries = 0,
-                note = "Staged diagnosis only; no historical cause or product fix is claimed. Cached samples are retained without UIA queries after failure."
-            });
+                keyboardClosed = true;
+                keyboardReport = new
+                {
+                    schema_version = 1, protocol = "contain-wpf-keyboard-diagnosis-1", source_sha = Environment.GetEnvironmentVariable("GITHUB_SHA"),
+                    synthetic = true, actual_packaged_executable = false, real_etw_executed = false,
+                    expected_host_process_id = host.Id, fixed_target_id = "NewInstall", keyboard_key = "Space",
+                    phase = keyboardPhase, error_type = keyboardError, elapsed_ms = keyboardClock.ElapsedMilliseconds,
+                    foreground_request_returned = foregroundRequestReturned, focus_call_returned = focusCallReturned,
+                    focus_observation_count = focusObservations, focus_first = focusFirst, focus_last = focusLast,
+                    space_dispatch_attempted = spaceAttempted, space_dispatch_returned = spaceReturned,
+                    click_observation_count = counterObservations, counter_first = counterFirst, counter_last = counterLast,
+                    samples = keyboardSamples.ToArray(), normal_exit = normalExit, forced_exit = forcedExit,
+                    focus_deadline_ms = 5000, dispatch_deadline_ms = 5000, click_observation_deadline_ms = 5000,
+                    maximum_keyboard_gestures = 1, retries = 0,
+                    note = "Staged diagnosis only; no historical cause or product fix is claimed. Cached samples are retained without UIA queries after failure."
+                };
+            }
+            await Write(Path.Combine(output, "navigation-keyboard-diagnostics.json"), keyboardReport);
             await Write(summaryPath, new
             {
                 schema_version = 1, protocol = "contain-wpf-external-navigation-probe-1", source_sha = Environment.GetEnvironmentVariable("GITHUB_SHA"),
@@ -291,6 +315,11 @@ internal static class ExternalProbe
         {
             try { await action(); gateChecks.Add(new { name, status = "passed", error_type = (string?)null }); gatePassed++; }
             catch (Exception error) { gateFailed = true; gateChecks.Add(new { name, status = "failed", error_type = error.GetType().Name }); throw; }
+        }
+        void UpdateKeyboard(Action update)
+        {
+            // No provider calls under this lock. Late workers cannot mutate a closed report.
+            lock (keyboardSync) { if (!keyboardClosed) update(); }
         }
         Task Invoke(string id) => Uia(() => { ((InvokePattern)Find(host.Id, id).Single().GetCurrentPattern(InvokePattern.Pattern)).Invoke(); return true; });
         Task Counter(int action, int ordinary) => Wait(host, async () => await Uia(() => Find(host.Id, "ProbeStatus").Single().Current.Name

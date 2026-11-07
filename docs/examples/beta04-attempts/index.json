@@ -90,6 +90,17 @@
       "sha256": "16ff772f28b8d097185e5290b508493b9888cf6177c69feee281008a1ad0e3a6",
       "accepted": false,
       "kind": "navigation-control-prerequisite; product_not_frozen"
+    },
+    {
+      "attempt": "M12",
+      "run": 42344334095,
+      "source_sha": "c9942c3eb0a19d7e782a4648c50abab56add1637",
+      "file": "M12.json",
+      "sha256": "4fcf97dcfdc86fb465b74d94a4001fc7ec1abe7a92dc563184c04298e02033b6",
+      "accepted": true,
+      "kind": "navigation-control-only; no product package or installation",
+      "keyboard_file": "M12-keyboard.json",
+      "keyboard_sha256": "046a84155f775b48233a9210cdc36b3f40c88becdd0116999c444f5e0007f4fc"
     }
   ]
 }

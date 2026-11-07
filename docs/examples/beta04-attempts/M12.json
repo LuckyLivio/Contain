@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "protocol": "contain-wpf-action-navigation-regression-2",
+  "source_sha": "c9942c3eb0a19d7e782a4648c50abab56add1637",
+  "native_windows": true,
+  "synthetic": true,
+  "real_etw_executed": false,
+  "actual_packaged_executable": false,
+  "production_source_link": "desktop/Contain.Desktop/Controls/ActionNavigationItem.cs",
+  "wpf_ui_version": "4.3.0",
+  "planned_checks": [
+    "library_selection_route_reproduces_null_target_failure",
+    "action_peer_has_name_id_button_and_invoke",
+    "action_invoke_routes_exactly_one_existing_click",
+    "disabled_action_rejects_invoke",
+    "queued_action_disabled_before_dispatch_does_not_click",
+    "reenabled_action_remains_usable",
+    "external_unique_button_identity",
+    "uia_navigation_invokes_exactly_once",
+    "disabled_navigation_refuses_invoke",
+    "reenabled_navigation_invokes_once",
+    "keyboard_navigation_invokes_once",
+    "owned_host_normal_exit"
+  ],
+  "checks": [
+    {
+      "name": "library_selection_route_reproduces_null_target_failure",
+      "status": "passed",
+      "error_type": null
+    },
+    {
+      "name": "action_peer_has_name_id_button_and_invoke",
+      "status": "passed",
+      "error_type": null
+    },
+    {
+      "name": "action_invoke_routes_exactly_one_existing_click",
+      "status": "passed",
+      "error_type": null
+    },
+    {
+      "name": "disabled_action_rejects_invoke",
+      "status": "passed",
+      "error_type": null
+    },
+    {
+      "name": "queued_action_disabled_before_dispatch_does_not_click",
+      "status": "passed",
+      "error_type": null
+    },
+    {
+      "name": "reenabled_action_remains_usable",
+      "status": "passed",
+      "error_type": null
+    },
+    {
+      "name": "external_unique_button_identity",
+      "status": "passed",
+      "error_type": null
+    },
+    {
+      "name": "uia_navigation_invokes_exactly_once",
+      "status": "passed",
+      "error_type": null
+    },
+    {
+      "name": "disabled_navigation_refuses_invoke",
+      "status": "passed",
+      "error_type": null
+    },
+    {
+      "name": "reenabled_navigation_invokes_once",
+      "status": "passed",
+      "error_type": null
+    },
+    {
+      "name": "keyboard_navigation_invokes_once",
+      "status": "passed",
+      "error_type": null
+    },
+    {
+      "name": "owned_host_normal_exit",
+      "status": "passed",
+      "error_type": null
+    }
+  ],
+  "passed": 12,
+  "failed": 0,
+  "not_run": 0,
+  "accepted": true,
+  "retries": 0,
+  "external_uia": true,
+  "host_count": 1,
+  "external_snapshots": [
+    {
+      "id": "NewInstall",
+      "expected_process_id": 5912,
+      "matched_count": 1,
+      "matches": [
+        {
+          "automation_id": "NewInstall",
+          "class_name": "Button",
+          "control_type": "ControlType.Button",
+          "name": "\u65B0\u5EFA\u8BB0\u5F55",
+          "process_id": 5912,
+          "enabled": true,
+          "offscreen": false,
+          "patterns": [
+            "InvokePatternIdentifiers.Pattern",
+            "SynchronizedInputPatternIdentifiers.Pattern"
+          ],
+          "ancestors": [
+            {
+              "depth": 1,
+              "class_name": "ItemsControlItem",
+              "control_type": "ControlType.DataItem",
+              "automation_id": ""
+            },
+            {
+              "depth": 2,
+              "class_name": "ItemsControl",
+              "control_type": "ControlType.List",
+              "automation_id": "NavigationItems"
+            },
+            {
+              "depth": 3,
+              "class_name": "ScrollViewer",
+              "control_type": "ControlType.Pane",
+              "automation_id": "PART_ScrollViewer"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ControlButton",
+      "expected_process_id": 5912,
+      "matched_count": 1,
+      "matches": [
+        {
+          "automation_id": "ControlButton",
+          "class_name": "Button",
+          "control_type": "ControlType.Button",
+          "name": "SYNTHETIC control button",
+          "process_id": 5912,
+          "enabled": true,
+          "offscreen": false,
+          "patterns": [
+            "InvokePatternIdentifiers.Pattern",
+            "SynchronizedInputPatternIdentifiers.Pattern"
+          ],
+          "ancestors": [
+            {
+              "depth": 1,
+              "class_name": "Window",
+              "control_type": "ControlType.Window",
+              "automation_id": ""
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "normal_exit": true,
+  "forced_exit": false
+}

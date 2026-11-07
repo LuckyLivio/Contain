@@ -414,6 +414,7 @@ def prepare_assets(output, archive_path, evidence, main_evidence, quality_dir, a
         limitations=["One controlled Windows x64 runner installation and isolated synthetic records; not a Parallels or ARM64 validation.",
                      "No claim of full installer coverage, final file ownership, safe deletion or monitor-DPI switching.",
                      "The unchanged core reuses Beta.10 bounded capture evidence; no new broad pressure matrix was run.",
+                     "M11 had one isolated synthetic navigation keyboard timeout before packaging. M12 staged diagnosis did not reproduce it; no historical cause or product repair is claimed. Final package acceptance remains separate.",
                      "C1 first-empty-library Ready timeout, D5 missing result control, and the original Parallels 57,767 losses remain historically unexplained."])
     write_json(output / "FINAL-ACCEPTANCE.json", acceptance)
     (output / "SHA256SUMS.txt").write_text("".join(digest(path) + "  " + path.name + "\n" for path in sorted(output.iterdir())), encoding="utf-8")

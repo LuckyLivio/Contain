@@ -381,7 +381,8 @@ passed. The independent navigation regression had 10 passed, 1 failed, 1 not run
 host exited normally with code0. No packaged desktop test or installation ran,
 and no product ZIP was produced. `M11.json` preserves the original combined
 control result. The same-source PR check 42343950976 passed, but is not substituted
-for this failed push attempt.
+for this failed push attempt. Repository CI
+[42343947449](https://github.com/LuckyLivio/Contain/actions/runs/42343947449) passed.
 
 The code already waits for HasKeyboardFocus and checks foreground ownership before
 sending one Space key. The old aggregate does not identify whether the timeout
@@ -399,3 +400,31 @@ content. Keep all 12 checks and fail on unexpected UIA errors, persistent state
 mismatch or early exit. Ordinary push/PR checks will run; no native acceptance
 marker, no product freeze and no installation. Use the result to choose any
 necessary test or product correction before the final complete desktop run.
+
+M12 source `c9942c3eb0a19d7e782a4648c50abab56add1637`,
+[push run 42344334095](https://github.com/LuckyLivio/Contain/actions/runs/42344334095),
+**passed the control-only diagnosis**: model34/control12 passed, no product
+package, no installation. `M12.json` and `M12-keyboard.json` preserve original
+aggregate bytes. The exact host owned focus at 172 ms; one Space down/up reached
+the target, and the expected 3/2 click counters appeared at 1019 ms. The host
+exited normally. M11 was not reproduced and its cause remains unconfirmed; this
+is not a claim that a product keyboard defect was repaired.
+
+Review of the added diagnostics found a separate late-input hazard: a synchronous
+UIA sample on the STA worker could finish after its outer dispatch timeout, then
+continue to send the key. Guard the existing five-second dispatch deadline and
+freeze bounded diagnostic snapshots before the next run. This review finding
+is not evidence that it caused M11, whose original code did not contain that
+additional UIA sample.
+
+## M13 — final complete package after bounded diagnostic hardening
+
+Predeclared before execution: only harden the new test diagnostics against a late
+Space dispatch and concurrent snapshot mutation; keep the M11 product changes,
+the exact virtualized-event selection regression, all12 control checks and all14
+packaged-desktop groups. Run one full acceptance on a newly frozen ZIP, at most
+one explicit GUI installation, zero retries and unchanged deadlines. No additional
+random control runs or capture-pressure research. Retain M11's unresolved isolated
+test timeout and M12's limited diagnostic scope; the final package must independently
+pass actual keyboard navigation, installation, exact readback, event explanation,
+export and cold restart. No prior PR pass substitutes for this run.
