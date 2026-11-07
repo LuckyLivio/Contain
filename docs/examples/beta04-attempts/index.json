@@ -101,6 +101,17 @@
       "kind": "navigation-control-only; no product package or installation",
       "keyboard_file": "M12-keyboard.json",
       "keyboard_sha256": "046a84155f775b48233a9210cdc36b3f40c88becdd0116999c444f5e0007f4fc"
+    },
+    {
+      "attempt": "M13",
+      "run": 42344602567,
+      "source_sha": "5a6ce89867e4c8c9d428de0a80b67b421bbd9717",
+      "file": "M13.json",
+      "sha256": "e1d02c6758678030c86f75c2f94403a2e4a4a81208ce64c7e4f6acc0ee2de432",
+      "accepted": true,
+      "kind": "complete packaged WPF desktop and one real GUI installation",
+      "keyboard_file": "M13-keyboard.json",
+      "keyboard_sha256": "2b2807e69140a7fc0182b7385832553f48055d1d13657f4a6fc50b30be7c0a42"
     }
   ]
 }

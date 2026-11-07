@@ -4,11 +4,16 @@
 `Contain.Viewer.exe`。普通流程为“选择 EXE → 明确开始 → 保存 → 查看文件操作 →
 下次找回记录”，不再通过旧 WinForms 窗口完成主要操作。
 
-发行状态、当前下载和实际截图见[仓库首页](../README.md)；新版的功能迁移、视觉
-约定和展示提纲见[迁移清单](../docs/beta04-design-and-migration.md)，实际执行与
-失败记录见[本轮验收记录](../docs/beta04-validation-attempts.md)。本页说明当前实现
-和验收契约，**不代表最终 Windows 包已经通过验收**；准确源码、包哈希和发布依据
-须由[交付说明](../docs/beta04-delivery.md)及对应运行结果确认。
+**[下载 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/contain-0.4.0-beta.1-windows-x64.zip)** · [Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.4.0-beta.1) · [实际截图](../docs/beta04-screenshots.md)。
+
+最终包已在 M13 完成 14/14 项原生全流程验收与 997 项断言；模型 34/34、Windows
+导航控件 12/12、独立夹具 24/24 谓词通过。产品及原生测试源码均为
+`5a6ce89867e4c8c9d428de0a80b67b421bbd9717`，原生运行见
+[42344602567](https://github.com/LuckyLivio/Contain/actions/runs/42344602567)。
+[发布说明](../docs/beta04-release.md)分别记录最终包、main/标签与发布步骤；
+[迁移清单](../docs/beta04-design-and-migration.md)说明功能、视觉约定及展示提纲，
+[全部尝试](../docs/beta04-validation-attempts.md)保留失败和有限诊断，不以旧 WinForms
+通过记录替代新界面验收。发布继续遵守[同一 ZIP 交付门槛](../docs/beta04-delivery.md)。
 [Beta.10](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.10)
 作为独立回退版本保留，旧标签、附件与历史证据不变。
 
@@ -170,8 +175,9 @@ stdout/stderr 持续读取，输出上限、查询截止时间和协议校验保
 | `Contain.Viewer.Presentation.Tests` | 保留共享证据展示与历史诊断契约回归 |
 | `Contain.Viewer` / `Contain.Viewer.Tests` | 旧 WinForms 源码与历史行为证据；旧界面的通过记录不计入新界面验收 |
 
-以上数字描述固定检查契约，不是本页宣称的通过数量。当前源码的执行结果、失败
-与未执行项以对应报告为准，不用重复运行挑选一次绿色结果。
+M13 对上述新桌面三个固定计划分别取得 34/34、12/12 和 14/14 通过结果。
+其实际 Windows 包完成真实安装、保存、原事件解释、导出与不同工作目录冷启动；
+六次 Viewer 启动均正常退出 0。所有先前失败仍保留，不能把本次通过归写到旧尝试。
 
 从仓库根目录使用锁定 SDK：
 
@@ -204,11 +210,26 @@ dotnet publish desktop/Contain.Desktop.Tests -c Release -r win-x64 --self-contai
 进程状态。截图来自实际 Windows 窗口，并记录像素尺寸、真实 DPI 与样例/真实
 数据来源；模拟缩放不冒充真实高 DPI 或 Parallels 验证。
 
-完整验收固定包含 130 条事件 / 53 条匹配的 ID、顺序、分页、解释与导出检查，
-以及默认新 GUI 启动的一次受控真实安装。父进程、直接子进程和无关写入都有
-独立依据，继续使用原严格身份、成功完成、损失和资源门槛。还需核对保存的准确
-会话、事件解释、正常退出及不同工作目录冷启动。仅运行不带安装夹具的预览会
-把四项真实安装检查标为 `not_run`，不能作为发布通过证据。
+M13 的完整验收覆盖 130 条事件 / 53 条匹配的 ID、顺序、分页、解释与导出，
+以及默认新 GUI 启动的一次受控真实安装。父进程和已验证直接子进程的成功写入
+具备独立依据，无关写入未被错误归属；接收、候选、交付、原始保存、ETW 和解码
+损失均为 0，原严格资源门槛保持。准确会话、事件解释、正常退出与不同工作目录
+冷启动均通过。这是一台受控 runner 的有界场景，不代表任意负载或安装器。
+
+测试平台为 Windows Server 2025 x64 / 10.0.26100，实际 96 DPI；普通截图
+1024 × 720 像素，紧凑窗口 820 × 640 像素。未验证 Windows 10/11、Parallels、
+实际 144/192 DPI 或显示器切换。仅运行不带安装夹具的预览会把四项真实安装检查
+标为 `not_run`，不能作为完整发布证据。
+
+发布对象保持 M13 原 ZIP，不为交付重新编译或重新打包，SHA-256：
+
+```text
+953b243bb3dd8ea32e61dcf5fdeaf143b9e697ea4a57021fb85ffd961ef907e3
+```
+
+main/标签与产品/测试可能因交付文档不同而有不同 SHA；发布、main 检查及公开
+附件回下载的准确身份由[发布说明](../docs/beta04-release.md)和独立
+`FINAL-ACCEPTANCE.json` 记录，不在本页编造未完成步骤的通过结果。
 
 核心二进制未变时，可复用对应 Beta.10 D4 采集证据；不能用其 WinForms D6 桌面
 结果替代新 WPF 集成。仓库质量要求继续由 [AGENTS](../AGENTS.md) 和
@@ -235,3 +256,6 @@ Parallels 原会话 57,767 条应用丢失（[#18](https://github.com/LuckyLivio
 （[#5](https://github.com/LuckyLivio/Contain/issues/5)）。新界面不追认这些历史问题
 已经修复。原生 Windows runner、模拟样例、手工反馈和未覆盖环境分别记录，不
 承诺完整软件足迹、最终归属、安全删除或尚未实际验证的平台。
+
+M11 的独立导航控件键盘检查曾超时，原始原因未确认；M12 分阶段诊断未复现，
+不构成修复证明。M13 独立通过完整包验收，仍保留 M11/M12 的原始结果和适用范围。

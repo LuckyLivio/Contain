@@ -17,6 +17,7 @@ Use the [README](../README.md) for the current Windows download and quick start.
 | Folder choice and finished-task guidance, Beta 8 | Released | [Focused fixes and native verification](install-guidance-beta8.md) |
 | Follow the launched EXE without guessing a directory, Beta 9 | Released | [Source evidence, page and package verification](follow-installer-beta9.md) |
 | Capture lifecycle handoff and saved-loss diagnostics, Beta 10 | Prerelease | [Frozen product, D4/D6 acceptance, retained failures and release policy](beta10-release.md), product `b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4` |
+| Modern WPF desktop, v0.4.0-beta.1 | Prerelease | [Final package and release state](beta04-release.md), [actual screenshots](beta04-screenshots.md), product / native tests `5a6ce89867e4c8c9d428de0a80b67b421bbd9717`; [M13 run 42344602567](https://github.com/LuckyLivio/Contain/actions/runs/42344602567) |
 
 [Architecture](architecture.md), [JSON contract](json-contract.md),
 [measured performance limits](performance.md) and [formal unexecuted stabilization
@@ -25,3 +26,26 @@ workflow does not close the formal accuracy/scale gates or establish ownership,
 safe uninstall or rollback.
 
 The [historical branch cleanup audit](examples/desktop-install-branch-cleanup.json) records the branches at the time of the graphical installation MVP.
+
+The v0.4.0-beta.1 M13 package passed all 14 native groups and 997 assertions,
+34 model checks, 12 actual Windows control checks and 24 independent fixture
+predicates. It used the real WPF EXE on Windows Server 2025 x64 / 10.0.26100 at
+actual 96 DPI, completed one GUI-controlled ETW installation, saved the exact
+session and cold-reopened its original event explanation. All six Viewer launches
+exited normally with code 0. Receiver, candidate, handoff, raw-save, ETW and decode
+loss counts were zero in this bounded scenario. No broad pressure matrix was
+repeated; the unchanged Beta.10 core retains its separate evidence and identity.
+
+The accepted original ZIP SHA-256 is
+`953b243bb3dd8ea32e61dcf5fdeaf143b9e697ea4a57021fb85ffd961ef907e3`.
+Normal screenshots are 1024 × 720 pixels and compact screenshots 820 × 640,
+all actual 96 DPI. Synthetic records and real capture screenshots are labelled
+separately. Windows 10/11, Parallels, actual 144/192 DPI and monitor switching
+remain unverified. Main checks, tag/main identities, publication and public asset
+readback are separate release gates, recorded by the linked release document and
+`FINAL-ACCEPTANCE.json`; the product source is not substituted for a later merge SHA.
+
+[Every modern-desktop attempt](beta04-validation-attempts.md) remains recorded.
+M11's isolated keyboard-control timeout was not reproduced by M12's staged
+diagnosis, whose success is not repair proof. M13's acceptance does not rewrite
+that unknown cause, the prior failed attempts, or Beta.10 issues #16 / #17 / #18.

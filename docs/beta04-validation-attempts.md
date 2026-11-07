@@ -428,3 +428,33 @@ random control runs or capture-pressure research. Retain M11's unresolved isolat
 test timeout and M12's limited diagnostic scope; the final package must independently
 pass actual keyboard navigation, installation, exact readback, event explanation,
 export and cold restart. No prior PR pass substitutes for this run.
+
+M13 source `5a6ce89867e4c8c9d428de0a80b67b421bbd9717`,
+[run 42344602567](https://github.com/LuckyLivio/Contain/actions/runs/42344602567),
+**accepted**: all14 fixed groups passed, 997 assertions, zero failed/not-run;
+model34, controls12 and independent live oracle24 passed. One GUI installation,
+zero retries. All6 viewers exited normally with code0, including the exact saved
+record reopened from a different working directory. The full original aggregate
+is `M13.json`; the staged control result is `M13-keyboard.json`.
+
+The frozen ZIP is 70,081,980 bytes, SHA-256
+`953b243bb3dd8ea32e61dcf5fdeaf143b9e697ea4a57021fb85ffd961ef907e3`.
+Exact session: `00663007-21a2-4247-b619-7ccb52581323`; parent target write:
+`4a41fef6-76b7-475f-ad9d-ce94315138c5`; child target write:
+`8ed40372-e255-402d-8c14-4c94cac7ee6d`. Both have PID plus creation-time identity,
+High source association and successful completion; neither proves final file state
+or ownership. Unrelated activity was not attributed. Receiver/candidate/handoff/
+raw storage/ETW/context/decode loss are zero; bounded drain completed. The current
+run received16613 observations, retained156 timeline events and persisted207 raw
+records; these differing quantities are not added or substituted for each other.
+No new same-load performance improvement claim is made.
+
+All53 matching IDs were exported in exact order; virtualized first/middle selection,
+exact explanation/copy, protected exports, same-name sessions, external read-only
+bytes, compact keyboard operation and cold readback passed. All13 actual screenshots
+were inspected at1024×720 or820×640, measured96DPI. Task stages are visible and the
+coverage summary is Chinese; original technical diagnostics remain. See the
+[unaltered screenshots and before/after comparison](beta04-screenshots.md).
+M11's isolated keyboard timeout remains unexplained; M12/M13 are not labelled a
+repair of that historical failure. Release uses this exact accepted ZIP, with
+separate main CI, tag and public-download identity checks.

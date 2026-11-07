@@ -2,20 +2,14 @@
 
 Windows 安装记录与证据查看工具。选择 EXE，记录安装行为，找回记录，查看文件操作及其依据。
 
-**当前开发版：v0.4.0-beta.1，最终 Windows 实包验收与发布待完成。** 新桌面使用
-WPF + WPF UI + MVVM，接入已有 Rust 核心与 CLI。
-原生预览、Linux 构建和旧版本通过结果均不代替最终新包验收。
-[新桌面迁移清单](docs/beta04-design-and-migration.md) · [本轮验收尝试](docs/beta04-validation-attempts.md) · [发布说明草稿与两分钟演示](docs/beta04-release-notes-draft.md)
+**v0.4.0-beta.1** 采用 WPF + WPF UI + MVVM 新桌面，接入原 Rust 核心与 CLI。
+实际 Windows 包已完成 M13 全流程验收；[发布说明与准确身份](docs/beta04-release.md) · [全部尝试记录](docs/beta04-validation-attempts.md) · [两分钟演示](docs/beta04-design-and-migration.md#两分钟展示顺序)。
 
 ## 下载与使用
 
-新桌面正式下载链接将在最终实包验收后提供。目前已发布的独立回退版是
-**[Beta.10 Windows x64 自包含 ZIP（旧 WinForms）](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.10/contain-0.3.2-beta.10-windows-x64.zip)** · [Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.10) · [校验和](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.10/SHA256SUMS.txt)。
-Beta.10 及更早标签和附件保持不变，不能将此回退包当作新 WPF 下载。
+**[直接下载 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/contain-0.4.0-beta.1-windows-x64.zip)** · [Beta.1 Prerelease](https://github.com/LuckyLivio/Contain/releases/tag/v0.4.0-beta.1) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/SHA256SUMS.txt) · [最终验收文件](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/FINAL-ACCEPTANCE.json)
 
-新桌面的普通流程：
-
-1. 完整解压 Windows x64 自包含 ZIP，运行 **`Contain.Viewer.exe`**，无需另装 .NET 或开发工具。
+1. 完整解压 ZIP，运行 **`Contain.Viewer.exe`**，无需另装 .NET 或开发工具。
 2. 进入“新建记录”，**选择 EXE → 明确点击“开始记录”**。默认跟随安装器及已验证直接子进程，名称自动建议，保存到“我的记录”；无需猜安装目录或选择数据库。选择文件本身不会启动安装器。
 3. 按安装器要求操作，保持窗口打开至整理保存结束。程序按准确会话打开结果，可搜索文件操作、查看解释、复制事件 ID 或导出报告。以后从“我的记录”找回。
 
@@ -24,15 +18,19 @@ Beta.10 及更早标签和附件保持不变，不能将此回退包当作新 WP
 
 ## 新界面截图
 
-最终实际截图待归档与审阅；下列是原生验收程序的输出文件名，不是效果图或已完成声明。
+以下来自最终包在 **Windows Server 2025 x64 / 10.0.26100 / 实际 96 DPI** 的原生运行，原图均为 **1024 × 720 像素**。合成样例与真实采集分别标注。
 
-| 画面 | 待归档位置与数据来源 |
+| 我的记录 · 隔离合成样例 | 新建配置 · 尚未开始安装 |
 | --- | --- |
-| 我的记录 | `docs/images/beta04/records-sample.png`；隔离合成样例 |
-| 新建配置 | `docs/images/beta04/new-record-configured.png`；受控安装器，尚未点击开始 |
-| 保存后的事件解释 | `docs/images/beta04/real-event-explanation.png`；真实 ETW 采集 |
+| [![我的记录，隔离合成样例](docs/images/beta04/records-sample.png)](docs/images/beta04/records-sample.png) | [![新建记录，受控安装器配置](docs/images/beta04/new-record-configured.png)](docs/images/beta04/new-record-configured.png) |
 
-每张最终截图须注明窗口尺寸、实际 DPI、版本与环境，完整验收仍须包含空态、真实任务、概览和紧凑窗口。
+真实安装后，查看所选目标事件的解释：
+
+![真实 ETW 采集保存后的事件解释](docs/images/beta04/real-event-explanation.png)
+
+[全部实际截图、空态、任务与前后对照](docs/beta04-screenshots.md)还包含 **820 × 640 像素**紧凑窗口；均为实际 96 DPI，不冒充高 DPI 或 Parallels 验证。
+
+[原 WinForms Beta.10 独立回退下载](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.10/contain-0.3.2-beta.10-windows-x64.zip)继续保留，Beta.10 及更早标签与附件不变；它不是新 WPF 包。
 
 个人库沿用 Windows LocalApplicationData 下的 `Contain\Records\contain.db`，通常为
 `%LOCALAPPDATA%\Contain\Records\contain.db`，不随启动目录变化。首次空启动不建库；
@@ -40,7 +38,7 @@ Beta.10 及更早标签和附件保持不变，不能将此回退包当作新 WP
 
 UI 为 `0.4.0-beta.1`，核心保持 `0.3.2-beta.10` / [源码 b0d2510](https://github.com/LuckyLivio/Contain/tree/b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4)。
 新包 `START-HERE.txt`、`BUILD.json`、`CONTENTS.json` 及独立最终验收文件分别说明使用、
-产品与核心身份、文件哈希和实际验收对象；[完整版本与核心哈希](docs/beta04-release-notes-draft.md)。
+产品与核心身份、文件哈希和实际验收对象；[完整版本与核心哈希](docs/beta04-release.md)。
 构建未签名；ETW 受当前令牌权限限制。程序不自动提权、不修改安全设置，也不静默切换快照模式。
 
 ## 证据与使用边界
@@ -77,10 +75,17 @@ Beta.10 的首次空库 C1 Ready 超时、D5 结果观察控件缺失、用户 P
 和错误日志，根因尚未确认；小范围成功不证明已修复。该问题保留为 Beta 已知限制，
 没有通过禁止目录或全盘性能实验掩盖它；继续跟踪于 [Issue #5](https://github.com/LuckyLivio/Contain/issues/5)。
 
-新桌面原生运行环境为 Windows Server 2025 x64 / 10.0.26100 / 实际 96 DPI；最终包
-完整验收仍待完成。未验证 Windows 10/11、Parallels、实际 144/192 DPI、多显示器切换
-或任意第三方安装器矩阵。原生执行、模拟缩放、手工反馈各自标明，
-[历史交付与失败证据索引](docs/delivery-history.md)保留旧结论。
+M13 [Windows 运行 42344602567](https://github.com/LuckyLivio/Contain/actions/runs/42344602567)完成 **14/14 项原生检查、997 项断言**，模型 **34/34**、导航控件 **12/12** 和独立夹具 **24/24** 谓词通过。真实新 GUI 完成安装、准确会话保存、所选子事件的解释与复制，以及不同工作目录冷启动；父子目标的身份和成功完成依据另经独立 CLI / 夹具核验。六次 Viewer 启动均正常退出 0，接收、候选、交付、原始保存、ETW 与解码损失均为 0。范围是一台受控 runner 的一次完整安装，不推导为所有安装器或负载保证。
+
+M11 的独立控件键盘检查曾超时，原因未确认；M12 仅完成带分阶段诊断的检查，未复现不等于修复证明。M13 的完整通过不改写这些原始结果。[全部尝试](docs/beta04-validation-attempts.md)与[历史交付索引](docs/delivery-history.md)继续保留。
+
+未验证 Windows 10/11、Parallels、实际 144/192 DPI、多显示器切换或第三方安装器矩阵。发布沿用 M13 验收的原 ZIP，产品与原生测试源码均为 `5a6ce89867e4c8c9d428de0a80b67b421bbd9717`，ZIP SHA-256 为：
+
+```text
+953b243bb3dd8ea32e61dcf5fdeaf143b9e697ea4a57021fb85ffd961ef907e3
+```
+
+main 检查、标签、上传及公开回下载属于单独发布步骤；准确状态与源码关系以 [Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.4.0-beta.1)、[发布说明](docs/beta04-release.md)及 `FINAL-ACCEPTANCE.json` 为准，不把产品源码冒充合并后的 main 或标签提交。
 
 ## 开发与参考
 
