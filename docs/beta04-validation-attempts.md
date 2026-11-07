@@ -323,3 +323,52 @@ behavior; do not rerun a broad historical matrix. The new WPF/CLI live integrati
 and all 13 actual screenshots remain required. Review the final screenshots,
 source identities and ZIP hash before making PR #19 mergeable. Release must reuse
 that exact accepted ZIP, without rebuilding or repackaging it.
+
+M10 source `90ba93199044aea3dcdf69c1b4bb4a1f3b125e05`,
+[run 42343076345](https://github.com/LuckyLivio/Contain/actions/runs/42343076345),
+**failed overall**: 12 fixed groups passed, 1 failed, 1 not run, 535 assertions;
+one real GUI installation, zero retries. Original aggregate: `M10.json`.
+Frozen ZIP SHA-256:
+`71d7413b8e05f0a1060e62ab5738c13a5d6e9566f5656545f6c93a9cb90be14a`.
+The GUI selected the fixture, started once, guarded an active close, saved and
+opened exact session `a795a31b-b29f-412f-a806-22e7c3c97497`. All 24 independent
+live predicates passed: receiver/candidate/handoff/storage and ETW loss were zero;
+parent write `3b8679d7-ac39-4a58-ab52-361e310639a3` and child write
+`8564e966-b888-44b3-af5a-a67be781b66d` had instance identity, High association and
+successful completion. Unrelated activity was not attributed. These facts do
+not convert the incomplete desktop run into acceptance.
+
+The child event's search explanation and copied ID passed before the later
+`real_timeline_page` selection raised `RequiredControlMissingException`.
+The harness had enumerated and realized all 50 rows, then used generic FindFirst
+for an earlier row recycled by WPF virtualization. The screenshot shows the page
+scrolled to its final rows. This is a test selection defect, not evidence of a
+missing stored event; exact selection must use the owned list's bounded item
+container and realize the matching ID. The real cold restart and final unchanged
+source/package check were not reached. Repository CI
+[42343076381](https://github.com/LuckyLivio/Contain/actions/runs/42343076381) passed.
+
+Actual screenshots also exposed two presentation issues: a long English raw
+coverage diagnostic occupied the normal overview banner, and the running task
+was partly below the configuration viewport. Preserve raw diagnostics in technical
+details, summarize the normal banner in Chinese, and bring the task area into
+view when it starts. These are new UI changes, not capture or attribution changes.
+
+## M11 — exact virtualized-row selection and readable live task
+
+Predeclared before execution: fix only the confirmed test lookup contract and the
+two observed UI presentation issues. The dependency audit also explicitly selects
+the official NuGet feed: M10 listed the runner's additional offline feed, which
+the release verifier correctly rejects. A focused regression retains that strict
+source check; no dependency versions change. Keep event virtualization and the 50-row
+page boundary. Exercise actual selection/explanation/copy for the first and middle
+rows after enumerating to the end, then retain all existing 53 ordered match,
+export and final selected-ID assertions. Never substitute a different event or
+session. Unexpected UIA exceptions and original deadlines remain failures.
+
+Freeze a new product ZIP because the UI presentation changes. Run the complete
+14-group desktop plan once, with at most one explicit GUI fixture installation
+and zero retries, then review all actual screenshots. Preserve M10's failed result
+and its separate successful live predicates. The unchanged core still reuses
+Beta.10 D4; no new heavy-load matrix is needed. Only the exact fully accepted ZIP
+can be published, with no rebuilding or repackaging afterward.

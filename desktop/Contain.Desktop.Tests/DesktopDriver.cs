@@ -12,6 +12,8 @@ namespace Contain.Desktop.Tests;
 internal sealed record Screenshot(string Name, string Sha256, int Width, int Height, uint Dpi, string DataKind);
 internal sealed record Probe(string Stage, string Control, long ElapsedMs, bool ProcessAlive, string? ErrorType);
 internal sealed record ActionProbe(string Control, string Pattern, bool Passed, string? ErrorType);
+internal sealed record RowSelectionProbe(string List, string Item, int ItemsInspected, bool TargetRealized,
+    bool Passed, string? ErrorType);
 internal sealed record ClickDiagnostic(string Control, string? TargetRole, string? HitRole, bool NativeOwned,
     string[] AncestorRoles, HitTargetGuard.Identity[] Ancestors, int? FixedIdMatches,
     bool FromPointObserved, bool TargetMatched, string? FromPointResult, HitTargetGuard.Viewport[] Viewports,
@@ -27,6 +29,7 @@ internal sealed class DesktopDriver : IDisposable
     private readonly Process process;
     private readonly List<Probe> probes = [];
     private readonly List<ActionProbe> actions = [];
+    private readonly List<RowSelectionProbe> rowSelections = [];
     private readonly List<ClickReadinessDiagnostic> clicks = [];
     private readonly Stopwatch lifetime = Stopwatch.StartNew();
     internal int ProcessId => process.Id;
@@ -34,6 +37,7 @@ internal sealed class DesktopDriver : IDisposable
     internal int ExitCode => process.ExitCode;
     internal IReadOnlyList<Probe> Probes => probes;
     internal IReadOnlyList<ActionProbe> Actions => actions;
+    internal IReadOnlyList<RowSelectionProbe> RowSelections => rowSelections;
     internal IReadOnlyList<ClickReadinessDiagnostic> Clicks => clicks;
     internal CloseDiagnostic? CloseObservation { get; private set; }
     internal string Stage { get; private set; } = "launch";
@@ -101,6 +105,13 @@ internal sealed class DesktopDriver : IDisposable
     // Boolean state probes accept absence while a view is being constructed.
     // Required text/action reads remain strict, and unexpected UIA errors propagate.
     internal Task<bool> VisibleAsync(string id) => OptionalAsync(id, Visible);
+    internal Task<bool> VisibleInOwnedViewportAsync(string id) => OptionalAsync(id, element =>
+    {
+        if (element.Current.ProcessId != process.Id || !Visible(element)) return false;
+        var rectangle = element.Current.BoundingRectangle;
+        var point = new Point { X = (int)(rectangle.X + rectangle.Width / 2), Y = (int)(rectangle.Y + rectangle.Height / 2) };
+        return CheckTargetGeometry(element, rectangle, point, MainWindow(), _ => { }).Matches;
+    });
     internal Task<string[]> RowIdsAsync(string id, string prefix) => Ui(id, () =>
     {
         var list = Required(id);
@@ -165,10 +176,52 @@ internal sealed class DesktopDriver : IDisposable
     });
     internal Task SelectAsync(string id) => Ui(id, () =>
     {
+        if (id.StartsWith("event:", StringComparison.Ordinal)) { SelectEventRow(id); return; }
         var element = Required(id);
         if (element.TryGetCurrentPattern(ScrollItemPattern.Pattern, out var scroll)) ((ScrollItemPattern)scroll).ScrollIntoView();
         ((SelectionItemPattern)element.GetCurrentPattern(SelectionItemPattern.Pattern)).Select();
     });
+    private void SelectEventRow(string id)
+    {
+        Stage = "select_event_row"; LastControl = id;
+        var inspected = 0; var targetRealized = false; string? errorType = null;
+        try
+        {
+            var list = Required("EventList");
+            if (list.Current.ProcessId != process.Id) throw new InvalidOperationException("Event list is not owned by the retained product.");
+            var container = (ItemContainerPattern)list.GetCurrentPattern(ItemContainerPattern.Pattern);
+            AutomationElement? item = null, target = null;
+            var identities = new HashSet<string>(StringComparer.Ordinal);
+            while ((item = container.FindItemByProperty(item, null, null)) is not null)
+            {
+                if (++inspected > 50) throw new InvalidOperationException("UI list exceeds its 50-item page bound.");
+                if (item.TryGetCurrentPattern(VirtualizedItemPattern.Pattern, out var virtualized))
+                    ((VirtualizedItemPattern)virtualized).Realize();
+                var identity = item.Current.AutomationId;
+                if (!identity.StartsWith("event:", StringComparison.Ordinal) || !identities.Add(identity))
+                    throw new InvalidOperationException("Event page has missing or duplicate original identities.");
+                if (identity == id) target = item;
+            }
+            if (target is null) throw new RequiredControlMissingException(id);
+            // Enumeration can recycle earlier containers. Keep the exact item provider and
+            // realize it again, instead of searching only currently rendered tree children.
+            if (target.TryGetCurrentPattern(VirtualizedItemPattern.Pattern, out var targetVirtualized))
+            {
+                ((VirtualizedItemPattern)targetVirtualized).Realize(); targetRealized = true;
+            }
+            if (target.TryGetCurrentPattern(ScrollItemPattern.Pattern, out var scroll))
+                ((ScrollItemPattern)scroll).ScrollIntoView();
+            if (target.Current.ProcessId != process.Id || target.Current.AutomationId != id)
+                throw new InvalidOperationException("Realized event does not preserve the requested original identity.");
+            ((SelectionItemPattern)target.GetCurrentPattern(SelectionItemPattern.Pattern)).Select();
+        }
+        catch (Exception error) { errorType = error.GetType().Name; throw; }
+        finally
+        {
+            if (rowSelections.Count < 128) rowSelections.Add(new("EventList", id, inspected,
+                targetRealized, errorType is null, errorType));
+        }
+    }
     internal Task ExpandAsync(string id) => Ui(id, () =>
     {
         var element = Required(id);

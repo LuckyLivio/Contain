@@ -6,6 +6,18 @@ namespace Contain.Desktop.Model;
 
 internal static class RecordPresentation
 {
+    internal static string OverviewAlert(string alert) => string.Join("\r\n", alert.Split("\r\n", StringSplitOptions.None).Select(line =>
+    {
+        // Keep the shared projection's saved/lost, source-error, missing-data
+        // and numeric-gap statements verbatim. Only its raw diagnostic preview
+        // is summarized here; Technical retains every original diagnostic.
+        const string diagnostic = "记录限制：";
+        if (!line.StartsWith(diagnostic, StringComparison.Ordinal)) return line;
+        return line.StartsWith(diagnostic + "File observations use bounded temporary read leases", StringComparison.Ordinal)
+            ? "读取结果只说明观测到的内容与文件身份，不能证明完整变化或最终归属；证据不足时状态关联仍为 Unknown。"
+            : "记录报告了限制或异常；请在技术详情中查看完整原始原因。";
+    }));
+
     internal static string Technical(JsonElement data, string database)
     {
         var backend = JsonView.Field(data, "backend");

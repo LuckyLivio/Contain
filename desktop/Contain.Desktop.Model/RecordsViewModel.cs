@@ -80,7 +80,7 @@ public sealed class RecordsViewModel : ObservableObject, IDisposable
     public string OverviewCoverage => overview?.Coverage ?? "覆盖质量未提供";
     public string OverviewChanges => overview?.Changes ?? "";
     public string OverviewChangesNote => overview?.ChangesNote ?? "";
-    public string OverviewAlert => overview?.Alert ?? "";
+    public string OverviewAlert => overview is null ? "" : RecordPresentation.OverviewAlert(overview.Alert);
     public string TechnicalDetails => technical;
     public string DiagnosticSummary => technical + (lastError is null ? "" : $"\n查询 / 导出错误\n数据库：{DatabasePath}\n会话：{recordId ?? "尚未确认"}\n错误类型：{ErrorKind}\n{lastError}\n"
         + (lastError is CoreClientException core ? core.Diagnostic : ""));

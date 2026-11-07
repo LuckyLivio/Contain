@@ -281,6 +281,19 @@ class ModernReleaseGates(unittest.TestCase):
         value["projects"][0]["frameworks"] = [dict(transitivePackages=[dict(id="unsafe", vulnerabilities=[{}])])]
         with self.assertRaises(ValueError): DELIVERY.verify_dependencies(value)
 
+    def test_dependency_audit_uses_only_the_explicit_official_source(self):
+        # SDK 10.0.403 keeps these parameters unchanged when --source is explicit.
+        # M10's runner default offline feed must not silently widen this contract.
+        value = dict(version=1, parameters="--vulnerable --include-transitive",
+                     sources=["https://api.nuget.org/v3/index.json"],
+                     projects=[dict(path="/isolated/desktop/Contain.Desktop/Contain.Desktop.csproj")])
+        DELIVERY.verify_dependencies(value)
+        for sources in [[], ["C:/Program Files (x86)/Microsoft SDKs/NuGetPackages/"],
+                        ["https://api.nuget.org/v3/index.json", "C:/Program Files (x86)/Microsoft SDKs/NuGetPackages/"],
+                        ["https://api.nuget.org/v3/index.json", "https://unreviewed.invalid/index.json"]]:
+            with self.subTest(sources=sources), self.assertRaisesRegex(ValueError, "source or problem"):
+                DELIVERY.verify_dependencies({**value, "sources": sources})
+
     def screenshot_rows(self):
         directory = self.root / "screenshots"
         directory.mkdir(exist_ok=True)

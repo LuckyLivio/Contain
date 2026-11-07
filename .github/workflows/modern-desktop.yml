@@ -74,7 +74,7 @@ jobs:
       - name: Dependency advisory report
         shell: pwsh
         run: |
-          dotnet list desktop/Contain.Desktop/Contain.Desktop.csproj package --vulnerable --include-transitive --format json --output-version 1 > "$env:MODERN_OUTPUT/public/dotnet-dependencies.json"
+          dotnet list desktop/Contain.Desktop/Contain.Desktop.csproj package --vulnerable --include-transitive --source https://api.nuget.org/v3/index.json --format json --output-version 1 > "$env:MODERN_OUTPUT/public/dotnet-dependencies.json"
           if ($LASTEXITCODE -ne 0) { throw 'Dependency audit could not complete' }
           python -c "import json,pathlib,sys; d=json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8-sig')); assert not d.get('problems'); assert all(not f.get('topLevelPackages') and not f.get('transitivePackages') for p in d.get('projects',[]) for f in p.get('frameworks',[])), 'Vulnerable dependency requires review'" "$env:MODERN_OUTPUT/public/dotnet-dependencies.json"
           if ($LASTEXITCODE -ne 0) { throw 'Dependency audit failed' }

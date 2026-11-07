@@ -1,0 +1,4797 @@
+{
+  "schema_version": 1,
+  "protocol": "contain-wpf-native-verification-1",
+  "source_sha": "90ba93199044aea3dcdf69c1b4bb4a1f3b125e05",
+  "native_windows": true,
+  "windows_version": "10.0.26100.0",
+  "architecture": "X64",
+  "framework": "WPF \u002B WPF UI",
+  "product_process_only": true,
+  "real_user_records_accessed": false,
+  "accepted": false,
+  "preview_checks_passed": false,
+  "native_install_requested": true,
+  "actual_etw": true,
+  "cold_restart_verified": false,
+  "viewer_exe_sha256": "d858ac38cf9a8875c05e6c48b84a9afce539d951fefef06a13ae94c389fcbc2c",
+  "viewer_dll_sha256": "47c8bc7cae2d97ee78508584a70ebdffc84dfd8513e6aa732a70a7275d5a839d",
+  "core_sha256": "a45f193a84fb3d5556e0258941d9f55bddded677098959c6b1a07b1e724e66f6",
+  "package_manifest_sha256": "395b41b2a930920e309764697cba11b02a1de8bca5f93c69c0e8d7d52a2be329",
+  "planned_checks": [
+    "frozen_package_identity",
+    "empty_personal_library_and_native_picker_cancel",
+    "saved_records_exact_identity_and_outcomes",
+    "search_130_events_53_matches_exact_order",
+    "search_copy_explain_and_export_all",
+    "external_legacy_readonly_and_return",
+    "same_name_session_switch_and_clear",
+    "compact_visible_keyboard_actions",
+    "saved_records_cold_restart",
+    "gui_default_configuration_no_implicit_install",
+    "gui_single_start_close_guard_and_saved_uuid",
+    "real_etw_parent_child_independent_oracle",
+    "real_event_explain_export_and_cold_restart",
+    "source_databases_and_package_unchanged"
+  ],
+  "checks": [
+    {
+      "name": "frozen_package_identity",
+      "status": "passed",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": null,
+      "call_sites": null
+    },
+    {
+      "name": "empty_personal_library_and_native_picker_cancel",
+      "status": "passed",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": null,
+      "call_sites": null
+    },
+    {
+      "name": "saved_records_exact_identity_and_outcomes",
+      "status": "passed",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": null,
+      "call_sites": null
+    },
+    {
+      "name": "search_130_events_53_matches_exact_order",
+      "status": "passed",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": null,
+      "call_sites": null
+    },
+    {
+      "name": "search_copy_explain_and_export_all",
+      "status": "passed",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": null,
+      "call_sites": null
+    },
+    {
+      "name": "external_legacy_readonly_and_return",
+      "status": "passed",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": null,
+      "call_sites": null
+    },
+    {
+      "name": "same_name_session_switch_and_clear",
+      "status": "passed",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": null,
+      "call_sites": null
+    },
+    {
+      "name": "compact_visible_keyboard_actions",
+      "status": "passed",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": null,
+      "call_sites": null
+    },
+    {
+      "name": "saved_records_cold_restart",
+      "status": "passed",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": null,
+      "call_sites": null
+    },
+    {
+      "name": "gui_default_configuration_no_implicit_install",
+      "status": "passed",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": null,
+      "call_sites": null
+    },
+    {
+      "name": "gui_single_start_close_guard_and_saved_uuid",
+      "status": "passed",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": null,
+      "call_sites": null
+    },
+    {
+      "name": "real_etw_parent_child_independent_oracle",
+      "status": "passed",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": null,
+      "call_sites": null
+    },
+    {
+      "name": "real_event_explain_export_and_cold_restart",
+      "status": "failed",
+      "error_type": "RequiredControlMissingException",
+      "stage": "real_timeline_page",
+      "control": "event:8564e966-b888-44b3-af5a-a67be781b66d",
+      "safe_reason": null,
+      "call_sites": [
+        "DesktopDriver.Required",
+        "\u003C\u003Ec__DisplayClass57_0.\u003CSelectAsync\u003Eb__0",
+        "\u003C\u003Ec__DisplayClass77_0.\u003CUi\u003Eb__0",
+        "\u003CExplain\u003Ed__54.MoveNext",
+        "\u003CSelectTimelineEvent\u003Ed__50.MoveNext",
+        "\u003CLiveExplainRestart\u003Ed__48.MoveNext",
+        "\u003CStep\u003Ed__35.MoveNext"
+      ]
+    },
+    {
+      "name": "source_databases_and_package_unchanged",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "prerequisite_failed",
+      "call_sites": null
+    }
+  ],
+  "assertions": 535,
+  "passed": 12,
+  "failed": 1,
+  "not_run": 1,
+  "retries": 0,
+  "screenshots": [
+    {
+      "name": "records-empty.png",
+      "sha256": "d0896369db5d086a762aeee9af5c2f7bcb073f3fb96a29ec7da74f8122fae2f3",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "isolated-empty"
+    },
+    {
+      "name": "records-sample.png",
+      "sha256": "11cef23af9201d63ea170f04e2dc739928393d8f887fe860601a6e4c21a765da",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "synthetic-viewer-fixtures"
+    },
+    {
+      "name": "overview-finished.png",
+      "sha256": "5b8ff007d39f9e0bfec9ba2eb84a2a346740fc942a6a71d561f6d3c9fe63d374",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "synthetic-persisted-outcome"
+    },
+    {
+      "name": "overview-historical.png",
+      "sha256": "370b0f68ad029f6a1e142e94f78733163e136457c25c9f98e476c3d92844e773",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "synthetic-persisted-outcome"
+    },
+    {
+      "name": "overview-interrupted.png",
+      "sha256": "1f96da751f8a97ca766b4ebc7338460f22713fb03cc90e2191b54eaa01adcc17",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "synthetic-persisted-outcome"
+    },
+    {
+      "name": "events-search-explain.png",
+      "sha256": "5bfafeb584210095786e069429e4f6fc8545a4b11800b450a265bbdc23001b09",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "synthetic-130-events-53-matches"
+    },
+    {
+      "name": "compact-events.png",
+      "sha256": "2007b61d6e3543b7f6057f29074be171219dafa9107a182cf7c813ab8fd5ce9b",
+      "width": 820,
+      "height": 640,
+      "dpi": 96,
+      "data_kind": "synthetic-viewer-fixtures"
+    },
+    {
+      "name": "compact-new-record.png",
+      "sha256": "048f9008d29ca2f2630b54fb205c2f864b05e54bf1c5c453303b9cd857609d26",
+      "width": 820,
+      "height": 640,
+      "dpi": 96,
+      "data_kind": "isolated-configuration-no-install"
+    },
+    {
+      "name": "new-record-configured.png",
+      "sha256": "dc274adaf987c8ca1378f3c12df7dfb1bb09004563117aedb31721bc7b40dbbc",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "real-controlled-fixture-before-explicit-start"
+    },
+    {
+      "name": "task-real-recording.png",
+      "sha256": "eb54e3aa00e42c7957d686866e63dcfd1789fc420748e4c78d15a64e5ee8d028",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "real-controlled-etw-capture"
+    },
+    {
+      "name": "real-saved-overview.png",
+      "sha256": "da37b0aa2133610bf1b13718bc98af6997a5659a819ebffdf091a222cfbfe8d2",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "real-controlled-etw-saved"
+    },
+    {
+      "name": "real-event-explanation.png",
+      "sha256": "920dcc9804f03471a3ae3c96725e6ccf68cb6bfb72f89aca192737653ca1ebc3",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "real-controlled-etw-saved"
+    },
+    {
+      "name": "failed-real_event_explain_export_and_cold_restart.png",
+      "sha256": "35c2d1d173dc5a9cf0ffab9f78906626749cc61478395ed67e57a9f2582436df",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "failed-isolated-native-stage"
+    }
+  ],
+  "launches": [
+    {
+      "process_id": 504,
+      "probes": [
+        {
+          "stage": "ready",
+          "control": "NewInstall",
+          "elapsed_ms": 1606,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "empty_records_ready",
+          "control": "EmptyRecordsCTA",
+          "elapsed_ms": 60,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "new_config",
+          "control": "PickInstaller",
+          "elapsed_ms": 341,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_click_readiness",
+          "control": "PickInstaller",
+          "elapsed_ms": 341,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_discovery",
+          "control": "PickInstaller",
+          "elapsed_ms": 894,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "expected_native_dialog_confirmed",
+          "control": "PickInstaller",
+          "elapsed_ms": 1236,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_closed",
+          "control": "PickInstaller",
+          "elapsed_ms": 80,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "back_to_empty_records",
+          "control": "EmptyRecordsCTA",
+          "elapsed_ms": 80,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "keyboard_focus",
+          "control": "NewInstall",
+          "elapsed_ms": 22,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "keyboard_new_record_navigation",
+          "control": "PickInstaller",
+          "elapsed_ms": 64,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "normal_close",
+          "control": "window",
+          "elapsed_ms": 89,
+          "process_alive": false,
+          "error_type": null
+        }
+      ],
+      "actions": [
+        {
+          "control": "NewInstall",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "MyRecords",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        }
+      ],
+      "clicks": [
+        {
+          "control": "PickInstaller",
+          "attempts": 1,
+          "first": {
+            "control": "PickInstaller",
+            "target_role": "ControlType.Button",
+            "hit_role": "ControlType.Text",
+            "native_owned": true,
+            "ancestor_roles": [
+              "ControlType.Text",
+              "ControlType.Button",
+              "ControlType.Group",
+              "ControlType.Pane",
+              "ControlType.Custom",
+              "ControlType.Pane",
+              "ControlType.Window",
+              "ControlType.Pane"
+            ],
+            "ancestors": [
+              {
+                "role": "ControlType.Text",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": true,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Group",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": false,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": true,
+                "runtime_matches": false
+              }
+            ],
+            "fixed_id_matches": 1,
+            "from_point_observed": true,
+            "target_matched": false,
+            "from_point_result": "uia_foreign_owner",
+            "viewports": [
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "is_viewport": true,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": true
+              }
+            ],
+            "geometry_ready": true,
+            "result": "owned_main_window_reached",
+            "elapsed_ms": 168,
+            "error_type": null
+          },
+          "last": {
+            "control": "PickInstaller",
+            "target_role": "ControlType.Button",
+            "hit_role": "ControlType.Text",
+            "native_owned": true,
+            "ancestor_roles": [
+              "ControlType.Text",
+              "ControlType.Button",
+              "ControlType.Group",
+              "ControlType.Pane",
+              "ControlType.Custom",
+              "ControlType.Pane",
+              "ControlType.Window",
+              "ControlType.Pane"
+            ],
+            "ancestors": [
+              {
+                "role": "ControlType.Text",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": true,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Group",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": false,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": true,
+                "runtime_matches": false
+              }
+            ],
+            "fixed_id_matches": 1,
+            "from_point_observed": true,
+            "target_matched": false,
+            "from_point_result": "uia_foreign_owner",
+            "viewports": [
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "is_viewport": true,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": true
+              }
+            ],
+            "geometry_ready": true,
+            "result": "owned_main_window_reached",
+            "elapsed_ms": 168,
+            "error_type": null
+          },
+          "physical_input_sent": true,
+          "elapsed_ms": 341,
+          "shared_picker_deadline_ms": 15000,
+          "error_type": null
+        }
+      ],
+      "last_stage": "normal_close",
+      "last_control": "window",
+      "last_error_type": null,
+      "process_exited": true,
+      "normal_close": {
+        "request_elapsed_ms": 1,
+        "wait_elapsed_ms": 88,
+        "wait_deadline_ms": 20000,
+        "process_alive": false,
+        "exit_code": 0,
+        "error_type": null
+      }
+    },
+    {
+      "process_id": 2936,
+      "probes": [
+        {
+          "stage": "ready",
+          "control": "NewInstall",
+          "elapsed_ms": 1194,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "saved_library_ready",
+          "control": "record:synthetic-finished",
+          "elapsed_ms": 52,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "find_exact_record",
+          "control": "record:synthetic-finished",
+          "elapsed_ms": 54,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "load_exact_record",
+          "control": "SessionTitle",
+          "elapsed_ms": 488,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "find_exact_record",
+          "control": "record:synthetic-historical",
+          "elapsed_ms": 87,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "load_exact_record",
+          "control": "SessionTitle",
+          "elapsed_ms": 234,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "find_exact_record",
+          "control": "record:synthetic-interrupted",
+          "elapsed_ms": 91,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "load_exact_record",
+          "control": "SessionTitle",
+          "elapsed_ms": 261,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "normal_close",
+          "control": "window",
+          "elapsed_ms": 73,
+          "process_alive": false,
+          "error_type": null
+        }
+      ],
+      "actions": [
+        {
+          "control": "OverviewTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "TechnicalTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "MyRecords",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "OverviewTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "TechnicalTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "MyRecords",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "OverviewTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "TechnicalTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "MyRecords",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        }
+      ],
+      "clicks": [],
+      "last_stage": "normal_close",
+      "last_control": "window",
+      "last_error_type": null,
+      "process_exited": true,
+      "normal_close": {
+        "request_elapsed_ms": 0,
+        "wait_elapsed_ms": 73,
+        "wait_deadline_ms": 20000,
+        "process_alive": false,
+        "exit_code": 0,
+        "error_type": null
+      }
+    },
+    {
+      "process_id": 5828,
+      "probes": [
+        {
+          "stage": "ready",
+          "control": "NewInstall",
+          "elapsed_ms": 1141,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "find_exact_record",
+          "control": "record:synthetic-search",
+          "elapsed_ms": 52,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "load_exact_record",
+          "control": "SessionTitle",
+          "elapsed_ms": 299,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "events_visible",
+          "control": "SearchText",
+          "elapsed_ms": 72,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "search_results",
+          "control": "EventList",
+          "elapsed_ms": 551,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "search_second_page",
+          "control": "EventPageLabel",
+          "elapsed_ms": 133,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "exact_explanation",
+          "control": "EventDetails",
+          "elapsed_ms": 170,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "clipboard_exact_event",
+          "control": "CopyEventId",
+          "elapsed_ms": 89,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_click_readiness",
+          "control": "ExportMatches",
+          "elapsed_ms": 410,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_discovery",
+          "control": "ExportMatches",
+          "elapsed_ms": 269,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "expected_native_dialog_confirmed",
+          "control": "ExportMatches",
+          "elapsed_ms": 680,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_value",
+          "control": "ExportMatches",
+          "elapsed_ms": 2,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_closed",
+          "control": "ExportMatches",
+          "elapsed_ms": 0,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "full_match_export",
+          "control": "ExportMatches",
+          "elapsed_ms": 229,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_click_readiness",
+          "control": "ExportMatches",
+          "elapsed_ms": 393,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_discovery",
+          "control": "ExportMatches",
+          "elapsed_ms": 276,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "expected_native_dialog_confirmed",
+          "control": "ExportMatches",
+          "elapsed_ms": 670,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_closed",
+          "control": "ExportMatches",
+          "elapsed_ms": 89,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_click_readiness",
+          "control": "ExportMatches",
+          "elapsed_ms": 456,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_discovery",
+          "control": "ExportMatches",
+          "elapsed_ms": 195,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "expected_native_dialog_confirmed",
+          "control": "ExportMatches",
+          "elapsed_ms": 652,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_value",
+          "control": "ExportMatches",
+          "elapsed_ms": 0,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_closed",
+          "control": "ExportMatches",
+          "elapsed_ms": 0,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "existing_export_refusal",
+          "control": "ShellError",
+          "elapsed_ms": 178,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "clear_search",
+          "control": "EventList",
+          "elapsed_ms": 300,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_click_readiness",
+          "control": "ExportPage",
+          "elapsed_ms": 443,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_discovery",
+          "control": "ExportPage",
+          "elapsed_ms": 198,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "expected_native_dialog_confirmed",
+          "control": "ExportPage",
+          "elapsed_ms": 641,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_value",
+          "control": "ExportPage",
+          "elapsed_ms": 0,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_closed",
+          "control": "ExportPage",
+          "elapsed_ms": 0,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "page_export",
+          "control": "ExportPage",
+          "elapsed_ms": 401,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_click_readiness",
+          "control": "OpenDatabase",
+          "elapsed_ms": 390,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_discovery",
+          "control": "OpenDatabase",
+          "elapsed_ms": 202,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "expected_native_dialog_confirmed",
+          "control": "OpenDatabase",
+          "elapsed_ms": 593,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_value",
+          "control": "OpenDatabase",
+          "elapsed_ms": 0,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_closed",
+          "control": "OpenDatabase",
+          "elapsed_ms": 0,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "find_exact_record",
+          "control": "record:synthetic-search-legacy",
+          "elapsed_ms": 139,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "load_exact_record",
+          "control": "SessionTitle",
+          "elapsed_ms": 200,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "events_visible",
+          "control": "SearchText",
+          "elapsed_ms": 53,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "search_results",
+          "control": "EventList",
+          "elapsed_ms": 139,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "find_exact_record",
+          "control": "record:synthetic-search",
+          "elapsed_ms": 86,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "load_exact_record",
+          "control": "SessionTitle",
+          "elapsed_ms": 204,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "find_exact_record",
+          "control": "record:synthetic-search-other",
+          "elapsed_ms": 75,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "load_exact_record",
+          "control": "SessionTitle",
+          "elapsed_ms": 243,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "events_visible",
+          "control": "SearchText",
+          "elapsed_ms": 72,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "search_results",
+          "control": "EventList",
+          "elapsed_ms": 382,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "find_exact_record",
+          "control": "record:synthetic-search",
+          "elapsed_ms": 61,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "load_exact_record",
+          "control": "SessionTitle",
+          "elapsed_ms": 221,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "events_visible",
+          "control": "SearchText",
+          "elapsed_ms": 57,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "newest_search",
+          "control": "EventList",
+          "elapsed_ms": 105,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "search_results",
+          "control": "EventList",
+          "elapsed_ms": 194,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "exact_explanation",
+          "control": "EventDetails",
+          "elapsed_ms": 112,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "clipboard_full_path",
+          "control": "CopyEventPath",
+          "elapsed_ms": 85,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "search_results",
+          "control": "EventList",
+          "elapsed_ms": 169,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "clear_latest",
+          "control": "EventList",
+          "elapsed_ms": 297,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "compact_navigation_visible",
+          "control": "MyRecords",
+          "elapsed_ms": 222,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "compact_navigation_visible",
+          "control": "NewInstall",
+          "elapsed_ms": 23,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "compact_navigation_visible",
+          "control": "OpenDatabase",
+          "elapsed_ms": 36,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "compact_navigation_visible",
+          "control": "About",
+          "elapsed_ms": 28,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "keyboard_focus",
+          "control": "OpenDatabase",
+          "elapsed_ms": 25,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_click_readiness",
+          "control": "OpenDatabase",
+          "elapsed_ms": 271,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_discovery",
+          "control": "OpenDatabase",
+          "elapsed_ms": 191,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "expected_native_dialog_confirmed",
+          "control": "OpenDatabase",
+          "elapsed_ms": 462,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_closed",
+          "control": "OpenDatabase",
+          "elapsed_ms": 0,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "compact_visible",
+          "control": "SearchText",
+          "elapsed_ms": 45,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "compact_visible",
+          "control": "SearchEvents",
+          "elapsed_ms": 42,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "compact_visible",
+          "control": "ClearSearch",
+          "elapsed_ms": 42,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "compact_visible",
+          "control": "NextEvents",
+          "elapsed_ms": 50,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "keyboard_focus",
+          "control": "SearchText",
+          "elapsed_ms": 48,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "compact_config",
+          "control": "PickInstaller",
+          "elapsed_ms": 118,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "normal_close",
+          "control": "window",
+          "elapsed_ms": 82,
+          "process_alive": false,
+          "error_type": null
+        }
+      ],
+      "actions": [
+        {
+          "control": "EventsTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "SearchEvents",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "NextEvents",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "CopyEventId",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "ClearSearch",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "EventsTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "SearchEvents",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "MyRecords",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "MyRecords",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "EventsTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "SearchEvents",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "MyRecords",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "EventsTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "SearchEvents",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "SearchEvents",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "SearchEvents",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "CopyEventPath",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "SearchEvents",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "ClearSearch",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "NewInstall",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        }
+      ],
+      "clicks": [
+        {
+          "control": "ExportMatches",
+          "attempts": 1,
+          "first": {
+            "control": "ExportMatches",
+            "target_role": "ControlType.Button",
+            "hit_role": "ControlType.Text",
+            "native_owned": true,
+            "ancestor_roles": [
+              "ControlType.Text",
+              "ControlType.Button",
+              "ControlType.Group",
+              "ControlType.Pane",
+              "ControlType.Pane",
+              "ControlType.TabItem",
+              "ControlType.Tab",
+              "ControlType.Custom",
+              "ControlType.Pane",
+              "ControlType.Window",
+              "ControlType.Pane"
+            ],
+            "ancestors": [
+              {
+                "role": "ControlType.Text",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": true,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Group",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.TabItem",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Tab",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": false,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": true,
+                "runtime_matches": false
+              }
+            ],
+            "fixed_id_matches": 1,
+            "from_point_observed": true,
+            "target_matched": false,
+            "from_point_result": "uia_foreign_owner",
+            "viewports": [
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.TabItem",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": false,
+                "contains_point": false,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Tab",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": true
+              }
+            ],
+            "geometry_ready": true,
+            "result": "owned_main_window_reached",
+            "elapsed_ms": 227,
+            "error_type": null
+          },
+          "last": {
+            "control": "ExportMatches",
+            "target_role": "ControlType.Button",
+            "hit_role": "ControlType.Text",
+            "native_owned": true,
+            "ancestor_roles": [
+              "ControlType.Text",
+              "ControlType.Button",
+              "ControlType.Group",
+              "ControlType.Pane",
+              "ControlType.Pane",
+              "ControlType.TabItem",
+              "ControlType.Tab",
+              "ControlType.Custom",
+              "ControlType.Pane",
+              "ControlType.Window",
+              "ControlType.Pane"
+            ],
+            "ancestors": [
+              {
+                "role": "ControlType.Text",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": true,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Group",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.TabItem",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Tab",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": false,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": true,
+                "runtime_matches": false
+              }
+            ],
+            "fixed_id_matches": 1,
+            "from_point_observed": true,
+            "target_matched": false,
+            "from_point_result": "uia_foreign_owner",
+            "viewports": [
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.TabItem",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": false,
+                "contains_point": false,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Tab",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": true
+              }
+            ],
+            "geometry_ready": true,
+            "result": "owned_main_window_reached",
+            "elapsed_ms": 227,
+            "error_type": null
+          },
+          "physical_input_sent": true,
+          "elapsed_ms": 410,
+          "shared_picker_deadline_ms": 15000,
+          "error_type": null
+        },
+        {
+          "control": "ExportMatches",
+          "attempts": 1,
+          "first": {
+            "control": "ExportMatches",
+            "target_role": "ControlType.Button",
+            "hit_role": "ControlType.Text",
+            "native_owned": true,
+            "ancestor_roles": [
+              "ControlType.Text",
+              "ControlType.Button",
+              "ControlType.Group",
+              "ControlType.Pane",
+              "ControlType.Pane",
+              "ControlType.TabItem",
+              "ControlType.Tab",
+              "ControlType.Custom",
+              "ControlType.Pane",
+              "ControlType.Window",
+              "ControlType.Pane"
+            ],
+            "ancestors": [
+              {
+                "role": "ControlType.Text",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": true,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Group",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.TabItem",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Tab",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": false,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": true,
+                "runtime_matches": false
+              }
+            ],
+            "fixed_id_matches": 1,
+            "from_point_observed": true,
+            "target_matched": false,
+            "from_point_result": "uia_foreign_owner",
+            "viewports": [
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.TabItem",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": false,
+                "contains_point": false,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Tab",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": true
+              }
+            ],
+            "geometry_ready": true,
+            "result": "owned_main_window_reached",
+            "elapsed_ms": 227,
+            "error_type": null
+          },
+          "last": {
+            "control": "ExportMatches",
+            "target_role": "ControlType.Button",
+            "hit_role": "ControlType.Text",
+            "native_owned": true,
+            "ancestor_roles": [
+              "ControlType.Text",
+              "ControlType.Button",
+              "ControlType.Group",
+              "ControlType.Pane",
+              "ControlType.Pane",
+              "ControlType.TabItem",
+              "ControlType.Tab",
+              "ControlType.Custom",
+              "ControlType.Pane",
+              "ControlType.Window",
+              "ControlType.Pane"
+            ],
+            "ancestors": [
+              {
+                "role": "ControlType.Text",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": true,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Group",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.TabItem",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Tab",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": false,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": true,
+                "runtime_matches": false
+              }
+            ],
+            "fixed_id_matches": 1,
+            "from_point_observed": true,
+            "target_matched": false,
+            "from_point_result": "uia_foreign_owner",
+            "viewports": [
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.TabItem",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": false,
+                "contains_point": false,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Tab",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": true
+              }
+            ],
+            "geometry_ready": true,
+            "result": "owned_main_window_reached",
+            "elapsed_ms": 227,
+            "error_type": null
+          },
+          "physical_input_sent": true,
+          "elapsed_ms": 393,
+          "shared_picker_deadline_ms": 15000,
+          "error_type": null
+        },
+        {
+          "control": "ExportMatches",
+          "attempts": 1,
+          "first": {
+            "control": "ExportMatches",
+            "target_role": "ControlType.Button",
+            "hit_role": "ControlType.Text",
+            "native_owned": true,
+            "ancestor_roles": [
+              "ControlType.Text",
+              "ControlType.Button",
+              "ControlType.Group",
+              "ControlType.Pane",
+              "ControlType.Pane",
+              "ControlType.TabItem",
+              "ControlType.Tab",
+              "ControlType.Custom",
+              "ControlType.Pane",
+              "ControlType.Window",
+              "ControlType.Pane"
+            ],
+            "ancestors": [
+              {
+                "role": "ControlType.Text",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": true,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Group",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.TabItem",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Tab",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": false,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": true,
+                "runtime_matches": false
+              }
+            ],
+            "fixed_id_matches": 1,
+            "from_point_observed": true,
+            "target_matched": false,
+            "from_point_result": "uia_foreign_owner",
+            "viewports": [
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.TabItem",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": false,
+                "contains_point": false,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Tab",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": true
+              }
+            ],
+            "geometry_ready": true,
+            "result": "owned_main_window_reached",
+            "elapsed_ms": 240,
+            "error_type": null
+          },
+          "last": {
+            "control": "ExportMatches",
+            "target_role": "ControlType.Button",
+            "hit_role": "ControlType.Text",
+            "native_owned": true,
+            "ancestor_roles": [
+              "ControlType.Text",
+              "ControlType.Button",
+              "ControlType.Group",
+              "ControlType.Pane",
+              "ControlType.Pane",
+              "ControlType.TabItem",
+              "ControlType.Tab",
+              "ControlType.Custom",
+              "ControlType.Pane",
+              "ControlType.Window",
+              "ControlType.Pane"
+            ],
+            "ancestors": [
+              {
+                "role": "ControlType.Text",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": true,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Group",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.TabItem",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Tab",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": false,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": true,
+                "runtime_matches": false
+              }
+            ],
+            "fixed_id_matches": 1,
+            "from_point_observed": true,
+            "target_matched": false,
+            "from_point_result": "uia_foreign_owner",
+            "viewports": [
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.TabItem",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": false,
+                "contains_point": false,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Tab",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": true
+              }
+            ],
+            "geometry_ready": true,
+            "result": "owned_main_window_reached",
+            "elapsed_ms": 240,
+            "error_type": null
+          },
+          "physical_input_sent": true,
+          "elapsed_ms": 456,
+          "shared_picker_deadline_ms": 15000,
+          "error_type": null
+        },
+        {
+          "control": "ExportPage",
+          "attempts": 1,
+          "first": {
+            "control": "ExportPage",
+            "target_role": "ControlType.Button",
+            "hit_role": "ControlType.Text",
+            "native_owned": true,
+            "ancestor_roles": [
+              "ControlType.Text",
+              "ControlType.Button",
+              "ControlType.Group",
+              "ControlType.Pane",
+              "ControlType.Pane",
+              "ControlType.TabItem",
+              "ControlType.Tab",
+              "ControlType.Custom",
+              "ControlType.Pane",
+              "ControlType.Window",
+              "ControlType.Pane"
+            ],
+            "ancestors": [
+              {
+                "role": "ControlType.Text",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": true,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Group",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.TabItem",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Tab",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": false,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": true,
+                "runtime_matches": false
+              }
+            ],
+            "fixed_id_matches": 1,
+            "from_point_observed": true,
+            "target_matched": false,
+            "from_point_result": "uia_foreign_owner",
+            "viewports": [
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.TabItem",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": false,
+                "contains_point": false,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Tab",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": true
+              }
+            ],
+            "geometry_ready": true,
+            "result": "owned_main_window_reached",
+            "elapsed_ms": 243,
+            "error_type": null
+          },
+          "last": {
+            "control": "ExportPage",
+            "target_role": "ControlType.Button",
+            "hit_role": "ControlType.Text",
+            "native_owned": true,
+            "ancestor_roles": [
+              "ControlType.Text",
+              "ControlType.Button",
+              "ControlType.Group",
+              "ControlType.Pane",
+              "ControlType.Pane",
+              "ControlType.TabItem",
+              "ControlType.Tab",
+              "ControlType.Custom",
+              "ControlType.Pane",
+              "ControlType.Window",
+              "ControlType.Pane"
+            ],
+            "ancestors": [
+              {
+                "role": "ControlType.Text",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": true,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Group",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.TabItem",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Tab",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": false,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": true,
+                "runtime_matches": false
+              }
+            ],
+            "fixed_id_matches": 1,
+            "from_point_observed": true,
+            "target_matched": false,
+            "from_point_result": "uia_foreign_owner",
+            "viewports": [
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.TabItem",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": false,
+                "contains_point": false,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Tab",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": true
+              }
+            ],
+            "geometry_ready": true,
+            "result": "owned_main_window_reached",
+            "elapsed_ms": 243,
+            "error_type": null
+          },
+          "physical_input_sent": true,
+          "elapsed_ms": 443,
+          "shared_picker_deadline_ms": 15000,
+          "error_type": null
+        },
+        {
+          "control": "OpenDatabase",
+          "attempts": 1,
+          "first": {
+            "control": "OpenDatabase",
+            "target_role": "ControlType.Button",
+            "hit_role": "ControlType.Text",
+            "native_owned": true,
+            "ancestor_roles": [
+              "ControlType.Text",
+              "ControlType.Button",
+              "ControlType.Group",
+              "ControlType.Pane",
+              "ControlType.Pane",
+              "ControlType.TabItem",
+              "ControlType.Tab",
+              "ControlType.Custom",
+              "ControlType.Pane",
+              "ControlType.Window",
+              "ControlType.Pane"
+            ],
+            "ancestors": [
+              {
+                "role": "ControlType.Text",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": true,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Group",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.TabItem",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Tab",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": false,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": true,
+                "runtime_matches": false
+              }
+            ],
+            "fixed_id_matches": 1,
+            "from_point_observed": true,
+            "target_matched": false,
+            "from_point_result": "uia_foreign_owner",
+            "viewports": [
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.DataItem",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.List",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": true
+              }
+            ],
+            "geometry_ready": true,
+            "result": "owned_main_window_reached",
+            "elapsed_ms": 199,
+            "error_type": null
+          },
+          "last": {
+            "control": "OpenDatabase",
+            "target_role": "ControlType.Button",
+            "hit_role": "ControlType.Text",
+            "native_owned": true,
+            "ancestor_roles": [
+              "ControlType.Text",
+              "ControlType.Button",
+              "ControlType.Group",
+              "ControlType.Pane",
+              "ControlType.Pane",
+              "ControlType.TabItem",
+              "ControlType.Tab",
+              "ControlType.Custom",
+              "ControlType.Pane",
+              "ControlType.Window",
+              "ControlType.Pane"
+            ],
+            "ancestors": [
+              {
+                "role": "ControlType.Text",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": true,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Group",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.TabItem",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Tab",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": false,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": true,
+                "runtime_matches": false
+              }
+            ],
+            "fixed_id_matches": 1,
+            "from_point_observed": true,
+            "target_matched": false,
+            "from_point_result": "uia_foreign_owner",
+            "viewports": [
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.DataItem",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.List",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": true
+              }
+            ],
+            "geometry_ready": true,
+            "result": "owned_main_window_reached",
+            "elapsed_ms": 199,
+            "error_type": null
+          },
+          "physical_input_sent": true,
+          "elapsed_ms": 390,
+          "shared_picker_deadline_ms": 15000,
+          "error_type": null
+        },
+        {
+          "control": "OpenDatabase",
+          "attempts": 1,
+          "first": {
+            "control": "OpenDatabase",
+            "target_role": "ControlType.Button",
+            "hit_role": "ControlType.Text",
+            "native_owned": true,
+            "ancestor_roles": [
+              "ControlType.Text",
+              "ControlType.Button"
+            ],
+            "ancestors": [
+              {
+                "role": "ControlType.Text",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "required_id_matches": true,
+                "role_matches": true,
+                "bounds_match": true,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": true
+              }
+            ],
+            "fixed_id_matches": 1,
+            "from_point_observed": true,
+            "target_matched": true,
+            "from_point_result": "exact_target_or_descendant",
+            "viewports": [
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.DataItem",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.List",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": true
+              }
+            ],
+            "geometry_ready": true,
+            "result": "owned_main_window_reached",
+            "elapsed_ms": 125,
+            "error_type": null
+          },
+          "last": {
+            "control": "OpenDatabase",
+            "target_role": "ControlType.Button",
+            "hit_role": "ControlType.Text",
+            "native_owned": true,
+            "ancestor_roles": [
+              "ControlType.Text",
+              "ControlType.Button"
+            ],
+            "ancestors": [
+              {
+                "role": "ControlType.Text",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "required_id_matches": true,
+                "role_matches": true,
+                "bounds_match": true,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": true
+              }
+            ],
+            "fixed_id_matches": 1,
+            "from_point_observed": true,
+            "target_matched": true,
+            "from_point_result": "exact_target_or_descendant",
+            "viewports": [
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.DataItem",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.List",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": true
+              }
+            ],
+            "geometry_ready": true,
+            "result": "owned_main_window_reached",
+            "elapsed_ms": 125,
+            "error_type": null
+          },
+          "physical_input_sent": true,
+          "elapsed_ms": 271,
+          "shared_picker_deadline_ms": 15000,
+          "error_type": null
+        }
+      ],
+      "last_stage": "normal_close",
+      "last_control": "window",
+      "last_error_type": null,
+      "process_exited": true,
+      "normal_close": {
+        "request_elapsed_ms": 0,
+        "wait_elapsed_ms": 82,
+        "wait_deadline_ms": 20000,
+        "process_alive": false,
+        "exit_code": 0,
+        "error_type": null
+      }
+    },
+    {
+      "process_id": 4996,
+      "probes": [
+        {
+          "stage": "ready",
+          "control": "NewInstall",
+          "elapsed_ms": 1149,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "find_exact_record",
+          "control": "record:synthetic-search",
+          "elapsed_ms": 51,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "load_exact_record",
+          "control": "SessionTitle",
+          "elapsed_ms": 286,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "events_visible",
+          "control": "SearchText",
+          "elapsed_ms": 71,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "search_results",
+          "control": "EventList",
+          "elapsed_ms": 498,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "cold_second_page",
+          "control": "EventList",
+          "elapsed_ms": 129,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "exact_explanation",
+          "control": "EventDetails",
+          "elapsed_ms": 158,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "normal_close",
+          "control": "window",
+          "elapsed_ms": 89,
+          "process_alive": false,
+          "error_type": null
+        }
+      ],
+      "actions": [
+        {
+          "control": "EventsTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "SearchEvents",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "NextEvents",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        }
+      ],
+      "clicks": [],
+      "last_stage": "normal_close",
+      "last_control": "window",
+      "last_error_type": null,
+      "process_exited": true,
+      "normal_close": {
+        "request_elapsed_ms": 0,
+        "wait_elapsed_ms": 89,
+        "wait_deadline_ms": 20000,
+        "process_alive": false,
+        "exit_code": 0,
+        "error_type": null
+      }
+    },
+    {
+      "process_id": 5712,
+      "probes": [
+        {
+          "stage": "ready",
+          "control": "NewInstall",
+          "elapsed_ms": 1160,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "live_config",
+          "control": "PickInstaller",
+          "elapsed_ms": 126,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_click_readiness",
+          "control": "PickInstaller",
+          "elapsed_ms": 316,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_discovery",
+          "control": "PickInstaller",
+          "elapsed_ms": 301,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "expected_native_dialog_confirmed",
+          "control": "PickInstaller",
+          "elapsed_ms": 617,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_value",
+          "control": "PickInstaller",
+          "elapsed_ms": 0,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_closed",
+          "control": "PickInstaller",
+          "elapsed_ms": 0,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "selected_installer",
+          "control": "StartRecording",
+          "elapsed_ms": 137,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "independent_ready",
+          "control": "StartRecording",
+          "elapsed_ms": 79,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "start_disabled",
+          "control": "StartRecording",
+          "elapsed_ms": 323,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "installation_saved_exact_uuid",
+          "control": "SessionTitle",
+          "elapsed_ms": 5671,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "return_exact_saved",
+          "control": "SessionTitle",
+          "elapsed_ms": 324,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "events_visible",
+          "control": "SearchText",
+          "elapsed_ms": 61,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "search_results",
+          "control": "EventList",
+          "elapsed_ms": 137,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "exact_explanation",
+          "control": "EventDetails",
+          "elapsed_ms": 107,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "clipboard_exact_event",
+          "control": "CopyEventId",
+          "elapsed_ms": 84,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "real_timeline_first_page",
+          "control": "EventList",
+          "elapsed_ms": 345,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "real_timeline_page",
+          "control": "EventList",
+          "elapsed_ms": 342,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "real_timeline_page",
+          "control": "EventList",
+          "elapsed_ms": 329,
+          "process_alive": true,
+          "error_type": null
+        }
+      ],
+      "actions": [
+        {
+          "control": "NewInstall",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "StartRecording",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "StartRecording",
+          "pattern": "check_enabled",
+          "passed": false,
+          "error_type": "ElementNotEnabledException"
+        },
+        {
+          "control": "OverviewTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "CurrentTask",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "OpenCapturedSession",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "EventsTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "SearchEvents",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "CopyEventId",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "ClearSearch",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "NextEvents",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "NextEvents",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        }
+      ],
+      "clicks": [
+        {
+          "control": "PickInstaller",
+          "attempts": 1,
+          "first": {
+            "control": "PickInstaller",
+            "target_role": "ControlType.Button",
+            "hit_role": "ControlType.Text",
+            "native_owned": true,
+            "ancestor_roles": [
+              "ControlType.Text",
+              "ControlType.Button",
+              "ControlType.Group",
+              "ControlType.Pane",
+              "ControlType.Custom",
+              "ControlType.Pane",
+              "ControlType.Window",
+              "ControlType.Pane"
+            ],
+            "ancestors": [
+              {
+                "role": "ControlType.Text",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": true,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Group",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": false,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": true,
+                "runtime_matches": false
+              }
+            ],
+            "fixed_id_matches": 1,
+            "from_point_observed": true,
+            "target_matched": false,
+            "from_point_result": "uia_foreign_owner",
+            "viewports": [
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "is_viewport": true,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": true
+              }
+            ],
+            "geometry_ready": true,
+            "result": "owned_main_window_reached",
+            "elapsed_ms": 158,
+            "error_type": null
+          },
+          "last": {
+            "control": "PickInstaller",
+            "target_role": "ControlType.Button",
+            "hit_role": "ControlType.Text",
+            "native_owned": true,
+            "ancestor_roles": [
+              "ControlType.Text",
+              "ControlType.Button",
+              "ControlType.Group",
+              "ControlType.Pane",
+              "ControlType.Custom",
+              "ControlType.Pane",
+              "ControlType.Window",
+              "ControlType.Pane"
+            ],
+            "ancestors": [
+              {
+                "role": "ControlType.Text",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": true,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Group",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": false,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": true,
+                "contains_click_point": true,
+                "runtime_matches": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": false,
+                "required_id_matches": false,
+                "role_matches": false,
+                "bounds_match": false,
+                "enabled": true,
+                "visible": false,
+                "contains_click_point": true,
+                "runtime_matches": false
+              }
+            ],
+            "fixed_id_matches": 1,
+            "from_point_observed": true,
+            "target_matched": false,
+            "from_point_result": "uia_foreign_owner",
+            "viewports": [
+              {
+                "role": "ControlType.Button",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "is_viewport": true,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Custom",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Pane",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": false
+              },
+              {
+                "role": "ControlType.Window",
+                "owned": true,
+                "is_viewport": false,
+                "contains_target": true,
+                "contains_point": true,
+                "is_exact_main_window": true
+              }
+            ],
+            "geometry_ready": true,
+            "result": "owned_main_window_reached",
+            "elapsed_ms": 158,
+            "error_type": null
+          },
+          "physical_input_sent": true,
+          "elapsed_ms": 316,
+          "shared_picker_deadline_ms": 15000,
+          "error_type": null
+        }
+      ],
+      "last_stage": "real_timeline_page",
+      "last_control": "window",
+      "last_error_type": null,
+      "process_exited": false,
+      "normal_close": null
+    }
+  ],
+  "failure_screenshots": [
+    {
+      "check": "real_event_explain_export_and_cold_restart",
+      "captured": true,
+      "error_type": null
+    }
+  ],
+  "navigation_diagnostics": [],
+  "search": {
+    "expected_ids": [
+      "synthetic-search-event-070",
+      "synthetic-search-event-071",
+      "synthetic-search-event-072",
+      "synthetic-search-event-073",
+      "synthetic-search-event-074",
+      "synthetic-search-event-075",
+      "synthetic-search-event-076",
+      "synthetic-search-event-077",
+      "synthetic-search-event-078",
+      "synthetic-search-event-079",
+      "synthetic-search-event-080",
+      "synthetic-search-event-081",
+      "synthetic-search-event-082",
+      "synthetic-search-event-083",
+      "synthetic-search-event-084",
+      "synthetic-search-event-085",
+      "synthetic-search-event-086",
+      "synthetic-search-event-087",
+      "synthetic-search-event-088",
+      "synthetic-search-event-089",
+      "synthetic-search-event-090",
+      "synthetic-search-event-091",
+      "synthetic-search-event-092",
+      "synthetic-search-event-093",
+      "synthetic-search-event-094",
+      "synthetic-search-event-095",
+      "synthetic-search-event-096",
+      "synthetic-search-event-097",
+      "synthetic-search-event-098",
+      "synthetic-search-event-099",
+      "synthetic-search-event-100",
+      "synthetic-search-event-101",
+      "synthetic-search-event-102",
+      "synthetic-search-event-103",
+      "synthetic-search-event-104",
+      "synthetic-search-event-105",
+      "synthetic-search-event-106",
+      "synthetic-search-event-107",
+      "synthetic-search-event-108",
+      "synthetic-search-event-109",
+      "synthetic-search-event-110",
+      "synthetic-search-event-111",
+      "synthetic-search-event-112",
+      "synthetic-search-event-113",
+      "synthetic-search-event-114",
+      "synthetic-search-event-115",
+      "synthetic-search-event-116",
+      "synthetic-search-event-117",
+      "synthetic-search-event-118",
+      "synthetic-search-event-119",
+      "synthetic-search-event-120",
+      "synthetic-search-event-121",
+      "synthetic-search-event-122"
+    ],
+    "first_page_ids": [
+      "synthetic-search-event-070",
+      "synthetic-search-event-071",
+      "synthetic-search-event-072",
+      "synthetic-search-event-073",
+      "synthetic-search-event-074",
+      "synthetic-search-event-075",
+      "synthetic-search-event-076",
+      "synthetic-search-event-077",
+      "synthetic-search-event-078",
+      "synthetic-search-event-079",
+      "synthetic-search-event-080",
+      "synthetic-search-event-081",
+      "synthetic-search-event-082",
+      "synthetic-search-event-083",
+      "synthetic-search-event-084",
+      "synthetic-search-event-085",
+      "synthetic-search-event-086",
+      "synthetic-search-event-087",
+      "synthetic-search-event-088",
+      "synthetic-search-event-089",
+      "synthetic-search-event-090",
+      "synthetic-search-event-091",
+      "synthetic-search-event-092",
+      "synthetic-search-event-093",
+      "synthetic-search-event-094",
+      "synthetic-search-event-095",
+      "synthetic-search-event-096",
+      "synthetic-search-event-097",
+      "synthetic-search-event-098",
+      "synthetic-search-event-099",
+      "synthetic-search-event-100",
+      "synthetic-search-event-101",
+      "synthetic-search-event-102",
+      "synthetic-search-event-103",
+      "synthetic-search-event-104",
+      "synthetic-search-event-105",
+      "synthetic-search-event-106",
+      "synthetic-search-event-107",
+      "synthetic-search-event-108",
+      "synthetic-search-event-109",
+      "synthetic-search-event-110",
+      "synthetic-search-event-111",
+      "synthetic-search-event-112",
+      "synthetic-search-event-113",
+      "synthetic-search-event-114",
+      "synthetic-search-event-115",
+      "synthetic-search-event-116",
+      "synthetic-search-event-117",
+      "synthetic-search-event-118",
+      "synthetic-search-event-119"
+    ],
+    "second_page_ids": [
+      "synthetic-search-event-120",
+      "synthetic-search-event-121",
+      "synthetic-search-event-122"
+    ],
+    "exported_ids": [
+      "synthetic-search-event-070",
+      "synthetic-search-event-071",
+      "synthetic-search-event-072",
+      "synthetic-search-event-073",
+      "synthetic-search-event-074",
+      "synthetic-search-event-075",
+      "synthetic-search-event-076",
+      "synthetic-search-event-077",
+      "synthetic-search-event-078",
+      "synthetic-search-event-079",
+      "synthetic-search-event-080",
+      "synthetic-search-event-081",
+      "synthetic-search-event-082",
+      "synthetic-search-event-083",
+      "synthetic-search-event-084",
+      "synthetic-search-event-085",
+      "synthetic-search-event-086",
+      "synthetic-search-event-087",
+      "synthetic-search-event-088",
+      "synthetic-search-event-089",
+      "synthetic-search-event-090",
+      "synthetic-search-event-091",
+      "synthetic-search-event-092",
+      "synthetic-search-event-093",
+      "synthetic-search-event-094",
+      "synthetic-search-event-095",
+      "synthetic-search-event-096",
+      "synthetic-search-event-097",
+      "synthetic-search-event-098",
+      "synthetic-search-event-099",
+      "synthetic-search-event-100",
+      "synthetic-search-event-101",
+      "synthetic-search-event-102",
+      "synthetic-search-event-103",
+      "synthetic-search-event-104",
+      "synthetic-search-event-105",
+      "synthetic-search-event-106",
+      "synthetic-search-event-107",
+      "synthetic-search-event-108",
+      "synthetic-search-event-109",
+      "synthetic-search-event-110",
+      "synthetic-search-event-111",
+      "synthetic-search-event-112",
+      "synthetic-search-event-113",
+      "synthetic-search-event-114",
+      "synthetic-search-event-115",
+      "synthetic-search-event-116",
+      "synthetic-search-event-117",
+      "synthetic-search-event-118",
+      "synthetic-search-event-119",
+      "synthetic-search-event-120",
+      "synthetic-search-event-121",
+      "synthetic-search-event-122"
+    ],
+    "selected_event_id": "synthetic-search-event-120"
+  },
+  "live": {
+    "session_id": "a795a31b-b29f-412f-a806-22e7c3c97497",
+    "selected_event_id": "8564e966-b888-44b3-af5a-a67be781b66d",
+    "accounting": {
+      "events_received": 1759,
+      "events_retained": 156,
+      "etw_events_lost": 0,
+      "etw_buffers_lost": 0,
+      "dropped_events": 0,
+      "context_losses": 0,
+      "decode_errors": 0,
+      "receiver": {
+        "queue_overflow": 0,
+        "enqueue_disconnected": 0,
+        "queue_pending": 0,
+        "deliberately_filtered": 7046,
+        "unsupported_records": 0
+      },
+      "handoff": {
+        "overflow": 0,
+        "oversized": 0,
+        "disconnected": 0,
+        "serialize_failed": 0,
+        "pending": 0
+      },
+      "raw_storage": {
+        "persisted": 293,
+        "failed": 0,
+        "quota_dropped": 0,
+        "quota_bytes": 67108864,
+        "committed_bytes": 299822
+      },
+      "drain_timed_out": false
+    },
+    "follow_oracle": {
+      "schema_version": 1,
+      "protocol": "contain-follow-installer-experiment-1",
+      "source_sha": "90ba93199044aea3dcdf69c1b4bb4a1f3b125e05",
+      "synthetic": false,
+      "controlled_fixture": true,
+      "maximum_native_captures": 1,
+      "retries": 0,
+      "session_id": "a795a31b-b29f-412f-a806-22e7c3c97497",
+      "checks": [
+        {
+          "name": "independent_fixed_answers",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "capture_and_fixture_finished",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "no_predetermined_scope_and_runtime_directory",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "bounded_follow_admission",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "bounded_storage",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "self_io_excluded",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "finished_saved_session",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "no_preset_watch_roots",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "actual_sources_and_loss_accounting",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "parent_independent_write",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "parent_content",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "child_independent_write",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "child_content",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "unrelated_independent_write",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "unrelated_content",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "distinct_process_instances",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "parent_verified_source_write",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "parent_reopened_explanation",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "parent_missing_baseline_explicit",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "child_verified_source_write",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "child_reopened_explanation",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "child_missing_baseline_explicit",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "direct_child_parent_instance",
+          "status": "passed",
+          "reason": null
+        },
+        {
+          "name": "unrelated_never_attributed",
+          "status": "passed",
+          "reason": null
+        }
+      ],
+      "observations": [
+        {
+          "label": "parent",
+          "event_id": "3b8679d7-ac39-4a58-ab52-361e310639a3",
+          "operation": "write_requested",
+          "timestamp_ticks": "134385032703545220",
+          "pid": 8232,
+          "creation_time": "134385032703414837",
+          "rule": "InstallerPid",
+          "confidence": "High",
+          "actor_confidence": "High",
+          "source": "EtwFile",
+          "completion": true,
+          "state_validated": false,
+          "recorded_name_sha256": "4e045a945afba8cfee9f3f6be4b292690616c76ab06eb4c3a09b44b36d62cbb0",
+          "current_path_verified": false,
+          "historical_name_source": "file_object_cache"
+        },
+        {
+          "label": "child",
+          "event_id": "8564e966-b888-44b3-af5a-a67be781b66d",
+          "operation": "write_requested",
+          "timestamp_ticks": "134385032707719232",
+          "pid": 7356,
+          "creation_time": "134385032703558835",
+          "rule": "DescendantProcess",
+          "confidence": "High",
+          "actor_confidence": "High",
+          "source": "EtwFile",
+          "completion": true,
+          "state_validated": false,
+          "recorded_name_sha256": "21c6c2989cd1e052cd7bdc5449b6978a3228f0e90c7f859fae9e4d2d9f7feb1d",
+          "current_path_verified": false,
+          "historical_name_source": "file_object_cache"
+        },
+        {
+          "label": "unrelated",
+          "observed_event_count": 0,
+          "contextual_event_count": 0,
+          "event_ids": [],
+          "outcome": "not_retained_by_follow_scope; no_claim_no_system_event",
+          "event_id": null,
+          "classification": "unobserved"
+        }
+      ],
+      "ownership_claim": false,
+      "current_path_claim": false,
+      "installation_before_baseline": false,
+      "post_install_file_reads": false,
+      "accepted": true,
+      "follow_counters": {
+        "direct_children_only": true,
+        "baseline_available": false,
+        "candidate_record_limit": 2048,
+        "candidate_byte_limit": 8388608,
+        "resource_limit": 4096,
+        "candidates": 1443,
+        "admitted": 130,
+        "excluded_other": 1280,
+        "unresolved": 33,
+        "excluded_self_io": 0,
+        "candidate_dropped": 0,
+        "candidate_high_water_records": 2,
+        "candidate_high_water_bytes": 2206
+      },
+      "storage_counters": {
+        "quota_bytes": 67108864,
+        "committed_bytes": 299822,
+        "persisted": 293,
+        "failed": 0,
+        "quota_dropped": 0
+      },
+      "candidate_evidence": [
+        {
+          "label": "parent",
+          "events": [
+            {
+              "event_id": "00437040-af39-47b4-8e3d-06a10817acd0",
+              "operation": "open_requested",
+              "confidence": "High",
+              "pid": 8232,
+              "creation_time": "134385032703414837",
+              "rule": "InstallerPid",
+              "source": "EtwFile"
+            },
+            {
+              "event_id": "b2768267-5300-49ae-8fa5-492143a44194",
+              "operation": "create_new_file",
+              "confidence": "High",
+              "pid": 8232,
+              "creation_time": "134385032703414837",
+              "rule": "InstallerPid",
+              "source": "EtwFile"
+            },
+            {
+              "event_id": "3b8679d7-ac39-4a58-ab52-361e310639a3",
+              "operation": "write_requested",
+              "confidence": "High",
+              "pid": 8232,
+              "creation_time": "134385032703414837",
+              "rule": "InstallerPid",
+              "source": "EtwFile"
+            },
+            {
+              "event_id": "2e066f71-a26d-443f-bf45-b934e43d036f",
+              "operation": "write_requested",
+              "confidence": "Unknown",
+              "pid": null,
+              "creation_time": null,
+              "rule": "MissingWriter",
+              "source": "EtwFile"
+            }
+          ]
+        },
+        {
+          "label": "child",
+          "events": [
+            {
+              "event_id": "0b064512-cf73-4333-a08b-8144328723b3",
+              "operation": "open_requested",
+              "confidence": "High",
+              "pid": 7356,
+              "creation_time": "134385032703558835",
+              "rule": "DescendantProcess",
+              "source": "EtwFile"
+            },
+            {
+              "event_id": "f70cdadc-646e-4671-81ce-e869410edb17",
+              "operation": "create_new_file",
+              "confidence": "High",
+              "pid": 7356,
+              "creation_time": "134385032703558835",
+              "rule": "DescendantProcess",
+              "source": "EtwFile"
+            },
+            {
+              "event_id": "8564e966-b888-44b3-af5a-a67be781b66d",
+              "operation": "write_requested",
+              "confidence": "High",
+              "pid": 7356,
+              "creation_time": "134385032703558835",
+              "rule": "DescendantProcess",
+              "source": "EtwFile"
+            },
+            {
+              "event_id": "835cc221-5089-4998-8787-a5cb049865e7",
+              "operation": "write_requested",
+              "confidence": "Unknown",
+              "pid": null,
+              "creation_time": null,
+              "rule": "MissingWriter",
+              "source": "EtwFile"
+            }
+          ]
+        }
+      ],
+      "passed": 24,
+      "failed": 0,
+      "not_run": 0,
+      "unresolved": []
+    }
+  },
+  "scope": "One native WPF package, isolated synthetic stores and at most one real follow-installer capture. Native DPI is measured per screenshot. No simulated scaling is reported as physical DPI."
+}

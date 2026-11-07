@@ -8,7 +8,7 @@ namespace Contain.Desktop.Views;
 public partial class NewRecordView : UserControl
 {
     public NewRecordView() => InitializeComponent();
-    public void ShowTask() => Dispatcher.InvokeAsync(() => TaskSurface.BringIntoView(new Rect(0, 0, TaskSurface.ActualWidth, 80)), DispatcherPriority.Loaded);
+    public void ShowTask() => Dispatcher.InvokeAsync(PageScroll.ScrollToTop, DispatcherPriority.Loaded);
     private MainWindow Shell => (MainWindow)DataContext;
     private void OnPickInstaller(object sender, RoutedEventArgs e) => Shell.PickInstaller();
     private void OnCopyInstaller(object sender, RoutedEventArgs e) => Shell.CopyText(Shell.Install.InstallerPath);
@@ -23,7 +23,7 @@ public partial class NewRecordView : UserControl
             return;
         }
         var task = Shell.RunUiAsync(Shell.Install.StartAsync);
-        await Dispatcher.InvokeAsync(() => TaskSurface.BringIntoView(new Rect(0, 0, TaskSurface.ActualWidth, 80)), DispatcherPriority.Loaded);
+        await Dispatcher.InvokeAsync(PageScroll.ScrollToTop, DispatcherPriority.Loaded);
         await task;
     }
     private async void OnOpenSession(object sender, RoutedEventArgs e) => await Shell.RunUiAsync(Shell.Install.OpenSessionAsync);

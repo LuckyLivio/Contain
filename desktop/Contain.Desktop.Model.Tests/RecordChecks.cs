@@ -206,6 +206,19 @@ public static class RecordChecks
             Require(vm.OverviewRecord == "会话已结束" && vm.OverviewInstaller.Contains("9", StringComparison.Ordinal)
                 && vm.OverviewInstallerNote.Contains("非零", StringComparison.Ordinal) && vm.OverviewAlert.Contains("记录已保存；采集期间丢失了部分记录", StringComparison.Ordinal)
                 && vm.TechnicalDetails.Contains("溢出 未提供", StringComparison.Ordinal), "separate saved exit coverage and missing counters");
+            const string rawError = "Raw journal writer failed with retained diagnostic details.";
+            service.SummaryOverride = (id, _) => Task.FromResult(Summary(id, "finished", 9, "Incomplete", true, diagnostics: [rawError], streamError: rawError));
+            await vm.OpenSessionAsync("A");
+            Require(vm.OverviewAlert.Contains("记录来源报告错误", StringComparison.Ordinal)
+                && vm.OverviewAlert.Contains("丢弃记录 3", StringComparison.Ordinal)
+                && vm.OverviewCoverage.Contains("Incomplete", StringComparison.Ordinal)
+                && !vm.OverviewAlert.Contains(rawError, StringComparison.Ordinal)
+                && vm.TechnicalDetails.Contains(rawError, StringComparison.Ordinal), "source error and numeric loss remain visible with full raw diagnostic in technical details");
+            service.SummaryOverride = (id, _) => Task.FromResult(Summary(id, "finished", 9, "Incomplete", true, diagnostics: [rawError]));
+            await vm.OpenSessionAsync("A");
+            Require(vm.OverviewAlert.Contains("限制或异常", StringComparison.Ordinal)
+                && vm.OverviewAlert.Contains("记录已保存；采集期间丢失了部分记录", StringComparison.Ordinal)
+                && vm.TechnicalDetails.Contains(rawError, StringComparison.Ordinal), "unknown diagnostic is summarized without concealing loss or its raw cause");
         });
 
         await Check("unfinished missing exit and no-baseline follow state stay distinct", async () =>
@@ -214,6 +227,17 @@ public static class RecordChecks
             using var vm = await Ready(service); await vm.OpenSessionAsync("A");
             Require(vm.OverviewInstaller == "退出结果未记录" && vm.OverviewRecord == "会话未完成" && vm.FollowInstaller
                 && vm.OverviewChanges.Contains("未采集安装前基线", StringComparison.Ordinal) && !vm.OverviewChanges.Contains("文件 0", StringComparison.Ordinal), "missing values and no baseline are not zero");
+            // This is the fixed core warning visible in the M10 native overview;
+            // it describes an evidence boundary, not a newly observed loss.
+            const string readBoundary = "File observations use bounded temporary read leases where available; they describe observed hashes and identities, not complete mutation coverage or ownership. Final file and registry state attribution remains Unknown where mutation coverage or read/clock proof is incomplete; verified source actors remain separate.";
+            service.SummaryOverride = (id, _) => Task.FromResult(Summary(id, "finished", 0, "Degraded", false, true, [readBoundary]));
+            await vm.OpenSessionAsync("A");
+            Require(vm.OverviewAlert.Contains("观测到的内容与文件身份", StringComparison.Ordinal)
+                && vm.OverviewAlert.Contains("Unknown", StringComparison.Ordinal)
+                && !vm.OverviewAlert.Contains("File observations", StringComparison.Ordinal)
+                && !vm.OverviewAlert.Contains("丢失了部分记录", StringComparison.Ordinal)
+                && vm.OverviewCoverage.Contains("Degraded", StringComparison.Ordinal)
+                && vm.TechnicalDetails.Contains(readBoundary, StringComparison.Ordinal), "native read-boundary warning is concise Chinese without losing original evidence or manufacturing loss");
         });
 
         await Check("external library remains distinct from personal destination", async () =>
@@ -295,12 +319,14 @@ public static class RecordChecks
     private static TaskCompletionSource<T> NewGate<T>() => new(TaskCreationOptions.RunContinuationsAsynchronously);
     private static void Require(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
     private static CoreResponse Response(string kind, object data) => CoreResponse.Parse(JsonSerializer.Serialize(new { schema_version = 3, kind, data }), kind);
-    private static CoreResponse Summary(string id, string state = "finished", int? exit = 0, string quality = "Degraded", bool loss = false, bool follow = false) => Response("inspect_summary", new
+    private static CoreResponse Summary(string id, string state = "finished", int? exit = 0, string quality = "Degraded", bool loss = false, bool follow = false,
+        string[]? diagnostics = null, string? streamError = null) => Response("inspect_summary", new
     {
         id, name = "same name", started_at = "2026-11-07T01:00:00+00:00", finished_at = state == "finished" ? "2026-11-07T01:01:00+00:00" : null,
         capture_state = state, exit_code = exit, events = Array.Empty<object>(), watch_roots = Array.Empty<string>(), files = Array.Empty<object>(),
         registry = Array.Empty<object>(), inventory = Array.Empty<object>(), processes = Array.Empty<object>(),
-        backend = new { follow_installer = follow ? new { direct_children_only = true, baseline_available = false } : null },
+        backend = new { follow_installer = follow ? new { direct_children_only = true, baseline_available = false } : null, stream = new { error = streamError } },
+        warnings = diagnostics ?? Array.Empty<string>(),
         quality = new { level = quality, reasons = Array.Empty<string>() }, summary_counts = new { application_records_dropped = loss ? (long?)3 : null }
     });
     private static Dictionary<string, object?> Event(string id, string? resource = null) => new()

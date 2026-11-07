@@ -79,6 +79,17 @@ selected event 120. UI row order, copy, raw explanation, all-match HTML and cold
 restart are checked against those fixed IDs. External legacy data and every
 frozen package member are hashed before and after.
 
+Event selection resolves an exact ID through the owned EventList's ItemContainer
+and VirtualizedItem patterns within its 50-row page. After checking all page IDs
+for duplicates, it re-realizes the retained exact item, scrolls and selects that
+item. It does not assume that every enumerated row remains in the rendered tree.
+The synthetic first page deliberately scrolls to its last row before selecting,
+explaining and copying the offscreen first and middle rows. M10 retained the real
+child event in the independent oracle and already explained/copied it through
+search; its later full-timeline failure occurred in the old rendered-tree lookup.
+The native regression verifies the corrected selection contract, with product
+virtualization, exact UUID/event checks and page limits unchanged.
+
 The single real install uses the new GUI's default follow path and unchanged
 `verify-follow-installer-experiment.py` oracle. Its parent, direct child and
 independent unrelated writer supply independent syscall truth. No installer is

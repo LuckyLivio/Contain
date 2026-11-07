@@ -6,8 +6,45 @@
       <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
       <ScrollViewer x:Name="PageScroll" Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24,16,24,16">
         <StackPanel MaxWidth="900" HorizontalAlignment="Stretch">
-            <TextBlock Text="新建记录" Style="{StaticResource PageTitle}" />
-            <TextBlock Text="选择安装器，记录这次安装。" Style="{StaticResource MutedText}" Margin="0,0,0,24" />
+            <TextBlock>
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock" BasedOn="{StaticResource PageTitle}">
+                        <Setter Property="Text" Value="新建记录" />
+                        <Style.Triggers><DataTrigger Binding="{Binding Install.HasTask}" Value="True"><Setter Property="Text" Value="本次任务" /></DataTrigger></Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+            <TextBlock Margin="0,0,0,24">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock" BasedOn="{StaticResource MutedText}">
+                        <Setter Property="Text" Value="选择安装器，记录这次安装。" />
+                        <Style.Triggers><DataTrigger Binding="{Binding Install.HasTask}" Value="True"><Setter Property="Text" Value="查看采集、保存与安装器退出的各自状态。" /></DataTrigger></Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+            <Border x:Name="TaskSurface" Style="{StaticResource Surface}" Margin="0,0,0,16" Visibility="{Binding Install.HasTask, Converter={StaticResource BoolVisibility}}">
+                <StackPanel>
+                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding Install.StatusTitle}" Style="{StaticResource SectionTitle}" AutomationProperties.AutomationId="TaskStatus" AutomationProperties.HelpText="{Binding Install.LastStatus.Stage, StringFormat=stage:{0}}" />
+                        <TextBlock Grid.Column="1" Text="{Binding Install.Elapsed}" Margin="16,0,0,0" Style="{StaticResource MutedText}" AutomationProperties.AutomationId="TaskElapsed" />
+                    </Grid>
+                    <ProgressBar IsIndeterminate="True" Height="3" Margin="0,4,0,16" Visibility="{Binding Install.Busy, Converter={StaticResource BoolVisibility}}" />
+                    <TextBlock Text="{Binding Install.StatusMessage}" AutomationProperties.AutomationId="TaskProgress" />
+                    <TextBlock Text="{Binding Install.Step}" AutomationProperties.AutomationId="TaskStep" Style="{StaticResource MutedText}" Margin="0,8,0,0" />
+                    <TextBlock Text="{Binding Install.Measurements}" AutomationProperties.AutomationId="TaskMeasurements" Style="{StaticResource MutedText}" Margin="0,4,0,12" />
+                    <TextBlock Text="{Binding Install.InstallerOutcome}" Margin="0,4,0,0" />
+                    <TextBlock Text="{Binding Install.SavedState}" Margin="0,4,0,0" />
+                    <TextBlock Text="{Binding Install.Coverage}" Margin="0,4,0,0" />
+                    <TextBox Style="{StaticResource SelectableText}" Text="{Binding Install.Error, Mode=OneWay}" Foreground="#963D2E" Margin="0,12,0,0" Visibility="{Binding Install.HasError, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="InstallError" AutomationProperties.Name="安装记录错误" />
+                    <ui:Button Content="打开本次记录" HorizontalAlignment="Left" Click="OnOpenSession" IsEnabled="{Binding Install.CanOpenSession}" Margin="0,16,0,0" AutomationProperties.AutomationId="OpenCapturedSession" />
+                    <Expander Header="任务技术详情" Margin="0,16,0,0" AutomationProperties.AutomationId="TaskDetails">
+                        <StackPanel Margin="0,12,0,0">
+                            <TextBox Style="{StaticResource SelectableText}" Text="{Binding Install.Diagnostics, Mode=OneWay}" MaxHeight="280" AutomationProperties.AutomationId="TaskDiagnostics" AutomationProperties.Name="任务技术详情" />
+                            <ui:Button Content="复制任务摘要" HorizontalAlignment="Left" Click="OnCopyTask" Margin="0,12,0,0" AutomationProperties.AutomationId="CopyTaskSummary" />
+                        </StackPanel>
+                    </Expander>
+                </StackPanel>
+            </Border>
             <Border Style="{StaticResource Surface}">
                 <StackPanel IsEnabled="{Binding Install.ConfigurationEnabled}">
                     <Grid>
@@ -68,29 +105,7 @@
                     </StackPanel>
                 </Border>
             </Expander>
-            <Border x:Name="TaskSurface" Style="{StaticResource Surface}" Margin="0,20,0,0" Visibility="{Binding Install.HasTask, Converter={StaticResource BoolVisibility}}">
-                <StackPanel>
-                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                        <TextBlock Text="{Binding Install.StatusTitle}" Style="{StaticResource SectionTitle}" AutomationProperties.AutomationId="TaskStatus" AutomationProperties.HelpText="{Binding Install.LastStatus.Stage, StringFormat=stage:{0}}" />
-                        <TextBlock Grid.Column="1" Text="{Binding Install.Elapsed}" Margin="16,0,0,0" Style="{StaticResource MutedText}" AutomationProperties.AutomationId="TaskElapsed" />
-                    </Grid>
-                    <ProgressBar IsIndeterminate="True" Height="3" Margin="0,4,0,16" Visibility="{Binding Install.Busy, Converter={StaticResource BoolVisibility}}" />
-                    <TextBlock Text="{Binding Install.StatusMessage}" AutomationProperties.AutomationId="TaskProgress" />
-                    <TextBlock Text="{Binding Install.Step}" Style="{StaticResource MutedText}" Margin="0,8,0,0" />
-                    <TextBlock Text="{Binding Install.Measurements}" Style="{StaticResource MutedText}" Margin="0,4,0,12" />
-                    <TextBlock Text="{Binding Install.InstallerOutcome}" Margin="0,4,0,0" />
-                    <TextBlock Text="{Binding Install.SavedState}" Margin="0,4,0,0" />
-                    <TextBlock Text="{Binding Install.Coverage}" Margin="0,4,0,0" />
-                    <TextBox Style="{StaticResource SelectableText}" Text="{Binding Install.Error, Mode=OneWay}" Foreground="#963D2E" Margin="0,12,0,0" Visibility="{Binding Install.HasError, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="InstallError" AutomationProperties.Name="安装记录错误" />
-                    <ui:Button Content="打开本次记录" HorizontalAlignment="Left" Click="OnOpenSession" IsEnabled="{Binding Install.CanOpenSession}" Margin="0,16,0,0" AutomationProperties.AutomationId="OpenCapturedSession" />
-                    <Expander Header="任务技术详情" Margin="0,16,0,0" AutomationProperties.AutomationId="TaskDetails">
-                        <StackPanel Margin="0,12,0,0">
-                            <TextBox Style="{StaticResource SelectableText}" Text="{Binding Install.Diagnostics, Mode=OneWay}" MaxHeight="280" AutomationProperties.AutomationId="TaskDiagnostics" AutomationProperties.Name="任务技术详情" />
-                            <ui:Button Content="复制任务摘要" HorizontalAlignment="Left" Click="OnCopyTask" Margin="0,12,0,0" AutomationProperties.AutomationId="CopyTaskSummary" />
-                        </StackPanel>
-                    </Expander>
-                </StackPanel>
-            </Border>
+
         </StackPanel>
       </ScrollViewer>
       <Border Grid.Row="1" Margin="24,0,24,16" Padding="0,12,0,0" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="0,1,0,0">

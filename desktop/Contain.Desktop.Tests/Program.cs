@@ -227,6 +227,13 @@ internal sealed class NativeSuite(Options options)
         await Search("needle", 53, 1);
         actualFirst = await D.RowIdsAsync("EventList", "event:");
         Require(actualFirst.SequenceEqual(expected.Take(50)), "first 50 matching event IDs and order");
+        foreach (var index in new[] { 0, 25 })
+        {
+            await Explain(expected[49], "synthetic-search");
+            Require(!await D.VisibleAsync("event:" + expected[index]), "controlled first/middle row is outside the current rendered viewport");
+            await Explain(expected[index], "synthetic-search");
+            await CopyEvent(expected[index]);
+        }
         await D.InvokeAsync("NextEvents");
         await D.UntilAsync("search_second_page", "EventPageLabel", async () => (await D.RowIdsAsync("EventList", "event:")).SequenceEqual(expected.Skip(50)));
         actualSecond = await D.RowIdsAsync("EventList", "event:");
@@ -361,7 +368,14 @@ internal sealed class NativeSuite(Options options)
             { liveSession = identity[8..]; return true; }
             var status = await D.TryHelpAsync("TaskStatus");
             if (!capturedRunning && status == "stage:capturing")
-            { await Shot("task-real-recording.png", "real-controlled-etw-capture"); capturedRunning = true; }
+            {
+                foreach (var control in new[] { "TaskStatus", "TaskElapsed", "TaskProgress", "TaskStep", "TaskMeasurements" })
+                {
+                    if (!await D.VisibleInOwnedViewportAsync(control)) return false;
+                    Require(!string.IsNullOrWhiteSpace(await D.TextAsync(control)), "capturing task field contains readable actual state: " + control);
+                }
+                await Shot("task-real-recording.png", "real-controlled-etw-capture"); capturedRunning = true;
+            }
             return false;
         }, TimeSpan.FromSeconds(180));
         Require(capturedRunning, "actual running stage screenshot captured");
@@ -551,7 +565,7 @@ internal sealed class NativeSuite(Options options)
     private void PreserveLaunch()
     {
         if (desktop is null) return;
-        launches.Add(new { process_id = desktop.ProcessId, probes = desktop.Probes.ToArray(), actions = desktop.Actions.ToArray(), clicks = desktop.Clicks.ToArray(), last_stage = desktop.Stage, last_control = desktop.LastControl,
+        launches.Add(new { process_id = desktop.ProcessId, probes = desktop.Probes.ToArray(), actions = desktop.Actions.ToArray(), row_selections = desktop.RowSelections.ToArray(), clicks = desktop.Clicks.ToArray(), last_stage = desktop.Stage, last_control = desktop.LastControl,
             last_error_type = desktop.LastErrorType, process_exited = desktop.HasExited, normal_close = desktop.CloseObservation });
     }
     private async Task Shot(string name, string kind) => screenshots.Add(await D.CaptureAsync(Path.Combine(options.Output, "screenshots"), name, kind));
