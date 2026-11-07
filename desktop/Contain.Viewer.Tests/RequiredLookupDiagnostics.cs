@@ -15,6 +15,7 @@ internal static class RequiredLookupDiagnostics
     private static readonly AsyncLocal<LookupUiInvocation?> current = new();
     private static string? output;
     private static int launches, omitted;
+    private static int experimentStopped;
 
     internal static void Configure(string directory)
     {
@@ -22,6 +23,7 @@ internal static class RequiredLookupDiagnostics
         {
             output = Path.Combine(directory, "packaged-lookup-diagnostics.json");
             failures.Clear(); launches = omitted = 0;
+            Volatile.Write(ref experimentStopped, 0);
         }
         Flush();
     }
@@ -30,6 +32,16 @@ internal static class RequiredLookupDiagnostics
     internal static bool TrySampleLaunch(ref int sampled) => Interlocked.Exchange(ref sampled, 1) == 0;
     internal static LookupUiInvocation? Current => current.Value;
     internal static bool IsFixedId(string id) => id is "SessionTitle" or "NewInstall";
+    internal static bool ExperimentStopped => Volatile.Read(ref experimentStopped) != 0;
+    internal static bool HasOriginalMiss { get { lock (gate) return failures.Count > 0; } }
+    internal static void StopAfterExperimentDeadline()
+    {
+        Volatile.Write(ref experimentStopped, 1);
+        RequiredLookupTrace[] retained;
+        lock (gate) retained = failures.ToArray();
+        foreach (var trace in retained) trace.Finish("experiment_stopped", false, null);
+        Flush();
+    }
 
     internal static RequiredLookupTrace? BeginFailure(int launch, string id, int originalWindows,
         RequiredLookupTrace.NativeState before, string rootOrigin, long? originalMissElapsedMs = null,
@@ -39,7 +51,9 @@ internal static class RequiredLookupDiagnostics
         RequiredLookupTrace? trace;
         lock (gate)
         {
-            if (output is null) return null;
+            // A late original worker must not manufacture a new diagnostic miss
+            // after the bounded experiment has already stopped/started cleanup.
+            if (output is null || ExperimentStopped) return null;
             if (failures.Count >= FailureLimit) { omitted++; trace = null; }
             else
             {
@@ -87,6 +101,7 @@ internal static class RequiredLookupDiagnostics
                     failure_limit = FailureLimit, comparisons_per_launch = 1, omitted_failures = omitted,
                     window_metadata_limit = WindowMetadataLimit, added_uia_calls_per_failure_limit = 20,
                     added_uia_cache_calls = 0, ui_deadline_ms = 20000,
+                    experiment_stopped = ExperimentStopped,
                     comparison_timing = "Sequential after original miss; never a simultaneous observation or a fallback result.",
                     cache_origin = "Reuse existing DescriptionAsync native-handle read, otherwise native readiness root candidate; no additional successful-path UIA calls.",
                     failures = failures.Select(item => item.Snapshot()).ToArray()
@@ -156,7 +171,7 @@ internal sealed class RequiredLookupTrace(int launch, string controlId, int orig
     {
         lock (gate)
         {
-            if (finished || RequiredLookupDiagnostics.Current?.RemainingMs is <= 0)
+            if (finished || RequiredLookupDiagnostics.ExperimentStopped || RequiredLookupDiagnostics.Current?.RemainingMs is <= 0)
                 throw new OperationCanceledException("Diagnostic deadline reached.");
             if (calls >= 20) throw new InvalidOperationException("Diagnostic call bound reached.");
             stage = operation; calls++;

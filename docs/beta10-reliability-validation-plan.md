@@ -314,3 +314,76 @@ matrix remains separate retained evidence; a diagnostic alternate lookup cannot
 convert a failing full suite into acceptance. The original C1 Ready timeout remains
 unexplained until evidence supports a conclusion; later successful Ready calls
 alone do not clear it. Choose any behavioral repair only after reviewing D6.
+
+### Recorded D6 outcome
+
+The single declared run 42325883947 at harness source d1bca0b passed all 80 full
+desktop checks and all existing native acceptance predicates using the unchanged
+original ZIP. It completed actual GUI installation, exact saved-session readback,
+parent/child source verification, event explanation, normal exit and cold reopen.
+All eleven Ready calls passed (298–577 ms). The bounded required-lookup diagnostic
+recorded no missing lookup and made no alternate comparison. D5's missing-control
+failure and C1's Ready timeout therefore remain unexplained. A green diagnostic
+observation does not demonstrate a behavioral repair, and D6's release_accepted
+remains false. The different sampled UI stages (D5 saw finalizing; D6 did not sample
+that stage before finding its exact session) do not imply that D6 skipped work.
+
+## D7: saved-record transition probe, declared before execution
+
+The next hypothesis is narrower than another installation run: the existing
+required SessionTitle lookup may fail while the actual Viewer is replacing a
+saved record's asynchronous summary/history view. D5 failed during finalizing to
+result observation; D6 reached its exact result without the same lookup failure.
+These samples suggest a transition to investigate, but do not prove a race or
+identify a faulty layer. SessionTitle remains above the tab control, so the probe
+does not assume that switching tabs hides it.
+
+Use the same original a7ef3faed3c42aada77fe5619b732fe092b8787f89311047105ff6082b132656
+ZIP, frozen product source b0d2510, original production DLL and one actual packaged
+Viewer. Copy its known three-record synthetic sample into one marked isolated
+record library. The original sample and copied database must retain their bytes;
+the before/after list must contain the same three fixed synthetic IDs. No user
+database, installer, ETW source or background-load matrix is involved.
+
+The committed workflow selects `[lookup-transition-diagnosis]` exclusively,
+declares D7 before preparing tools, and invokes the standalone
+`--lookup-transition-checks-only <package> <fixtures> <output>` entrypoint once.
+It must not invoke the full desktop entrypoint or pass `--install-fixture`.
+The one Viewer first selects `synthetic-interrupted` as setup (30 seconds, not one
+of the transitions), then executes exactly 100 planned alternating selections:
+`synthetic-finished`, `synthetic-interrupted`, repeated 50 times. Maximum selection
+requests are 101 including setup. No repeated or replacement Viewer is allowed.
+
+While each selected record loads, poll the original required description lookup
+and require its exact expected session ID and enabled NewInstall control within
+30 seconds.
+The complete transition loop has a hard 180-second bound, including selections.
+The first original missing-control failure stops the sequence, retains the D6
+diagnostic comparison if available, and marks every remaining planned transition
+not run. The comparison never supplies a passing result. Original 20-second UIA
+limits, startup waits and ten-minute outer harness deadline stay unchanged. Keep
+the one-viewer/global diagnostic limits and the native ownership checks from D6;
+do not grant an additional wait to a comparison. Normal close, process quiescence
+and source/database integrity are independently recorded, including failures.
+
+Retain `lookup-transition-plan.json`, `lookup-transition-summary.json`, the existing
+bounded startup/lookup checkpoints, and separate package/source/execution evidence
+under `frozen-beta10-transition-evidence` and `windows-lookup-transition-evidence`.
+The transition summary protocol is `contain-lookup-transition-diagnosis-1`, with
+all 100 fixed cases, exact order/counts, attempted/passed/failed/not-run status and
+safe timing/counter fields. It explicitly reports synthetic saved-record data,
+native Windows UIA, no real ETW, and accepted=false/release_accepted=false. No
+captions, arbitrary paths, database bytes, window trees or private logs are uploaded.
+
+This probes shared saved-record `OpenRecordAsync` queries; it does not reproduce
+the install-completion callback, `InstallForm.Hide` or automatic follow-event-tab
+selection as a combined path. A successful D7 cannot exclude a defect specific
+to those omitted transitions.
+
+This is one targeted diagnostic attempt, not another full-install retry. Preserve
+C1, D4, D5 and D6 unchanged. If no original missing lookup occurs, report that this
+specific hypothesis was not reproduced; do not infer that either historical
+failure is fixed. If it occurs, distinguish original UIA lookup, native/window
+availability and the later direct observation before selecting any repair. Only
+a subsequently justified change can be followed by separately predeclared full
+same-ZIP validation; D7 cannot replace full desktop or capture acceptance.

@@ -81,6 +81,10 @@ internal static class RequiredLookupDiagnosticsChecks
                 && final.RootElement.GetProperty("omitted_failures").GetInt32() == 4,
                 "global retained diagnostics have a hard limit and explicit omissions");
             Require(!text.Contains("PRIVATE", StringComparison.Ordinal), "exception messages and unreviewed IDs remain private");
+            RequiredLookupDiagnostics.StopAfterExperimentDeadline();
+            Require(RequiredLookupDiagnostics.ExperimentStopped
+                && RequiredLookupDiagnostics.BeginFailure(30, "SessionTitle", 0, Native(), "prior_same_control_native_handle") is null,
+                "an outer experiment deadline prevents a late worker from starting new diagnosis during cleanup");
             Console.WriteLine($"Required lookup diagnostic state: {checks} passed, 0 failed (synthetic recorder only; no native UIA claim).");
         }
         finally { Directory.Delete(directory, recursive: true); }

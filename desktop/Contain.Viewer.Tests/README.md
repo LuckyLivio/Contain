@@ -137,6 +137,18 @@ For the bounded progress-only plan (no ETW/provider probe or installer launch):
 That standalone mode reports `working-tree` and no package manifest identity;
 release acceptance uses the full frozen-package harness and its exact source SHA.
 
+The opt-in `--lookup-transition-checks-only <package> <fixtures> <output>` diagnosis
+uses one frozen packaged Viewer and a byte-identical, isolated copy of its three
+synthetic sample records. It first selects interrupted, then performs exactly 100
+finished/interrupted alternations with the original required SessionTitle lookup.
+Each selection and its queries share one 30-second deadline; the whole 100-transition loop
+has 180 seconds; the existing 20-second UIA bound also remains. It stops at the
+first failure, retains not-run cases and D6 lookup evidence, and never substitutes
+an alternate query for a failed required lookup. Public plan/summary files record
+exact fixed identities, unchanged database hashes and normal exit. This is a
+read-only OpenRecord-transition probe, not an installer/ETW test or proof of the
+old startup failure's cause; its `accepted` and `release_accepted` stay false.
+
 This is a Windows integration executable, not a mock frontend. It references the
 production viewer, verifies its assembly is byte-identical to the frozen package,
 uses the packaged `contain.exe`, and launches the packaged desktop executable.
