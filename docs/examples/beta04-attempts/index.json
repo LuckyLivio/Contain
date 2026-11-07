@@ -1,0 +1,117 @@
+{
+  "note": "Original reviewed public aggregate bytes. M3 is diagnosis, not acceptance. No databases or full logs.",
+  "attempts": [
+    {
+      "attempt": "M1",
+      "run": 42337219333,
+      "source_sha": "e308844e3c1f6be5f530b248d3de488d9dec4be8",
+      "file": "M1.json",
+      "sha256": "3a32b3bd00168a09c6defc0fd5b7e98a4b3ecad75768799502395b2b7966f6d4",
+      "accepted": false
+    },
+    {
+      "attempt": "M2",
+      "run": 42338017143,
+      "source_sha": "08827096f893ad271bba0593e954329eae039343",
+      "file": "M2.json",
+      "sha256": "addd88a9ebf5f134cb4ce47e6d270613ee120136eb2a0c414e3a5d4bc108a451",
+      "accepted": false
+    },
+    {
+      "attempt": "M3",
+      "run": 42338832102,
+      "source_sha": "431fd92ac44c10bbc61cc50c51c6781077835fde",
+      "file": "M3.json",
+      "sha256": "6b1601493c8425ee33f6acd4a28ef19df6daad8f174b24a28bf884d5e6f87f08",
+      "accepted": false
+    },
+    {
+      "attempt": "M4",
+      "run": 42339828453,
+      "source_sha": "63f264a0b397e7cf582b25505e1ba095e0d1b6fd",
+      "file": "M4.json",
+      "sha256": "447a6991bbf294d38c87f72a308d14112779f4fd0cce2db112d7ee689765c23e",
+      "accepted": false
+    },
+    {
+      "attempt": "M5",
+      "run": 42340263767,
+      "source_sha": "94ec2a274b47616b3dba645e15a43704c57f488d",
+      "file": "M5.json",
+      "sha256": "1f61bfe0d0927c41e1aa2579cafd70deb2807e424fc2b7b9c2918e3d12daf375",
+      "accepted": false
+    },
+    {
+      "attempt": "M6",
+      "run": 42340821695,
+      "source_sha": "37b6d1dbb3a384817c77f70b5318e4b16321f2c6",
+      "file": "M6.json",
+      "sha256": "f4d13435b97904988380d1eed59941c053d89ef7fbc9f6a0af9e3ed32aa6affb",
+      "accepted": false
+    },
+    {
+      "attempt": "M7",
+      "run": 42341344681,
+      "source_sha": "eb512ce59ab7758f9941f7fe66c4f721beba6121",
+      "file": "M7.json",
+      "sha256": "2d0d194744e98b0a34c5316b5c2e0a64be2718f38695320df4e5a15deaa178de",
+      "accepted": false
+    },
+    {
+      "attempt": "M8",
+      "run": 42341966951,
+      "source_sha": "9356cde03697091b690709c9904cd90de59d6040",
+      "file": "M8.json",
+      "sha256": "fa7de9adcfa5722a34e41cffa42579e012751b974aef24fe2b91c73be2a220c3",
+      "accepted": false
+    },
+    {
+      "attempt": "M9",
+      "run": 42342627378,
+      "source_sha": "c5e4b856b1edf2643bc6caa3b4ae8cd5687dabb5",
+      "file": "M9.json",
+      "sha256": "8cfacd75f4e958445cf74145abdea2bac8ccde1646fe4a730722a24e44248d85",
+      "accepted": false,
+      "preview_checks_passed": true
+    },
+    {
+      "attempt": "M10",
+      "run": 42343076345,
+      "source_sha": "90ba93199044aea3dcdf69c1b4bb4a1f3b125e05",
+      "file": "M10.json",
+      "sha256": "84db225a8485cc44ceb0e74dcf34a79d8924804b12131a2015aa58913ec5215f",
+      "accepted": false
+    },
+    {
+      "attempt": "M11",
+      "run": 42343947561,
+      "source_sha": "28fc2fc4ee7edd1bec3f525f4f5a6d98a233f80d",
+      "file": "M11.json",
+      "sha256": "16ff772f28b8d097185e5290b508493b9888cf6177c69feee281008a1ad0e3a6",
+      "accepted": false,
+      "kind": "navigation-control-prerequisite; product_not_frozen"
+    },
+    {
+      "attempt": "M12",
+      "run": 42344334095,
+      "source_sha": "c9942c3eb0a19d7e782a4648c50abab56add1637",
+      "file": "M12.json",
+      "sha256": "4fcf97dcfdc86fb465b74d94a4001fc7ec1abe7a92dc563184c04298e02033b6",
+      "accepted": true,
+      "kind": "navigation-control-only; no product package or installation",
+      "keyboard_file": "M12-keyboard.json",
+      "keyboard_sha256": "046a84155f775b48233a9210cdc36b3f40c88becdd0116999c444f5e0007f4fc"
+    },
+    {
+      "attempt": "M13",
+      "run": 42344602567,
+      "source_sha": "5a6ce89867e4c8c9d428de0a80b67b421bbd9717",
+      "file": "M13.json",
+      "sha256": "e1d02c6758678030c86f75c2f94403a2e4a4a81208ce64c7e4f6acc0ee2de432",
+      "accepted": true,
+      "kind": "complete packaged WPF desktop and one real GUI installation",
+      "keyboard_file": "M13-keyboard.json",
+      "keyboard_sha256": "2b2807e69140a7fc0182b7385832553f48055d1d13657f4a6fc50b30be7c0a42"
+    }
+  ]
+}

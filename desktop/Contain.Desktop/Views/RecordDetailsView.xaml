@@ -1,0 +1,156 @@
+<UserControl x:Class="Contain.Desktop.Views.RecordDetailsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml" SizeChanged="OnSizeChanged">
+    <Grid Margin="24,12,24,16">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <StackPanel>
+            <ui:Button Content="返回我的记录" Appearance="Transparent" HorizontalAlignment="Left" Padding="0,8" Click="OnBack" AutomationProperties.AutomationId="BackToRecords">
+                <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowLeft24" /></ui:Button.Icon>
+            </ui:Button>
+            <TextBlock Text="{Binding Records.SessionTitle}" Style="{StaticResource PageTitle}" Margin="0,8,0,4" AutomationProperties.AutomationId="SessionTitle" AutomationProperties.HelpText="{Binding Records.SessionIdentity}" />
+            <TextBlock Text="{Binding Records.OverviewRecordNote}" Style="{StaticResource MutedText}" AutomationProperties.AutomationId="SavedState" />
+        </StackPanel>
+        <Border Grid.Row="1" Background="#EDF3F0" CornerRadius="8" Padding="12" Margin="0,12,0,16">
+            <StackPanel>
+                <TextBlock Text="{Binding Records.OverviewCoverage}" FontWeight="SemiBold" AutomationProperties.AutomationId="CoverageStatus" />
+                <TextBlock Text="{Binding Records.OverviewAlert}" Margin="0,4,0,0" Visibility="{Binding Records.OverviewAlert, Converter={StaticResource TextVisibility}}" />
+            </StackPanel>
+        </Border>
+        <TabControl x:Name="Tabs" Grid.Row="2" Background="Transparent" BorderThickness="0" AutomationProperties.AutomationId="DetailsTabs">
+            <TabItem Header="概览" AutomationProperties.AutomationId="OverviewTab">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,16,0,0">
+                    <StackPanel>
+                        <Border Style="{StaticResource Surface}">
+                            <StackPanel>
+                                <TextBlock Text="本次记录" Style="{StaticResource SectionTitle}" />
+                                <TextBlock Text="{Binding Records.OverviewInstaller}" FontSize="18" FontWeight="SemiBold" AutomationProperties.AutomationId="InstallerOutcome" />
+                                <TextBlock Text="{Binding Records.OverviewInstallerNote}" Style="{StaticResource MutedText}" Margin="0,6,0,20" />
+                                <TextBlock Text="{Binding Records.OverviewRecord}" FontWeight="SemiBold" AutomationProperties.AutomationId="RecordOutcome" />
+                                <TextBlock Text="{Binding Records.OverviewRecordNote}" Style="{StaticResource MutedText}" Margin="0,6,0,0" />
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource Surface}">
+                            <StackPanel>
+                                <TextBlock Text="记录范围" Style="{StaticResource SectionTitle}" />
+                                <TextBox Text="{Binding Records.OverviewScope, Mode=OneWay}" Style="{StaticResource SelectableText}" AutomationProperties.AutomationId="RecordingScope" AutomationProperties.Name="记录范围" />
+                                <TextBlock Text="{Binding Records.OverviewChanges}" Margin="0,16,0,6" AutomationProperties.AutomationId="StateComparisonSummary" />
+                                <TextBlock Text="{Binding Records.OverviewChangesNote}" Style="{StaticResource MutedText}" />
+                                <ui:Button Content="查看文件操作" Appearance="Primary" HorizontalAlignment="Left" Margin="0,20,0,0" Click="OnViewEvents" AutomationProperties.AutomationId="ViewFileOperations">
+                                    <ui:Button.Icon><ui:SymbolIcon Symbol="DocumentSearch24" /></ui:Button.Icon>
+                                </ui:Button>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Text="High 表示有依据的执行进程关联；Unknown 表示当前证据不足。它们都不是最终文件所有权或安全删除许可。" Style="{StaticResource MutedText}" Margin="0,0,0,16" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="文件操作" AutomationProperties.AutomationId="EventsTab">
+                <Grid Margin="0,16,0,0">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                        <DockPanel Margin="0,0,0,12" IsEnabled="{Binding Records.HasRecord}">
+                            <ui:Button DockPanel.Dock="Right" Content="清除" Appearance="Transparent" Margin="8,0,0,0" Click="OnClearSearch" AutomationProperties.AutomationId="ClearSearch" />
+                            <ui:Button DockPanel.Dock="Right" Content="搜索" Margin="8,0,0,0" Click="OnSearch" AutomationProperties.AutomationId="SearchEvents" />
+                            <ui:TextBox x:Name="SearchBox" Text="{Binding Records.SearchDraft, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="搜索本次记录中的路径、操作或事件 ID" KeyDown="OnSearchKeyDown" AutomationProperties.AutomationId="SearchText" AutomationProperties.Name="搜索本次记录" />
+                        </DockPanel>
+                        <WrapPanel Grid.Row="1" Margin="0,0,0,4">
+                            <TextBlock Text="{Binding Records.EventPageText}" VerticalAlignment="Center" Margin="0,0,16,8" AutomationProperties.AutomationId="EventPageLabel" />
+                            <ui:Button Content="上一页" Click="OnPreviousEvents" IsEnabled="{Binding Records.CanPreviousEvents}" Margin="0,0,8,8" AutomationProperties.AutomationId="PreviousEvents" />
+                            <ui:Button Content="下一页" Click="OnNextEvents" IsEnabled="{Binding Records.CanNextEvents}" Margin="0,0,16,8" AutomationProperties.AutomationId="NextEvents" />
+                            <ui:Button Content="导出本页报告" Appearance="Transparent" Click="OnExportPage" IsEnabled="{Binding Records.CanExportPage}" Margin="0,0,8,8" AutomationProperties.AutomationId="ExportPage" />
+                            <ui:Button Content="{Binding Records.MatchExportLabel}" Appearance="Transparent" Click="OnExportMatches" IsEnabled="{Binding Records.CanExportMatches}" Margin="0,0,0,8" AutomationProperties.AutomationId="ExportMatches" />
+                            <ui:Button Content="停止导出" Appearance="Transparent" Click="OnCancelExport" Margin="8,0,0,8" Visibility="{Binding Records.IsExporting, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="CancelExport" />
+                        </WrapPanel>
+                      <ScrollViewer x:Name="EventBodyScroll" Grid.Row="2" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Disabled" SizeChanged="OnBodySizeChanged">
+                        <Grid x:Name="EventColumns">
+                            <Grid.ColumnDefinitions><ColumnDefinition x:Name="ListColumn" Width="3*" /><ColumnDefinition x:Name="ExplanationColumn" Width="2*" /></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="0" /></Grid.RowDefinitions>
+                            <Border x:Name="EventListSurface" Style="{StaticResource Surface}" Padding="8" Margin="0,0,16,0">
+                                <Grid>
+                                    <ListBox x:Name="EventList" ItemsSource="{Binding Records.Events}" BorderThickness="0" Background="Transparent"
+                                             SelectedValuePath="Id" SelectedValue="{Binding Records.SelectedEventId, Mode=OneWay}"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                                             AutomationProperties.AutomationId="EventList" AutomationProperties.Name="当前会话文件操作列表" SelectionChanged="OnEventSelectionChanged">
+                                        <ListBox.ItemContainerStyle>
+                                            <Style TargetType="ListBoxItem" BasedOn="{StaticResource RecordItem}">
+                                                <Setter Property="Padding" Value="12" />
+                                                <Setter Property="AutomationProperties.AutomationId" Value="{Binding Id, StringFormat=event:{0}}" />
+                                                <Setter Property="AutomationProperties.HelpText" Value="{Binding Id, StringFormat=event:{0}}" />
+                                                <Setter Property="AutomationProperties.Name" Value="{Binding OperationLabel}" />
+                                            </Style>
+                                        </ListBox.ItemContainerStyle>
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding OperationLabel}" FontWeight="SemiBold" />
+                                                        <TextBlock Text="{Binding Resource}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding Resource}" Margin="0,5,0,0" />
+                                                        <TextBlock Text="{Binding Time}" Style="{StaticResource MutedText}" FontSize="12" Margin="0,5,0,0" />
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Confidence}" FontSize="12" Margin="12,0,0,0" VerticalAlignment="Top" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                    <TextBlock Text="本页没有事件。可以清除搜索或换一个关键词。" Style="{StaticResource MutedText}" TextAlignment="Center" VerticalAlignment="Center" Margin="20" Visibility="{Binding Records.Events.Count, Converter={StaticResource ZeroVisibility}}" AutomationProperties.AutomationId="EmptyEvents" />
+                                </Grid>
+                            </Border>
+                            <Border x:Name="ExplanationSurface" Grid.Column="1" Style="{StaticResource Surface}" Padding="16" Margin="0">
+                                <Grid>
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                    <TextBlock Text="事件依据" Style="{StaticResource SectionTitle}" />
+                                  <ScrollViewer x:Name="ExplanationScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                   <StackPanel>
+                                    <TextBox Style="{StaticResource SelectableText}" Text="{Binding Records.EventExplanation, Mode=OneWay}" MinHeight="80" AutomationProperties.AutomationId="EventDetails" AutomationProperties.Name="所选事件依据" AutomationProperties.HelpText="{Binding Records.EventIdentity}" />
+                                    <TextBlock Text="记录中的完整资源路径" Style="{StaticResource FieldLabel}" />
+                                    <TextBox Style="{StaticResource SelectableText}" Text="{Binding Records.SelectedEventResource, Mode=OneWay}" MaxHeight="100" AutomationProperties.AutomationId="EventResource" AutomationProperties.Name="所选事件完整资源路径" />
+                                    <Expander Header="原始操作与完整 JSON" Margin="0,8,0,0" Collapsed="OnRawCollapsed" AutomationProperties.AutomationId="RawExplanationExpander">
+                                        <TextBox Style="{StaticResource SelectableText}" Text="{Binding Records.RawExplanation, Mode=OneWay}" MaxHeight="400" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" Margin="0,12,0,0" AutomationProperties.AutomationId="EventRawJson" AutomationProperties.Name="所选事件原始 JSON" />
+                                    </Expander>
+                                   </StackPanel>
+                                  </ScrollViewer>
+                                    <WrapPanel Grid.Row="2" Margin="0,12,0,0">
+                                        <ui:Button Content="复制事件 ID" Appearance="Transparent" Padding="8,6" Margin="0,0,8,0" Click="OnCopyEventId" IsEnabled="{Binding Records.CanCopyEvent}" AutomationProperties.AutomationId="CopyEventId" />
+                                        <ui:Button Content="复制完整路径" Appearance="Transparent" Padding="8,6" Click="OnCopyEventPath" IsEnabled="{Binding Records.CanCopyEvent}" AutomationProperties.AutomationId="CopyEventPath" />
+                                    </WrapPanel>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                      </ScrollViewer>
+                        <TextBlock Grid.Row="3" Text="搜索覆盖当前会话的全部事件；列表每页最多 50 条。路径是记录时的名称，不表示已验证的当前路径。" Style="{StaticResource MutedText}" Margin="0,12,0,0" />
+                </Grid>
+            </TabItem>
+            <TabItem Header="状态对比" AutomationProperties.AutomationId="ChangesTab">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="{Binding Records.OverviewChanges}" Style="{StaticResource SectionTitle}" />
+                        <TextBlock Text="{Binding Records.OverviewChangesNote}" Style="{StaticResource MutedText}" Margin="0,0,0,16" />
+                        <ui:TextBox x:Name="ChangeFilterBox" Text="{Binding Records.ChangeFilter, Mode=OneWay}" IsEnabled="{Binding Records.HasRecord}" PlaceholderText="筛选已保存的状态变化" TextChanged="OnChangeFilter" AutomationProperties.AutomationId="ChangeFilter" AutomationProperties.Name="筛选状态变化" />
+                        <WrapPanel Margin="0,12,0,8">
+                            <TextBlock Text="{Binding Records.ChangePageText}" VerticalAlignment="Center" Margin="0,0,16,8" AutomationProperties.AutomationId="ChangePageLabel" />
+                            <ui:Button Content="上一页" Click="OnPreviousChanges" IsEnabled="{Binding Records.CanPreviousChanges}" Margin="0,0,8,8" AutomationProperties.AutomationId="PreviousChanges" />
+                            <ui:Button Content="下一页" Click="OnNextChanges" IsEnabled="{Binding Records.CanNextChanges}" Margin="0,0,0,8" AutomationProperties.AutomationId="NextChanges" />
+                        </WrapPanel>
+                        <ListBox x:Name="ChangeList" Height="260" ItemsSource="{Binding Records.Changes}" ItemContainerStyle="{StaticResource RecordItem}" Background="White" BorderThickness="0" SelectionChanged="OnChangeSelection" AutomationProperties.AutomationId="ChangeList" AutomationProperties.Name="当前会话状态变化列表">
+                            <ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Operation}" FontWeight="SemiBold" /><TextBlock Text="{Binding Resource}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip="{Binding Resource}" Margin="0,4,0,0" /><TextBlock Text="{Binding Confidence}" Style="{StaticResource MutedText}" /></StackPanel></DataTemplate></ListBox.ItemTemplate>
+                        </ListBox>
+                        <TextBox Text="{Binding Records.ChangeExplanation, Mode=OneWay}" Style="{StaticResource SelectableText}" Margin="0,16,0,0" AutomationProperties.AutomationId="ChangeDetails" AutomationProperties.Name="所选状态变化依据" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="技术详情" AutomationProperties.AutomationId="TechnicalTab">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="诊断与证据边界" Style="{StaticResource SectionTitle}" />
+                        <TextBlock Text="以下是记录中保存的原始来源、损失分项与错误。分项可能重叠，不重复相加。分享前请检查本地路径。" Style="{StaticResource MutedText}" Margin="0,0,0,16" />
+                        <ui:Button Content="复制诊断摘要" HorizontalAlignment="Left" Click="OnCopyDiagnostics" AutomationProperties.AutomationId="CopyDiagnostics" Margin="0,0,0,16">
+                            <ui:Button.Icon><ui:SymbolIcon Symbol="Copy24" /></ui:Button.Icon>
+                        </ui:Button>
+                        <Border Style="{StaticResource Surface}"><TextBox Text="{Binding Records.DiagnosticSummary, Mode=OneWay}" Style="{StaticResource SelectableText}" AutomationProperties.AutomationId="TechnicalDetails" AutomationProperties.Name="记录技术详情" /></Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</UserControl>

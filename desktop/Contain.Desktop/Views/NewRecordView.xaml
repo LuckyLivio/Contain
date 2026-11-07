@@ -1,0 +1,131 @@
+<UserControl x:Class="Contain.Desktop.Views.NewRecordView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+    <Grid>
+      <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+      <ScrollViewer x:Name="PageScroll" Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24,16,24,16">
+        <StackPanel MaxWidth="900" HorizontalAlignment="Stretch">
+            <TextBlock>
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock" BasedOn="{StaticResource PageTitle}">
+                        <Setter Property="Text" Value="新建记录" />
+                        <Style.Triggers><DataTrigger Binding="{Binding Install.HasTask}" Value="True"><Setter Property="Text" Value="本次任务" /></DataTrigger></Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+            <TextBlock Margin="0,0,0,24">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock" BasedOn="{StaticResource MutedText}">
+                        <Setter Property="Text" Value="选择安装器，记录这次安装。" />
+                        <Style.Triggers><DataTrigger Binding="{Binding Install.HasTask}" Value="True"><Setter Property="Text" Value="查看采集、保存与安装器退出的各自状态。" /></DataTrigger></Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+            <Border x:Name="TaskSurface" Style="{StaticResource Surface}" Margin="0,0,0,16" Visibility="{Binding Install.HasTask, Converter={StaticResource BoolVisibility}}">
+                <StackPanel>
+                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding Install.StatusTitle}" Style="{StaticResource SectionTitle}" AutomationProperties.AutomationId="TaskStatus" AutomationProperties.HelpText="{Binding Install.LastStatus.Stage, StringFormat=stage:{0}}" />
+                        <TextBlock Grid.Column="1" Text="{Binding Install.Elapsed}" Margin="16,0,0,0" Style="{StaticResource MutedText}" AutomationProperties.AutomationId="TaskElapsed" />
+                    </Grid>
+                    <ProgressBar IsIndeterminate="True" Height="3" Margin="0,4,0,16" Visibility="{Binding Install.Busy, Converter={StaticResource BoolVisibility}}" />
+                    <TextBlock Text="{Binding Install.StatusMessage}" AutomationProperties.AutomationId="TaskProgress" />
+                    <TextBlock Text="{Binding Install.Step}" AutomationProperties.AutomationId="TaskStep" Style="{StaticResource MutedText}" Margin="0,8,0,0" />
+                    <TextBlock Text="{Binding Install.Measurements}" AutomationProperties.AutomationId="TaskMeasurements" Style="{StaticResource MutedText}" Margin="0,4,0,12" />
+                    <TextBlock Text="{Binding Install.InstallerOutcome}" Margin="0,4,0,0" />
+                    <TextBlock Text="{Binding Install.SavedState}" Margin="0,4,0,0" />
+                    <TextBlock Text="{Binding Install.Coverage}" Margin="0,4,0,0" />
+                    <TextBox Style="{StaticResource SelectableText}" Text="{Binding Install.Error, Mode=OneWay}" Foreground="#963D2E" Margin="0,12,0,0" Visibility="{Binding Install.HasError, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="InstallError" AutomationProperties.Name="安装记录错误" />
+                    <ui:Button Content="打开本次记录" HorizontalAlignment="Left" Click="OnOpenSession" IsEnabled="{Binding Install.CanOpenSession}" Margin="0,16,0,0" AutomationProperties.AutomationId="OpenCapturedSession" />
+                    <Expander Header="任务技术详情" Margin="0,16,0,0" AutomationProperties.AutomationId="TaskDetails">
+                        <StackPanel Margin="0,12,0,0">
+                            <TextBox Style="{StaticResource SelectableText}" Text="{Binding Install.Diagnostics, Mode=OneWay}" MaxHeight="280" AutomationProperties.AutomationId="TaskDiagnostics" AutomationProperties.Name="任务技术详情" />
+                            <ui:Button Content="复制任务摘要" HorizontalAlignment="Left" Click="OnCopyTask" Margin="0,12,0,0" AutomationProperties.AutomationId="CopyTaskSummary" />
+                        </StackPanel>
+                    </Expander>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Surface}">
+                <StackPanel IsEnabled="{Binding Install.ConfigurationEnabled}">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="安装器" Style="{StaticResource SectionTitle}" />
+                            <TextBlock Text="{Binding Install.InstallerFileName}" AutomationProperties.AutomationId="InstallerFileName" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                            <TextBlock Text="选择文件后不会立即运行。" Style="{StaticResource MutedText}" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <ui:Button Grid.Column="1" Content="选择 EXE" Margin="16,0,0,0" VerticalAlignment="Center" Click="OnPickInstaller" AutomationProperties.AutomationId="PickInstaller">
+                            <ui:Button.Icon><ui:SymbolIcon Symbol="FolderOpen24" /></ui:Button.Icon>
+                        </ui:Button>
+                    </Grid>
+                    <Expander Header="查看完整路径" Margin="0,12,0,0" AutomationProperties.AutomationId="FullInstallerPath">
+                        <StackPanel Margin="0,8,0,0">
+                            <TextBox Text="{Binding Install.InstallerPath, Mode=OneWay}" Style="{StaticResource SelectableText}" AutomationProperties.AutomationId="InstallerPath" AutomationProperties.Name="安装器完整路径" />
+                            <ui:Button Content="复制路径" Appearance="Transparent" HorizontalAlignment="Left" Click="OnCopyInstaller" Margin="0,8,0,0" />
+                        </StackPanel>
+                    </Expander>
+                    <TextBlock Text="记录名称" Style="{StaticResource FieldLabel}" />
+                    <ui:TextBox Text="{Binding Install.Name, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="选择安装器后自动建议名称" AutomationProperties.AutomationId="InstallName" AutomationProperties.Name="记录名称" />
+                    <TextBlock Text="默认保存到“我的记录”，可在高级设置更改。" Style="{StaticResource MutedText}" Margin="0,8,0,0" />
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Surface}" Background="#EDF5F2">
+                <StackPanel>
+                    <TextBlock Text="本次记录方式" FontWeight="SemiBold" Margin="0,0,0,6" />
+                    <TextBlock Text="默认跟随安装器，无需预先猜测安装目录。需要前后状态对比时，可在高级设置选择已有的观察文件夹。开始前会检查记录位置和采集来源。" Style="{StaticResource MutedText}" />
+                    <TextBlock Text="{Binding Install.ConfigurationSummary}" Margin="0,12,0,0" AutomationProperties.AutomationId="ConfigurationSummary" />
+                </StackPanel>
+            </Border>
+            <Expander Header="高级设置" Margin="0,0,0,20" AutomationProperties.AutomationId="AdvancedSettings" IsEnabled="{Binding Install.ConfigurationEnabled}">
+                <Border Style="{StaticResource Surface}" Margin="0,12,0,0">
+                    <StackPanel>
+                        <CheckBox Content="跟随安装器记录（默认）" IsChecked="{Binding Install.FollowInstaller}" AutomationProperties.AutomationId="ModeFollow" />
+                        <TextBlock Text="关闭后使用指定文件夹观察与前后状态对比。" Style="{StaticResource MutedText}" Margin="0,8,0,0" />
+                        <TextBlock Text="观察文件夹（仅手动模式）" Style="{StaticResource FieldLabel}" />
+                        <DockPanel>
+                            <ui:Button DockPanel.Dock="Right" Content="选择文件夹" Margin="8,0,0,0" Click="OnPickWatchRoot" AutomationProperties.AutomationId="PickWatchRoot" />
+                            <ui:TextBox Text="{Binding Install.WatchRoot, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="WatchRoot" AutomationProperties.Name="观察文件夹" />
+                        </DockPanel>
+                        <CheckBox Content="使用自定义保存位置" IsChecked="{Binding Install.CustomDatabase}" Margin="0,20,0,8" AutomationProperties.AutomationId="CustomDatabase" />
+                        <DockPanel>
+                            <ui:Button DockPanel.Dock="Right" Content="更改保存位置" Margin="8,0,0,0" Click="OnPickDatabase" AutomationProperties.AutomationId="PickDatabase" />
+                            <ui:TextBox Text="{Binding Install.DatabasePath, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding Install.CustomDatabase}" AutomationProperties.AutomationId="DatabasePath" AutomationProperties.Name="记录保存位置" />
+                        </DockPanel>
+                        <TextBlock Text="安装器参数 · 每行一个原样参数" Style="{StaticResource FieldLabel}" />
+                        <ui:TextBox Text="{Binding Install.ArgumentsText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" MinHeight="72" MaxHeight="160" VerticalScrollBarVisibility="Auto" AutomationProperties.AutomationId="InstallerArguments" AutomationProperties.Name="安装器参数，每行一个" />
+                        <TextBlock Text="注册表范围 · HKCU 下的一个 Software 键（可选）" Style="{StaticResource FieldLabel}" />
+                        <ui:TextBox Text="{Binding Install.RegistryKey, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="例如 Software\ContainFixture" AutomationProperties.AutomationId="RegistryKey" AutomationProperties.Name="HKCU 注册表范围" />
+                        <WrapPanel Margin="0,16,0,0">
+                            <StackPanel Width="220" Margin="0,0,16,8"><TextBlock Text="稳定等待（毫秒）" Margin="0,0,0,8" /><ui:TextBox Text="{Binding Install.SettleMilliseconds, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="SettleMilliseconds" AutomationProperties.Name="稳定等待毫秒" /></StackPanel>
+                            <StackPanel Width="220" Margin="0,0,0,8"><TextBlock Text="最长排空（毫秒）" Margin="0,0,0,8" /><ui:TextBox Text="{Binding Install.MaxDrainMilliseconds, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="MaxDrainMilliseconds" AutomationProperties.Name="最长排空毫秒" /></StackPanel>
+                        </WrapPanel>
+                        <CheckBox Content="明确使用有限快照模式（不提供 ETW 事件）" IsChecked="{Binding Install.SnapshotOnly}" Margin="0,8,0,12" AutomationProperties.AutomationId="SnapshotOnly" />
+                        <ui:Button Content="检查环境" HorizontalAlignment="Left" Click="OnCheckEnvironment" IsEnabled="{Binding Install.CanCheckEnvironment}" AutomationProperties.AutomationId="CheckEnvironment" />
+                        <TextBlock Text="检查不会启动安装器，不会自动提权或更改系统安全设置。" Style="{StaticResource MutedText}" Margin="0,8,0,0" />
+                    </StackPanel>
+                </Border>
+            </Expander>
+
+        </StackPanel>
+      </ScrollViewer>
+      <Border Grid.Row="1" Margin="24,0,24,16" Padding="0,12,0,0" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="0,1,0,0">
+        <Grid>
+          <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+          <ui:Button Content="开始记录" Appearance="Primary" HorizontalAlignment="Left" Padding="24,12" Click="OnStart" IsEnabled="{Binding Install.CanStart}" AutomationProperties.AutomationId="StartRecording">
+            <ui:Button.Icon><ui:SymbolIcon Symbol="Play24" /></ui:Button.Icon>
+          </ui:Button>
+          <TextBlock Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center">
+            <TextBlock.Style>
+              <Style TargetType="TextBlock" BasedOn="{StaticResource MutedText}">
+                <Setter Property="Text" Value="只有点击开始，才会运行安装器。" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding Install.HasTask}" Value="True"><Setter Property="Text" Value="本次任务的状态与详细依据保留在上方。" /></DataTrigger>
+                  <DataTrigger Binding="{Binding Install.Busy}" Value="True"><Setter Property="Text" Value="任务进行中，请保持窗口打开，等待采集与保存结束。" /></DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </TextBlock.Style>
+          </TextBlock>
+        </Grid>
+      </Border>
+    </Grid>
+</UserControl>

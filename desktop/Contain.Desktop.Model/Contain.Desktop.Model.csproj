@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <Version>0.4.0-beta.1</Version>
+    <RuntimeFrameworkVersion>10.0.14</RuntimeFrameworkVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- Same bounded protocol, personal-library and exporter implementation as Beta.10. -->
+    <Compile Include="../Contain.Viewer/CoreClient.cs;../Contain.Viewer/CoreResponse.cs;../Contain.Viewer/JsonView.cs;../Contain.Viewer/InstallClient.cs;../Contain.Viewer/InstallStatus.cs;../Contain.Viewer/InstallDiagnosticOutput.cs;../Contain.Viewer/InstallProgressClock.cs;../Contain.Viewer/PersonalRecords.cs;../Contain.Viewer/OverviewPresentation.cs;../Contain.Viewer/RecordingScope.cs;../Contain.Viewer/ReportExporter.cs;../Contain.Viewer/SearchReportExporter.cs" Link="Shared/%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,695 @@
+{
+  "schema_version": 1,
+  "protocol": "contain-wpf-native-verification-1",
+  "source_sha": "94ec2a274b47616b3dba645e15a43704c57f488d",
+  "native_windows": true,
+  "windows_version": "10.0.26100.0",
+  "architecture": "X64",
+  "framework": "WPF \u002B WPF UI",
+  "product_process_only": true,
+  "real_user_records_accessed": false,
+  "accepted": false,
+  "preview_checks_passed": false,
+  "native_install_requested": false,
+  "actual_etw": false,
+  "cold_restart_verified": false,
+  "viewer_exe_sha256": "570b902bf757aa6c4629a8f629e8fd32cd1ae8e7fe5c9ea03fe0e8ca18138565",
+  "viewer_dll_sha256": "8d17b0ea8630807044af91327d6e9240daa3648519859f698df56300cace7096",
+  "core_sha256": "a45f193a84fb3d5556e0258941d9f55bddded677098959c6b1a07b1e724e66f6",
+  "package_manifest_sha256": "7455a9a07fe4f7aa9bc343d840c6dc83f1c937df7ec439e50fbb8a01f4f7bbaf",
+  "planned_checks": [
+    "frozen_package_identity",
+    "empty_personal_library_and_native_picker_cancel",
+    "saved_records_exact_identity_and_outcomes",
+    "search_130_events_53_matches_exact_order",
+    "search_copy_explain_and_export_all",
+    "external_legacy_readonly_and_return",
+    "same_name_session_switch_and_clear",
+    "compact_visible_keyboard_actions",
+    "saved_records_cold_restart",
+    "gui_default_configuration_no_implicit_install",
+    "gui_single_start_close_guard_and_saved_uuid",
+    "real_etw_parent_child_independent_oracle",
+    "real_event_explain_export_and_cold_restart",
+    "source_databases_and_package_unchanged"
+  ],
+  "checks": [
+    {
+      "name": "frozen_package_identity",
+      "status": "passed",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": null,
+      "call_sites": null
+    },
+    {
+      "name": "empty_personal_library_and_native_picker_cancel",
+      "status": "passed",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": null,
+      "call_sites": null
+    },
+    {
+      "name": "saved_records_exact_identity_and_outcomes",
+      "status": "passed",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": null,
+      "call_sites": null
+    },
+    {
+      "name": "search_130_events_53_matches_exact_order",
+      "status": "passed",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": null,
+      "call_sites": null
+    },
+    {
+      "name": "search_copy_explain_and_export_all",
+      "status": "failed",
+      "error_type": "TimeoutException",
+      "stage": "native_picker_discovery",
+      "control": "ExportMatches",
+      "safe_reason": null,
+      "call_sites": [
+        "\u003CRunAsync\u003Ed__0.MoveNext",
+        "\u003CUntilAsync\u003Ed__40.MoveNext",
+        "\u003CChooseFileAsync\u003Ed__62.MoveNext",
+        "\u003CSearchExplainExport\u003Ed__40.MoveNext",
+        "\u003CStep\u003Ed__35.MoveNext"
+      ]
+    },
+    {
+      "name": "external_legacy_readonly_and_return",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "prerequisite_failed",
+      "call_sites": null
+    },
+    {
+      "name": "same_name_session_switch_and_clear",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "prerequisite_failed",
+      "call_sites": null
+    },
+    {
+      "name": "compact_visible_keyboard_actions",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "prerequisite_failed",
+      "call_sites": null
+    },
+    {
+      "name": "saved_records_cold_restart",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "prerequisite_failed",
+      "call_sites": null
+    },
+    {
+      "name": "gui_default_configuration_no_implicit_install",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "native_install_not_requested_preview_only",
+      "call_sites": null
+    },
+    {
+      "name": "gui_single_start_close_guard_and_saved_uuid",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "native_install_not_requested_preview_only",
+      "call_sites": null
+    },
+    {
+      "name": "real_etw_parent_child_independent_oracle",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "native_install_not_requested_preview_only",
+      "call_sites": null
+    },
+    {
+      "name": "real_event_explain_export_and_cold_restart",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "native_install_not_requested_preview_only",
+      "call_sites": null
+    },
+    {
+      "name": "source_databases_and_package_unchanged",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "prerequisite_failed",
+      "call_sites": null
+    }
+  ],
+  "assertions": 473,
+  "passed": 4,
+  "failed": 1,
+  "not_run": 9,
+  "retries": 0,
+  "screenshots": [
+    {
+      "name": "records-empty.png",
+      "sha256": "eb0242e012a2f51a7385cad4dafe9e5b677faf49ba8f973a57d5baf6990725c6",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "isolated-empty"
+    },
+    {
+      "name": "records-sample.png",
+      "sha256": "5abc19e9f30d2e93e18cae1f47692825223e623394b619211a5afff544dd29c9",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "synthetic-viewer-fixtures"
+    },
+    {
+      "name": "overview-finished.png",
+      "sha256": "12a984fd3a519a8f0e80c94c572fa84295442c241c4cf74ae0d2481c6b38e82e",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "synthetic-persisted-outcome"
+    },
+    {
+      "name": "overview-historical.png",
+      "sha256": "3ff111d6fd523b61e2da8d0f4f02b98c321c149f2affaef06a2ee177a0e5c8e9",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "synthetic-persisted-outcome"
+    },
+    {
+      "name": "overview-interrupted.png",
+      "sha256": "a3ead0348df5dd9dd8bb624099d4e758daf76f63f6dbce160ec57e6d0be5a242",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "synthetic-persisted-outcome"
+    },
+    {
+      "name": "events-search-explain.png",
+      "sha256": "251d3b4b1873a957419e2cccf15ebacb6a0d9a0e6c50076392d52a554d8fbdb5",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "synthetic-130-events-53-matches"
+    },
+    {
+      "name": "failed-search_copy_explain_and_export_all.png",
+      "sha256": "1f47462f7b255a0bad5e0a57e35bbcaeed454fc6817012b36066fc6f1d61d57f",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "failed-isolated-native-stage"
+    }
+  ],
+  "launches": [
+    {
+      "process_id": 7152,
+      "probes": [
+        {
+          "stage": "ready",
+          "control": "NewInstall",
+          "elapsed_ms": 1461,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "empty_records_ready",
+          "control": "EmptyRecordsCTA",
+          "elapsed_ms": 60,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "new_config",
+          "control": "PickInstaller",
+          "elapsed_ms": 336,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_discovery",
+          "control": "PickInstaller",
+          "elapsed_ms": 886,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_closed",
+          "control": "PickInstaller",
+          "elapsed_ms": 80,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "back_to_empty_records",
+          "control": "EmptyRecordsCTA",
+          "elapsed_ms": 120,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "keyboard_focus",
+          "control": "NewInstall",
+          "elapsed_ms": 23,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "keyboard_new_record_navigation",
+          "control": "PickInstaller",
+          "elapsed_ms": 101,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "normal_close",
+          "control": "window",
+          "elapsed_ms": 83,
+          "process_alive": false,
+          "error_type": null
+        }
+      ],
+      "actions": [
+        {
+          "control": "NewInstall",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "MyRecords",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        }
+      ],
+      "last_stage": "normal_close",
+      "last_control": "window",
+      "last_error_type": null,
+      "process_exited": true,
+      "normal_close": {
+        "request_elapsed_ms": 1,
+        "wait_elapsed_ms": 82,
+        "wait_deadline_ms": 20000,
+        "process_alive": false,
+        "exit_code": 0,
+        "error_type": null
+      }
+    },
+    {
+      "process_id": 4164,
+      "probes": [
+        {
+          "stage": "ready",
+          "control": "NewInstall",
+          "elapsed_ms": 1162,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "saved_library_ready",
+          "control": "record:synthetic-finished",
+          "elapsed_ms": 52,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "find_exact_record",
+          "control": "record:synthetic-finished",
+          "elapsed_ms": 56,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "load_exact_record",
+          "control": "SessionTitle",
+          "elapsed_ms": 478,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "find_exact_record",
+          "control": "record:synthetic-historical",
+          "elapsed_ms": 113,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "load_exact_record",
+          "control": "SessionTitle",
+          "elapsed_ms": 243,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "find_exact_record",
+          "control": "record:synthetic-interrupted",
+          "elapsed_ms": 123,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "load_exact_record",
+          "control": "SessionTitle",
+          "elapsed_ms": 288,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "normal_close",
+          "control": "window",
+          "elapsed_ms": 71,
+          "process_alive": false,
+          "error_type": null
+        }
+      ],
+      "actions": [
+        {
+          "control": "OverviewTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "TechnicalTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "MyRecords",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "OverviewTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "TechnicalTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "MyRecords",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "OverviewTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "TechnicalTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "MyRecords",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        }
+      ],
+      "last_stage": "normal_close",
+      "last_control": "window",
+      "last_error_type": null,
+      "process_exited": true,
+      "normal_close": {
+        "request_elapsed_ms": 0,
+        "wait_elapsed_ms": 71,
+        "wait_deadline_ms": 20000,
+        "process_alive": false,
+        "exit_code": 0,
+        "error_type": null
+      }
+    },
+    {
+      "process_id": 4012,
+      "probes": [
+        {
+          "stage": "ready",
+          "control": "NewInstall",
+          "elapsed_ms": 1081,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "find_exact_record",
+          "control": "record:synthetic-search",
+          "elapsed_ms": 56,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "load_exact_record",
+          "control": "SessionTitle",
+          "elapsed_ms": 327,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "events_visible",
+          "control": "SearchText",
+          "elapsed_ms": 86,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "search_results",
+          "control": "EventList",
+          "elapsed_ms": 579,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "search_second_page",
+          "control": "EventPageLabel",
+          "elapsed_ms": 134,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "exact_explanation",
+          "control": "EventDetails",
+          "elapsed_ms": 153,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "clipboard_exact_event",
+          "control": "CopyEventId",
+          "elapsed_ms": 90,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "native_picker_discovery",
+          "control": "ExportMatches",
+          "elapsed_ms": 15001,
+          "process_alive": true,
+          "error_type": "TimeoutException"
+        }
+      ],
+      "actions": [
+        {
+          "control": "EventsTab",
+          "pattern": "SelectionItemPattern.Select",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "SearchEvents",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "NextEvents",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        },
+        {
+          "control": "CopyEventId",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        }
+      ],
+      "last_stage": "native_picker_discovery",
+      "last_control": "window",
+      "last_error_type": "TimeoutException",
+      "process_exited": false,
+      "normal_close": null
+    }
+  ],
+  "failure_screenshots": [
+    {
+      "check": "search_copy_explain_and_export_all",
+      "captured": true,
+      "error_type": null
+    }
+  ],
+  "navigation_diagnostics": [],
+  "search": {
+    "expected_ids": [
+      "synthetic-search-event-070",
+      "synthetic-search-event-071",
+      "synthetic-search-event-072",
+      "synthetic-search-event-073",
+      "synthetic-search-event-074",
+      "synthetic-search-event-075",
+      "synthetic-search-event-076",
+      "synthetic-search-event-077",
+      "synthetic-search-event-078",
+      "synthetic-search-event-079",
+      "synthetic-search-event-080",
+      "synthetic-search-event-081",
+      "synthetic-search-event-082",
+      "synthetic-search-event-083",
+      "synthetic-search-event-084",
+      "synthetic-search-event-085",
+      "synthetic-search-event-086",
+      "synthetic-search-event-087",
+      "synthetic-search-event-088",
+      "synthetic-search-event-089",
+      "synthetic-search-event-090",
+      "synthetic-search-event-091",
+      "synthetic-search-event-092",
+      "synthetic-search-event-093",
+      "synthetic-search-event-094",
+      "synthetic-search-event-095",
+      "synthetic-search-event-096",
+      "synthetic-search-event-097",
+      "synthetic-search-event-098",
+      "synthetic-search-event-099",
+      "synthetic-search-event-100",
+      "synthetic-search-event-101",
+      "synthetic-search-event-102",
+      "synthetic-search-event-103",
+      "synthetic-search-event-104",
+      "synthetic-search-event-105",
+      "synthetic-search-event-106",
+      "synthetic-search-event-107",
+      "synthetic-search-event-108",
+      "synthetic-search-event-109",
+      "synthetic-search-event-110",
+      "synthetic-search-event-111",
+      "synthetic-search-event-112",
+      "synthetic-search-event-113",
+      "synthetic-search-event-114",
+      "synthetic-search-event-115",
+      "synthetic-search-event-116",
+      "synthetic-search-event-117",
+      "synthetic-search-event-118",
+      "synthetic-search-event-119",
+      "synthetic-search-event-120",
+      "synthetic-search-event-121",
+      "synthetic-search-event-122"
+    ],
+    "first_page_ids": [
+      "synthetic-search-event-070",
+      "synthetic-search-event-071",
+      "synthetic-search-event-072",
+      "synthetic-search-event-073",
+      "synthetic-search-event-074",
+      "synthetic-search-event-075",
+      "synthetic-search-event-076",
+      "synthetic-search-event-077",
+      "synthetic-search-event-078",
+      "synthetic-search-event-079",
+      "synthetic-search-event-080",
+      "synthetic-search-event-081",
+      "synthetic-search-event-082",
+      "synthetic-search-event-083",
+      "synthetic-search-event-084",
+      "synthetic-search-event-085",
+      "synthetic-search-event-086",
+      "synthetic-search-event-087",
+      "synthetic-search-event-088",
+      "synthetic-search-event-089",
+      "synthetic-search-event-090",
+      "synthetic-search-event-091",
+      "synthetic-search-event-092",
+      "synthetic-search-event-093",
+      "synthetic-search-event-094",
+      "synthetic-search-event-095",
+      "synthetic-search-event-096",
+      "synthetic-search-event-097",
+      "synthetic-search-event-098",
+      "synthetic-search-event-099",
+      "synthetic-search-event-100",
+      "synthetic-search-event-101",
+      "synthetic-search-event-102",
+      "synthetic-search-event-103",
+      "synthetic-search-event-104",
+      "synthetic-search-event-105",
+      "synthetic-search-event-106",
+      "synthetic-search-event-107",
+      "synthetic-search-event-108",
+      "synthetic-search-event-109",
+      "synthetic-search-event-110",
+      "synthetic-search-event-111",
+      "synthetic-search-event-112",
+      "synthetic-search-event-113",
+      "synthetic-search-event-114",
+      "synthetic-search-event-115",
+      "synthetic-search-event-116",
+      "synthetic-search-event-117",
+      "synthetic-search-event-118",
+      "synthetic-search-event-119"
+    ],
+    "second_page_ids": [
+      "synthetic-search-event-120",
+      "synthetic-search-event-121",
+      "synthetic-search-event-122"
+    ],
+    "exported_ids": [],
+    "selected_event_id": "synthetic-search-event-120"
+  },
+  "live": {
+    "session_id": null,
+    "selected_event_id": null,
+    "accounting": null,
+    "follow_oracle": null
+  },
+  "scope": "One native WPF package, isolated synthetic stores and at most one real follow-installer capture. Native DPI is measured per screenshot. No simulated scaling is reported as physical DPI."
+}
