@@ -20,7 +20,8 @@
             <local:ZeroVisibilityConverter x:Key="ZeroVisibility" />
             <local:InverseBooleanConverter x:Key="Not" />
             <Style TargetType="TextBlock">
-                <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+                <!-- Keep inherited foreground: WPF UI sets the content presenter's
+                     text color for primary, pressed and disabled button states. -->
                 <Setter Property="FontSize" Value="14" />
                 <Setter Property="TextWrapping" Value="Wrap" />
             </Style>

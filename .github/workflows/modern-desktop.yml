@@ -48,6 +48,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Actual model regression failed' }
           dotnet run --project desktop/Contain.Viewer.Presentation.Tests -c Release
           if ($LASTEXITCODE -ne 0) { throw 'Shared evidence presentation regression failed' }
+          dotnet restore desktop/Contain.Desktop.Controls.Tests --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Locked control regression restore failed' }
+          dotnet run --project desktop/Contain.Desktop.Controls.Tests -c Release --no-restore -- "$env:MODERN_OUTPUT/public/controls"
+          if ($LASTEXITCODE -ne 0) { throw 'Actual WPF action-navigation regression failed' }
+          Copy-Item -LiteralPath "$env:MODERN_OUTPUT/public/controls/navigation-control-summary.json" -Destination "$env:MODERN_OUTPUT/public/navigation-control-summary.json"
           dotnet restore desktop/Contain.Desktop -p:RuntimeIdentifier=win-x64 -p:RuntimeIdentifiers=win-x64 -p:SelfContained=true --locked-mode
           if ($LASTEXITCODE -ne 0) { throw 'Locked WPF restore failed' }
           dotnet publish desktop/Contain.Desktop -c Release -r win-x64 --self-contained true --no-restore -o "$env:MODERN_OUTPUT/viewer"

@@ -11,17 +11,20 @@ namespace Contain.Desktop.Tests;
 
 internal sealed record Screenshot(string Name, string Sha256, int Width, int Height, uint Dpi, string DataKind);
 internal sealed record Probe(string Stage, string Control, long ElapsedMs, bool ProcessAlive, string? ErrorType);
+internal sealed record ActionProbe(string Control, string Pattern, bool Passed, string? ErrorType);
 
 /// <summary>Only talks to a separately launched, exact packaged executable. No product assembly reference.</summary>
 internal sealed class DesktopDriver : IDisposable
 {
     private readonly Process process;
     private readonly List<Probe> probes = [];
+    private readonly List<ActionProbe> actions = [];
     private readonly Stopwatch lifetime = Stopwatch.StartNew();
     internal int ProcessId => process.Id;
     internal bool HasExited => process.HasExited;
     internal int ExitCode => process.ExitCode;
     internal IReadOnlyList<Probe> Probes => probes;
+    internal IReadOnlyList<ActionProbe> Actions => actions;
     internal string Stage { get; private set; } = "launch";
     internal string? LastControl { get; private set; }
     internal string? LastErrorType { get; private set; }
@@ -48,6 +51,11 @@ internal sealed class DesktopDriver : IDisposable
     {
         await UntilAsync("ready", "NewInstall", async () => await OptionalAsync("NewInstall", e => e.Current.IsEnabled) == true,
             TimeSpan.FromSeconds(40));
+        foreach (var id in new[] { "NewInstall", "MyRecords", "OpenDatabase", "About" })
+            await Ui(id, () =>
+            {
+                if (!Required(id).TryGetCurrentPattern(InvokePattern.Pattern, out _)) throw new RequiredInvokePatternMissingException(id);
+            });
     }
 
     internal async Task UntilAsync(string stage, string id, Func<Task<bool>> predicate, TimeSpan? timeout = null)
@@ -75,10 +83,12 @@ internal sealed class DesktopDriver : IDisposable
     internal Task<string> TextAsync(string id) => Ui(id, () => Text(Required(id)));
     internal Task<string> HelpAsync(string id) => Ui(id, () => Required(id).Current.HelpText);
     internal Task<bool> EnabledAsync(string id) => Ui(id, () => Required(id).Current.IsEnabled);
-    internal Task<bool> ExistsAsync(string id) => Ui(id, () => Find(id) is not null);
+    internal Task<bool> ExistsAsync(string id) => OptionalAsync(id, _ => true);
     internal Task<string?> TryHelpAsync(string id) => OptionalAsync(id, e => e.Current.HelpText);
     internal Task<string?> TryTextAsync(string id) => OptionalAsync(id, Text);
-    internal Task<bool> VisibleAsync(string id) => Ui(id, () => Visible(Required(id)));
+    // Boolean state probes accept absence while a view is being constructed.
+    // Required text/action reads remain strict, and unexpected UIA errors propagate.
+    internal Task<bool> VisibleAsync(string id) => OptionalAsync(id, Visible);
     internal Task<string[]> RowIdsAsync(string id, string prefix) => Ui(id, () =>
     {
         var list = Required(id);
@@ -117,11 +127,29 @@ internal sealed class DesktopDriver : IDisposable
     });
     internal Task InvokeAsync(string id) => Ui(id, () =>
     {
-        var element = Required(id);
-        if (!element.Current.IsEnabled) throw new ElementNotEnabledException(id);
-        if (element.TryGetCurrentPattern(InvokePattern.Pattern, out var invoke)) ((InvokePattern)invoke).Invoke();
-        else if (element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out var select)) ((SelectionItemPattern)select).Select();
-        else throw new InvalidOperationException("Required action has no supported invocation pattern: " + id);
+        var attempted = "find_control";
+        try
+        {
+            var element = Required(id);
+            attempted = "check_enabled";
+            if (!element.Current.IsEnabled) throw new ElementNotEnabledException(id);
+            var navigationAction = id is "NewInstall" or "MyRecords" or "CurrentTask" or "OpenDatabase" or "About";
+            if (navigationAction && !Visible(element)) throw new InvalidOperationException("Required navigation action is not visible.");
+            attempted = "find_pattern";
+            if (element.TryGetCurrentPattern(InvokePattern.Pattern, out var invoke))
+            { attempted = "InvokePattern.Invoke"; ((InvokePattern)invoke).Invoke(); }
+            else if (navigationAction)
+            { attempted = "require_navigation_InvokePattern"; throw new RequiredInvokePatternMissingException(id); }
+            else if (element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out var select))
+            { attempted = "SelectionItemPattern.Select"; ((SelectionItemPattern)select).Select(); }
+            else throw new InvalidOperationException("Required action has no supported invocation pattern: " + id);
+            if (actions.Count < 128) actions.Add(new(id, attempted, true, null));
+        }
+        catch (Exception error)
+        {
+            if (actions.Count < 128) actions.Add(new(id, attempted, false, error.GetType().Name));
+            throw;
+        }
     });
     internal Task SelectAsync(string id) => Ui(id, () =>
     {
@@ -144,6 +172,16 @@ internal sealed class DesktopDriver : IDisposable
     {
         await Ui(id, () => { SetForegroundWindow(MainWindow()); Required(id).SetFocus(); });
         await UntilAsync("keyboard_focus", id, () => Ui(id, () => Required(id).Current.HasKeyboardFocus), TimeSpan.FromSeconds(5));
+    }
+    internal async Task KeyboardActivateAsync(string id)
+    {
+        await KeyboardReachAsync(id);
+        await Sta(() =>
+        {
+            GetWindowThreadProcessId(GetForegroundWindow(), out var owner);
+            if (owner != process.Id) throw new InvalidOperationException("Keyboard action lost its owned foreground window.");
+            Forms.SendKeys.SendWait(" ");
+        });
     }
     internal Task ToggleAsync(string id, bool value) => Ui(id, () =>
     {
@@ -323,6 +361,7 @@ internal sealed class DesktopDriver : IDisposable
     }
     internal sealed class ProductExitedException(int code) : IOException("Packaged product exited before required state; exit=" + code);
     internal sealed class RequiredControlMissingException(string id) : InvalidOperationException("Required control missing: " + id);
+    internal sealed class RequiredInvokePatternMissingException(string id) : InvalidOperationException("Navigation action lacks required InvokePattern: " + id);
     [StructLayout(LayoutKind.Sequential)] private struct Bounds { internal int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] private struct Point { internal int X, Y; }
     private delegate bool WindowCallback(IntPtr window, IntPtr parameter);
@@ -335,6 +374,7 @@ internal sealed class DesktopDriver : IDisposable
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out Bounds rectangle);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out Point point);
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(Point point);

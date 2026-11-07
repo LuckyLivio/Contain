@@ -169,6 +169,10 @@ internal sealed class NativeSuite(Options options)
         await D.InvokeAsync("NewInstall"); await D.UntilAsync("new_config", "PickInstaller", () => D.VisibleAsync("PickInstaller"));
         await D.ChooseFileAsync("PickInstaller", null);
         Require(!await D.EnabledAsync("StartRecording") && !File.Exists(Database(currentRoot)), "picker cancellation creates no session and cannot start");
+        await D.InvokeAsync("MyRecords");
+        await D.UntilAsync("back_to_empty_records", "EmptyRecordsCTA", () => D.VisibleAsync("EmptyRecordsCTA"));
+        await D.KeyboardActivateAsync("NewInstall");
+        await D.UntilAsync("keyboard_new_record_navigation", "PickInstaller", () => D.VisibleAsync("PickInstaller"));
         await D.CloseAsync(); PreserveLaunch(); D.Dispose(); desktop = null;
     }
     private async Task SavedOutcomes()
@@ -532,7 +536,7 @@ internal sealed class NativeSuite(Options options)
     private void PreserveLaunch()
     {
         if (desktop is null) return;
-        launches.Add(new { process_id = desktop.ProcessId, probes = desktop.Probes.ToArray(), last_stage = desktop.Stage, last_control = desktop.LastControl,
+        launches.Add(new { process_id = desktop.ProcessId, probes = desktop.Probes.ToArray(), actions = desktop.Actions.ToArray(), last_stage = desktop.Stage, last_control = desktop.LastControl,
             last_error_type = desktop.LastErrorType, process_exited = desktop.HasExited });
     }
     private async Task Shot(string name, string kind) => screenshots.Add(await D.CaptureAsync(Path.Combine(options.Output, "screenshots"), name, kind));

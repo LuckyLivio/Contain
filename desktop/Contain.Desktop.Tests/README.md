@@ -26,6 +26,16 @@ later stages. A deadline is never extended by an inner UIA call; transient absen
 is accepted only inside the relevant bounded state wait. Unexpected UIA errors
 and premature process exits retain their types.
 
+Action-only sidebar entries must expose `InvokePattern`; the harness does not
+substitute a mouse click for a broken automation action. The empty-library check
+also reaches New record by actual focused Space input. M1 (run 42337219333)
+retains its original InvalidOperationException at NewInstall. Source review found
+that WPF UI 4.3.0's default selection peer routes through target-page navigation,
+while these entries are configured as actions. The separate Windows STA control
+regression verifies that library route and the corrected action peer. Bounded
+action diagnostics distinguish lookup, missing pattern, selection and invocation
+without collecting unrelated desktop elements or exception text.
+
 The actual wait engine also runs controlled sequences for temporary absence plus
 an old session followed by the correct session, permanent absence, a permanent
 wrong session, process exit and preservation of an unexpected COM exception.
