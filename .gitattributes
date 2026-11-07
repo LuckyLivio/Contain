@@ -2,3 +2,6 @@
 # Redistributed license texts retain upstream bytes, including line endings and
 # upstream whitespace. This exception does not apply to product or test sources.
 licenses/** -text -whitespace
+# Retained public native aggregates keep original bytes and their recorded hashes.
+# Generated evidence only; source and test whitespace checks remain unchanged.
+docs/examples/beta04-attempts/*.json -text -whitespace

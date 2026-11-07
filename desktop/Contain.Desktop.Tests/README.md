@@ -32,9 +32,24 @@ also reaches New record by actual focused Space input. M1 (run 42337219333)
 retains its original InvalidOperationException at NewInstall. Source review found
 that WPF UI 4.3.0's default selection peer routes through target-page navigation,
 while these entries are configured as actions. The separate Windows STA control
-regression verifies that library route and the corrected action peer. Bounded
+regression verifies that library route and the corrected inner-button composition
+through both in-process and external UI Automation. Bounded
 action diagnostics distinguish lookup, missing pattern, selection and invocation
 without collecting unrelated desktop elements or exception text.
+
+Native picker actions use a physical click to avoid synchronously blocking in a
+modal `InvokePattern` call. Before sending input, the driver requires an enabled,
+visible button, a unique fixed AutomationId in the owned main window, native
+window ownership, and a UIA hit ancestor with that exact ID, button role and
+current bounds containing the click point within 16 inspected nodes. Runtime ID
+equality is recorded separately. This rejects a control clipped behind another
+part of the same window. There is no fallback or repeated click. Cached per-launch
+diagnostics contain only the fixed action ID, roles, identity/geometry comparison
+booleans, bounded ancestry, match outcome and original exception type. The real
+guard is also exercised with duplicate IDs, wrong IDs/bounds, exact/child hits,
+covered/missing/foreign targets, an overlong ancestor chain and an unexpected
+provider exception. M6 did not capture the hit ancestor's ID/bounds; it does not
+establish that the observed Button was the required action or a provider bug.
 
 The actual wait engine also runs controlled sequences for temporary absence plus
 an old session followed by the correct session, permanent absence, a permanent

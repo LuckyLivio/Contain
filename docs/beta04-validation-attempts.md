@@ -5,6 +5,10 @@ These are ordered attempts, not a selection of green reruns. The fixed plan is
 ZIP is frozen before its native checks; each failed artifact remains in Actions.
 No previous WinForms report establishes acceptance of this WPF desktop.
 
+Reviewed public aggregates are also archived under
+[`examples/beta04-attempts`](examples/beta04-attempts/index.json), preserving
+their original bytes and SHA-256. This archive contains no database or full log.
+
 ## M1 — first native viewing preview
 
 - Source: `e308844e3c1f6be5f530b248d3de488d9dec4be8`.
@@ -187,3 +191,35 @@ requests UTF-8 explicitly for its source/report reads. Its 26 checks pass locall
 both normally and with Python UTF-8 mode and locale coercion disabled under the
 C locale; the next Windows CI must verify the actual platform. No product or
 core behavior, assertion or acceptance threshold changes for this correction.
+
+M6 source `37b6d1dbb3a384817c77f70b5318e4b16321f2c6`,
+[run 42340821695](https://github.com/LuckyLivio/Contain/actions/runs/42340821695),
+**failed** in the new click guard before the first EXE chooser: 1 fixed group
+passed, 1 failed, 12 not run, zero installations. The screenshot shows the
+chooser button and fixed Start footer visibly present. Native ownership passed;
+UIA hit-testing returned Text, then Button, then its ancestors in the product,
+but `Automation.Compare` did not match the previously found element. The guard
+refused to click before reaching the foreign desktop ancestor. This report does
+not yet show the hit button's required-ID or rectangle match, so it cannot prove
+the exact provider-identity reason. It does not establish a product chooser
+failure. The package remained unchanged; the result and screenshots are retained.
+
+## M7 — unique stable action identity plus actual hit geometry
+
+Predeclared before execution: no product change. .NET WPF's element overload of
+`Automation.Compare` compares runtime-ID arrays; it is not a CLR reference test.
+For the four fixed native-chooser actions, require one unique target in the
+owned main window, Button role, visible/enabled state and matching current
+bounds containing the click point. Require that exact stable ID, role and bounds
+on the actual hit element or within its bounded 16-node ancestry. Runtime-ID
+comparison remains separately recorded rather than serving as the only action
+identity. Reject duplicate IDs, siblings/overlays, wrong role or bounds, foreign
+ancestry and exhausted traversal. Preserve unexpected UIA exceptions.
+
+Deterministic regressions exercise the actual identity/ancestry guard, including
+distinct runtime identities with the same unique stable target, and all rejection
+cases above. One new viewing preview with zero installations records only fixed
+IDs and per-node match/ownership/geometry booleans. No arbitrary desktop names,
+paths or content IDs are collected. M6 remains failed; its unrecorded hit-ID and
+geometry cannot be inferred retroactively. If current identity is ambiguous,
+the next attempt must fail before clicking rather than fall back or retry.

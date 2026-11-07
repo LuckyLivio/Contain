@@ -5,6 +5,19 @@ internal static class HitTargetGuard
 {
     internal const int MaximumNodes = 16;
     internal sealed record Result(bool Matches, string Reason);
+    internal sealed record Identity(string Role, bool Owned, bool RequiredIdMatches, bool RoleMatches,
+        bool BoundsMatch, bool Enabled, bool Visible, bool ContainsClickPoint, bool RuntimeMatches)
+    {
+        // Runtime IDs remain diagnostic: the user-facing action contract is its unique,
+        // owned, fixed AutomationId and current button geometry in the actual hit ancestry.
+        internal bool Matches => Owned && RequiredIdMatches && RoleMatches && BoundsMatch
+            && Enabled && Visible && ContainsClickPoint;
+    }
+
+    internal static void RequireUniqueCount(int count)
+    {
+        if (count != 1) throw new ClickTargetIdentityException(count == 0 ? "missing_fixed_id" : "duplicate_fixed_id");
+    }
 
     internal static Result Check<T>(T target, T? hit, Func<T, bool> owned, Func<T, T, bool> same,
         Func<T, T?> parent, Action<T> observe) where T : class
@@ -23,6 +36,21 @@ internal static class HitTargetGuard
 
     internal static void VerifyContract()
     {
+        RequireUniqueCount(1);
+        foreach (var count in new[] { 0, 2 })
+        {
+            try { RequireUniqueCount(count); throw new InvalidOperationException("Non-unique click target was accepted."); }
+            catch (ClickTargetIdentityException) { }
+        }
+        var identity = new Identity("ControlType.Button", true, true, true, true, true, true, true, false);
+        if (!identity.Matches) throw new InvalidOperationException("Exact action identity must not require equal runtime IDs.");
+        foreach (var invalid in new[]
+        {
+            identity with { Owned = false }, identity with { RequiredIdMatches = false, RuntimeMatches = true },
+            identity with { RoleMatches = false }, identity with { BoundsMatch = false },
+            identity with { Enabled = false }, identity with { Visible = false }, identity with { ContainsClickPoint = false }
+        })
+            if (invalid.Matches) throw new InvalidOperationException("Incomplete action identity was accepted.");
         var target = new Node();
         var child = new Node { Parent = target };
         var sibling = new Node();
@@ -53,4 +81,6 @@ internal static class HitTargetGuard
         internal Node? Parent { get; init; }
         internal bool Owned { get; init; } = true;
     }
+
+    internal sealed class ClickTargetIdentityException(string reason) : InvalidOperationException("Click target identity rejected: " + reason);
 }

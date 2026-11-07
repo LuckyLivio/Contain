@@ -1,0 +1,332 @@
+{
+  "schema_version": 1,
+  "protocol": "contain-wpf-native-verification-1",
+  "source_sha": "37b6d1dbb3a384817c77f70b5318e4b16321f2c6",
+  "native_windows": true,
+  "windows_version": "10.0.26100.0",
+  "architecture": "X64",
+  "framework": "WPF \u002B WPF UI",
+  "product_process_only": true,
+  "real_user_records_accessed": false,
+  "accepted": false,
+  "preview_checks_passed": false,
+  "native_install_requested": false,
+  "actual_etw": false,
+  "cold_restart_verified": false,
+  "viewer_exe_sha256": "fcfd1b8df36e5b81b5929497985abf39d6318c4202cdbef93aff8a3b299d7711",
+  "viewer_dll_sha256": "942bdabf1b7090caed2a54e6775875c36e76072294d4b01944e518b4149ba23c",
+  "core_sha256": "a45f193a84fb3d5556e0258941d9f55bddded677098959c6b1a07b1e724e66f6",
+  "package_manifest_sha256": "b564e31c938a47899bd7ca63e095ec3b2a35834e9b1a3682a3cb205240043a48",
+  "planned_checks": [
+    "frozen_package_identity",
+    "empty_personal_library_and_native_picker_cancel",
+    "saved_records_exact_identity_and_outcomes",
+    "search_130_events_53_matches_exact_order",
+    "search_copy_explain_and_export_all",
+    "external_legacy_readonly_and_return",
+    "same_name_session_switch_and_clear",
+    "compact_visible_keyboard_actions",
+    "saved_records_cold_restart",
+    "gui_default_configuration_no_implicit_install",
+    "gui_single_start_close_guard_and_saved_uuid",
+    "real_etw_parent_child_independent_oracle",
+    "real_event_explain_export_and_cold_restart",
+    "source_databases_and_package_unchanged"
+  ],
+  "checks": [
+    {
+      "name": "frozen_package_identity",
+      "status": "passed",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": null,
+      "call_sites": null
+    },
+    {
+      "name": "empty_personal_library_and_native_picker_cancel",
+      "status": "failed",
+      "error_type": "ClickTargetUnavailableException",
+      "stage": "native_click",
+      "control": "PickInstaller",
+      "safe_reason": null,
+      "call_sites": [
+        "\u003C\u003Ec__DisplayClass64_0.\u003CClickAsync\u003Eb__0",
+        "\u003C\u003Ec__DisplayClass75_0.\u003CUi\u003Eb__0",
+        "\u003CChooseFileAsync\u003Ed__65.MoveNext",
+        "\u003CEmptyAndChooser\u003Ed__37.MoveNext",
+        "\u003CStep\u003Ed__35.MoveNext"
+      ]
+    },
+    {
+      "name": "saved_records_exact_identity_and_outcomes",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "prerequisite_failed",
+      "call_sites": null
+    },
+    {
+      "name": "search_130_events_53_matches_exact_order",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "prerequisite_failed",
+      "call_sites": null
+    },
+    {
+      "name": "search_copy_explain_and_export_all",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "prerequisite_failed",
+      "call_sites": null
+    },
+    {
+      "name": "external_legacy_readonly_and_return",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "prerequisite_failed",
+      "call_sites": null
+    },
+    {
+      "name": "same_name_session_switch_and_clear",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "prerequisite_failed",
+      "call_sites": null
+    },
+    {
+      "name": "compact_visible_keyboard_actions",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "prerequisite_failed",
+      "call_sites": null
+    },
+    {
+      "name": "saved_records_cold_restart",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "prerequisite_failed",
+      "call_sites": null
+    },
+    {
+      "name": "gui_default_configuration_no_implicit_install",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "native_install_not_requested_preview_only",
+      "call_sites": null
+    },
+    {
+      "name": "gui_single_start_close_guard_and_saved_uuid",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "native_install_not_requested_preview_only",
+      "call_sites": null
+    },
+    {
+      "name": "real_etw_parent_child_independent_oracle",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "native_install_not_requested_preview_only",
+      "call_sites": null
+    },
+    {
+      "name": "real_event_explain_export_and_cold_restart",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "native_install_not_requested_preview_only",
+      "call_sites": null
+    },
+    {
+      "name": "source_databases_and_package_unchanged",
+      "status": "not_run",
+      "error_type": null,
+      "stage": null,
+      "control": null,
+      "safe_reason": "prerequisite_failed",
+      "call_sites": null
+    }
+  ],
+  "assertions": 442,
+  "passed": 1,
+  "failed": 1,
+  "not_run": 12,
+  "retries": 0,
+  "screenshots": [
+    {
+      "name": "records-empty.png",
+      "sha256": "eb0242e012a2f51a7385cad4dafe9e5b677faf49ba8f973a57d5baf6990725c6",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "isolated-empty"
+    },
+    {
+      "name": "failed-empty_personal_library_and_native_picker_cancel.png",
+      "sha256": "e1804c3f6b5eec8be4258cb36025d63d0af2cdc0f3c84b6fefd0c103c51b2179",
+      "width": 1024,
+      "height": 720,
+      "dpi": 96,
+      "data_kind": "failed-isolated-native-stage"
+    }
+  ],
+  "launches": [
+    {
+      "process_id": 7268,
+      "probes": [
+        {
+          "stage": "ready",
+          "control": "NewInstall",
+          "elapsed_ms": 1507,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "empty_records_ready",
+          "control": "EmptyRecordsCTA",
+          "elapsed_ms": 55,
+          "process_alive": true,
+          "error_type": null
+        },
+        {
+          "stage": "new_config",
+          "control": "PickInstaller",
+          "elapsed_ms": 312,
+          "process_alive": true,
+          "error_type": null
+        }
+      ],
+      "actions": [
+        {
+          "control": "NewInstall",
+          "pattern": "InvokePattern.Invoke",
+          "passed": true,
+          "error_type": null
+        }
+      ],
+      "clicks": [
+        {
+          "control": "PickInstaller",
+          "target_role": "ControlType.Button",
+          "hit_role": "ControlType.Text",
+          "native_owned": true,
+          "ancestor_roles": [
+            "ControlType.Text",
+            "ControlType.Button",
+            "ControlType.Group",
+            "ControlType.Pane",
+            "ControlType.Custom",
+            "ControlType.Pane",
+            "ControlType.Window",
+            "ControlType.Pane"
+          ],
+          "target_matched": false,
+          "result": "uia_foreign_owner",
+          "elapsed_ms": 74,
+          "error_type": "ClickTargetUnavailableException"
+        }
+      ],
+      "last_stage": "native_click",
+      "last_control": "window",
+      "last_error_type": "ClickTargetUnavailableException",
+      "process_exited": false,
+      "normal_close": null
+    }
+  ],
+  "failure_screenshots": [
+    {
+      "check": "empty_personal_library_and_native_picker_cancel",
+      "captured": true,
+      "error_type": null
+    }
+  ],
+  "navigation_diagnostics": [],
+  "search": {
+    "expected_ids": [
+      "synthetic-search-event-070",
+      "synthetic-search-event-071",
+      "synthetic-search-event-072",
+      "synthetic-search-event-073",
+      "synthetic-search-event-074",
+      "synthetic-search-event-075",
+      "synthetic-search-event-076",
+      "synthetic-search-event-077",
+      "synthetic-search-event-078",
+      "synthetic-search-event-079",
+      "synthetic-search-event-080",
+      "synthetic-search-event-081",
+      "synthetic-search-event-082",
+      "synthetic-search-event-083",
+      "synthetic-search-event-084",
+      "synthetic-search-event-085",
+      "synthetic-search-event-086",
+      "synthetic-search-event-087",
+      "synthetic-search-event-088",
+      "synthetic-search-event-089",
+      "synthetic-search-event-090",
+      "synthetic-search-event-091",
+      "synthetic-search-event-092",
+      "synthetic-search-event-093",
+      "synthetic-search-event-094",
+      "synthetic-search-event-095",
+      "synthetic-search-event-096",
+      "synthetic-search-event-097",
+      "synthetic-search-event-098",
+      "synthetic-search-event-099",
+      "synthetic-search-event-100",
+      "synthetic-search-event-101",
+      "synthetic-search-event-102",
+      "synthetic-search-event-103",
+      "synthetic-search-event-104",
+      "synthetic-search-event-105",
+      "synthetic-search-event-106",
+      "synthetic-search-event-107",
+      "synthetic-search-event-108",
+      "synthetic-search-event-109",
+      "synthetic-search-event-110",
+      "synthetic-search-event-111",
+      "synthetic-search-event-112",
+      "synthetic-search-event-113",
+      "synthetic-search-event-114",
+      "synthetic-search-event-115",
+      "synthetic-search-event-116",
+      "synthetic-search-event-117",
+      "synthetic-search-event-118",
+      "synthetic-search-event-119",
+      "synthetic-search-event-120",
+      "synthetic-search-event-121",
+      "synthetic-search-event-122"
+    ],
+    "first_page_ids": [],
+    "second_page_ids": [],
+    "exported_ids": [],
+    "selected_event_id": null
+  },
+  "live": {
+    "session_id": null,
+    "selected_event_id": null,
+    "accounting": null,
+    "follow_oracle": null
+  },
+  "scope": "One native WPF package, isolated synthetic stores and at most one real follow-installer capture. Native DPI is measured per screenshot. No simulated scaling is reported as physical DPI."
+}

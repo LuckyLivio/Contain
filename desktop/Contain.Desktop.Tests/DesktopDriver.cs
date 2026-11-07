@@ -13,7 +13,8 @@ internal sealed record Screenshot(string Name, string Sha256, int Width, int Hei
 internal sealed record Probe(string Stage, string Control, long ElapsedMs, bool ProcessAlive, string? ErrorType);
 internal sealed record ActionProbe(string Control, string Pattern, bool Passed, string? ErrorType);
 internal sealed record ClickDiagnostic(string Control, string? TargetRole, string? HitRole, bool NativeOwned,
-    string[] AncestorRoles, bool TargetMatched, string Result, long ElapsedMs, string? ErrorType);
+    string[] AncestorRoles, HitTargetGuard.Identity[] Ancestors, int? FixedIdMatches,
+    bool TargetMatched, string Result, long ElapsedMs, string? ErrorType);
 internal sealed record CloseDiagnostic(long RequestElapsedMs, long WaitElapsedMs, int WaitDeadlineMs,
     bool ProcessAlive, int? ExitCode, string? ErrorType);
 
@@ -202,18 +203,27 @@ internal sealed class DesktopDriver : IDisposable
     internal Task ClickAsync(string id) => Ui(id, () =>
     {
         Stage = "native_click";
-        var clock = Stopwatch.StartNew(); var roles = new List<string>();
+        var clock = Stopwatch.StartNew(); var identities = new List<HitTargetGuard.Identity>();
         string? targetRole = null, hitRole = null, errorType = null;
+        int? fixedIdMatches = null;
         var nativeOwned = false; var matched = false; var result = "find_target";
         try
         {
-            var element = Required(id);
+            result = "unique_fixed_action";
+            var window = MainWindow();
+            var matches = AutomationElement.FromHandle(window).FindAll(TreeScope.Element | TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.AutomationIdProperty, id));
+            fixedIdMatches = matches.Count;
+            HitTargetGuard.RequireUniqueCount(matches.Count);
+            var element = matches[0];
             targetRole = element.Current.ControlType.ProgrammaticName;
             result = "visible_enabled";
-            if (!element.Current.IsEnabled || !Visible(element)) throw new ClickTargetUnavailableException(id);
+            if (element.Current.ProcessId != process.Id || element.Current.ControlType != ControlType.Button
+                || !element.Current.IsEnabled || !Visible(element)) throw new ClickTargetUnavailableException(id);
             var rect = element.Current.BoundingRectangle;
-            SetForegroundWindow(MainWindow());
+            SetForegroundWindow(window);
             var point = new Point { X = (int)(rect.X + rect.Width / 2), Y = (int)(rect.Y + rect.Height / 2) };
+            var clickPoint = new System.Windows.Point(point.X, point.Y);
             GetWindowThreadProcessId(WindowFromPoint(point), out var owner);
             nativeOwned = owner == process.Id;
             result = "native_owner";
@@ -222,12 +232,18 @@ internal sealed class DesktopDriver : IDisposable
             // A WPF child can be clipped by a ScrollViewer while its rectangle is still
             // inside the main HWND. Require the actual hit target, not merely window ownership.
             result = "uia_hit_target";
-            var hit = AutomationElement.FromPoint(new System.Windows.Point(point.X, point.Y));
-            var match = HitTargetGuard.Check(element, hit, e => e.Current.ProcessId == process.Id,
-                Automation.Compare, TreeWalker.RawViewWalker.GetParent, e =>
+            var hit = AutomationElement.FromPoint(clickPoint);
+            HitTargetGuard.Identity? currentIdentity = null;
+            var match = HitTargetGuard.Check(element, hit, _ => currentIdentity!.Owned,
+                (_, _) => currentIdentity!.Matches, TreeWalker.RawViewWalker.GetParent, e =>
                 {
-                    var role = e.Current.ControlType.ProgrammaticName;
-                    hitRole ??= role; roles.Add(role);
+                    var current = e.Current;
+                    var role = current.ControlType.ProgrammaticName;
+                    currentIdentity = new(role, current.ProcessId == process.Id, current.AutomationId == id,
+                        current.ControlType == ControlType.Button, current.BoundingRectangle == rect,
+                        current.IsEnabled, Visible(e), current.BoundingRectangle.Contains(clickPoint),
+                        Automation.Compare(element, e));
+                    hitRole ??= role; identities.Add(currentIdentity);
                 });
             matched = match.Matches; result = match.Reason;
             if (!matched) throw new ClickTargetUnavailableException(id);
@@ -241,7 +257,8 @@ internal sealed class DesktopDriver : IDisposable
         {
             // Cached fields only: failed UIA calls retain their original exception, with no
             // follow-up provider queries that could replace it or expose unrelated desktop text.
-            if (clicks.Count < 128) clicks.Add(new(id, targetRole, hitRole, nativeOwned, roles.ToArray(),
+            if (clicks.Count < 128) clicks.Add(new(id, targetRole, hitRole, nativeOwned,
+                identities.Select(item => item.Role).ToArray(), identities.ToArray(), fixedIdMatches,
                 matched, result, clock.ElapsedMilliseconds, errorType));
         }
     });

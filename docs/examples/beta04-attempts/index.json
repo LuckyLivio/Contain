@@ -1,0 +1,53 @@
+{
+  "note": "Original reviewed public aggregate bytes. M3 is diagnosis, not acceptance. No databases or full logs.",
+  "attempts": [
+    {
+      "attempt": "M1",
+      "run": 42337219333,
+      "source_sha": "e308844e3c1f6be5f530b248d3de488d9dec4be8",
+      "file": "M1.json",
+      "sha256": "3a32b3bd00168a09c6defc0fd5b7e98a4b3ecad75768799502395b2b7966f6d4",
+      "accepted": false
+    },
+    {
+      "attempt": "M2",
+      "run": 42338017143,
+      "source_sha": "08827096f893ad271bba0593e954329eae039343",
+      "file": "M2.json",
+      "sha256": "addd88a9ebf5f134cb4ce47e6d270613ee120136eb2a0c414e3a5d4bc108a451",
+      "accepted": false
+    },
+    {
+      "attempt": "M3",
+      "run": 42338832102,
+      "source_sha": "431fd92ac44c10bbc61cc50c51c6781077835fde",
+      "file": "M3.json",
+      "sha256": "6b1601493c8425ee33f6acd4a28ef19df6daad8f174b24a28bf884d5e6f87f08",
+      "accepted": false
+    },
+    {
+      "attempt": "M4",
+      "run": 42339828453,
+      "source_sha": "63f264a0b397e7cf582b25505e1ba095e0d1b6fd",
+      "file": "M4.json",
+      "sha256": "447a6991bbf294d38c87f72a308d14112779f4fd0cce2db112d7ee689765c23e",
+      "accepted": false
+    },
+    {
+      "attempt": "M5",
+      "run": 42340263767,
+      "source_sha": "94ec2a274b47616b3dba645e15a43704c57f488d",
+      "file": "M5.json",
+      "sha256": "1f61bfe0d0927c41e1aa2579cafd70deb2807e424fc2b7b9c2918e3d12daf375",
+      "accepted": false
+    },
+    {
+      "attempt": "M6",
+      "run": 42340821695,
+      "source_sha": "37b6d1dbb3a384817c77f70b5318e4b16321f2c6",
+      "file": "M6.json",
+      "sha256": "f4d13435b97904988380d1eed59941c053d89ef7fbc9f6a0af9e3ed32aa6affb",
+      "accepted": false
+    }
+  ]
+}
