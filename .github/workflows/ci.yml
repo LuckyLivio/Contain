@@ -163,7 +163,9 @@ jobs:
         if: ${{ !cancelled() && steps.trial_plan.outputs.desktop == 'true' }}
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: |
+            10.0.403
+            8.0.427
       - name: Saved loss diagnostic presentation regressions
         if: ${{ !cancelled() && steps.trial_plan.outputs.desktop == 'true' }}
         shell: pwsh

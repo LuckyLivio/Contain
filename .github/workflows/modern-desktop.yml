@@ -1,0 +1,133 @@
+name: Modern desktop
+on:
+  push:
+    branches: ['**']
+    tags-ignore: ['**']
+    paths-ignore: ['README.md', 'docs/**']
+  pull_request:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  desktop:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Declare the bounded new-desktop plan
+        id: plan
+        shell: pwsh
+        env:
+          PREVIEW: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[modern-preview]') }}
+          ACCEPTANCE: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[modern-acceptance]') }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:PREVIEW -eq 'true' -and $env:ACCEPTANCE -eq 'true') { throw 'Select one fixed plan' }
+          $native = $env:PREVIEW -eq 'true' -or $env:ACCEPTANCE -eq 'true'
+          if ($native -and $env:GITHUB_RUN_ATTEMPT -ne '1') { throw 'Native attempts are not rerun; retain failure and commit a justified change' }
+          $out = Join-Path $env:RUNNER_TEMP ('contain-modern-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+          New-Item -ItemType Directory -Path $out,(Join-Path $out 'public'),(Join-Path $out 'private') -ErrorAction Stop | Out-Null
+          "MODERN_OUTPUT=$out" >> $env:GITHUB_ENV
+          "native=$($native.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "install=$env:ACCEPTANCE" >> $env:GITHUB_OUTPUT
+          [ordered]@{schema_version=1;protocol='contain-modern-validation-plan-1';source_sha=$env:GITHUB_SHA;native_windows=$native;full_acceptance=($env:ACCEPTANCE -eq 'true');maximum_gui_installations=$(if($env:ACCEPTANCE -eq 'true'){1}else{0});retries=0;capture_core_changed=$false;core_source_sha='b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4';baseline_zip_sha256='a7ef3faed3c42aada77fe5619b732fe092b8787f89311047105ff6082b132656';order=@('deterministic_model_regressions','new_wpf_build_and_freeze','empty_and_isolated_personal_library','external_read_only_and_same_name_uuid','130_events_53_matches_and_exports','native_layout_screenshots','one_gui_install_if_acceptance','exact_session_event_explain_and_cold_restart');previous_failures_retained=$true;old_winforms_acceptance_is_not_new_desktop_evidence=$true;zip_frozen_before_native=$true} | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $out 'public/plan.json') -Encoding utf8
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.403
+            8.0.427
+      - name: Restore locked modern dependencies and run deterministic regressions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet restore desktop/Contain.Desktop.Model.Tests --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Locked model restore failed' }
+          dotnet run --project desktop/Contain.Desktop.Model.Tests -c Release --no-restore -- "$env:MODERN_OUTPUT/public/model-checks.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Actual model regression failed' }
+          dotnet run --project desktop/Contain.Viewer.Presentation.Tests -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Shared evidence presentation regression failed' }
+          dotnet restore desktop/Contain.Desktop -p:RuntimeIdentifier=win-x64 -p:RuntimeIdentifiers=win-x64 -p:SelfContained=true --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Locked WPF restore failed' }
+          dotnet publish desktop/Contain.Desktop -c Release -r win-x64 --self-contained true --no-restore -o "$env:MODERN_OUTPUT/viewer"
+          if ($LASTEXITCODE -ne 0) { throw 'WPF publish failed' }
+          dotnet restore desktop/Contain.Desktop.Tests -p:RuntimeIdentifier=win-x64 -p:RuntimeIdentifiers=win-x64 -p:SelfContained=true --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Locked native harness restore failed' }
+          dotnet publish desktop/Contain.Desktop.Tests -c Release -r win-x64 --self-contained true --no-restore -o "$env:MODERN_OUTPUT/harness"
+          if ($LASTEXITCODE -ne 0) { throw 'Native WPF harness publish failed' }
+          python scripts/test-package-modern-desktop.py
+          if ($LASTEXITCODE -ne 0) { throw 'Modern package regressions failed' }
+      - name: Dependency advisory report
+        shell: pwsh
+        run: |
+          dotnet list desktop/Contain.Desktop/Contain.Desktop.csproj package --vulnerable --include-transitive --format json --output-version 1 > "$env:MODERN_OUTPUT/public/dotnet-dependencies.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency audit could not complete' }
+          python -c "import json,pathlib,sys; d=json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8-sig')); assert not d.get('problems'); assert all(not f.get('topLevelPackages') and not f.get('transitivePackages') for p in d.get('projects',[]) for f in p.get('frameworks',[])), 'Vulnerable dependency requires review'" "$env:MODERN_OUTPUT/public/dotnet-dependencies.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency audit failed' }
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.plan.outputs.native == 'true'
+      - uses: Swatinem/rust-cache@v2
+        if: steps.plan.outputs.native == 'true'
+      - name: Freeze the new product, unchanged core, and separate fixture
+        if: steps.plan.outputs.native == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git diff --exit-code b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4 -- Cargo.toml Cargo.lock crates tools/offline scripts/verify-follow-installer-experiment.py
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen capture or independent oracle changed' }
+          gh release download v0.3.2-beta.10 --repo LuckyLivio/Contain --pattern contain-0.3.2-beta.10-windows-x64.zip --dir "$env:MODERN_OUTPUT/private"
+          if ($LASTEXITCODE -ne 0) { throw 'Original core package unavailable' }
+          cargo build -p contain-offline --bin viewer-fixtures --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Unchanged fixture generator build failed' }
+          ./target/debug/viewer-fixtures.exe "$env:MODERN_OUTPUT/private/fixtures"
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic fixture generation failed' }
+          python -c "import pathlib,shutil,sqlite3,sys; p=pathlib.Path(sys.argv[1]); shutil.copyfile(p/'empty.db',p/'future.db'); c=sqlite3.connect(p/'future.db'); c.execute('PRAGMA user_version=99'); c.close(); (p/'corrupt.db').write_bytes(b'SYNTHETIC corrupt database'); c=sqlite3.connect(p/'unrelated.db'); c.execute('CREATE TABLE unrelated(value TEXT)'); c.close()" "$env:MODERN_OUTPUT/private/fixtures"
+          if ($LASTEXITCODE -ne 0) { throw 'Adverse fixture generation failed' }
+          $package = Join-Path $env:MODERN_OUTPUT 'package 中文 & [x]'
+          "MODERN_PACKAGE=$package" >> $env:GITHUB_ENV
+          python scripts/package-modern-desktop.py prepare --viewer "$env:MODERN_OUTPUT/viewer" --baseline "$env:MODERN_OUTPUT/private/contain-0.3.2-beta.10-windows-x64.zip" --fixtures "$env:MODERN_OUTPUT/private/fixtures" --package $package --zip "$env:MODERN_OUTPUT/public/contain-0.4.0-beta.1-windows-x64.zip" --fixture "$env:MODERN_OUTPUT/private/contain-test-installer.exe" --nuget "$env:USERPROFILE/.nuget/packages" --source $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Immutable modern package freeze failed' }
+          Copy-Item -LiteralPath (Join-Path $package 'BUILD.json') -Destination "$env:MODERN_OUTPUT/public/BUILD-IDENTITY.json"
+      - name: One actual packaged WPF desktop attempt
+        id: native
+        if: steps.plan.outputs.native == 'true'
+        timeout-minutes: 12
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $fixtureTemp = Join-Path $env:MODERN_OUTPUT 'private/fixture-temp'
+          New-Item -ItemType Directory -Path $fixtureTemp | Out-Null
+          $env:TEMP = $fixtureTemp
+          $env:TMP = $fixtureTemp
+          $testArgs = @('--package',$env:MODERN_PACKAGE,'--fixtures',"$env:MODERN_OUTPUT/private/fixtures",'--output',"$env:MODERN_OUTPUT/public",'--private-output',"$env:MODERN_OUTPUT/private/native",'--source',$env:GITHUB_SHA)
+          if ('${{ steps.plan.outputs.install }}' -eq 'true') { $testArgs += @('--install-fixture',"$env:MODERN_OUTPUT/private/contain-test-installer.exe") }
+          $quoted = $testArgs | ForEach-Object { '"' + $_.Replace('"', '\"') + '"' }
+          $harness = Start-Process -FilePath "$env:MODERN_OUTPUT/harness/Contain.Desktop.Tests.exe" -ArgumentList $quoted -PassThru -NoNewWindow -RedirectStandardOutput "$env:MODERN_OUTPUT/private/harness.log" -RedirectStandardError "$env:MODERN_OUTPUT/private/harness-stderr.log"
+          $null = $harness.Handle
+          if (-not $harness.WaitForExit(600000)) { $harness.Kill(); throw 'Harness exceeded ten-minute deadline; only test harness stopped' }
+          $harness.Refresh()
+          if ($null -eq $harness.ExitCode -or $harness.ExitCode -ne 0) { throw 'Native WPF attempt failed; retain aggregate and screenshots' }
+      - name: Confirm the tested package is unchanged
+        if: ${{ !cancelled() && steps.plan.outputs.native == 'true' && env.MODERN_PACKAGE != '' }}
+        shell: pwsh
+        run: |
+          python scripts/package-modern-desktop.py verify --zip "$env:MODERN_OUTPUT/public/contain-0.4.0-beta.1-windows-x64.zip" --package $env:MODERN_PACKAGE > "$env:MODERN_OUTPUT/private/package-verification.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen product changed during native run' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: modern-desktop-evidence
+          path: |
+            ${{ env.MODERN_OUTPUT }}/public/*.json
+            ${{ env.MODERN_OUTPUT }}/public/screenshots/*.png
+            ${{ env.MODERN_OUTPUT }}/public/reports/*.html
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.plan.outputs.native == 'true' }}
+        with:
+          name: modern-desktop-frozen-package
+          path: ${{ env.MODERN_OUTPUT }}/public/contain-0.4.0-beta.1-windows-x64.zip
+          if-no-files-found: warn
