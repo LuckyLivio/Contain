@@ -8,9 +8,9 @@
 | --- | --- | --- |
 | [首次空库（隔离测试目录）](images/beta04/records-empty.png) | 1024×720 / 96 | `isolated-empty` |
 | [我的记录（合成同名记录）](images/beta04/records-sample.png) | 1024×720 / 96 | `synthetic-viewer-fixtures` |
-| [已结束但非零退出 / Incomplete 合成记录](images/beta04/overview-finished.png) | 1024×720 / 96 | `synthetic-persisted-outcome` |
-| [缺少退出信息的合成历史记录](images/beta04/overview-historical.png) | 1024×720 / 96 | `synthetic-persisted-outcome` |
-| [未完成的合成记录](images/beta04/overview-interrupted.png) | 1024×720 / 96 | `synthetic-persisted-outcome` |
+| [已结束、退出 0 / Degraded 合成记录](images/beta04/overview-finished.png) | 1024×720 / 96 | `synthetic-persisted-outcome` |
+| [已结束、退出 1603 / Degraded 合成历史记录](images/beta04/overview-historical.png) | 1024×720 / 96 | `synthetic-persisted-outcome` |
+| [未完成、缺少退出信息 / Incomplete 合成记录](images/beta04/overview-interrupted.png) | 1024×720 / 96 | `synthetic-persisted-outcome` |
 | [130 / 53 合成搜索与解释](images/beta04/events-search-explain.png) | 1024×720 / 96 | `synthetic-130-events-53-matches` |
 | [紧凑事件页（合成记录）](images/beta04/compact-events.png) | 820×640 / 96 | `synthetic-viewer-fixtures` |
 | [紧凑新建页（未启动安装）](images/beta04/compact-new-record.png) | 820×640 / 96 | `isolated-configuration-no-install` |
