@@ -235,9 +235,16 @@ fn install_inner(
         "provider_readiness".into(),
         ready_clock.elapsed().as_millis() as u64,
     );
+    // This is the same bounded cache later owned by the live receiver. Starts
+    // drained while taking the initial snapshots must remain available there;
+    // a thread born after trace readiness is correctly excluded from snapshots.
+    let mut initial_cache = LifetimeCache::default();
     source.initialize_identities(|mut page| {
         if follow {
             page.retain(|e| e.event_type == "lifecycle");
+            for event in &page {
+                initial_cache.ingest(event);
+            }
         }
         journal.append(db, page)
     });
@@ -255,6 +262,7 @@ fn install_inner(
         &mut source,
         db,
         journal,
+        initial_cache,
         |live: &crate::ingest::LiveCapture| {
             if follow {
                 live.seed_follow_initial(&initial_identities, &initial_threads);

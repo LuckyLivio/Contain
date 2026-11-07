@@ -178,6 +178,17 @@ fn run() -> Result<()> {
                 let a = dir.join(format!("{i}.tmp"));
                 let b = dir.join(format!("{i}.dat"));
                 truth.write(&a, b"independent noise")?;
+                if i == 0
+                    && std::env::var_os("CONTAIN_FIXTURE_BACKGROUND_WAIT")
+                        .is_some_and(|value| value == "1")
+                {
+                    // Signal only after a successful independently timed write.
+                    // The paired root cannot write its answer before noise starts.
+                    fs::write(
+                        root.join(".pair-background-started"),
+                        b"background complete",
+                    )?;
+                }
                 truth.rename(&a, &b)?;
                 truth.delete(&b)?;
             }

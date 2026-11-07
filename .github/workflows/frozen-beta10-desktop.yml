@@ -1,0 +1,328 @@
+name: Frozen Beta 10 bounded desktop diagnosis
+on:
+  push:
+    branches:
+      - fix/beta10-capture-loss
+permissions:
+  contents: read
+  actions: read
+jobs:
+  frozen-desktop:
+    if: ${{ github.repository == 'LuckyLivio/Contain' && github.ref == 'refs/heads/fix/beta10-capture-loss' && github.run_attempt == 1 && (contains(github.event.head_commit.message, '[frozen-lookup-diagnosis]') || contains(github.event.head_commit.message, '[lookup-transition-diagnosis]')) }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      DIAG_DESKTOP_REQUESTED: ${{ contains(github.event.head_commit.message, '[frozen-lookup-diagnosis]') }}
+      DIAG_TRANSITION_REQUESTED: ${{ contains(github.event.head_commit.message, '[lookup-transition-diagnosis]') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Declare one fixed diagnostic attempt before any tools or viewers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $transition = $env:DIAG_TRANSITION_REQUESTED -eq 'true'
+          if ($transition -eq ($env:DIAG_DESKTOP_REQUESTED -eq 'true')) { throw 'Exactly one predeclared diagnostic plan must be selected' }
+          $out = Join-Path $env:RUNNER_TEMP ('contain-frozen-desktop-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+          if (Test-Path -LiteralPath $out) { throw 'Output already exists; previous attempts are never replaced' }
+          New-Item -ItemType Directory -Path $out,(Join-Path $out 'public'),(Join-Path $out 'private') | Out-Null
+          "FROZEN_DESKTOP_OUTPUT=$out" >> $env:GITHUB_ENV
+          [ordered]@{
+            schema_version=1;protocol=$(if($transition){'contain-frozen-beta10-transition-plan-1'}else{'contain-frozen-beta10-desktop-plan-1'});declared_at_utc=[DateTime]::UtcNow.ToString('o');harness_source_sha=$env:GITHUB_SHA;script_source_sha=$env:GITHUB_SHA
+            product_source_sha='b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4';fixture_generator_source_sha='b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4';native_oracle_source_sha='b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4'
+            candidate=@{source_sha='b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4';run_id=42227112910;artifact_id=13506927140;zip_sha256='a7ef3faed3c42aada77fe5619b732fe092b8787f89311047105ff6082b132656'}
+            original_full_gui=@{run_id=42227112910;accepted=$false;failed_check='packaged_executable_default_history';error_type='TimeoutException';retained=$true}
+            previous_subset_diagnosis=@{run_id=42231290678;full_desktop=$false;substitute_for_full_desktop=$false;retained=$true}
+            diagnostic_stage=$(if($transition){'D7'}else{'D6'})
+            previous_full_gui=@{run_id=42249868473;harness_source_sha='ad8c6b5894a1964d972d08d23d2d8159a3acb8b4';accepted=$false;failed_check='gui_runtime_stages_and_close_guard';failed_phase='observe_one_recording';error_type='RequiredProductControlMissingException';missing_control_inferred='SessionTitle';missing_control_directly_recorded=$false;ready_timeouts=0;retained=$true}
+            previous_complete_desktop=@{run_id=42325883947;harness_source_sha='d1bca0b109d722ceaf0ab4ecf89c1d8e17d0b77b';complete_native_gates_passed=$true;release_accepted=$false;lookup_failures=0;ready_timeouts=0;retained=$true}
+            purpose=$(if($transition){'one_saved_record_transition_diagnosis_without_installation_or_etw'}else{'one_full_existing_desktop_suite_with_bounded_required_lookup_diagnostics'})
+            hypothesis=$(if($transition){'session_title_uia_availability_during_saved_record_view_transition'}else{'global_uia_window_enumeration_or_target_lookup_vs_same_process_native_window_availability'})
+            lookup_diagnosis=@{protocol='contain-required-lookup-diagnostics-1';filename='packaged-lookup-diagnostics.json';control_ids=@('SessionTitle','NewInstall');maximum_alternate_probes_per_launch=1;maximum_alternate_probes_per_harness=4;maximum_success_cache_uia_calls_per_launch=0;maximum_original_window_metadata_uia_calls_per_probe=16;maximum_comparison_uia_calls_per_probe=4;maximum_added_uia_calls_per_probe=20;shares_existing_uia_deadline=$true;uia_deadline_ms=20000;require_owned_window_and_retained_process=$true;alternate_query_after_original_miss=$true;alternate_query_is_evidence_only=$true;original_lookup_failure_preserved=$true;changes_acceptance_result=$false}
+            full_entrypoint=(-not $transition);personal_subset_only=$false;transition_subset_only=$transition;harness_runs=1;maximum_native_captures=$(if($transition){0}else{1});retries=0
+            order=$(if($transition){@('one_frozen_viewer_on_isolated_copy_of_three_record_sample','100_fixed_alternating_finished_interrupted_transitions','normal_close_and_read_only_integrity')}else{@('synthetic_actual_forms_and_packaged_cli','personal_records_empty_and_seeded_cold_start','persisted_overview','session_event_search','search_export','progress_and_failure_feedback','first_use_configuration','native_layout_and_simulated_scale','one_actual_gui_follow_install_save_explain_exit_reopen')})
+            transition_plan=$(if($transition){@{protocol='contain-lookup-transition-diagnosis-1';viewer_launches=1;synthetic=$true;real_etw_executed=$false;installer_launches=0;initial_setup_selection='synthetic-interrupted';initial_setup_selection_counted_as_transition=$false;maximum_selection_requests=101;transitions=100;ordered_alternation=@('synthetic-finished','synthetic-interrupted');transitions_per_record=50;per_transition_deadline_ms=30000;initial_setup_deadline_ms=30000;transition_loop_deadline_ms=180000;first_original_miss_stops=$true;remaining_transitions_not_run=$true;database_bytes_unchanged_required=$true;original_lookup_failure_preserved=$true}}else{$null})
+            ready_discovery_deadline_ms=40000;ready_enabled_deadline_ms=40000;uia_call_deadline_ms=20000;harness_deadline_ms=600000;owned_process_quiescence_deadline_ms=45000
+            capture_code_changed=$false;original_zip_must_remain_unchanged=$true;repack_allowed=$false;native_gate_relaxation_allowed=$false
+            release_accepted=$false;release_note='Each fixed diagnostic preserves the original lookup result. D7 is a synthetic saved-record transition probe, never a complete desktop or live ETW acceptance. C1 and D5 failures remain separate; later successful observations do not explain them.'
+          } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $out 'public/plan.json') -Encoding utf8
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Verify original packages and build separated diagnostic tools
+        id: prepare
+        timeout-minutes: 12
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $PSNativeCommandUseErrorActionPreference = $false
+          $out = $env:FROZEN_DESKTOP_OUTPUT
+          $private = Join-Path $out 'private'
+          $source = 'b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4'
+          function Require([bool]$Value,[string]$Reason) { if (-not $Value) { throw $Reason } }
+          function Hash([string]$Path) { (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
+          function Fixed-Artifact([long]$Artifact,[long]$Run,[string]$Source,[string]$ZipHash,[string]$Label) {
+            $origin = gh api "repos/LuckyLivio/Contain/actions/runs/$Run" | ConvertFrom-Json
+            Require ($LASTEXITCODE -eq 0 -and $origin.id -eq $Run -and $origin.head_sha -eq $Source -and $origin.run_attempt -eq 1 -and $origin.path -eq '.github/workflows/ci.yml' -and $origin.head_repository.full_name -eq 'LuckyLivio/Contain' -and $origin.status -eq 'completed' -and $origin.conclusion -eq 'failure') 'Original failed CI identity differs'
+            $metadata = gh api "repos/LuckyLivio/Contain/actions/artifacts/$Artifact" | ConvertFrom-Json
+            Require ($LASTEXITCODE -eq 0 -and $metadata.id -eq $Artifact -and $metadata.name -eq 'contain-windows-x64-viewer' -and $metadata.expired -eq $false -and $metadata.workflow_run.id -eq $Run -and $metadata.workflow_run.head_sha -eq $Source) 'Frozen artifact identity differs or expired'
+            $outer = Join-Path $private ($Label + '-artifact.zip')
+            python -c 'import pathlib,subprocess,sys; f=pathlib.Path(sys.argv[1]).open("wb"); subprocess.run(["gh","api","repos/LuckyLivio/Contain/actions/artifacts/"+sys.argv[2]+"/zip"],stdout=f,check=True); f.close()' $outer $Artifact
+            Require ($LASTEXITCODE -eq 0) 'Frozen artifact download failed'
+            $directory = Join-Path $private ($Label + '-artifact')
+            Expand-Archive -LiteralPath $outer -DestinationPath $directory
+            $zips = @(Get-ChildItem -LiteralPath $directory -Recurse -File | Where-Object { $_.Name -eq 'contain-0.3.2-beta.10-windows-x64.zip' })
+            Require ($zips.Count -eq 1) 'Frozen original ZIP is missing or ambiguous'
+            Require ((Hash $zips[0].FullName) -eq $ZipHash) 'Frozen original ZIP bytes differ'
+            return $zips[0].FullName
+          }
+          $candidate = Fixed-Artifact 13506927140 42227112910 $source 'a7ef3faed3c42aada77fe5619b732fe092b8787f89311047105ff6082b132656' 'candidate'
+          # Full immutable archive verification occurs before extraction. Neither
+          # the embedded failed VALIDATION nor the source archive is rewritten.
+          @'
+          import hashlib,json,pathlib,sys,zipfile
+          path=pathlib.Path(sys.argv[1]); output=pathlib.Path(sys.argv[2])
+          with zipfile.ZipFile(path) as archive:
+              names=archive.namelist()
+              assert archive.testzip() is None and len(names)==len(set(names))
+              manifest=json.loads(archive.read('CONTENTS.json'))
+              assert manifest['source_sha']=='b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4'
+              assert set(names)=={row['path'] for row in manifest['files']}|{'CONTENTS.json'}
+              assert len(manifest['files'])==len({row['path'] for row in manifest['files']})
+              for row in manifest['files']:
+                  data=archive.read(row['path'])
+                  assert len(data)==row['bytes'] and hashlib.sha256(data).hexdigest()==row['sha256']
+              validation=archive.read('VALIDATION.json')
+              assert json.loads(validation)['status']=='diagnostic_unverified'
+              assert json.loads(validation)['viewer_verified'] is False
+          output.write_text(json.dumps(dict(schema_version=1,source_sha=manifest['source_sha'],zip_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),archive_entries=len(names),verified_contents_members=len(manifest['files']),original_validation_sha256=hashlib.sha256(validation).hexdigest(),original_validation_status='diagnostic_unverified',original_failure_preserved=True,all_members_verified=True),indent=2)+'\n',encoding='utf-8')
+          '@ | python - $candidate (Join-Path $out 'public/original-package-integrity.json')
+          Require ($LASTEXITCODE -eq 0) 'Original ZIP integrity verification failed'
+          $package = Join-Path ('C:\Contain Desktop Package\' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT + '\' + $env:GITHUB_SHA.Substring(0,12)) '安装包 中文 & [x]'
+          New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($package)) -Force | Out-Null
+          Expand-Archive -LiteralPath $candidate -DestinationPath $package
+          $build = Get-Content -LiteralPath (Join-Path $package 'BUILD.json') -Raw | ConvertFrom-Json
+          Require ($build.source_sha -eq $source -and $build.target -eq 'win-x64' -and $build.version -eq '0.3.2-beta.10') 'Frozen C1 build identity differs'
+          foreach ($name in @('contain.exe','contain-test-installer.exe','Contain.Viewer.exe','Contain.Viewer.dll')) {
+            $rows = @($build.files | Where-Object { $_.path -eq $name })
+            Require ($rows.Count -eq 1 -and (Hash (Join-Path $package $name)) -eq $rows[0].sha256) 'Frozen C1 executable or production DLL differs'
+          }
+          # Product source and the independent native oracle remain frozen. Only
+          # the harness/workflow may differ from the accepted capture source.
+          git diff --exit-code $source -- Cargo.toml Cargo.lock crates desktop/Contain.Viewer desktop/Contain.Viewer.Presentation tools/offline scripts/verify-follow-installer-experiment.py scripts/package-viewer.py
+          Require ($LASTEXITCODE -eq 0) 'Frozen product source or existing independent desktop gates changed'
+          $worktree = Join-Path $private 'source-b0d2510'
+          git worktree add --detach $worktree $source
+          Require ($LASTEXITCODE -eq 0) 'Frozen-source worktree failed'
+          Require ((git -C $worktree rev-parse HEAD).Trim() -eq $source) 'Frozen-source worktree SHA differs'
+          Require (@(git -C $worktree status --porcelain).Count -eq 0) 'Frozen-source worktree must be clean'
+          $buildTarget = [IO.Path]::GetFullPath('target')
+          $oldTarget = $env:CARGO_TARGET_DIR
+          $env:CARGO_TARGET_DIR = $buildTarget
+          Push-Location $worktree
+          try {
+            cargo build -p contain-offline --bin viewer-fixtures --locked
+            Require ($LASTEXITCODE -eq 0) 'Frozen-source viewer fixture generator build failed'
+          } finally { Pop-Location; $env:CARGO_TARGET_DIR = $oldTarget }
+          $generator = Join-Path $buildTarget 'debug/viewer-fixtures.exe'
+          $fixtures = Join-Path $private 'viewer-fixtures'
+          & $generator $fixtures
+          Require ($LASTEXITCODE -eq 0) 'Frozen-source synthetic viewer fixtures failed'
+          python -c "import pathlib,shutil,sqlite3,sys; p=pathlib.Path(sys.argv[1]); shutil.copyfile(p/'empty.db',p/'future.db'); c=sqlite3.connect(p/'future.db'); c.execute('PRAGMA user_version=99'); c.close(); (p/'corrupt.db').write_bytes(b'SYNTHETIC corrupt database'); c=sqlite3.connect(p/'unrelated.db'); c.execute('CREATE TABLE unrelated(value TEXT)'); c.close()" $fixtures
+          Require ($LASTEXITCODE -eq 0) 'Frozen-source adverse database fixture setup failed'
+          $harness = Join-Path $private 'viewer-tests'
+          dotnet publish desktop/Contain.Viewer.Tests/Contain.Viewer.Tests.csproj -c Release -r win-x64 --self-contained true -o $harness
+          Require ($LASTEXITCODE -eq 0) 'Current-source diagnostic harness build failed'
+          # The harness references the exact production DLL from C1. Only the
+          # separate harness publish directory is changed; the ZIP is untouched.
+          Copy-Item -LiteralPath (Join-Path $package 'Contain.Viewer.dll') -Destination (Join-Path $harness 'Contain.Viewer.dll') -Force
+          Require ((Hash (Join-Path $harness 'Contain.Viewer.dll')) -eq (Hash (Join-Path $package 'Contain.Viewer.dll'))) 'Harness production reference differs from frozen C1'
+          Require ((Hash $candidate) -eq 'a7ef3faed3c42aada77fe5619b732fe092b8787f89311047105ff6082b132656') 'Original candidate ZIP changed during preparation'
+          [ordered]@{
+            schema_version=1;protocol=$(if($env:DIAG_TRANSITION_REQUESTED -eq 'true'){'contain-frozen-beta10-transition-provenance-1'}else{'contain-frozen-beta10-desktop-provenance-1'});harness_source_sha=$env:GITHUB_SHA;script_source_sha=$env:GITHUB_SHA
+            product_source_sha=$source;fixture_generator_source_sha=$source;native_oracle_source_sha=$source
+            original_zip_sha256=(Hash $candidate);core_sha256=(Hash (Join-Path $package 'contain.exe'));installer_fixture_sha256=(Hash (Join-Path $package 'contain-test-installer.exe'))
+            viewer_exe_sha256=(Hash (Join-Path $package 'Contain.Viewer.exe'));production_viewer_dll_sha256=(Hash (Join-Path $package 'Contain.Viewer.dll'));harness_production_reference_sha256=(Hash (Join-Path $harness 'Contain.Viewer.dll'))
+            harness_exe_sha256=(Hash (Join-Path $harness 'Contain.Viewer.Tests.exe'));harness_dll_sha256=(Hash (Join-Path $harness 'Contain.Viewer.Tests.dll'));viewer_fixture_generator_sha256=(Hash $generator)
+            full_report_source_sha=$(if($env:DIAG_TRANSITION_REQUESTED -eq 'true'){$null}else{$source});full_report_source_is_product_revision=($env:DIAG_TRANSITION_REQUESTED -ne 'true');transition_report_source_sha=$(if($env:DIAG_TRANSITION_REQUESTED -eq 'true'){$source}else{$null});transition_report_source_is_product_revision=($env:DIAG_TRANSITION_REQUESTED -eq 'true');release_accepted=$false
+          } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $out 'public/provenance.json') -Encoding utf8
+          "FROZEN_CANDIDATE_ZIP=$candidate" >> $env:GITHUB_ENV
+          "FROZEN_GUI_PACKAGE=$package" >> $env:GITHUB_ENV
+          "FROZEN_GUI_FIXTURES=$fixtures" >> $env:GITHUB_ENV
+          "FROZEN_GUI_HARNESS=$harness" >> $env:GITHUB_ENV
+      - name: Execute the one predeclared original desktop or saved-record transition plan
+        id: gui
+        if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
+        timeout-minutes: 12
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $out = $env:FROZEN_DESKTOP_OUTPUT
+          $public = Join-Path $out 'viewer-public'
+          $private = Join-Path $out 'private/viewer-private'
+          New-Item -ItemType Directory -Path $public,$private | Out-Null
+          # Both fixed plans use reviewed isolated fixture paths. The D7 entrypoint
+          # never receives --install-fixture and cannot claim full-suite acceptance.
+          $fixtureTemp = 'C:\Contain Desktop Fixture Temp\' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT
+          New-Item -ItemType Directory -Path $fixtureTemp -Force | Out-Null
+          $env:TEMP = $fixtureTemp; $env:TMP = $fixtureTemp
+          Remove-Item Env:CONTAIN_VIEWER_TEST_ROOT -ErrorAction SilentlyContinue
+          $transition = $env:DIAG_TRANSITION_REQUESTED -eq 'true'
+          $arguments = if ($transition) { @('--lookup-transition-checks-only',$env:FROZEN_GUI_PACKAGE,$env:FROZEN_GUI_FIXTURES,$public) } else { @('--package',$env:FROZEN_GUI_PACKAGE,'--fixtures',$env:FROZEN_GUI_FIXTURES,'--output',$public,'--private-output',$private,'--source','b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4','--install-fixture',(Join-Path $env:FROZEN_GUI_PACKAGE 'contain-test-installer.exe')) }
+          $quoted = $arguments | ForEach-Object { '"' + $_.Replace('"','\"') + '"' }
+          $harness = $null; $exitCode = $null; $driverError = $null; $timedOut = $false
+          $started = [Diagnostics.Stopwatch]::StartNew()
+          try {
+            $harness = Start-Process -FilePath (Join-Path $env:FROZEN_GUI_HARNESS 'Contain.Viewer.Tests.exe') -ArgumentList $quoted -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $private 'harness.log') -RedirectStandardError (Join-Path $private 'harness-stderr.log')
+            $null = $harness.Handle
+            if ($harness.WaitForExit(600000)) { $harness.Refresh(); $exitCode = $harness.ExitCode }
+            else { $timedOut = $true; $harness.Kill() } # Original cleanup: only the owned harness, never an installer tree.
+          } catch { $driverError = $_.Exception.GetType().Name }
+          $harnessElapsed = $started.ElapsedMilliseconds
+          # Read-only post-run accounting covers package copies, including the
+          # moved-package cold restart. Unknown executable paths never count as 0.
+          function Owned-Processes {
+            $result = @{viewers=0;cores=0;unknown=0}
+            $prefixes = @($out,$env:FROZEN_GUI_PACKAGE,$fixtureTemp) | ForEach-Object { [IO.Path]::GetFullPath($_).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar }
+            $enumerationErrors = @()
+            $processes = @(Get-Process -Name 'Contain.Viewer','contain' -ErrorAction SilentlyContinue -ErrorVariable enumerationErrors)
+            foreach ($enumerationError in $enumerationErrors) {
+              if ($enumerationError.FullyQualifiedErrorId -notlike 'NoProcessFoundForGivenName,*') { $result.unknown++ }
+            }
+            foreach ($process in $processes) {
+              try {
+                if ($process.HasExited) { continue }
+                $path = $process.Path
+                if ([string]::IsNullOrEmpty($path)) { $result.unknown++; continue }
+                $canonical = [IO.Path]::GetFullPath($path)
+                $owned = @($prefixes | Where-Object { $canonical.StartsWith($_,[StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
+                if ($owned) {
+                  if ([IO.Path]::GetFileName($canonical) -ieq 'Contain.Viewer.exe') { $result.viewers++ }
+                  elseif ([IO.Path]::GetFileName($canonical) -ieq 'contain.exe') { $result.cores++ }
+                  else { $result.unknown++ }
+                }
+              } catch { $result.unknown++ }
+            }
+            return $result
+          }
+          $wait = [Diagnostics.Stopwatch]::StartNew()
+          do {
+            $remaining = Owned-Processes
+            $harnessExited = $null -ne $harness -and $harness.HasExited
+            if (($harnessExited -and $remaining.viewers -eq 0 -and $remaining.cores -eq 0 -and $remaining.unknown -eq 0) -or $wait.ElapsedMilliseconds -ge 45000) { break }
+            Start-Sleep -Milliseconds 200
+          } while ($true)
+          $quiescent = $harnessExited -and $remaining.viewers -eq 0 -and $remaining.cores -eq 0 -and $remaining.unknown -eq 0
+          [ordered]@{schema_version=1;full_desktop_invoked=($null -ne $harness -and -not $transition);transition_probe_invoked=($null -ne $harness -and $transition);personal_subset_only=$false;harness_started=($null -ne $harness);harness_exited=$harnessExited;exit_code=$exitCode;timed_out=$timedOut;driver_error_type=$driverError;harness_elapsed_ms=$harnessElapsed;harness_deadline_ms=600000;viewer_count=$remaining.viewers;core_count=$remaining.cores;unknown_count=$remaining.unknown;all_owned_viewer_core_exited=$quiescent;maximum_quiescence_wait_ms=45000;actual_quiescence_wait_ms=$wait.ElapsedMilliseconds;retries=0} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $out 'public/gui-execution.json') -Encoding utf8
+          if (-not $quiescent -or $timedOut -or $null -ne $driverError -or $exitCode -ne 0) { throw 'Declared diagnostic harness did not pass; original failed observations remain retained' }
+      - name: Record immutable package identity and the declared diagnostic outcomes
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:FROZEN_DESKTOP_OUTPUT) { throw 'Run plan unavailable; no completed desktop attempt is claimed' }
+          @'
+          import hashlib,importlib.util,json,pathlib,sys,zipfile
+          out=pathlib.Path(sys.argv[1]); package=pathlib.Path(sys.argv[2]) if sys.argv[2] else None
+          archive_path=pathlib.Path(sys.argv[3]) if sys.argv[3] else None
+          evidence=out/'viewer-public'
+          def read(path):
+              return json.loads(path.read_text(encoding='utf-8-sig')) if path.is_file() else {}
+          def load(name,file):
+              spec=importlib.util.spec_from_file_location(name,file); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); return module
+          gate=load('frozen_existing_desktop_gates','scripts/package-viewer.py')
+          guidance=load('frozen_existing_beta9_guidance','scripts/upload-beta9-assets.py')
+          execution=read(out/'public/gui-execution.json'); provenance=read(out/'public/provenance.json'); plan=read(out/'public/plan.json')
+          unchanged=False; members_unchanged=False; build={}; manifest_sha=None
+          if archive_path and archive_path.is_file() and package and package.is_dir():
+              unchanged=hashlib.sha256(archive_path.read_bytes()).hexdigest()=='a7ef3faed3c42aada77fe5619b732fe092b8787f89311047105ff6082b132656'
+              with zipfile.ZipFile(archive_path) as archive:
+                  build_bytes=archive.read('BUILD.json'); build=json.loads(build_bytes); manifest_sha=hashlib.sha256(build_bytes).hexdigest()
+                  members=archive.namelist()
+                  members_unchanged={path.relative_to(package).as_posix() for path in package.rglob('*') if path.is_file()}==set(members) and all((package/name).is_file() and hashlib.sha256((package/name).read_bytes()).hexdigest()==hashlib.sha256(archive.read(name)).hexdigest() for name in members)
+          if plan.get('diagnostic_stage')=='D7':
+              # This is deliberately separate from every full native acceptance
+              # predicate. A green synthetic transition probe is never a release.
+              transition=read(evidence/'lookup-transition-summary.json')
+              transition_plan=read(evidence/'lookup-transition-plan.json')
+              cases=transition.get('cases',[])
+              fixed_targets=['synthetic-finished' if i%2==0 else 'synthetic-interrupted' for i in range(100)]
+              cases_match=isinstance(cases,list) and len(cases)==100 and all(isinstance(row,dict) for row in cases) and [row.get('target') for row in cases]==fixed_targets and [row.get('index') for row in cases]==list(range(1,101))
+              observed_counts={key:sum(row.get('status')==status for row in cases) for key,status in [('passed','passed'),('failed','failed'),('not_run','not_run')]} if cases_match else {}
+              counts_match=bool(observed_counts) and all(type(transition.get(key)) is int and transition[key]==value for key,value in observed_counts.items()) and sum(observed_counts.values())==100 and type(transition.get('attempted')) is int and transition['attempted']==observed_counts['passed']+observed_counts['failed']
+              expected_hashes={row['path']:row['sha256'] for row in build.get('files',[])}
+              source_match=transition.get('source_sha')==transition.get('product_source_sha')=='b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4' and transition.get('harness_source_sha')==sys.argv[4]
+              protocol_match=transition.get('protocol_revision')=='contain-lookup-transition-diagnosis-1' and transition.get('accepted') is False and transition.get('release_accepted') is False and transition.get('synthetic') is True and transition.get('real_etw_executed') is False
+              binary_match=transition.get('package_manifest_sha256')==manifest_sha and all(transition.get(key)==expected_hashes.get(name) and expected_hashes.get(name) is not None for key,name in [('viewer_assembly_sha256','Contain.Viewer.dll'),('viewer_launcher_sha256','Contain.Viewer.exe'),('contain_sha256','contain.exe')])
+              sample_hash=expected_hashes.get('samples/viewer-demo.db')
+              readonly_match=sample_hash is not None and all(transition.get(key)==sample_hash for key in ['copied_database_before_sha256','copied_database_after_sha256','package_sample_before_sha256','package_sample_after_sha256']) and all(transition.get(key) is True for key in ['database_unchanged','package_sample_unchanged','all_three_fixed_ids_before','all_three_fixed_ids_after'])
+              fixed_plan=dict(schema_version=1,protocol_revision='contain-lookup-transition-plan-1',product_source_sha='b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4',harness_source_sha=sys.argv[4],initial_selection='synthetic-interrupted',transition_count=100,targets=fixed_targets,maximum_selection_requests=101,maximum_viewer_launches=1,maximum_native_captures=0,retries=0,transition_deadline_ms=30000,transition_loop_deadline_ms=180000,poll_interval_ms=50,original_uia_deadline_ms=20000,fail_first_required_miss=True,alternate_lookup_is_fallback=False,accepted=False,release_accepted=False)
+              plan_match=all(type(transition_plan.get(key)) is type(value) and transition_plan[key]==value for key,value in fixed_plan.items())
+              bounded_complete=all(transition.get(key) is True for key in ['completed_diagnostic','native_windows','actual_packaged_executable','initial_selection_completed','normal_exit']) and transition.get('real_user_records_accessed') is False and transition.get('reproduced_required_miss') is False and type(transition.get('exit_code')) is int and transition['exit_code']==0 and type(transition.get('loop_elapsed_ms')) is int and 0<=transition['loop_elapsed_ms']<=180000 and all(type(transition.get(key)) is int and transition[key]==value for key,value in [('maximum_native_captures',0),('maximum_viewer_launches',1),('retries',0)]) and cases_match and all(type(row.get('elapsed_ms')) is int and 0<=row['elapsed_ms']<=30000 for row in cases)
+              healthy_driver=execution.get('transition_probe_invoked') is True and execution.get('full_desktop_invoked') is False and execution.get('harness_exited') is True and execution.get('exit_code')==0 and execution.get('timed_out') is False and execution.get('driver_error_type') is None and execution.get('all_owned_viewer_core_exited') is True
+              complete=healthy_driver and unchanged and members_unchanged and source_match and binary_match and readonly_match and plan_match and bounded_complete and protocol_match and cases_match and counts_match and observed_counts.get('passed')==100
+              result=dict(schema_version=1,protocol='contain-frozen-beta10-transition-1',diagnostic_stage='D7',product_source_sha='b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4',harness_source_sha=sys.argv[4],script_source_sha=sys.argv[4],transition_probe_completed=complete,original_zip_unchanged=unchanged,all_extracted_package_members_unchanged=members_unchanged,source_identity_matches=source_match,binary_identity_matches=binary_match,readonly_sample_identity_matches=readonly_match,transition_plan_matches=plan_match,bounded_transition_completed=bounded_complete,transition_protocol_matches=protocol_match,fixed_case_order_matches=cases_match,case_counts_match=counts_match,case_counts=observed_counts,original_required_miss_reproduced=transition.get('reproduced_required_miss'),execution=execution,complete_native_gates_passed=False,real_etw_executed=False,accepted=False,release_accepted=False,retries=0,real_user_records_accessed=False,retained_previous_runs=[42227112910,42231290678,42249868473,42325883947])
+              (out/'public/frozen-transition-summary.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
+              assert complete, 'Transition probe retained its failure or unavailable outcome; no full desktop acceptance is claimed'
+              sys.exit(0)
+          contracts={
+              'native_ui_cli_and_export':('summary.json',gate.verification_matches),
+              'native_personal_records_and_cold_restart':('personal-records-summary.json',gate.personal_records_verification_matches),
+              'native_persisted_overview_and_navigation':('overview-summary.json',gate.overview_verification_matches),
+              'native_session_event_search':('search-summary.json',gate.search_verification_matches),
+              'native_first_use_configuration':('first-use-configuration-summary.json',gate.first_use_configuration_verification_matches),
+              'native_layout_and_simulated_scale':('layout-summary.json',gate.layout_verification_matches),
+              'native_progress_and_failure_feedback':('progress-summary.json',gate.progress_verification_matches),
+              'native_gui_install_etw_and_exact_result':('install-summary.json',gate.install_verification_matches),
+          }
+          checks={}; errors={}
+          def check(name,fn):
+              try: checks[name]=bool(fn())
+              except Exception as error: checks[name]=False; errors[name]=type(error).__name__
+          for name,(filename,validate) in contracts.items():
+              check(name,lambda filename=filename,validate=validate: validate(read(evidence/filename),build,manifest_sha))
+          check('native_search_export',lambda: gate.search_export_verification_matches(read(evidence/'export-summary.json'),build,manifest_sha,evidence/'export-summary.json'))
+          check('native_first_use_install_flow',lambda: gate.first_use_install_verification_matches(read(evidence/'install-summary.json'),build,manifest_sha,evidence/'install-summary.json'))
+          check('preserved_beta9_guidance_cases',lambda: guidance.guidance_verification_matches(read(evidence/'progress-summary.json'),read(evidence/'first-use-configuration-summary.json')))
+          completed=execution.get('full_desktop_invoked') is True and execution.get('harness_exited') is True and execution.get('exit_code')==0 and execution.get('timed_out') is False and execution.get('driver_error_type') is None and execution.get('all_owned_viewer_core_exited') is True and unchanged and members_unchanged and all(checks.values())
+          result=dict(schema_version=1,protocol='contain-frozen-beta10-desktop-1',product_source_sha='b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4',harness_source_sha=sys.argv[4],script_source_sha=sys.argv[4],full_desktop_invoked=execution.get('full_desktop_invoked',False),complete_native_gates_passed=completed,original_zip_unchanged=unchanged,all_extracted_package_members_unchanged=members_unchanged,original_full_gui_failure_retained=True,original_full_gui_run=42227112910,original_full_gui_failed_check='packaged_executable_default_history',original_full_gui_error_type='TimeoutException',native_checks=checks,native_check_error_types=errors,execution=execution,release_accepted=False,release_note='All historical attempts remain evidence. A complete new suite and evidence-backed startup conclusion are required with the separate quality/capture/release gates; a green subset cannot authorize publication.',retries=0,real_user_records_accessed=False)
+          (out/'public/frozen-desktop-summary.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
+          assert completed, 'Complete desktop gates or immutable package verification did not pass; all available outcomes are retained'
+          '@ | python - $env:FROZEN_DESKTOP_OUTPUT "$env:FROZEN_GUI_PACKAGE" "$env:FROZEN_CANDIDATE_ZIP" $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Full frozen desktop result remains failed or unavailable' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ env.DIAG_TRANSITION_REQUESTED == 'true' && 'frozen-beta10-transition-evidence' || 'frozen-beta10-desktop-evidence' }}
+          path: ${{ env.FROZEN_DESKTOP_OUTPUT }}/public/*.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ env.DIAG_TRANSITION_REQUESTED == 'true' && 'windows-lookup-transition-evidence' || 'windows-viewer-evidence' }}
+          path: |
+            ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/summary.json
+            ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/install-summary.json
+            ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/install-progress.json
+            ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/layout-summary.json
+            ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/progress-summary.json
+            ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/personal-records-summary.json
+            ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/overview-summary.json
+            ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/search-summary.json
+            ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/export-summary.json
+            ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/export-progress.json
+            ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/first-use-configuration-summary.json
+            ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/packaged-ready-diagnostics.json
+            ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/packaged-lookup-diagnostics.json
+            ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/lookup-transition-plan.json
+            ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/lookup-transition-summary.json
+            ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/screenshots/*.png
+            ${{ env.FROZEN_DESKTOP_OUTPUT }}/viewer-public/reports/*.html
+          if-no-files-found: warn

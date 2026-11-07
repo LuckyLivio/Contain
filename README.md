@@ -8,11 +8,12 @@ Rust、Visual Studio、Python、PowerShell 7 或独立 .NET 运行库。
 
 ## 下载与使用
 
-**[直接下载 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.9/contain-0.3.2-beta.9-windows-x64.zip)** · [Beta Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.9) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.9/SHA256SUMS.txt)
+**[直接下载 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.10/contain-0.3.2-beta.10-windows-x64.zip)** · [Beta.10 Prerelease](https://github.com/LuckyLivio/Contain/releases/tag/v0.3.2-beta.10) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.10/SHA256SUMS.txt)
 
-版本 **0.3.2-beta.9**。[本版跟随记录、页面和验证边界](docs/follow-installer-beta9.md)。
-发布页提供实际验收的 Windows x64 自包含 ZIP、SHA-256 和 `BUILD-IDENTITY.json`，
-其中记录冻结源码、Windows / DPI、原生验收结果和构建身份。
+**0.3.2-beta.10** 修复初始化生命周期事实未交给实时跟随缓存的缺口，并纠正“已保存但采集丢失”的提示。[修复、最终验收、平台与已知风险](docs/beta10-release.md) · [跟随证据边界](docs/follow-installer-beta9.md)。
+
+同一原 ZIP 的两轮固定负载对照中，接收和候选丢失均为 0，父子目标正确关联；D6 完整 80 项桌面检查及 11 项原生谓词通过，实际完成安装、保存、解释和退出重开。发布沿用该 ZIP，完整解压即可运行。包内历史失败 `VALIDATION.json` 保留，独立的 `FINAL-ACCEPTANCE.json` 说明当前发布依据，`BUILD-IDENTITY.json` 区分产品、测试和交付源码。
+首次空库启动超时、D5 结果观察控件缺失、用户 Parallels 原会话丢失的原因仍未确认，分别跟踪于 [#16](https://github.com/LuckyLivio/Contain/issues/16)、[#17](https://github.com/LuckyLivio/Contain/issues/17)、[#18](https://github.com/LuckyLivio/Contain/issues/18)。这些是保留的 Beta 已知风险，未写成已修复。Beta.9 及更早标签和附件保持不变。
 
 1. **选择安装器。** 完整解压 ZIP，运行 `Contain.Viewer.exe`，点击“新建安装记录”，在弹出的选择器中选择 EXE。取消时返回原来的历史记录。
 2. **直接开始。** 默认“跟随安装器记录”，点击“开始记录”后照常安装，安装位置由安装器决定，无需预先猜目录。它记录这个 EXE 和已验证直接子进程的文件操作；不提供安装前文件基线或最终归属结论。需要明确范围和前后状态对比时，可改选“指定文件夹观察”并选择已有文件夹。
@@ -63,7 +64,7 @@ Rust、Visual Studio、Python、PowerShell 7 或独立 .NET 运行库。
 没有通过禁止目录或全盘性能实验掩盖它；继续跟踪于 [Issue #5](https://github.com/LuckyLivio/Contain/issues/5)。
 
 原生 Windows CI、模拟缩放压力、用户手工反馈和未验证条件在
-[当前交付记录](docs/follow-installer-beta9.md)中分别列出。此前四个里程碑保持关闭；
+[当前交付记录](docs/beta10-release.md)中分别列出。此前四个里程碑保持关闭；
 [历史交付与失败证据索引](docs/delivery-history.md)保留原始记录，旧包不再并列为当前下载。
 
 ## 开发与参考

@@ -47,6 +47,7 @@ internal sealed record OverviewPresentation(string Installer, string InstallerNo
         var diagnostics = Diagnostics(summary).ToArray();
         var streamError = Text(Field(backend, "stream"), "error");
         var alerts = new List<string>();
+        if (finished && HasRecordedLoss(summary)) alerts.Add("记录已保存；采集期间丢失了部分记录。");
         if (streamError is not null) alerts.Add("记录来源报告错误；完整原因可在技术详情中查看或复制。");
         if (diagnostics.Any(text => text.Contains("Legacy capture:", StringComparison.Ordinal)))
             alerts.Add("旧记录未保存完整覆盖元数据；缺失统计不可按 0 解读。");
@@ -69,10 +70,55 @@ internal sealed record OverviewPresentation(string Installer, string InstallerNo
                 : "记录限制：" + Brief(important));
         }
         if (diagnostics.Length > 1) alerts.Add($"共 {diagnostics.Length} 条诊断，技术详情保留完整文字。");
-        if (alerts.Count == 0 && !finished) alerts.Add("记录未确认完整结束；已保存条目不代表完整证据。可展开技术详情检查已记录的阶段。");
+        if (!finished) alerts.Insert(0, "记录未确认完整结束；已保存条目不代表完整证据。可展开技术详情检查已记录的阶段。");
         return new(installer, installerNote, record, recordNote, scope, registryScope, coverage, changes, changesNote,
             string.Join("\r\n", alerts), !finished);
     }
+
+    internal static bool HasRecordedLoss(JsonElement summary)
+    {
+        var backend = Field(summary, "backend");
+        var counts = Field(summary, "summary_counts");
+        var pipeline = Field(backend, "pipeline");
+        var handoff = Field(backend, "handoff");
+        var stream = Field(backend, "stream");
+        return Positive(counts, "application_records_dropped", "decode_errors")
+            || Positive(backend, "dropped_events", "etw_events_lost", "etw_buffers_lost", "decode_errors", "context_losses")
+            || Positive(pipeline, "queue_overflow", "enqueue_disconnected", "retention_dropped")
+            || Positive(handoff, "overflow", "oversized", "disconnected", "serialize_failed")
+            || Positive(stream, "quota_dropped", "failed")
+            || Positive(Field(backend, "follow_installer"), "candidate_dropped");
+    }
+
+    // These are saved, overlapping diagnostic counters. Never add them to the
+    // application total: retention_dropped aliases stream.quota_dropped, and
+    // follow candidate loss is already represented in context_losses.
+    internal static string LossDetails(JsonElement summary)
+    {
+        var backend = Field(summary, "backend");
+        var pipeline = Field(backend, "pipeline");
+        var handoff = Field(backend, "handoff");
+        var stream = Field(backend, "stream");
+        var follow = Field(backend, "follow_installer");
+        // Old readback fills absent backend scalars with default zero. Without
+        // pipeline accounting that zero does not prove measured context loss.
+        var context = Number(backend, "context_losses");
+        if (context == "0" && pipeline.ValueKind != JsonValueKind.Object) context = "未提供";
+        return "丢失环节（保存的分项，不重复求和）\r\n"
+            + $"接收队列：溢出 {Number(pipeline, "queue_overflow")} · 断开 {Number(pipeline, "enqueue_disconnected")} · 待取出 {Number(pipeline, "queue_pending")}\r\n"
+            + $"线程间交付：溢出 {Number(handoff, "overflow")} · 超大记录 {Number(handoff, "oversized")} · 断开 {Number(handoff, "disconnected")} · 序列化失败 {Number(handoff, "serialize_failed")} · 待交付 {Number(handoff, "pending")}\r\n"
+            + $"原始记录保存：配额丢弃 {Number(stream, "quota_dropped")} · 保存失败 {Number(stream, "failed")}\r\n"
+            + $"跟随候选丢失：{Number(follow, "candidate_dropped")} · 上下文丢失总数：{context}（不同于应用原始记录丢弃总数）\r\n"
+            + $"正常范围筛除（不计丢失）：主动筛除 {Number(pipeline, "deliberately_filtered")} · 不支持记录 {Number(pipeline, "unsupported_records")} · 无关进程 {Number(follow, "excluded_other")} · 自身 I/O {Number(follow, "excluded_self_io")}\r\n"
+            + $"跟随身份未解析：{Number(follow, "unresolved")}（不作为已验证目标写入）";
+    }
+
+    private static bool Positive(JsonElement data, params string[] keys) => keys.Any(key =>
+        Field(data, key) is var field && field.ValueKind == JsonValueKind.Number && field.TryGetUInt64(out var value) && value > 0);
+
+    private static string Number(JsonElement data, string key) => Field(data, key) is var field
+        && field.ValueKind == JsonValueKind.Number && field.TryGetUInt64(out var value)
+            ? value.ToString(CultureInfo.InvariantCulture) : "未提供";
 
     internal static IEnumerable<string> Diagnostics(JsonElement summary)
     {

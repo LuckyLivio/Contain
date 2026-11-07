@@ -12,6 +12,12 @@ internal sealed class PackagedDesktop : IDisposable
     private readonly Process process;
     private readonly bool savedRecordsOnly;
     private readonly long startedAt;
+    private readonly ReadyTrace readyTrace;
+    private readonly int lookupLaunch = RequiredLookupDiagnostics.BeginLaunch();
+    private int lookupFailureSampled;
+    private IntPtr nativeReadyRoot;
+    private sealed record CachedControl(IntPtr Root, IntPtr Target);
+    private CachedControl? sessionTitleCache;
     internal int ProcessId => process.Id;
     internal bool HasExited => process.HasExited;
     internal int ExitCode => process.ExitCode;
@@ -31,6 +37,19 @@ internal sealed class PackagedDesktop : IDisposable
     internal string ReportDialogDiagnostic { get; private set; } = string.Empty;
     internal Action? ReportDialogProgress { get; set; }
     internal string CleanupState { get; private set; } = "not_disposed";
+    private string readyStage = "not_started";
+    private string readyTimeoutKind = "none";
+    private int readyDiscoveryAttempts;
+    private int readyEnabledAttempts;
+    private int readyProbeAttempts;
+    private long readyElapsedMilliseconds;
+    private long readyLastProbeMilliseconds;
+
+    internal sealed record ReadyDiagnostic(string Launch, string Stage, string TimeoutKind,
+        int DiscoveryAttempts, int EnabledAttempts, int UiProbeAttempts, long ElapsedMs, long LastUiProbeMs,
+        int ProcessId, bool? ProcessAlive, int? ProcessExitCode, bool? OwnedMainWindowPresent,
+        bool? MainWindowVisible, bool? MainWindowEnabled, bool? MainWindowHung, bool NativeSnapshotAvailable,
+        ReadyTrace.Diagnostic Startup);
 
     internal PackagedDesktop(string package, string workingDirectory, bool savedRecordsOnly = false)
     {
@@ -39,25 +58,190 @@ internal sealed class PackagedDesktop : IDisposable
         Executable = Path.GetFullPath(Path.Combine(package, "Contain.Viewer.exe"));
         WorkingDirectory = Path.GetFullPath(workingDirectory);
         this.savedRecordsOnly = savedRecordsOnly;
-        process = Process.Start(new ProcessStartInfo(Executable)
+        readyTrace = ReadyDiagnostics.Begin();
+        try
         {
-            UseShellExecute = false, WorkingDirectory = WorkingDirectory
-        }) ?? throw new IOException("The packaged desktop process did not start.");
+            process = Process.Start(new ProcessStartInfo(Executable)
+            {
+                UseShellExecute = false, WorkingDirectory = WorkingDirectory
+            }) ?? throw new IOException("The packaged desktop process did not start.");
+        }
+        catch (Exception error) { readyTrace.StartFailed(error); throw; }
+        readyTrace.Started(process.Id);
         // Retain the exact process handle and creation identity for the opt-in
         // saved-records cleanup. Never discover a replacement process by PID.
-        _ = process.Handle;
-        startedAt = process.StartTime.ToUniversalTime().Ticks;
+        try
+        {
+            _ = process.Handle;
+            startedAt = process.StartTime.ToUniversalTime().Ticks;
+        }
+        catch (Exception error) { readyTrace.HandleSetupFailed(error); throw; }
     }
 
-    internal async Task ReadyAsync()
+    internal async Task ReadyAsync(string launch = "unlabelled")
     {
-        await WaitAsync(async () => !process.HasExited && await ExistsAsync("NewInstall"), TimeSpan.FromSeconds(40));
-        await WaitAsync(() => EnabledAsync("NewInstall"), TimeSpan.FromSeconds(40));
+        if (launch is not ("unlabelled" or "default_history" or "seeded_first" or "seeded_restart"))
+            throw new InvalidOperationException("The readiness diagnostic requires a fixed launch label.");
+        var clock = Stopwatch.StartNew();
+        readyDiscoveryAttempts = readyEnabledAttempts = readyProbeAttempts = 0;
+        readyLastProbeMilliseconds = 0;
+        readyTimeoutKind = "none";
+        readyStage = "discover_control";
+        readyTrace.Stage(readyStage, launch);
+        using var observation = new CancellationTokenSource();
+        var observer = ObserveNativeReadinessAsync(observation.Token);
+        try
+        {
+            await WaitAsync(async () =>
+            {
+                readyDiscoveryAttempts++;
+                return !process.HasExited && await ReadyProbeAsync(() =>
+                {
+                    var found = Find("NewInstall", trace: readyTrace) is not null;
+                    if (found) readyTrace.Found();
+                    return found;
+                });
+            }, TimeSpan.FromSeconds(40));
+            readyStage = "wait_enabled";
+            readyTrace.Stage(readyStage, launch);
+            await WaitAsync(() =>
+            {
+                readyEnabledAttempts++;
+                return ReadyProbeAsync(() =>
+                {
+                    var control = Find("NewInstall", trace: readyTrace) ?? throw new RequiredProductControlMissingException("NewInstall");
+                    var enabled = readyTrace.Call("target_is_enabled", () => control.Current.IsEnabled);
+                    if (enabled) readyTrace.Found(enabled: true);
+                    return enabled;
+                });
+            }, TimeSpan.FromSeconds(40));
+            readyStage = "ready";
+            readyTrace.Stage(readyStage, launch);
+        }
+        catch (TimeoutException)
+        {
+            if (readyTimeoutKind == "none")
+                readyTimeoutKind = readyStage == "discover_control" ? "control_discovery_40s" : "control_enabled_40s";
+            readyTrace.Timeout(readyTimeoutKind);
+            throw;
+        }
+        finally
+        {
+            readyElapsedMilliseconds = clock.ElapsedMilliseconds;
+            // Freeze before cancellation/cleanup: a timed-out Task.Run may
+            // complete later, but must never overwrite the deadline evidence.
+            readyTrace.Finish();
+            observation.Cancel();
+            // The observer adds no wait to the original readiness deadline.
+            // Late native samples are ignored by the frozen trace; no UIA
+            // request or product process lifetime depends on this observer.
+            _ = observer.ContinueWith(task => _ = task.Exception, CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        }
+    }
+
+    private Task ObserveNativeReadinessAsync(CancellationToken cancellation) => Task.Run(async () =>
+    {
+        var checkpoints = 0;
+        try
+        {
+            while (!cancellation.IsCancellationRequested)
+            {
+                readyTrace.Native(NativeReadiness());
+                if (++checkpoints % 10 == 0) ReadyDiagnostics.Flush();
+                await Task.Delay(100, cancellation);
+            }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+    });
+
+    private ReadyTrace.NativeState NativeReadiness()
+    {
+        bool? alive = null, present = null, visible = null, enabled = null, hung = null;
+        int? exitCode = null;
+        var available = false;
+        try
+        {
+            // Read the retained process handle without refreshing Process's
+            // mutable cache concurrently with the existing readiness predicate.
+            var wait = WaitForSingleObject(process.Handle, 0);
+            alive = wait == 0x00000102 ? true : wait == 0 ? false : null;
+            if (alive is null) return new(null, null, null, null, null, null, false);
+            if (alive == false)
+            {
+                if (GetExitCodeProcess(process.Handle, out var code)) exitCode = unchecked((int)code);
+                present = false;
+            }
+            else
+            {
+                var window = IntPtr.Zero;
+                var enumerationCompleted = EnumWindows((candidate, _) =>
+                {
+                    GetWindowThreadProcessId(candidate, out var candidateOwner);
+                    if (candidateOwner != process.Id || !IsWindowVisible(candidate) || GetWindow(candidate, 4) != IntPtr.Zero)
+                        return true;
+                    window = candidate; return false;
+                }, IntPtr.Zero);
+                if (!enumerationCompleted && window == IntPtr.Zero)
+                    return new(alive, null, null, null, null, null, false);
+                GetWindowThreadProcessId(window, out var owner);
+                present = window != IntPtr.Zero && owner == process.Id;
+                if (present == true)
+                {
+                    Interlocked.CompareExchange(ref nativeReadyRoot, window, IntPtr.Zero);
+                    visible = IsWindowVisible(window);
+                    enabled = IsWindowEnabled(window);
+                    hung = IsHungAppWindow(window);
+                }
+            }
+            available = true;
+        }
+        catch (Exception) { /* No captions, paths, UIA trees or native error messages. */ }
+        return new(alive, exitCode, present, visible, enabled, hung, available);
+    }
+
+    private async Task<bool> ReadyProbeAsync(Func<bool> action)
+    {
+        readyProbeAttempts++;
+        readyTrace.Queued(readyProbeAttempts);
+        var clock = Stopwatch.StartNew();
+        // Keep the exact existing UIA worker/deadline behavior. Only identify
+        // whether its 20-second wrapper or the outer 40-second wait expired.
+        var probe = Task.Run(() => { readyTrace.WorkerStarted(); return action(); });
+        readyTrace.ArmProbeDeadline(20000);
+        try { return await probe.WaitAsync(TimeSpan.FromSeconds(20)); }
+        catch (TimeoutException error)
+        {
+            readyTimeoutKind = probe.IsFaulted && ReferenceEquals(probe.Exception?.InnerException, error)
+                ? "uia_operation_timeout" : "uia_probe_20s";
+            throw;
+        }
+        finally { readyLastProbeMilliseconds = clock.ElapsedMilliseconds; }
+    }
+
+    internal ReadyDiagnostic ReadySnapshot(string launch)
+    {
+        if (launch is not ("default_history" or "seeded_first" or "seeded_restart"))
+            throw new InvalidOperationException("The readiness diagnostic requires a fixed launch label.");
+        var native = NativeReadiness();
+        return new(launch, readyStage, readyTimeoutKind, readyDiscoveryAttempts, readyEnabledAttempts,
+            readyProbeAttempts, readyElapsedMilliseconds, readyLastProbeMilliseconds, process.Id, native.ProcessAlive,
+            native.ExitCode, native.MainWindowPresent, native.MainWindowVisible, native.MainWindowEnabled,
+            native.MainWindowHung, native.Available, readyTrace.Snapshot());
     }
 
     internal Task<bool> ExistsAsync(string id) => Ui(() => Find(id) is not null);
     internal Task<bool> EnabledAsync(string id) => Ui(() => Required(id).Current.IsEnabled);
     internal Task<string> TextAsync(string id) => Ui(() => Text(Required(id)));
+    // A transient status window may close normally while a sample is being
+    // taken. Keep discovery and reading in one UIA operation; required reads
+    // and all completion assertions deliberately retain their fail-fast path.
+    internal Task<string?> TryTextAsync(string id) => Ui(() => TryText(() => Find(id)));
+    internal static string? TryText(Func<Automation.AutomationElement?> find)
+    {
+        try { return find() is { } element ? Text(element) : null; }
+        catch (Automation.ElementNotAvailableException) { return null; }
+    }
     // Static labels can expose a stable AccessibleName rather than their
     // displayed filename. Keep that accessibility metadata intact and read
     // the actual visible HWND caption for visual-text assertions.
@@ -118,6 +302,17 @@ internal sealed class PackagedDesktop : IDisposable
     {
         var element = Required(id);
         var nativeWindow = new IntPtr(element.Current.NativeWindowHandle);
+        // Reuse this pre-existing read. Diagnosis adds no UIA call to a
+        // successful lookup, and never retains the element or its text.
+        if (id == "SessionTitle" && sessionTitleCache is null)
+        {
+            var root = GetAncestor(nativeWindow, 2);
+            GetWindowThreadProcessId(nativeWindow, out var targetOwner);
+            GetWindowThreadProcessId(root, out var rootOwner);
+            if (nativeWindow != IntPtr.Zero && root != IntPtr.Zero
+                && targetOwner == process.Id && rootOwner == process.Id)
+                Interlocked.CompareExchange(ref sessionTitleCache, new(root, nativeWindow), null);
+        }
         if (nativeWindow != IntPtr.Zero)
         {
             var iid = new Guid("618736e0-3c3d-11cf-810c-00aa00389b71");
@@ -706,22 +901,148 @@ internal sealed class PackagedDesktop : IDisposable
         throw new TimeoutException("The actual packaged UI did not reach the expected condition.");
     }
 
-    private Automation.AutomationElement? Find(string? id, string? name = null)
+    private Automation.AutomationElement? Find(string? id, string? name = null, ReadyTrace? trace = null,
+        Action<Automation.AutomationElementCollection>? captureWindows = null)
     {
-        var windows = Automation.AutomationElement.RootElement.FindAll(Automation.TreeScope.Children,
-            new Automation.PropertyCondition(Automation.AutomationElement.ProcessIdProperty, process.Id));
+        T Observe<T>(string operation, Func<T> action) => trace is null ? action() : trace.Call(operation, action);
+        var root = Observe("desktop_root_element", () => Automation.AutomationElement.RootElement);
+        var windows = Observe("find_owned_windows", () => root.FindAll(Automation.TreeScope.Children,
+            new Automation.PropertyCondition(Automation.AutomationElement.ProcessIdProperty, process.Id)));
+        captureWindows?.Invoke(windows);
         var condition = id is not null
             ? new Automation.PropertyCondition(Automation.AutomationElement.AutomationIdProperty, id)
             : new Automation.PropertyCondition(Automation.AutomationElement.NameProperty, name!);
-        foreach (Automation.AutomationElement window in windows)
+        var iterator = Observe("owned_windows_enumerator", windows.GetEnumerator);
+        try
         {
-            var found = window.FindFirst(Automation.TreeScope.Element | Automation.TreeScope.Descendants, condition);
-            if (found is not null) return found;
+            while (Observe("owned_windows_move_next", iterator.MoveNext))
+            {
+                var window = Observe("owned_window_current", () => (Automation.AutomationElement)iterator.Current);
+                var found = Observe("find_target_control", () => window.FindFirst(Automation.TreeScope.Element | Automation.TreeScope.Descendants, condition));
+                if (found is not null) return found;
+            }
         }
+        finally { (iterator as IDisposable)?.Dispose(); }
         return null;
     }
 
-    private Automation.AutomationElement Required(string id) => Find(id) ?? throw new InvalidOperationException("Actual product control is absent: " + id);
+    private Automation.AutomationElement Required(string id)
+    {
+        Automation.AutomationElementCollection? windows = null;
+        var fixedId = RequiredLookupDiagnostics.IsFixedId(id);
+        var found = Find(id, captureWindows: fixedId ? value => windows = value : null);
+        if (found is not null) return found;
+        var original = new RequiredProductControlMissingException(id);
+        if (fixedId && RequiredLookupDiagnostics.Current is { } invocation
+            && RequiredLookupDiagnostics.TrySampleLaunch(ref lookupFailureSampled))
+        {
+            // Publish the original failure BEFORE even native diagnosis or disk
+            // checkpoints can consume the remaining original Ui deadline.
+            invocation.Preserve(original);
+            var cached = id == "SessionTitle" ? sessionTitleCache : null;
+            var root = cached?.Root ?? nativeReadyRoot;
+            var target = cached?.Target ?? IntPtr.Zero;
+            var before = LookupNativeState(root, target);
+            var trace = RequiredLookupDiagnostics.BeginFailure(lookupLaunch, id, windows?.Count ?? 0, before,
+                target == IntPtr.Zero ? "native_readiness_root_candidate" : "prior_same_control_native_handle",
+                invocation.OriginalMissElapsedMs, invocation.OriginalMissRemainingMs);
+            if (trace is not null)
+            {
+                invocation.Attach(trace);
+                DiagnoseRequiredMiss(id, root, target, windows, before, trace, invocation);
+            }
+        }
+        throw original;
+    }
+
+    private RequiredLookupTrace.NativeState LookupNativeState(IntPtr root, IntPtr target)
+    {
+        bool? alive = null, rootExists = null, rootOwned = null, rootVisible = null,
+            rootEnabled = null, rootHung = null, targetExists = null, targetOwned = null,
+            targetVisible = null, targetRoot = null;
+        var available = false;
+        try
+        {
+            var wait = WaitForSingleObject(process.Handle, 0);
+            alive = wait == 0x00000102 ? true : wait == 0 ? false : null;
+            if (alive is null) return new(null, root != IntPtr.Zero, null, null, null, null, null,
+                target != IntPtr.Zero, null, null, null, null, false);
+            rootExists = root != IntPtr.Zero ? IsWindow(root) : null;
+            if (rootExists == true)
+            {
+                GetWindowThreadProcessId(root, out var owner); rootOwned = owner == process.Id && alive == true;
+                rootVisible = IsWindowVisible(root); rootEnabled = IsWindowEnabled(root); rootHung = IsHungAppWindow(root);
+            }
+            targetExists = target != IntPtr.Zero ? IsWindow(target) : null;
+            if (targetExists == true)
+            {
+                GetWindowThreadProcessId(target, out var owner); targetOwned = owner == process.Id && alive == true;
+                targetVisible = IsWindowVisible(target); targetRoot = GetAncestor(target, 2) == root;
+            }
+            available = true;
+        }
+        catch (Exception) { }
+        return new(alive, root != IntPtr.Zero, rootExists, rootOwned, rootVisible, rootEnabled, rootHung,
+            target != IntPtr.Zero, targetExists, targetOwned, targetVisible, targetRoot, available);
+    }
+
+    private void DiagnoseRequiredMiss(string id, IntPtr root, IntPtr target,
+        Automation.AutomationElementCollection? windows, RequiredLookupTrace.NativeState before,
+        RequiredLookupTrace trace, LookupUiInvocation invocation)
+    {
+        trace.Budget(invocation.RemainingMs);
+        try
+        {
+            if (before.ProcessAlive != true || before.RootOwned != true || windows is null)
+            { trace.Finish("owned_cached_root_unavailable", false, null); return; }
+            var count = Math.Min(windows.Count, RequiredLookupDiagnostics.WindowMetadataLimit);
+            var included = false;
+            var complete = windows.Count <= RequiredLookupDiagnostics.WindowMetadataLimit;
+            for (var index = 0; index < count; index++)
+            {
+                try
+                {
+                    var captured = index;
+                    var handle = trace.Call("original_window_native_handle", () => windows[captured].Current.NativeWindowHandle);
+                    included |= new IntPtr(handle) == root;
+                }
+                catch (Automation.ElementNotAvailableException) { complete = false; }
+                var allRead = complete && index + 1 == windows.Count;
+                trace.Metadata(index + 1, included ? true : allRead ? false : null, allRead);
+            }
+            if (count == 0) trace.Metadata(0, false, true);
+            // Recheck retained-process ownership immediately before passing any
+            // cached HWND to UIA. A later observation is explicitly diagnostic.
+            var current = LookupNativeState(root, target);
+            if (current.ProcessAlive != true || current.RootOwned != true)
+            { trace.After(current); trace.Finish("owned_cached_root_changed", false, null); return; }
+            var directRoot = trace.Call("from_cached_owned_root", () => Automation.AutomationElement.FromHandle(root));
+            var direct = trace.Call("find_target_from_cached_root", () => directRoot.FindFirst(
+                Automation.TreeScope.Element | Automation.TreeScope.Descendants,
+                new Automation.PropertyCondition(Automation.AutomationElement.AutomationIdProperty, id)));
+            if (direct is null) trace.Direct(false, null, null, null, null);
+            else
+            {
+                var matches = trace.Call("direct_target_id", () => direct.Current.AutomationId == id);
+                var handle = new IntPtr(trace.Call("direct_target_native_handle", () => direct.Current.NativeWindowHandle));
+                GetWindowThreadProcessId(handle, out var owner);
+                trace.Direct(true, matches, handle == IntPtr.Zero ? null : owner == process.Id,
+                    handle == IntPtr.Zero ? null : GetAncestor(handle, 2) == root,
+                    handle == IntPtr.Zero || target == IntPtr.Zero ? null : handle == target);
+            }
+            trace.After(LookupNativeState(root, target));
+            trace.Finish("comparison_completed_original_failure_preserved", true, null);
+        }
+        catch (Exception error)
+        {
+            trace.After(LookupNativeState(root, target));
+            trace.Finish(invocation.RemainingMs <= 0 ? "existing_ui_deadline" : "comparison_failed_original_failure_preserved", false, error);
+        }
+    }
+    // Public summaries already report exception type. Use a fixed type for this
+    // harness failure without exposing the control id or a raw exception message.
+    internal sealed class RequiredProductControlMissingException(string id)
+        : InvalidOperationException("Actual product control is absent: " + id);
     private Automation.AutomationElement? FindIdentity(string identity)
     {
         var windows = Automation.AutomationElement.RootElement.FindAll(Automation.TreeScope.Children,
@@ -742,8 +1063,8 @@ internal sealed class PackagedDesktop : IDisposable
         if (element.TryGetCurrentPattern(Automation.InvokePattern.Pattern, out var invoke)) ((Automation.InvokePattern)invoke).Invoke();
         else throw new InvalidOperationException("The actual control cannot be invoked.");
     }
-    private static async Task<T> Ui<T>(Func<T> action) => await Task.Run(action).WaitAsync(TimeSpan.FromSeconds(20));
-    private static async Task Ui(Action action) => await Task.Run(action).WaitAsync(TimeSpan.FromSeconds(20));
+    private static Task<T> Ui<T>(Func<T> action) => RequiredLookupDiagnostics.RunUiAsync(action, TimeSpan.FromSeconds(20));
+    private static Task Ui(Action action) => RequiredLookupDiagnostics.RunUiAsync(() => { action(); return true; }, TimeSpan.FromSeconds(20));
 
     public void Dispose()
     {
@@ -784,6 +1105,10 @@ internal sealed class PackagedDesktop : IDisposable
         public WindowBounds CaretBounds;
     }
     [DllImport("user32.dll")] private static extern IntPtr GetParent(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr window);
+    [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr window, uint command);
+    [DllImport("kernel32.dll")] private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+    [DllImport("kernel32.dll")] private static extern bool GetExitCodeProcess(IntPtr handle, out uint exitCode);
     [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr window, uint flags);
     [DllImport("user32.dll")] private static extern bool IsChild(IntPtr parent, IntPtr child);
     [DllImport("user32.dll")] private static extern IntPtr GetDlgItem(IntPtr dialog, int item);
@@ -800,6 +1125,7 @@ internal sealed class PackagedDesktop : IDisposable
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, System.Text.StringBuilder name, int maximum);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool IsHungAppWindow(IntPtr window);
     [DllImport("user32.dll")] private static extern IntPtr ChildWindowFromPointEx(IntPtr parent, NativePoint point, uint flags);
     [DllImport("user32.dll")] private static extern bool ScreenToClient(IntPtr window, ref NativePoint point);
     [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr window, out WindowBounds bounds);

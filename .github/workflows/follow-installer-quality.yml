@@ -27,12 +27,18 @@ jobs:
           "FOLLOW_QUALITY_OUTPUT=$out" >> $env:GITHUB_ENV
           $private = Join-Path $env:RUNNER_TEMP ('follow-quality-private-' + $env:GITHUB_RUN_ID)
           New-Item -ItemType Directory -Path $private | Out-Null
-          function Publish-Benchmark([string]$InputFile, [string]$OutputFile, [string]$ExpectedSource) {
-            $raw = Get-Content -LiteralPath $InputFile -Raw | ConvertFrom-Json -AsHashtable
+          function Publish-Benchmark([string]$QualityDirectory, [string]$OutputFile, [string]$ExpectedSource) {
+            $gates = Get-Content -LiteralPath (Join-Path $QualityDirectory 'gates.json') -Raw | ConvertFrom-Json -AsHashtable
+            $invocations = @($gates.invocations | Where-Object { $_.mode -eq 'Bench' -and $_.source_revision -eq $ExpectedSource })
+            if ($invocations.Count -ne 1 -or -not $invocations[0].completed -or -not $invocations[0].passed) { throw 'Bench quality invocation did not pass for expected source' }
+            $benchGates = @($gates.gates | Where-Object { $_.invocation_id -eq $invocations[0].invocation_id -and $_.label -eq 'bench' })
+            if ($benchGates.Count -ne 1 -or $benchGates[0].exit_code -ne 0) { throw 'Bench command did not pass' }
+            $raw = Get-Content -LiteralPath (Join-Path $QualityDirectory 'event-pipeline.json') -Raw | ConvertFrom-Json -AsHashtable
             if ($raw.source_commit -ne $ExpectedSource -or $raw.profile -ne 'release') { throw 'Benchmark source/profile differs' }
             $safe = [ordered]@{}
             foreach ($key in @('schema_version','measurement_kind','etw_validation','etw_providers_started','sqlite_measured','profile','source_commit','compiler','os','os_version','arch','fixture_generation_timed','assertions_timed','notes')) { $safe[$key] = $raw[$key] }
             $safe.working_tree_clean = $raw.working_tree_status -eq ''
+            $safe.quality_gate = [ordered]@{mode='Bench';completed=$true;passed=$true;label='bench';exit_code=0}
             $safe.results = @($raw.results | ForEach-Object {
               $row = $_; $item = [ordered]@{}
               foreach ($key in @('name','work_items_per_sample','input_records_per_sample','measured_samples','warmup_samples','median_ns_per_work_item','min_ns_per_work_item','p95_ns_per_work_item','median_work_items_per_second','sample_ns_per_work_item','validated_checksum')) { $item[$key] = $row[$key] }
@@ -41,18 +47,20 @@ jobs:
             $safe | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $OutputFile -Encoding utf8
           }
           $baseline = Join-Path $env:RUNNER_TEMP ('follow-baseline-' + $env:GITHUB_RUN_ID)
-          git worktree add --detach $baseline a1f9876f4976c2e35b443d9634bbb06fa19f1927
+          git worktree add --detach $baseline 8e68ccfe63389e1533235e253eb59329f15be898
           if ($LASTEXITCODE -ne 0) { throw 'Baseline checkout failed' }
+          $baselinePrivate = Join-Path $private 'baseline'
+          $candidatePrivate = Join-Path $private 'candidate'
           Push-Location $baseline
           try {
-            cargo bench -p contain-core --bench event_pipeline --locked -- --events 20000 --samples 7 --output (Join-Path $private 'baseline-raw.json') *> (Join-Path $private 'baseline.log')
+            ./scripts/quality.ps1 -Mode Bench -OutputDirectory $baselinePrivate *> (Join-Path $private 'baseline.log')
             if ($LASTEXITCODE -ne 0) { throw 'Baseline benchmark failed' }
           } finally { Pop-Location }
-          cargo bench -p contain-core --bench event_pipeline --locked -- --events 20000 --samples 7 --output (Join-Path $private 'candidate-raw.json') *> (Join-Path $private 'candidate.log')
+          ./scripts/quality.ps1 -Mode Bench -OutputDirectory $candidatePrivate *> (Join-Path $private 'candidate.log')
           if ($LASTEXITCODE -ne 0) { throw 'Candidate benchmark failed' }
-          Publish-Benchmark (Join-Path $private 'baseline-raw.json') (Join-Path $out 'baseline-benchmark.json') 'a1f9876f4976c2e35b443d9634bbb06fa19f1927'
-          Publish-Benchmark (Join-Path $private 'candidate-raw.json') (Join-Path $out 'candidate-benchmark.json') $env:GITHUB_SHA
-          [ordered]@{schema_version=1;source_sha=$env:GITHUB_SHA;baseline_sha='a1f9876f4976c2e35b443d9634bbb06fa19f1927';same_runner=$true;scope='Existing synthetic event pipeline, same runner, seven release samples; not live ETW or new follow-buffer throughput';accepted=$true} | ConvertTo-Json | Set-Content (Join-Path $out 'benchmark-identity.json') -Encoding utf8
+          Publish-Benchmark $baselinePrivate (Join-Path $out 'baseline-benchmark.json') '8e68ccfe63389e1533235e253eb59329f15be898'
+          Publish-Benchmark $candidatePrivate (Join-Path $out 'candidate-benchmark.json') $env:GITHUB_SHA
+          [ordered]@{schema_version=1;source_sha=$env:GITHUB_SHA;baseline_sha='8e68ccfe63389e1533235e253eb59329f15be898';same_runner=$true;scope='quality.ps1 -Mode Bench on Beta 9 and candidate; existing synthetic event pipeline, same runner, seven release samples; not live ETW or follow-buffer throughput';accepted=$true} | ConvertTo-Json | Set-Content (Join-Path $out 'benchmark-identity.json') -Encoding utf8
       - name: Run the existing Windows ASan fuzz smoke targets
         shell: pwsh
         run: |
@@ -98,7 +106,7 @@ jobs:
             [ordered]@{schema_version=1;source_sha=$env:GITHUB_SHA;accepted=$false;error_type='SetupFailedOrCheckNotCompleted';toolchain='nightly-2026-11-05';seconds_per_target=30;targets=@('event_json','lifetime_sequences','completion_correlation');scope='No completed fuzz claim; inspect the failed or unexecuted CI step'} | ConvertTo-Json | Set-Content (Join-Path $out 'fuzz-identity.json') -Encoding utf8
           }
           if (-not (Test-Path (Join-Path $out 'benchmark-identity.json'))) {
-            [ordered]@{schema_version=1;source_sha=$env:GITHUB_SHA;baseline_sha='a1f9876f4976c2e35b443d9634bbb06fa19f1927';same_runner=$true;accepted=$false;scope='Benchmark comparison not completed'} | ConvertTo-Json | Set-Content (Join-Path $out 'benchmark-identity.json') -Encoding utf8
+            [ordered]@{schema_version=1;source_sha=$env:GITHUB_SHA;baseline_sha='8e68ccfe63389e1533235e253eb59329f15be898';same_runner=$true;accepted=$false;scope='Benchmark comparison not completed'} | ConvertTo-Json | Set-Content (Join-Path $out 'benchmark-identity.json') -Encoding utf8
           }
       - uses: actions/upload-artifact@v4
         if: always()

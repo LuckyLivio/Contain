@@ -157,9 +157,35 @@ impl Queue {
 
 struct LiveState {
     cache: LifetimeCache,
+    follow_cache_updated: bool,
     last_activity: Instant,
     received: u64,
     follow: Option<crate::follow::FollowBuffer>,
+}
+impl LiveState {
+    fn seed(&mut self, record: ProcessRecord) {
+        // Repeated observer polling refreshes last_seen only. It must not make
+        // every idle page recheck the complete provisional backlog.
+        let changed = record.creation_time.is_some_and(|birth| {
+            self.cache
+                .processes
+                .get(&(record.pid, birth))
+                .is_none_or(|old| {
+                    (!record.image.is_empty() && record.image != old.image)
+                        || (record.parent_pid.is_some() && record.parent_pid != old.parent_pid)
+                        || (record.parent_creation_time.is_some()
+                            && record.parent_creation_time != old.parent_creation_time)
+                        || record
+                            .ended_at
+                            .is_some_and(|end| old.ended_at.is_none_or(|old_end| end < old_end))
+                        || (matches!(record.confidence, Confidence::Certain | Confidence::High)
+                            && (record.confidence != old.confidence
+                                || record.evidence != old.evidence))
+                })
+        });
+        self.follow_cache_updated |= changed;
+        self.cache.seed(record);
+    }
 }
 pub(crate) struct LiveCapture(Arc<Mutex<LiveState>>);
 impl LiveCapture {
@@ -176,7 +202,16 @@ impl LiveCapture {
         if live.follow.is_none() {
             return;
         }
+        live.follow_cache_updated |= !records.is_empty() || !threads.is_empty();
         for (record, at) in records {
+            // Startup ETW facts now precede these snapshots. Check contradictory
+            // observations without replacing the wider lifecycle interval.
+            if record
+                .creation_time
+                .is_some_and(|birth| live.cache.processes.contains_key(&(record.pid, birth)))
+            {
+                live.cache.seed(record.clone());
+            }
             live.cache.seed_snapshot(record.clone(), *at);
         }
         for identity in threads {
@@ -193,7 +228,7 @@ impl LiveCapture {
     pub(crate) fn bind_follow_root(&self, record: ProcessRecord, session: &str) {
         let mut live = self.0.lock().unwrap();
         let root = (record.pid, record.creation_time.unwrap_or(0));
-        live.cache.seed(record);
+        live.seed(record);
         if let Some(follow) = &mut live.follow {
             follow.bind(root, session);
         }
@@ -214,7 +249,7 @@ impl LiveCapture {
         let candidates = {
             let mut live = self.0.lock().unwrap();
             for record in records {
-                live.cache.seed(record);
+                live.seed(record);
             }
             live.cache.attach(root, session);
             if live.cache.dropped > 0 {
@@ -255,34 +290,39 @@ pub(crate) fn record_while<T>(
     source: &mut EtwSource,
     db: &mut Storage,
     journal: RawBuffer,
+    initial_cache: LifetimeCache,
     operation: impl FnOnce(&LiveCapture) -> Result<T>,
 ) -> Result<(T, BackendReport, StreamStats)> {
-    record_while_mode(source, db, journal, false, operation)
+    record_while_mode(source, db, journal, initial_cache, false, operation)
 }
 
 pub(crate) fn record_while_follow<T>(
     source: &mut EtwSource,
     db: &mut Storage,
     journal: RawBuffer,
+    initial_cache: LifetimeCache,
     operation: impl FnOnce(&LiveCapture) -> Result<T>,
 ) -> Result<(T, BackendReport, StreamStats)> {
-    record_while_mode(source, db, journal, true, operation)
+    record_while_mode(source, db, journal, initial_cache, true, operation)
 }
 
 fn record_while_mode<T>(
     source: &mut EtwSource,
     db: &mut Storage,
     mut journal: RawBuffer,
+    initial_cache: LifetimeCache,
     follow: bool,
     operation: impl FnOnce(&LiveCapture) -> Result<T>,
 ) -> Result<(T, BackendReport, StreamStats)> {
     let receiver = source.take_receiver();
     let probe = source.queue_probe();
-    let epoch = profile::epoch();
+    let receiver_probe = probe.clone();
+    let worker_context = profile::worker_context();
     let queue = Arc::new(Queue::new(RECORDS, BYTES));
     let done = Arc::new(AtomicBool::new(false));
     let live = LiveCapture(Arc::new(Mutex::new(LiveState {
-        cache: LifetimeCache::default(),
+        cache: initial_cache,
+        follow_cache_updated: follow,
         last_activity: Instant::now(),
         received: 0,
         follow: follow.then(Default::default),
@@ -295,7 +335,7 @@ fn record_while_mode<T>(
             .name("contain-writer".into())
             .spawn_scoped(scope, move || {
                 let _close = QueueCloser(writer_queue.clone());
-                profile::worker_start(epoch);
+                profile::worker_start(worker_context);
                 profile::observe_queue(probe);
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     while let Some(page) = writer_queue.page() {
@@ -327,40 +367,79 @@ fn record_while_mode<T>(
             .name("contain-receiver".into())
             .spawn_scoped(scope, move || {
                 let _close = QueueCloser(receiver_queue.clone());
-                profile::worker_start(epoch);
+                profile::worker_start(worker_context);
+                profile::observe_queue(receiver_probe);
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     loop {
-                        let page = receiver.drain();
+                        let page = {
+                            let _span = profile::queue_span("receiver_drain");
+                            receiver.drain()
+                        };
                         if page.is_empty() {
                             if receiver_done.load(Ordering::Acquire) {
                                 break;
                             }
+                            let _span = profile::queue_span("receiver_idle_wait");
                             thread::sleep(Duration::from_millis(1));
                             continue;
                         }
                         let mut accepted = Vec::new();
                         {
                             let _timer = profile::timer("receiver_lifetime_update");
-                            let mut live = receiver_live.lock().unwrap();
+                            let mut live = {
+                                let _span = profile::queue_span("receiver_lock_wait");
+                                receiver_live.lock().unwrap()
+                            };
                             live.received = live.received.saturating_add(page.len() as u64);
-                            for event in page {
-                                live.cache.ingest(&event);
-                                if live.follow.is_some()
-                                    && matches!(event.event_type.as_str(), "file" | "completion")
-                                {
-                                    live.follow.as_mut().unwrap().push(event);
-                                } else {
-                                    if event.event_type == "file"
-                                        || (event.event_type == "registry"
-                                            && event.raw.resource_resolved)
+                            // Resolve the page against all lifecycle facts received in
+                            // it, including thread starts delivered after file records.
+                            {
+                                let _span = profile::queue_span("receiver_lifecycle_ingest")
+                                    .units(page.len());
+                                let mut lifecycle_events = 0;
+                                for event in &page {
+                                    let lifecycle =
+                                        event.evidence.source == EvidenceSource::EtwProcess;
+                                    lifecycle_events += u64::from(lifecycle);
+                                    live.follow_cache_updated |= lifecycle;
+                                    live.cache.ingest(event);
+                                }
+                                profile::counters([
+                                    ("receiver_pages", 1),
+                                    ("receiver_page_records", page.len() as u64),
+                                    ("receiver_lifecycle_records", lifecycle_events),
+                                ]);
+                            }
+                            let mut follow_candidates = Vec::new();
+                            {
+                                let _span =
+                                    profile::queue_span("receiver_page_split").units(page.len());
+                                for event in page {
+                                    if live.follow.is_some()
+                                        && matches!(
+                                            event.event_type.as_str(),
+                                            "file" | "completion"
+                                        )
                                     {
-                                        live.last_activity = Instant::now();
+                                        follow_candidates.push(event);
+                                    } else {
+                                        if event.event_type == "file"
+                                            || (event.event_type == "registry"
+                                                && event.raw.resource_resolved)
+                                        {
+                                            live.last_activity = Instant::now();
+                                        }
+                                        accepted.push(event);
                                     }
-                                    accepted.push(event);
                                 }
                             }
                             if let Some(mut follow) = live.follow.take() {
-                                let selected = follow.flush(&mut live.cache, false);
+                                let cache_updated = std::mem::take(&mut live.follow_cache_updated);
+                                let selected = follow.receive(
+                                    follow_candidates,
+                                    &mut live.cache,
+                                    cache_updated,
+                                );
                                 if selected.iter().any(|e| e.event_type == "file") {
                                     live.last_activity = Instant::now();
                                 }
@@ -368,8 +447,12 @@ fn record_while_mode<T>(
                                 live.follow = Some(follow);
                             }
                         }
-                        for event in accepted {
-                            receiver_queue.push(event);
+                        {
+                            let _span =
+                                profile::queue_span("receiver_handoff").units(accepted.len());
+                            for event in accepted {
+                                receiver_queue.push(event);
+                            }
                         }
                     }
                     let mut live = receiver_live.lock().unwrap();
@@ -411,7 +494,16 @@ fn record_while_mode<T>(
         profile::merge_worker(writer_profile);
         stopped?;
         let mut backend = source.final_report();
-        if let Some(follow) = &live.0.lock().unwrap().follow {
+        let live = live.0.lock().unwrap();
+        if let Some(follow) = &live.follow {
+            // Count live-stage evictions separately from final-replay evictions;
+            // these are stage occurrences, not unique dropped raw records.
+            backend.context_losses = backend.context_losses.saturating_add(live.cache.dropped);
+            if let Some(pipeline) = &mut backend.pipeline {
+                pipeline.context_evictions = pipeline
+                    .context_evictions
+                    .saturating_add(live.cache.dropped);
+            }
             let mut stats = follow.stats.clone();
             stats.excluded_self_io = source.excluded_self_io();
             backend.context_losses = backend
@@ -464,6 +556,135 @@ mod tests {
             id: sequence.to_string(),
             ..Default::default()
         }
+    }
+    fn startup_live() -> LiveCapture {
+        let mut cache = LifetimeCache::default();
+        for (operation, at, tid) in [("process_start", 100, None), ("thread_start", 110, Some(7))] {
+            cache.ingest(&SystemEvent {
+                timestamp_ticks: at,
+                operation: operation.into(),
+                resource: "observed.exe".into(),
+                evidence: AttributionEvidence {
+                    source: EvidenceSource::EtwProcess,
+                    pid: Some(2),
+                    process_creation_time: (operation == "process_start").then_some(100),
+                    ..Default::default()
+                },
+                raw: RawEvidence {
+                    thread_id: tid,
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+        }
+        LiveCapture(Arc::new(Mutex::new(LiveState {
+            cache,
+            follow_cache_updated: true,
+            last_activity: Instant::now(),
+            received: 0,
+            follow: Some(Default::default()),
+        })))
+    }
+    #[test]
+    fn startup_lifecycle_interval_survives_later_matching_initial_snapshot() {
+        let live = startup_live();
+        live.seed_follow_initial(
+            &[(
+                ProcessRecord {
+                    pid: 2,
+                    creation_time: Some(100),
+                    image: "observed.exe".into(),
+                    evidence: AttributionEvidence {
+                        source: EvidenceSource::ProcessApi,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                200,
+            )],
+            &[],
+        );
+        let mut event = SystemEvent {
+            timestamp_ticks: 150,
+            evidence: AttributionEvidence {
+                source: EvidenceSource::EtwFile,
+                ..Default::default()
+            },
+            raw: RawEvidence {
+                thread_id: Some(7),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        live.0.lock().unwrap().cache.resolve_event(&mut event);
+        assert_eq!(
+            event.evidence.pid.zip(event.evidence.process_creation_time),
+            Some((2, 100))
+        );
+    }
+    #[test]
+    fn initial_snapshot_conflict_with_startup_lifecycle_revokes_identity() {
+        let live = startup_live();
+        live.seed_follow_initial(
+            &[(
+                ProcessRecord {
+                    pid: 2,
+                    creation_time: Some(100),
+                    image: "conflicting.exe".into(),
+                    evidence: AttributionEvidence {
+                        source: EvidenceSource::ProcessApi,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                200,
+            )],
+            &[],
+        );
+        let mut event = SystemEvent {
+            timestamp_ticks: 250,
+            evidence: AttributionEvidence {
+                source: EvidenceSource::EtwFile,
+                ..Default::default()
+            },
+            raw: RawEvidence {
+                thread_id: Some(7),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        live.0.lock().unwrap().cache.resolve_event(&mut event);
+        assert!(event.evidence.process_creation_time.is_none());
+    }
+    #[test]
+    fn observer_last_seen_refresh_does_not_dirty_follow_context_but_new_evidence_does() {
+        let mut live = LiveState {
+            cache: LifetimeCache::default(),
+            follow_cache_updated: false,
+            last_activity: Instant::now(),
+            received: 0,
+            follow: Some(Default::default()),
+        };
+        let mut record = ProcessRecord {
+            pid: 1,
+            creation_time: Some(100),
+            image: "installer.exe".into(),
+            confidence: Confidence::Certain,
+            ..Default::default()
+        };
+        live.seed(record.clone());
+        assert!(std::mem::take(&mut live.follow_cache_updated));
+        record.last_seen = "later polling sample".into();
+        live.seed(record.clone());
+        assert!(!live.follow_cache_updated);
+        record.ended_at = Some(300);
+        live.seed(record.clone());
+        assert!(std::mem::take(&mut live.follow_cache_updated));
+        live.seed(record.clone());
+        assert!(!live.follow_cache_updated);
+        record.parent_pid = Some(2);
+        live.seed(record);
+        assert!(live.follow_cache_updated);
     }
     #[test]
     fn stop_failure_releases_waiting_workers_without_claiming_completion() {

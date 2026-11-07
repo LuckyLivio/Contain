@@ -938,7 +938,10 @@ public sealed class ViewerForm : Form
             .AppendLine($"记录完成：{(captureState == "finished" ? "已确认结束" : "未确认完整结束")}；数据保存：已从数据库读到记录。保存不代表安装成功或记录完整。")
             .AppendLine($"已保存的状态变化：文件 {Count(Field(changes, "files"))} 项 / 注册表值 {Count(Field(changes, "registry"))} 项 / 配置清单 {Count(Field(changes, "inventory"))} 项。")
             .AppendLine($"覆盖质量：{Quality(FieldText(quality, "level"))}")
-            .AppendLine(FieldText(quality, "level") == "Incomplete" ? "覆盖限制：证据不完整。数据库未确认结束时，不能仅凭当前阶段确定中断根因。" : "覆盖限制：仅观察所选范围；实际来源启用也不能证明完整软件足迹或最终文件归属。")
+            .AppendLine(captureState != "finished" ? "覆盖限制：记录未确认完整结束；不能仅凭当前阶段确定中断根因。"
+                : OverviewPresentation.HasRecordedLoss(data) ? "记录已保存；采集期间丢失了部分记录。已知分项见下方丢失环节。"
+                : FieldText(quality, "level") == "Incomplete" ? "覆盖限制：会话已结束，保存的证据不完整；请检查下方诊断。"
+                : "覆盖限制：仅观察所选范围；实际来源启用也不能证明完整软件足迹或最终文件归属。")
             .AppendLine().AppendLine("观察对象与范围").AppendLine($"程序：{FieldText(data, "name")}")
             .AppendLine($"安装程序：{FieldText(data, "installer")}")
             .AppendLine($"开始：{FieldText(data, "started_at")}")
@@ -958,7 +961,8 @@ public sealed class ViewerForm : Form
             .AppendLine($"覆盖质量：{Quality(FieldText(quality, "level"))}")
             .AppendLine($"ETW 丢失事件：{FieldText(backend, "etw_events_lost")}  ·  丢失缓冲区：{FieldText(backend, "etw_buffers_lost")}")
             .AppendLine($"应用丢弃：{FieldText(counts, "application_records_dropped")}  ·  解码错误：{FieldText(counts, "decode_errors")}")
-            .AppendLine($"快照缺口：{FieldText(counts, "snapshot_gaps")}  ·  通知缺口：{FieldText(counts, "notification_gaps")}  ·  排空超时：{FieldText(counts, "drain_timed_out")}");
+            .AppendLine($"快照缺口：{FieldText(counts, "snapshot_gaps")}  ·  通知缺口：{FieldText(counts, "notification_gaps")}  ·  排空超时：{FieldText(counts, "drain_timed_out")}")
+            .AppendLine(OverviewPresentation.LossDetails(data));
         foreach (var reason in OverviewPresentation.Diagnostics(data)) text.AppendLine("• " + reason);
         text.AppendLine().AppendLine("进程证据（身份由 PID 与创建时间共同标识）");
         var processes = Array(Field(data, "processes")).ToList();
