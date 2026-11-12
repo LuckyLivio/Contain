@@ -23,6 +23,33 @@ class SourceFactsTests(unittest.TestCase):
     def test_absent_history_is_unavailable(self):
         self.assertIsNone(M.summarize(inspect({}))['initial_identity_snapshot'])
         self.assertIsNone(M.summarize(inspect({}))['etw_session'])
+        self.assertIsNone(M.summarize(inspect({}))['drain'])
+
+    def test_drain_keeps_reason_counts_and_bounded_instance_hashes(self):
+        rows = [dict(pid=4032 + index, creation_time='134385075882875960', image='SECRET') for index in range(12)]
+        result = M.summarize(inspect({'stats': {'drain': dict(elapsed_ms=10000, quiet_ms=9500,
+            pending_verified_instances=12, lifecycle_context_lost=0, source_records_during_wait=123,
+            stop_reason='deadline_pending_process_exit', pending_examples=rows, path='SECRET')}}))
+        drain = result['drain']
+        self.assertEqual(drain['pending_verified_instances'], 12)
+        self.assertEqual(drain['stop_reason'], 'deadline_pending_process_exit')
+        self.assertEqual(len(drain['pending_instance_hashes']), 8)
+        self.assertEqual(drain['examples_omitted'], 4)
+        self.assertEqual(M.drain_summary(dict(pending_verified_instances=12,
+            pending_examples=rows[:8]))['examples_omitted'], 4)
+        self.assertEqual(drain['pending_instance_hashes'], M.drain_summary({'pending_examples': rows})['pending_instance_hashes'])
+        self.assertNotIn('SECRET', str(result))
+        self.assertNotIn('134385075882875960', str(result))
+
+    def test_drain_rejects_arbitrary_reason_invalid_counts_and_identity_text(self):
+        result = M.drain_summary(dict(stop_reason='SECRET', elapsed_ms=True, quiet_ms=-1,
+            pending_examples=[dict(pid=1, creation_time='SECRET'), dict(pid=True, creation_time='10')]))
+        self.assertIsNone(result['stop_reason'])
+        self.assertIsNone(result['elapsed_ms'])
+        self.assertIsNone(result['quiet_ms'])
+        self.assertEqual(result['pending_instance_hashes'], [])
+        self.assertEqual(result['examples_omitted'], 2)
+        self.assertNotIn('SECRET', str(result))
 
     def test_source_phases_keep_cumulative_values_and_only_safe_numeric_labels(self):
         result = M.summarize(inspect({'backend': {'pipeline': {

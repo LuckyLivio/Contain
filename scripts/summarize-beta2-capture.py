@@ -10,6 +10,17 @@ SPEC.loader.exec_module(PAIR)
 ORDER = ["r1/baseline", "r1/candidate", "r2/candidate", "r2/baseline"]
 
 
+def continuation_reason(sample):
+    code = sample.get("capture_exit_code")
+    if type(code) is not int or code != 0:
+        return "prior_collector_exit_abnormal_or_unverified"
+    if sample.get("all_owned_processes_exited") is not True:
+        return "prior_owned_process_termination_unverified"
+    if sample.get("workload_complete") is not True:
+        return "prior_independent_workload_or_installer_exit_unverified"
+    return None
+
+
 def summarize(plan, execution, cases):
     valid_plan = plan.get("protocol") == "contain-beta2-comparison-1" and plan.get("order") == ORDER \
         and plan.get("maximum_native_captures") == 4 and plan.get("retries") == 0 \
@@ -42,8 +53,20 @@ def summarize(plan, execution, cases):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--directory", type=Path, required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--directory", type=Path)
+    mode.add_argument("--sample-directory", type=Path)
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
+    if args.sample_directory is not None:
+        if args.output is None:
+            parser.error("--sample-directory requires --output")
+        # Preserve an oracle failure without treating an abnormal collector or
+        # incomplete independent workload as safe to begin another sample.
+        result = PAIR.summarize(args.sample_directory)
+        result["continuation_stop_reason"] = continuation_reason(result)
+        args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+        return 0
     plan = PAIR.read(args.directory / "public/run-plan.json")
     execution = PAIR.read(args.directory / "public/execution.json")
     result = summarize(plan, execution, {name: PAIR.summarize(args.directory / name) for name in ORDER})

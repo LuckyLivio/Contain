@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Contain.Desktop.Model;
 using Contain.Viewer;
 
@@ -251,6 +252,25 @@ public static class RecordChecks
             Require(vm.OverviewAlert.Contains("限制或异常", StringComparison.Ordinal)
                 && vm.OverviewAlert.Contains("记录已保存；采集期间丢失了部分记录", StringComparison.Ordinal)
                 && vm.TechnicalDetails.Contains(rawError, StringComparison.Ordinal), "unknown diagnostic is summarized without concealing loss or its raw cause");
+        });
+
+        await Check("new bounded ETW and drain diagnostics remain exact and copyable without changing completion", async () =>
+        {
+            var root = JsonNode.Parse(Summary("A").Envelope.GetRawText())!;
+            root["data"]!["backend"]!["pipeline"] = JsonNode.Parse("""
+                {"etw_session":{"stopped":{"events_lost":192055,"realtime_buffers_lost":0},"stop_control_elapsed_ns":1234}}
+                """);
+            root["data"]!["stats"] = JsonNode.Parse("""
+                {"drain":{"stop_reason":"deadline_pending_process_exit","pending_examples":[{"pid":4032,"creation_time":"134385075882875960"}]}}
+                """);
+            var service = new FakeService { SummaryOverride = (_, _) => Task.FromResult(CoreResponse.Parse(root.ToJsonString(), "inspect_summary")) };
+            using var vm = await Ready(service); await vm.OpenSessionAsync("A");
+            Require(vm.TechnicalDetails.Contains("ETW 会话阶段诊断", StringComparison.Ordinal)
+                && vm.TechnicalDetails.Contains("192055", StringComparison.Ordinal)
+                && vm.TechnicalDetails.Contains("134385075882875960", StringComparison.Ordinal)
+                && vm.DiagnosticSummary.Contains("stop_control_elapsed_ns", StringComparison.Ordinal)
+                && vm.DiagnosticSummary.Contains("pending_examples", StringComparison.Ordinal)
+                && vm.OverviewRecord == "会话已结束", "exact raw diagnostics remain available to diagnostic copy without rewriting completion");
         });
 
         await Check("unfinished missing exit and no-baseline follow state stay distinct", async () =>

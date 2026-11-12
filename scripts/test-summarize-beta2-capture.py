@@ -21,6 +21,18 @@ def inputs():
 
 
 class ComparisonContracts(unittest.TestCase):
+    def test_oracle_only_baseline_failure_can_continue_but_abnormal_collector_cannot(self):
+        sample = dict(accepted=False, capture_exit_code=0, all_owned_processes_exited=True, workload_complete=True)
+        self.assertIsNone(S.continuation_reason(sample))
+        for exit_code in (None, 1, -1, True, False):
+            with self.subTest(exit_code=exit_code):
+                changed = sample | dict(capture_exit_code=exit_code)
+                self.assertEqual(S.continuation_reason(changed), 'prior_collector_exit_abnormal_or_unverified')
+        self.assertEqual(S.continuation_reason(sample | dict(all_owned_processes_exited=False)),
+                         'prior_owned_process_termination_unverified')
+        self.assertEqual(S.continuation_reason(sample | dict(workload_complete=False)),
+                         'prior_independent_workload_or_installer_exit_unverified')
+
     def test_zero_loss_both_versions_has_no_improvement_claim(self):
         result = S.summarize(*inputs())
         self.assertTrue(result["accepted"])

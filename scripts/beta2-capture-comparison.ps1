@@ -59,6 +59,15 @@ foreach ($name in $order) {
         Write-Json $execution (Join-Path $public 'execution.json')
         break
     }
+    $samplePath = Join-Path $public ($name.Replace('/','-') + '-sample.json')
+    python "$PSScriptRoot/summarize-beta2-capture.py" --sample-directory (Join-Path $OutputDirectory $name) --output $samplePath
+    Require ($LASTEXITCODE -eq 0) 'Safe sample summary unavailable; stop before another capture'
+    $sample = Get-Content -LiteralPath $samplePath -Raw | ConvertFrom-Json -AsHashtable
+    $execution.stop_reason = $sample.continuation_stop_reason
+    if ($null -ne $execution.stop_reason) {
+        Write-Json $execution (Join-Path $public 'execution.json')
+        break
+    }
 }
 python "$PSScriptRoot/summarize-beta2-capture.py" --directory $OutputDirectory
 if ($LASTEXITCODE -ne 0) { throw 'Fixed comparison failed; candidate remains diagnostic only' }

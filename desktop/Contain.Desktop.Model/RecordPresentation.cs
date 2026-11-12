@@ -39,7 +39,11 @@ internal static class RecordPresentation
             .AppendLine($"ETW 丢失事件：{RecordText.Value(backend, "etw_events_lost")} · 丢失缓冲区：{RecordText.Value(backend, "etw_buffers_lost")}")
             .AppendLine($"应用丢弃：{RecordText.Value(counts, "application_records_dropped")} · 解码错误：{RecordText.Value(counts, "decode_errors")}")
             .AppendLine($"快照缺口：{RecordText.Value(counts, "snapshot_gaps")} · 通知缺口：{RecordText.Value(counts, "notification_gaps")} · 排空超时：{RecordText.Value(counts, "drain_timed_out")}")
-            .AppendLine(OverviewPresentation.LossDetails(data));
+            .AppendLine(OverviewPresentation.LossDetails(data))
+            .AppendLine("ETW 会话阶段诊断（原始 JSON；阶段计数是累计值，不重复相加）：")
+            .AppendLine(OptionalRaw(JsonView.Field(JsonView.Field(backend, "pipeline"), "etw_session")))
+            .AppendLine("收尾等待诊断（原始 JSON；不同于来源停止和队列排空）：")
+            .AppendLine(OptionalRaw(JsonView.Field(JsonView.Field(data, "stats"), "drain")));
         foreach (var reason in OverviewPresentation.Diagnostics(data)) text.AppendLine(reason);
         text.AppendLine().AppendLine("进程证据：PID 与创建时间共同标识进程实例。");
         var processes = JsonView.Items(JsonView.Field(data, "processes")).ToArray();
@@ -49,6 +53,9 @@ internal static class RecordPresentation
         text.AppendLine("会话结束不等于覆盖完整。历史名称不等于当前路径；High 不证明最终所有权或安全删除。");
         return text.ToString();
     }
+
+    private static string OptionalRaw(JsonElement value) => value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
+        ? "未提供" : value.GetRawText();
 
     internal static string Explain(JsonElement data, bool follow)
     {

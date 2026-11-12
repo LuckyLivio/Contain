@@ -1,11 +1,13 @@
 name: Beta 2 fuzz and benchmark checks
 on:
   workflow_dispatch:
+  push:
+    branches: [fix/beta2-capture-and-desktop]
 permissions:
   contents: read
 jobs:
   extended-quality:
-    if: ${{ github.repository == 'LuckyLivio/Contain' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[follow-quality]')) }}
+    if: ${{ github.repository == 'LuckyLivio/Contain' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[beta2-quality]')) }}
     runs-on: windows-latest
     timeout-minutes: 60
     steps:

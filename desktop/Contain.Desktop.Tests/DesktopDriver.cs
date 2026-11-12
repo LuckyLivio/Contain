@@ -10,6 +10,9 @@ using Forms = System.Windows.Forms;
 namespace Contain.Desktop.Tests;
 
 internal sealed record Screenshot(string Name, string Sha256, int Width, int Height, uint Dpi, string DataKind);
+internal sealed record SaveNameObservation(string Action, string UiaValue, string WindowMessageValue, string FileType,
+    string? ExpectedFullName, bool FullMatch, bool HiddenExtensionMatch, bool ExtensionProbe,
+    bool OwnedEdit, bool ExtensionVerified = false, string? ErrorType = null);
 internal sealed record Probe(string Stage, string Control, long ElapsedMs, bool ProcessAlive, string? ErrorType);
 internal sealed record ActionProbe(string Control, string Pattern, bool Passed, string? ErrorType);
 internal sealed record RowSelectionProbe(string List, string Item, int ItemsInspected, bool TargetRealized,
@@ -46,6 +49,10 @@ internal sealed class DesktopDriver : IDisposable
     internal bool LiveInstallationStarted { get; set; }
     internal int ChooserInteractions { get; private set; }
     internal Dictionary<string, string> SaveDialogNames { get; } = new(StringComparer.Ordinal);
+    internal Dictionary<string, SaveNameObservation> SaveDialogObservations { get; } = new(StringComparer.Ordinal);
+    internal List<SaveNameObservation> SaveDialogHistory { get; } = [];
+    internal List<Screenshot> PickerScreenshots { get; } = [];
+    internal string? PickerEvidenceDirectory { get; set; }
 
     internal DesktopDriver(string package, string working, string isolatedRoot, IReadOnlyDictionary<string, string>? environment = null)
     {
@@ -403,9 +410,13 @@ internal sealed class DesktopDriver : IDisposable
             }, TreeWalker.RawViewWalker.GetParent, observe);
     }
 
-    internal async Task ChooseFileAsync(string action, string? path, bool save = false, bool existingRefusal = false)
+    internal async Task ChooseFileAsync(string action, string? path, bool save = false, bool existingRefusal = false,
+        string? expectedDefaultName = null, bool probeHtmlExtension = false)
     {
         Stage = "native_picker_" + action;
+        if ((expectedDefaultName is not null || probeHtmlExtension) && !save) throw new ArgumentException("Default filename checks require a save dialog.");
+        if (probeHtmlExtension && (path is null || Path.GetExtension(path) != ".html")) throw new ArgumentException("Extension probe needs a new HTML destination.");
+        var typedPath = path is not null && probeHtmlExtension ? Path.ChangeExtension(Path.GetFullPath(path), null) : path is null ? null : Path.GetFullPath(path);
         if (existingRefusal && (!save || path is null || !File.Exists(path)))
             throw new IOException("Existing-target refusal requires a deliberate existing save target.");
         if (path is not null && (save ? !Directory.Exists(Path.GetDirectoryName(path)) || (File.Exists(path) && !existingRefusal) : !File.Exists(path)))
@@ -432,23 +443,48 @@ internal sealed class DesktopDriver : IDisposable
         ChooserInteractions++;
         try
         {
+            if (save)
+            {
+                var readyBudget = pickerDeadline - pickerClock.Elapsed;
+                if (readyBudget <= TimeSpan.Zero) throw new TimeoutException("Save dialog default name exceeded original picker deadline.");
+                await UntilAsync("native_save_default", action, () => Sta(() =>
+                {
+                    var edit = FilenameEdit(dialog);
+                    GetWindowThreadProcessId(edit.Window, out var editOwner);
+                    var element = AutomationElement.FromHandle(edit.Window);
+                    var owned = editOwner == process.Id && element.Current.ProcessId == process.Id
+                        && element.Current.NativeWindowHandle == edit.Window.ToInt64();
+                    if (!owned) throw new InvalidOperationException("Filename edit is not owned by the retained product.");
+                    var value = ((ValuePattern)element.GetCurrentPattern(ValuePattern.Pattern)).Current.Value;
+                    var messageValue = NativeText(edit.Window);
+                    var type = NativeChildren(dialog).Where(item => item.Id == 1136 && item.Class == "ComboBox")
+                        .Select(item => NativeText(item.Window)).SingleOrDefault() ?? "";
+                    SaveDialogNames[action] = value;
+                    var full = expectedDefaultName is not null && value == expectedDefaultName;
+                    var hidden = expectedDefaultName is not null && value == Path.GetFileNameWithoutExtension(expectedDefaultName)
+                        && type.Contains("*.html", StringComparison.OrdinalIgnoreCase);
+                    SaveDialogObservations[action] = new(action, value, messageValue, type, expectedDefaultName, full, hidden, probeHtmlExtension, owned);
+                    return expectedDefaultName is null || full || hidden;
+                }), readyBudget);
+                if (PickerEvidenceDirectory is not null)
+                    PickerScreenshots.Add(await Sta(() => CaptureWindow(dialog, PickerEvidenceDirectory,
+                        "save-default-" + action + "-" + ChooserInteractions + ".png", "isolated-native-save-dialog-default")));
+            }
             await Sta(() =>
             {
                 SetForegroundWindow(dialog);
                 if (path is null && !save) { Forms.SendKeys.SendWait("{ESC}"); return; }
-                var edits = NativeChildren(dialog).Where(item => item.Id is 1001 or 1148 or 1152 && item.Class == "Edit" && IsWindowVisible(item.Window)).ToArray();
-                if (edits.Length != 1) throw new InvalidOperationException("Native file picker has no unique filename entry.");
-                if (save) SaveDialogNames[action] = NativeText(edits[0].Window);
+                var edit = FilenameEdit(dialog);
                 if (path is null) { Forms.SendKeys.SendWait("{ESC}"); return; }
-                AutomationElement.FromHandle(edits[0].Window).SetFocus();
-                Forms.SendKeys.SendWait("^a"); Forms.SendKeys.SendWait(KeysLiteral(Path.GetFullPath(path)));
+                AutomationElement.FromHandle(edit.Window).SetFocus();
+                Forms.SendKeys.SendWait("^a"); Forms.SendKeys.SendWait(KeysLiteral(typedPath!));
                 Forms.SendKeys.SendWait("{TAB}");
             });
             if (path is not null)
             {
                 await UntilAsync("native_picker_value", action, () => Task.FromResult(NativeChildren(dialog).Any(item =>
                     item.Id is 1001 or 1148 or 1152 && item.Class == "Edit" && IsWindowVisible(item.Window)
-                    && NativeText(item.Window) == Path.GetFullPath(path))), TimeSpan.FromSeconds(5));
+                    && (NativeText(item.Window) == typedPath || (probeHtmlExtension && NativeText(item.Window) == Path.GetFullPath(path))))), TimeSpan.FromSeconds(5));
                 await Ui(action, () =>
                 {
                     var accept = NativeChildren(dialog).Single(item => item.Id == 1 && item.Class == "Button" && IsWindowVisible(item.Window));
@@ -457,7 +493,30 @@ internal sealed class DesktopDriver : IDisposable
             }
             await UntilAsync("native_picker_closed", action, () => Task.FromResult(!IsWindowVisible(dialog)), TimeSpan.FromSeconds(15));
         }
-        catch { if (dialog != IntPtr.Zero) PostMessage(dialog, 0x0010, IntPtr.Zero, IntPtr.Zero); throw; }
+        catch (Exception error)
+        {
+            if (save && SaveDialogObservations.TryGetValue(action, out var observation))
+                SaveDialogObservations[action] = observation with { ErrorType = error.GetType().Name };
+            if (save && dialog != IntPtr.Zero && IsWindowVisible(dialog) && PickerEvidenceDirectory is not null)
+            {
+                try { PickerScreenshots.Add(await Sta(() => CaptureWindow(dialog, PickerEvidenceDirectory,
+                    "save-default-failed-" + action + "-" + ChooserInteractions + ".png", "failed-isolated-native-save-dialog"))); }
+                catch { /* Preserve the original observation failure. */ }
+            }
+            if (dialog != IntPtr.Zero) PostMessage(dialog, 0x0010, IntPtr.Zero, IntPtr.Zero);
+            throw;
+        }
+        finally
+        {
+            if (save && SaveDialogObservations.TryGetValue(action, out var observed)) SaveDialogHistory.Add(observed);
+        }
+    }
+
+    private static (IntPtr Window, int Id, string Class) FilenameEdit(IntPtr dialog)
+    {
+        var edits = NativeChildren(dialog).Where(item => item.Id is 1001 or 1148 or 1152 && item.Class == "Edit" && IsWindowVisible(item.Window)).ToArray();
+        if (edits.Length != 1) throw new InvalidOperationException("Native file picker has no unique filename entry.");
+        return edits[0];
     }
 
     internal Task ResizeAsync(int width, int height) => Ui("window", () =>
@@ -484,9 +543,9 @@ internal sealed class DesktopDriver : IDisposable
             Record("normal_close", "window", request.ElapsedMilliseconds + wait.ElapsedMilliseconds, errorType);
         }
     }
-    internal Task<Screenshot> CaptureAsync(string output, string name, string kind) => Ui("window", () =>
+    internal Task<Screenshot> CaptureAsync(string output, string name, string kind) => Ui("window", () => CaptureWindow(MainWindow(), output, name, kind));
+    private static Screenshot CaptureWindow(IntPtr window, string output, string name, string kind)
     {
-        var window = MainWindow();
         if (!GetWindowRect(window, out var bounds) || bounds.Right <= bounds.Left || bounds.Bottom <= bounds.Top)
             throw new IOException("Actual window bounds unavailable.");
         SetForegroundWindow(window);
@@ -499,7 +558,7 @@ internal sealed class DesktopDriver : IDisposable
         }
         Directory.CreateDirectory(output); var path = Path.Combine(output, name); bitmap.Save(path, ImageFormat.Png);
         return new Screenshot(name, Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant(), bitmap.Width, bitmap.Height, GetDpiForWindow(window), kind);
-    });
+    }
     internal static Task<string> ClipboardAsync() => Sta(Forms.Clipboard.GetText);
     internal static Task SetClipboardAsync(string value) => Sta(() => Forms.Clipboard.SetText(value));
     internal Task<object> NavigationDiagnosticsAsync() => Ui<object>("fixed_navigation_diagnostics", () =>

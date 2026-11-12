@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -247,9 +248,9 @@ internal sealed class NativeSuite(Options options)
         await CopyEvent(selectedId);
         await Shot("events-search-explain.png", "synthetic-130-events-53-matches");
         var report = Path.Combine(options.PrivateOutput, "all-matches.html");
-        await D.ChooseFileAsync("ExportMatches", report, save: true);
-        RequireDefaultName("ExportMatches", "匹配结果", "synthetic-search");
+        await D.ChooseFileAsync("ExportMatches", report, save: true, expectedDefaultName: await ExpectedDefaultName("匹配结果", "synthetic-search"), probeHtmlExtension: true);
         await D.UntilAsync("full_match_export", "ExportMatches", async () => File.Exists(report) && await D.EnabledAsync("ExportMatches"));
+        RequireDefaultName("ExportMatches", "匹配结果", "synthetic-search", report);
         var html = WebUtility.HtmlDecode(await File.ReadAllTextAsync(report));
         exportedIds = Regex.Matches(html, "data-event-id=\"([^\"]+)\"").Select(match => match.Groups[1].Value).ToArray();
         Require(exportedIds.SequenceEqual(expected), "all 53 exported IDs match independent ordered oracle");
@@ -264,9 +265,9 @@ internal sealed class NativeSuite(Options options)
         await D.InvokeAsync("ClearSearch");
         await D.UntilAsync("clear_search", "EventList", async () => (await D.RowIdsAsync("EventList", "event:")).FirstOrDefault() == "synthetic-search-event-000");
         var pageReport = Path.Combine(options.PrivateOutput, "current-page.html");
-        await D.ChooseFileAsync("ExportPage", pageReport, save: true);
-        RequireDefaultName("ExportPage", "本页报告", "synthetic-search");
+        await D.ChooseFileAsync("ExportPage", pageReport, save: true, expectedDefaultName: await ExpectedDefaultName("本页报告", "synthetic-search"), probeHtmlExtension: true);
         await D.UntilAsync("page_export", "ExportPage", async () => File.Exists(pageReport) && await D.EnabledAsync("ExportPage"));
+        RequireDefaultName("ExportPage", "本页报告", "synthetic-search", pageReport);
         Require((await File.ReadAllTextAsync(pageReport)).Contains("synthetic-search-event-000", StringComparison.Ordinal), "current-page report includes current first event");
     }
     private async Task ExternalReadOnly()
@@ -470,9 +471,9 @@ internal sealed class NativeSuite(Options options)
         await CopyEvent(liveEvent!);
         await Shot("real-event-explanation.png", "real-controlled-etw-saved");
         await SelectTimelineEvent(liveEvent!);
-        var report = Path.Combine(options.PrivateOutput, "real-current-page.html"); await D.ChooseFileAsync("ExportPage", report, save: true);
-        RequireDefaultName("ExportPage", "本页报告", liveSession!);
+        var report = Path.Combine(options.PrivateOutput, "real-current-page.html"); await D.ChooseFileAsync("ExportPage", report, save: true, expectedDefaultName: await ExpectedDefaultName("本页报告", liveSession!), probeHtmlExtension: true);
         await D.UntilAsync("real_report", "ExportPage", async () => File.Exists(report) && await D.EnabledAsync("ExportPage"));
+        RequireDefaultName("ExportPage", "本页报告", liveSession!, report);
         var html = WebUtility.HtmlDecode(await File.ReadAllTextAsync(report)); Require(html.Contains(liveSession!, StringComparison.Ordinal) && html.Contains(liveEvent!, StringComparison.Ordinal), "real report exact session and selected event");
         var full = await Cli(liveDatabase!, "inspect", "--json", "--", liveSession!);
         foreach (var operation in new[] { "process_start", "process_stop" })
@@ -493,11 +494,28 @@ internal sealed class NativeSuite(Options options)
         await Shot("real-cold-restart.png", "real-controlled-etw-saved-cold-restart");
         await D.CloseAsync(); coldRestart = true;
     }
-    private void RequireDefaultName(string action, string type, string session)
+    private async Task<string> ExpectedDefaultName(string type, string session)
     {
-        Require(D.SaveDialogNames.TryGetValue(action, out var name), "actual save dialog default name observed");
-        Require(name!.EndsWith("_" + type + ".html", StringComparison.Ordinal) && name.Contains("UTC", StringComparison.Ordinal), "default name has export type and explicit UTC time");
-        Require(name.Contains(session[..Math.Min(8, session.Length)], StringComparison.Ordinal), "default name has exact current session short identity");
+        var summary = await Cli(Database(currentRoot!), "inspect", "--summary", "--json", "--", session);
+        var name = summary.GetProperty("name").GetString()!;
+        Require(name.Length <= 96 && name.IndexOfAny("<>:\"/\\|?*".ToCharArray()) < 0, "controlled record name needs no filename substitution");
+        var started = DateTimeOffset.Parse(summary.GetProperty("started_at").GetString()!, CultureInfo.InvariantCulture);
+        var id = Guid.TryParse(session, out var uuid) ? uuid.ToString("N")[..8] : session[..8];
+        return name + "_开始" + started.UtcDateTime.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture)
+            + "UTC_" + id + "_" + type + ".html";
+    }
+    private void RequireDefaultName(string action, string type, string session, string actualReport)
+    {
+        Require(D.SaveDialogObservations.TryGetValue(action, out var observation), "actual save dialog default name observed");
+        Require(observation!.ExpectedFullName is not null && observation.OwnedEdit, "default name checked against frozen exact record in owned dialog");
+        Require(observation.FullMatch || observation.HiddenExtensionMatch, "default display exactly matches record name UTC start short identity and export type");
+        Require(observation.ExpectedFullName!.EndsWith("_" + type + ".html", StringComparison.Ordinal)
+            && observation.ExpectedFullName.Contains("UTC_" + session[..8], StringComparison.Ordinal), "expected name preserves explicit UTC time session and export type");
+        Require(observation.ExtensionProbe && File.Exists(actualReport) && Path.GetExtension(actualReport) == ".html"
+            && !File.Exists(Path.ChangeExtension(actualReport, null)), "native save adds HTML extension after filename input omits it");
+        var verified = observation with { ExtensionVerified = true };
+        D.SaveDialogObservations[action] = verified;
+        D.SaveDialogHistory[^1] = verified;
     }
     private Task CheckUnchanged()
     {
@@ -567,7 +585,11 @@ internal sealed class NativeSuite(Options options)
         if (Encoding.UTF8.GetByteCount(text) > 64 * 1024 * 1024) throw new IOException("Verification output exceeded established bound.");
         return text;
     }
-    private void Start(string root, string working, IReadOnlyDictionary<string, string>? environment = null) => desktop = new(options.Package, Path.Combine(root, working), root, environment);
+    private void Start(string root, string working, IReadOnlyDictionary<string, string>? environment = null)
+    {
+        desktop = new(options.Package, Path.Combine(root, working), root, environment)
+            { PickerEvidenceDirectory = Path.Combine(options.Output, "screenshots") };
+    }
     private string Root(string label)
     {
         var path = Path.Combine(options.PrivateOutput, "records-" + label);
@@ -593,6 +615,7 @@ internal sealed class NativeSuite(Options options)
     {
         if (desktop is null) return;
         launches.Add(new { process_id = desktop.ProcessId, probes = desktop.Probes.ToArray(), actions = desktop.Actions.ToArray(), row_selections = desktop.RowSelections.ToArray(), clicks = desktop.Clicks.ToArray(), last_stage = desktop.Stage, last_control = desktop.LastControl,
+            save_dialog_observations = desktop.SaveDialogHistory.ToArray(), save_dialog_current = desktop.SaveDialogObservations.Values.ToArray(), picker_screenshots = desktop.PickerScreenshots.ToArray(),
             last_error_type = desktop.LastErrorType, process_exited = desktop.HasExited, normal_close = desktop.CloseObservation });
     }
     private async Task Shot(string name, string kind) => screenshots.Add(await D.CaptureAsync(Path.Combine(options.Output, "screenshots"), name, kind));

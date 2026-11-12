@@ -113,3 +113,14 @@ Beta.2 additionally reads both actual Save dialogs before replacing the suggeste
 filename, checks session/time/type components, verifies real process start/stop
 selection, explanation and copies, and checks the finished task hides runtime
 step/measurement noise while retaining elapsed time and its record entry.
+
+Beta.2 default-name observation reads the unique owned filename Edit through UIA
+ValuePattern and retains the WM_GETTEXT comparison. It validates the complete
+expected record name, exact UTC start, short session identity and export type
+while the dialog is still open. A displayed stem is accepted only with the HTML
+file-type contract and a successful no-extension input that produces the exact
+`.html` output. Every dialog observation and a native dialog screenshot survive
+failure; the original discovery deadline is unchanged. The first Beta.2 native
+attempt did not retain its observed default value, so its filename assertion
+failure alone does not establish a product naming defect or an extension-hiding
+cause. This targeted attempt tests those hypotheses without changing product code.

@@ -1,5 +1,6 @@
 """Export only existing numeric source/snapshot accounting; no new collection."""
 import argparse
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -9,10 +10,37 @@ SNAPSHOT_COUNTS = '''enumerated queried resolved failed skipped query_ns elapsed
 PROVIDER_TIMES = 'callback lock_wait schema_lookup property_decode identity_query path_normalization event_construction enqueue queue_delay context'.split()
 ETW_SAMPLE_FIELDS = '''elapsed_ns query_elapsed_ns control_error events_lost realtime_buffers_lost log_buffers_lost allocated_buffers free_buffers buffer_size_kib min_buffers max_buffers buffers_written callback_records callback_elapsed_ns lock_wait_ns'''.split()
 ETW_SESSION_FIELDS = 'requested_buffer_size_kib requested_min_buffers requested_max_buffers stop_control_elapsed_ns consumer_join_elapsed_ns'.split()
+DRAIN_FIELDS = 'elapsed_ms quiet_ms pending_verified_instances lifecycle_context_lost source_records_during_wait'.split()
+DRAIN_REASONS = {'quiet_and_no_pending_process_exit', 'deadline_lifecycle_context_lost',
+                 'deadline_pending_process_exit', 'deadline_recent_activity'}
 
 
 def number(value):
     return value if type(value) is int and value >= 0 else None
+
+
+def drain_summary(value):
+    if not isinstance(value, dict):
+        return None
+    result = {key: number(value.get(key)) for key in DRAIN_FIELDS}
+    reason = value.get('stop_reason')
+    result['stop_reason'] = reason if isinstance(reason, str) and reason in DRAIN_REASONS else None
+    examples = value.get('pending_examples')
+    result['pending_instance_hashes'] = None
+    result['examples_omitted'] = None
+    if isinstance(examples, list):
+        hashes = []
+        for row in examples[:8]:
+            if not isinstance(row, dict):
+                continue
+            pid, birth = row.get('pid'), row.get('creation_time')
+            if type(pid) is int and 0 < pid <= 0xffffffff and isinstance(birth, str) \
+                    and re.fullmatch(r'[0-9]{1,20}', birth) and 0 < int(birth) <= 0xffffffffffffffff:
+                hashes.append(hashlib.sha256(f'{pid}:{int(birth)}'.encode('ascii')).hexdigest())
+        result['pending_instance_hashes'] = hashes
+        pending = result['pending_verified_instances']
+        result['examples_omitted'] = max(len(examples), pending or 0) - len(hashes)
+    return result
 
 
 def summarize(capture):
@@ -50,10 +78,12 @@ def summarize(capture):
         provider_elapsed_ns={key: {field: number((providers[key].get('elapsed_ns') or {}).get(field)) for field in PROVIDER_TIMES}
             if isinstance(providers.get(key), dict) and isinstance(providers[key].get('elapsed_ns'), dict) else None for key in ('file', 'process', 'registry')},
         etw_session=clean_session,
+        drain=drain_summary((capture['data'].get('stats') or {}).get('drain')),
         initial_identity_snapshot=clean_snapshot,
         limitations=['Existing saved fields only; absent historical fields remain null.',
             'Enumeration completion is not complete identity coverage; query failures and observation boundaries still apply.',
             'ETW samples are cumulative within one trace; do not add phases, events and buffers, or application drops.',
+            'Drain describes the pre-STOP quiet/process wait, not queued-record completion; instance examples are hashed and capped at eight.',
             'No paths, arbitrary error text, or host process/thread inventory are exported.'])
 
 
