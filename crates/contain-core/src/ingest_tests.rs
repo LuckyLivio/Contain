@@ -334,6 +334,103 @@ fn follow_startup_cache_eviction_remains_context_loss_after_ownership_handoff() 
 }
 
 #[test]
+fn profiling_switch_preserves_actual_follow_receiver_evidence_and_boundaries() {
+    fn run() -> serde_json::Value {
+        let (path, mut db, _, journal) = fixture();
+        let root = ProcessRecord {
+            pid: 1,
+            creation_time: Some(100),
+            image: "installer.exe".into(),
+            confidence: Confidence::Certain,
+            evidence: AttributionEvidence {
+                source: EvidenceSource::ProcessApi,
+                rule: AttributionRule::InstallerPid,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut cache = LifetimeCache::default();
+        cache.seed(ProcessRecord {
+            pid: 2,
+            creation_time: Some(200),
+            parent_pid: Some(1),
+            parent_creation_time: Some(100),
+            image: "child.exe".into(),
+            confidence: Confidence::Unknown,
+            ..Default::default()
+        });
+        let incoming = [(1, 1, 100), (2, 2, 200), (3, 99, 50)]
+            .into_iter()
+            .map(|(sequence, pid, birth)| SystemEvent {
+                id: format!("request-{sequence}"),
+                sequence,
+                timestamp_ticks: 300,
+                event_type: "file".into(),
+                operation: "write_requested".into(),
+                resource: format!("fixture-{sequence}"),
+                evidence: AttributionEvidence {
+                    source: EvidenceSource::EtwFile,
+                    pid: Some(pid),
+                    process_creation_time: Some(birth),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .collect();
+        let mut source = EtwSource::synthetic(incoming);
+        let (_, backend, stream) =
+            record_while_follow(&mut source, &mut db, journal, cache, |live| {
+                live.bind_follow_root(root, "ingest");
+                Ok(())
+            })
+            .unwrap();
+        let h = backend.handoff.unwrap();
+        let f = backend.follow_installer.unwrap();
+        let stored = db.load("ingest").unwrap();
+        assert_eq!(
+            stored
+                .events
+                .iter()
+                .map(|event| event.id.as_str())
+                .collect::<Vec<_>>(),
+            ["request-1", "request-2"]
+        );
+        let result = serde_json::json!({
+            "events": stored.events, "state": stored.capture_state,
+            "loss": [backend.dropped_events, backend.context_losses, backend.decode_errors, backend.etw_events_lost, backend.etw_buffers_lost,
+                stream.failed, stream.quota_dropped, h.dropped(), f.candidate_dropped],
+            "persisted": stream.persisted, "workers": [h.receiver_finished, h.writer_finished],
+            "pending": h.pending, "handoff_limits": [h.record_capacity, h.byte_capacity],
+            "follow_limits": [f.candidate_record_limit, f.candidate_byte_limit, f.resource_limit],
+            "quiet": format!("{:?}", crate::drain::decide(1500, 1500, false, 1500, 10000)),
+            "deadline": format!("{:?}", crate::drain::decide(10000, 0, true, 1500, 10000))
+        });
+        drop(db);
+        remove_database(&path);
+        result
+    }
+    let mut off = None;
+    profile::test_without_profile(|| off = Some(run()));
+    let mut existing = None;
+    let ordinary_profile = profile::test_profile(|| existing = Some(run()));
+    let mut window = None;
+    let window_profile = profile::test_backlog_profile(|| window = Some(run()));
+    assert_eq!(off, existing);
+    assert_eq!(off, window);
+    assert!(ordinary_profile.get("backlog_windows").is_none());
+    assert_eq!(
+        window_profile["backlog_windows"]["protocol"],
+        "contain-receiver-backlog-window-1"
+    );
+    assert!(
+        window_profile["backlog_windows"]["receiver_observations"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+}
+
+#[test]
 fn sqlite_insert_failure_accounts_for_every_drained_record_and_retains_prior_commit() {
     let count = PAGE as u64 * 2 + 7;
     let (path, mut db, _, mut journal) = fixture();

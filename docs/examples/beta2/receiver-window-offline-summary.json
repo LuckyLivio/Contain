@@ -1,0 +1,677 @@
+{
+  "protocol": "contain-receiver-window-offline-overhead-1",
+  "accepted": true,
+  "synthetic": true,
+  "real_etw": false,
+  "native_ingest": false,
+  "binary_sha256": "73cdd6be02796d2635b87fc44771c0072a7945c3c1be99d0e3c8ef29a82ec488",
+  "spans_per_sample": 200000,
+  "source_revision": "347a86ee730c4fd2d9ee775add60a6c5deddf7fa",
+  "tracked_patch_at_freeze_sha256": "9179a2c153f01fe61fbbc1b5a1866789257db825228ea26664f28d963b869abd",
+  "input_sha256": {
+    "Cargo.toml": "11e6668dfef29735e42d2525c9a9f4c68ae8f818baf11ea5da152556d250cab9",
+    "Cargo.lock": "2135765c6d00696880284ef269435405230dd6dec9152609ef2246e0c3fab7cc",
+    "tools/offline/Cargo.toml": "f9ee4b625711837c88efcd52a17f498f551b45985dd151e18d91e7e43f143c14",
+    "tools/offline/src/lib.rs": "c51026d7a29d68b5d27c882be316f6a3f92b7e19cefd3a112a9b44a334e4ae79",
+    "tools/offline/src/bin/receiver-window-check.rs": "f5103965f84ec629d1828dbc43bbc78385cc395f400f6987d876d118dd87085f",
+    "crates/contain-core/src/profile.rs": "0d8cce7e99b2d64474206a5cba35fd1a690fafe3f35ef3385ca8b1099099f3cc",
+    "crates/contain-core/src/profile/backlog.rs": "63d0072d170a97f12d4ea74e303d3469da7c1c5f91714ccde749565c7ca6a265",
+    "scripts/receiver-window-overhead.py": "9b1bf85dd35c12b86bfc9576056472fa35b33860ee7293bcc993db49b37da926"
+  },
+  "warmup_order": [
+    "off",
+    "existing",
+    "window"
+  ],
+  "sample_order": [
+    "off",
+    "existing",
+    "window",
+    "window",
+    "existing",
+    "off",
+    "off",
+    "existing",
+    "window",
+    "window",
+    "existing",
+    "off",
+    "off",
+    "existing",
+    "window",
+    "window",
+    "existing",
+    "off"
+  ],
+  "retries": 0,
+  "samples": [
+    {
+      "number": 1,
+      "warmup": true,
+      "mode": "off",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 741484564,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": false,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      }
+    },
+    {
+      "number": 2,
+      "warmup": true,
+      "mode": "existing",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 809168638,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": true,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      },
+      "window_records": null
+    },
+    {
+      "number": 3,
+      "warmup": true,
+      "mode": "window",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 814454644,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": true,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      },
+      "window_records": {
+        "first_backlog": 129,
+        "first_overflow": 129,
+        "maximum_backlog": 129
+      }
+    },
+    {
+      "number": 4,
+      "warmup": false,
+      "mode": "off",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 728082618,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": false,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      }
+    },
+    {
+      "number": 5,
+      "warmup": false,
+      "mode": "existing",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 785014324,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": true,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      },
+      "window_records": null
+    },
+    {
+      "number": 6,
+      "warmup": false,
+      "mode": "window",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 745536450,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": true,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      },
+      "window_records": {
+        "first_backlog": 129,
+        "first_overflow": 129,
+        "maximum_backlog": 129
+      }
+    },
+    {
+      "number": 7,
+      "warmup": false,
+      "mode": "window",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 736083322,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": true,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      },
+      "window_records": {
+        "first_backlog": 129,
+        "first_overflow": 129,
+        "maximum_backlog": 129
+      }
+    },
+    {
+      "number": 8,
+      "warmup": false,
+      "mode": "existing",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 769226098,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": true,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      },
+      "window_records": null
+    },
+    {
+      "number": 9,
+      "warmup": false,
+      "mode": "off",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 730957917,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": false,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      }
+    },
+    {
+      "number": 10,
+      "warmup": false,
+      "mode": "off",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 738393603,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": false,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      }
+    },
+    {
+      "number": 11,
+      "warmup": false,
+      "mode": "existing",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 766441026,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": true,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      },
+      "window_records": null
+    },
+    {
+      "number": 12,
+      "warmup": false,
+      "mode": "window",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 757259864,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": true,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      },
+      "window_records": {
+        "first_backlog": 129,
+        "first_overflow": 129,
+        "maximum_backlog": 129
+      }
+    },
+    {
+      "number": 13,
+      "warmup": false,
+      "mode": "window",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 996106240,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": true,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      },
+      "window_records": {
+        "first_backlog": 129,
+        "first_overflow": 129,
+        "maximum_backlog": 129
+      }
+    },
+    {
+      "number": 14,
+      "warmup": false,
+      "mode": "existing",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 816171260,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": true,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      },
+      "window_records": null
+    },
+    {
+      "number": 15,
+      "warmup": false,
+      "mode": "off",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 799322428,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": false,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      }
+    },
+    {
+      "number": 16,
+      "warmup": false,
+      "mode": "off",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 741504167,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": false,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      }
+    },
+    {
+      "number": 17,
+      "warmup": false,
+      "mode": "existing",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 811314414,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": true,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      },
+      "window_records": null
+    },
+    {
+      "number": 18,
+      "warmup": false,
+      "mode": "window",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 771783646,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": true,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      },
+      "window_records": {
+        "first_backlog": 129,
+        "first_overflow": 129,
+        "maximum_backlog": 129
+      }
+    },
+    {
+      "number": 19,
+      "warmup": false,
+      "mode": "window",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 772830475,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": true,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      },
+      "window_records": {
+        "first_backlog": 129,
+        "first_overflow": 129,
+        "maximum_backlog": 129
+      }
+    },
+    {
+      "number": 20,
+      "warmup": false,
+      "mode": "existing",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 862680264,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": true,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      },
+      "window_records": null
+    },
+    {
+      "number": 21,
+      "warmup": false,
+      "mode": "off",
+      "exit_code": 0,
+      "result": {
+        "architecture": "x86_64",
+        "body_bytes_per_span": 4096,
+        "debug_assertions_disabled": true,
+        "elapsed_ns": 906189634,
+        "native_ingest": false,
+        "os": "linux",
+        "output_sha256": "be4bee828eb58af7354f07e088d4479f7e886ef2ec7ad1152db4c9a611dc6e22",
+        "profile_enabled": false,
+        "protocol": "contain-receiver-window-offline-cost-1",
+        "real_etw": false,
+        "scope": "Actual production profile module with fixed nonempty SHA256 work; numeric snapshots are synthetic inputs. Timed loop excludes profile JSON I/O. This does not measure event collection, consumer scheduling, ETW decoding or installer overhead.",
+        "snapshot_input": {
+          "dequeued": 3067904,
+          "enqueued": 3069952,
+          "overflow": 749,
+          "pending": 2048
+        },
+        "spans": 200000,
+        "synthetic": true
+      }
+    }
+  ],
+  "scope": "Same immutable release binary and fixed SHA256 work. Off, existing profile, and existing profile plus window. No ETW or Windows ingest overhead claim; profile JSON serialization is outside the binary's timed loop. CPU profiling is disabled in all modes; OS scheduling is not controlled.",
+  "host_load_average_before": [
+    0.91943359375,
+    1.2802734375,
+    0.7568359375
+  ],
+  "median_ns_per_span": {
+    "off": 3699.744425,
+    "existing": 3990.8218450000004,
+    "window": 3822.608775
+  },
+  "existing_profile_increment_ns_per_span": 291.07742000000053,
+  "window_increment_ns_per_span": -168.21307000000024,
+  "fixed_work_and_snapshot_inputs_equal": true,
+  "host_load_average_after": [
+    0.9384765625,
+    1.265625,
+    0.76123046875
+  ]
+}
