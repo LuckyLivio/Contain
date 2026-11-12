@@ -17,6 +17,7 @@ Use the [README](../README.md) for the current Windows download and quick start.
 | Folder choice and finished-task guidance, Beta 8 | Released | [Focused fixes and native verification](install-guidance-beta8.md) |
 | Follow the launched EXE without guessing a directory, Beta 9 | Released | [Source evidence, page and package verification](follow-installer-beta9.md) |
 | Capture lifecycle handoff and saved-loss diagnostics, Beta 10 | Prerelease | [Frozen product, D4/D6 acceptance, retained failures and release policy](beta10-release.md), product `b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4` |
+| Export identity and capture diagnostics, v0.4.0-beta.2 | Diagnostic candidate; draft PR | [Download, retained failed comparison and limits](beta2-diagnostic.md), frozen product `4161c4225e419d2baa51a3331d4efea8009d277f`; no tag or Prerelease |
 | Modern WPF desktop, v0.4.0-beta.1 | Prerelease | [Final package and release state](beta04-release.md), [actual screenshots](beta04-screenshots.md), product / native tests `5a6ce89867e4c8c9d428de0a80b67b421bbd9717`; [M13 run 42344602567](https://github.com/LuckyLivio/Contain/actions/runs/42344602567) |
 
 [Architecture](architecture.md), [JSON contract](json-contract.md),

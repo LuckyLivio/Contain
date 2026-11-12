@@ -101,3 +101,32 @@ Bench为同runner纯内存阶段，4项各7×20,000 work，保留全部56样本�
 fd2的lifetime中位耗时517.390→332.785ns/work，历史85ca同项351.845→486.665ns/work，
 方向相反。两个源码生产模块相同；没有依据宣称稳定性能提升或退化的具体原因。
 这两组观测均保留，不能选较好结果作为吞吐提升证明。原始安全汇总在各run扩展artifact。
+
+## B5：预定负载失败，保持草稿并交付诊断包
+
+[run 43198739683](https://github.com/LuckyLivio/Contain/actions/runs/43198739683)，
+冻结源码`4161c4225e419d2baa51a3331d4efea8009d277f`，
+ZIP SHA-256 `9c53e207e7c126d3c80e149b89db864d054392446f60331e333d29d9de35d709`。
+四次ABBA均完整执行，无重试；第二候选接收队列溢出3,843、候选丢失7,624，
+分别计数，不相加。两基线及第一候选该两项均0；四次ETW事件/缓冲丢失、交付、
+原始保存及解码损失均0。父/子独立内容均成功，失败样本保守Unknown，无关误归因0。
+精确会话保存冷读、独立背景36,000成功操作/次及全部自有进程退出均通过。
+WPF按门跳过，未执行交互目录或新GUI完整流程。
+
+初始快照预算未耗尽，候选两次STOP/join均约数毫秒、收尾1,500/1,501ms；
+全程累计回调/锁等待不能解释瞬时接收停顿。未开启profile，不能猜测具体接收阶段。
+[完整分项、交付与剩余限制](beta2-diagnostic.md)和[脱敏聚合JSON](examples/beta2/B5-diagnostic-summary.json)
+保留所有失败及分母。触发用户停止条件：不合并、不打标签、不发Prerelease，不再新live运行挑绿。
+
+### B5普通质量门的独立测试一致性缺口
+
+[CI 43198739984](https://github.com/LuckyLivio/Contain/actions/runs/43198739984)Rust nextest
+408通过/7既有跳过，Coverage/Original/Dependencies/Companion通过。
+Check在`test-publish-modern-desktop.py`（27项中1失败）停止：当前native emitter新增
+`clipboard_probes`，旧字段审阅fixture没有显式记录。后续29个Python门当时未执行。
+修复只在“当前emitter字段审阅”构造包含该空字段的fixture，保留完整字段相等断言，
+并另断言历史Beta.1发布器仍拒绝新字段；不改发布器或旧Release契约。
+本地最终27项通过；首次直接加到历史fixture的本地错误也保留，未弱化门槛。
+
+后续仅测试fixture、README及本交付记录变更，冻结ZIP保持原字节/源码身份；普通CI验证
+新分支HEAD，原生B5失败不会因这项测试修正而被清除。

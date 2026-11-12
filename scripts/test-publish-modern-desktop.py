@@ -149,11 +149,18 @@ class ModernReleaseGates(unittest.TestCase):
 
     def test_accepted_fixture_accounts_for_every_current_native_emitter_field(self):
         native, _, _ = native_inputs(self.archive)
+        # This publisher remains frozen to the historical Beta.1 contract. The
+        # current harness adds reviewed clipboard diagnostics; account for that
+        # field explicitly without allowing it through the old release gates.
+        current_native = dict(native, clipboard_probes=[])
         fields = emitted_summary_fields()
         self.assertEqual(len(fields), len(set(fields)))
-        self.assertEqual(set(native), set(fields))
+        self.assertEqual(set(current_native), set(fields))
         self.assertEqual(native["navigation_diagnostics"], [])
+        self.assertEqual(current_native["clipboard_probes"], [])
         self.verify(native)
+        with self.assertRaisesRegex(ValueError, "unreviewed native fields"):
+            self.verify(current_native)
 
     def test_navigation_diagnostics_are_preserved_and_cannot_be_accepted(self):
         for diagnostics in [None, {}, [dict(check="empty_personal_library_and_native_picker_cancel", captured=True)]]:
