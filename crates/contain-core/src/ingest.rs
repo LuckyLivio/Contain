@@ -239,48 +239,77 @@ impl LiveCapture {
     pub(crate) fn reset_activity(&self) {
         self.0.lock().unwrap().last_activity = Instant::now();
     }
-    pub(crate) fn descendants(
+    pub(crate) fn drain_state(
         &self,
         records: Vec<ProcessRecord>,
         root: (u32, u64),
         session: &str,
         lifecycle: bool,
-    ) -> bool {
-        let candidates = {
+    ) -> DrainDiagnostics {
+        let (candidates, context_lost) = {
             let mut live = self.0.lock().unwrap();
             for record in records {
                 live.seed(record);
             }
             live.cache.attach(root, session);
-            if live.cache.dropped > 0 {
-                return true;
-            }
             if lifecycle {
-                return if live.follow.is_some() {
-                    live.cache.processes.values().any(|p| {
-                        (p.pid, p.creation_time.unwrap_or(0)) != root
-                            && crate::follow::is_direct_actor(p, root)
-                            && p.ended_at.is_none()
-                    })
-                } else {
-                    live.cache.descendants_pending(root)
+                let pending = live.cache.processes.values().filter(|p| {
+                    (p.pid, p.creation_time.unwrap_or(0)) != root
+                        && p.ended_at.is_none()
+                        && if live.follow.is_some() {
+                            crate::follow::is_direct_actor(p, root)
+                        } else {
+                            p.confidence == Confidence::High
+                        }
+                });
+                let mut state = DrainDiagnostics {
+                    quiet_ms: live.last_activity.elapsed().as_millis() as u64,
+                    lifecycle_context_lost: live.cache.dropped,
+                    ..Default::default()
                 };
+                for process in pending {
+                    state.pending_verified_instances += 1;
+                    if state.pending_examples.len() < 8 {
+                        state.pending_examples.push(DrainProcess {
+                            pid: process.pid,
+                            creation_time: process.creation_time.unwrap_or(0),
+                        });
+                    }
+                }
+                return state;
             }
-            live.cache
-                .processes
-                .values()
-                .filter(|p| {
-                    p.pid != root.0
-                        && p.confidence == Confidence::High
-                        && (live.follow.is_none() || crate::follow::is_direct_actor(p, root))
-                })
-                .map(|p| (p.pid, p.creation_time))
-                .collect::<Vec<_>>()
+            (
+                live.cache
+                    .processes
+                    .values()
+                    .filter(|p| {
+                        (p.pid, p.creation_time.unwrap_or(0)) != root
+                            && p.confidence == Confidence::High
+                            && (live.follow.is_none() || crate::follow::is_direct_actor(p, root))
+                    })
+                    .map(|p| (p.pid, p.creation_time))
+                    .collect::<Vec<_>>(),
+                live.cache.dropped,
+            )
         };
         // Never hold the receiver's lifetime lock during Win32 process queries.
-        candidates.into_iter().any(|(pid, birth)| {
-            native::process_identity(pid).is_some_and(|p| Some(p.creation_time) == birth)
-        })
+        let mut state = DrainDiagnostics {
+            quiet_ms: self.quiet_ms(),
+            lifecycle_context_lost: context_lost,
+            ..Default::default()
+        };
+        for (pid, birth) in candidates {
+            if native::process_identity(pid).is_some_and(|p| Some(p.creation_time) == birth) {
+                state.pending_verified_instances += 1;
+                if state.pending_examples.len() < 8 {
+                    state.pending_examples.push(DrainProcess {
+                        pid,
+                        creation_time: birth.unwrap_or(0),
+                    });
+                }
+            }
+        }
+        state
     }
 }
 
@@ -435,12 +464,13 @@ fn record_while_mode<T>(
                             }
                             if let Some(mut follow) = live.follow.take() {
                                 let cache_updated = std::mem::take(&mut live.follow_cache_updated);
+                                let activity_before = follow.target_mutations;
                                 let selected = follow.receive(
                                     follow_candidates,
                                     &mut live.cache,
                                     cache_updated,
                                 );
-                                if selected.iter().any(|e| e.event_type == "file") {
+                                if follow.target_mutations != activity_before {
                                     live.last_activity = Instant::now();
                                 }
                                 accepted.extend(selected);
@@ -620,6 +650,97 @@ mod tests {
         assert_eq!(
             event.evidence.pid.zip(event.evidence.process_creation_time),
             Some((2, 100))
+        );
+    }
+    #[test]
+    fn drain_reports_exact_pending_instances_and_applies_exit_without_polling() {
+        let live = startup_live();
+        let root = ProcessRecord {
+            pid: 1,
+            creation_time: Some(50),
+            image: "installer.exe".into(),
+            confidence: Confidence::Certain,
+            evidence: AttributionEvidence {
+                source: EvidenceSource::ProcessApi,
+                rule: AttributionRule::InstallerPid,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        live.bind_follow_root(root, "s");
+        {
+            let mut state = live.0.lock().unwrap();
+            let child = state.cache.processes.get_mut(&(2, 100)).unwrap();
+            child.parent_pid = Some(1);
+            child.parent_creation_time = Some(50);
+        }
+        let state = live.drain_state(Vec::new(), (1, 50), "s", true);
+        assert_eq!(state.pending_verified_instances, 1);
+        assert_eq!(state.pending_examples[0].pid, 2);
+        assert_eq!(state.pending_examples[0].creation_time, 100);
+        // An exit for a reused PID cannot close the observed instance.
+        let stop = |birth| SystemEvent {
+            event_type: "lifecycle".into(),
+            operation: "process_stop".into(),
+            timestamp_ticks: 300,
+            evidence: AttributionEvidence {
+                source: EvidenceSource::EtwProcess,
+                pid: Some(2),
+                process_creation_time: Some(birth),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        live.0.lock().unwrap().cache.ingest(&stop(200));
+        assert_eq!(
+            live.drain_state(Vec::new(), (1, 50), "s", true)
+                .pending_verified_instances,
+            1
+        );
+        live.0.lock().unwrap().cache.ingest(&stop(100));
+        assert_eq!(
+            live.drain_state(Vec::new(), (1, 50), "s", true)
+                .pending_verified_instances,
+            0
+        );
+        live.0.lock().unwrap().cache.dropped = 1;
+        let state = live.drain_state(Vec::new(), (1, 50), "s", true);
+        assert_eq!(state.pending_verified_instances, 0);
+        assert_eq!(state.lifecycle_context_lost, 1);
+    }
+    #[test]
+    fn drain_examples_are_bounded_without_hiding_pending_instances() {
+        let live = startup_live();
+        let root = ProcessRecord {
+            pid: 1,
+            creation_time: Some(50),
+            confidence: Confidence::Certain,
+            evidence: AttributionEvidence {
+                source: EvidenceSource::ProcessApi,
+                rule: AttributionRule::InstallerPid,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        live.bind_follow_root(root, "s");
+        for pid in 10..22 {
+            live.0.lock().unwrap().cache.seed(ProcessRecord {
+                pid,
+                creation_time: Some(100),
+                parent_pid: Some(1),
+                parent_creation_time: Some(50),
+                confidence: Confidence::High,
+                ..Default::default()
+            });
+        }
+        let state = live.drain_state(Vec::new(), (1, 50), "s", true);
+        assert_eq!(state.pending_verified_instances, 12);
+        assert_eq!(state.pending_examples.len(), 8);
+        assert!(
+            state
+                .pending_examples
+                .iter()
+                .all(|p| p.creation_time == 100)
         );
     }
     #[test]

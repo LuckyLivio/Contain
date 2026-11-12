@@ -13,7 +13,7 @@ public static partial class ReportExporter
 
     public static async Task<long> ExportSearchAsync(CoreClient client, string database, string recordId,
         string search, string expectedFingerprint, long expectedCount, string outputPath,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, ReportExportIdentity? identity = null)
     {
         var target = ValidateTarget(client, database, outputPath);
         if (expectedCount <= 0)
@@ -28,6 +28,7 @@ public static partial class ReportExporter
             token.ThrowIfCancellationRequested();
             var response = await client.SearchMatchesAsync(database, recordId, search, token).ConfigureAwait(false);
             var data = response.Data;
+            identity?.ValidateSearch(data);
             if (data.GetProperty("matched_total").GetInt64() != expectedCount ||
                 data.GetProperty("search_fingerprint").GetString() != expectedFingerprint)
                 throw new CoreClientException("export_record_changed", "搜索结果已变化，未导出报告。请刷新搜索后再导出。");
@@ -45,7 +46,7 @@ public static partial class ReportExporter
                     created = true;
                     // Even when small buffered writes complete synchronously,
                     // escaping a large result must not occupy the UI thread.
-                    written = await Task.Run(() => WriteSearchHtmlAsync(stream, data, token), token).ConfigureAwait(false);
+                    written = await Task.Run(() => WriteSearchHtmlWithIdentityAsync(stream, data, token, identity), token).ConfigureAwait(false);
                     if (written != expectedCount)
                         throw new CoreClientException("export_count", "报告事件序列不完整，未提交文件。请刷新搜索后重试。");
                     await stream.FlushAsync(token).ConfigureAwait(false);
@@ -65,7 +66,10 @@ public static partial class ReportExporter
         }
     }
 
-    private static async Task<long> WriteSearchHtmlAsync(Stream stream, JsonElement data, CancellationToken token)
+    private static Task<long> WriteSearchHtmlAsync(Stream stream, JsonElement data, CancellationToken token) =>
+        WriteSearchHtmlWithIdentityAsync(stream, data, token, null);
+
+    private static async Task<long> WriteSearchHtmlWithIdentityAsync(Stream stream, JsonElement data, CancellationToken token, ReportExportIdentity? identity)
     {
         var utf8 = new UTF8Encoding(false);
         long bytesWritten = 0;
@@ -104,6 +108,7 @@ public static partial class ReportExporter
         await Encoded(data.GetProperty("name").GetString()!).ConfigureAwait(false);
         await Write("</h1><dl>").ConfigureAwait(false);
         await Pair("会话 UUID", data.GetProperty("app_id").GetString()!).ConfigureAwait(false);
+        if (identity is not null) await Pair("记录开始时间", identity.StartedAt.Length == 0 ? "未提供" : identity.StartedAt).ConfigureAwait(false);
         await Pair("搜索词", data.GetProperty("search").GetString()!).ConfigureAwait(false);
         await Pair("导出范围", "本次会话全部匹配事件，按搜索时间线顺序；不受界面当前页或所选事件限制。").ConfigureAwait(false);
         await Pair("实际事件条数", data.GetProperty("events").GetArrayLength().ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false);

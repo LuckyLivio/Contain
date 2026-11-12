@@ -19,4 +19,4 @@ clap.workspace = true
 winreg.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-windows-sys.workspace = true
+windows-sys = { workspace = true, features = ["Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }

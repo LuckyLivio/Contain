@@ -1,0 +1,142 @@
+name: Beta.2 frozen Windows acceptance
+on:
+  push:
+    branches: ['fix/beta2-capture-and-desktop']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  native:
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[beta2-acceptance]') }}
+    runs-on: windows-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Declare fixed acceptance and comparison
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_RUN_ATTEMPT -ne '1') { throw 'Retain failed attempts; no reruns' }
+          $out = Join-Path $env:RUNNER_TEMP ('contain-beta2-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+          New-Item -ItemType Directory -Path $out,(Join-Path $out 'public'),(Join-Path $out 'private') | Out-Null
+          "BETA2_OUT=$out" >> $env:GITHUB_ENV
+          [ordered]@{schema_version=1;protocol='contain-beta2-plan-1';source_sha=$env:GITHUB_SHA;native_windows=$true;maximum_gui_installations=1;maximum_comparison_captures=4;retries=0;capture_core_changed=$true;zip_frozen_before_native=$true;comparison_order=@('r1/baseline','r1/candidate','r2/candidate','r2/baseline');background_files=12000;baseline_version='0.4.0-beta.1';baseline_sha256='953b243bb3dd8ea32e61dcf5fdeaf143b9e697ea4a57021fb85ffd961ef907e3';success=@('exact_frozen_package','all_native_wpf_checks','independent_parent_child_and_unrelated_truth','both_candidate_comparisons_pass_unchanged_oracle','zero_candidate_source_and_application_loss','exact_session_cold_restart','interactive_installer_custom_directory');failures_retained=$true} | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $out 'public/plan.json') -Encoding utf8
+          [ordered]@{windows=[Environment]::OSVersion.Version.ToString();os_architecture=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString();process_architecture=[Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString();runner_arch=$env:RUNNER_ARCH;processor_architecture=$env:PROCESSOR_ARCHITECTURE;processor_architew6432=$env:PROCESSOR_ARCHITEW6432;tool='GitHub hosted windows-latest';emulation_verified=$false} | ConvertTo-Json | Set-Content (Join-Path $out 'public/platform.json') -Encoding utf8
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.403
+            8.0.427
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build exact core, independent fixture and synthetic stores
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo build --workspace --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Core build failed' }
+          ./target/debug/viewer-fixtures.exe "$env:BETA2_OUT/private/fixtures"
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic store build failed' }
+          python -c "import pathlib,shutil,sqlite3,sys; p=pathlib.Path(sys.argv[1]); shutil.copyfile(p/'empty.db',p/'future.db'); c=sqlite3.connect(p/'future.db'); c.execute('PRAGMA user_version=99'); c.close(); (p/'corrupt.db').write_bytes(b'SYNTHETIC corrupt database'); c=sqlite3.connect(p/'unrelated.db'); c.execute('CREATE TABLE unrelated(value TEXT)'); c.close()" "$env:BETA2_OUT/private/fixtures"
+          if ($LASTEXITCODE -ne 0) { throw 'Adverse fixture generation failed' }
+          rustc --version > "$env:BETA2_OUT/public/rust-version.txt"
+          dotnet --version > "$env:BETA2_OUT/public/dotnet-version.txt"
+      - name: Locked desktop regressions and native harness build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet restore desktop/Contain.Desktop.Model.Tests --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Model restore failed' }
+          dotnet run --project desktop/Contain.Desktop.Model.Tests -c Release --no-restore -- "$env:BETA2_OUT/public/model-checks.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Model regression failed' }
+          dotnet run --project desktop/Contain.Viewer.Presentation.Tests -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Shared presentation regression failed' }
+          dotnet restore desktop/Contain.Desktop.Controls.Tests --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Control restore failed' }
+          dotnet run --project desktop/Contain.Desktop.Controls.Tests -c Release --no-restore -- "$env:BETA2_OUT/public/controls"
+          if ($LASTEXITCODE -ne 0) { throw 'Native controls failed' }
+          dotnet restore desktop/Contain.Desktop -p:RuntimeIdentifier=win-x64 -p:RuntimeIdentifiers=win-x64 -p:SelfContained=true --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'WPF restore failed' }
+          dotnet publish desktop/Contain.Desktop -c Release -r win-x64 --self-contained true --no-restore -o "$env:BETA2_OUT/viewer"
+          if ($LASTEXITCODE -ne 0) { throw 'WPF build failed' }
+          dotnet restore desktop/Contain.Desktop.Tests -p:RuntimeIdentifier=win-x64 -p:RuntimeIdentifiers=win-x64 -p:SelfContained=true --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Harness restore failed' }
+          dotnet publish desktop/Contain.Desktop.Tests -c Release -r win-x64 --self-contained true --no-restore -o "$env:BETA2_OUT/harness"
+          if ($LASTEXITCODE -ne 0) { throw 'Native harness build failed' }
+          python scripts/test-package-beta2-desktop.py
+          if ($LASTEXITCODE -ne 0) { throw 'Freeze contract failed' }
+          python scripts/test-summarize-beta2-capture.py
+          if ($LASTEXITCODE -ne 0) { throw 'Comparison summarizer contract failed' }
+      - name: Freeze product ZIP before all native tests
+        id: freeze
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vsRoot = & $vswhere -latest -products '*' -property installationPath
+          $crt = Get-ChildItem -LiteralPath (Join-Path $vsRoot 'VC/Redist/MSVC') -Directory -Recurse | Where-Object { $_.Name -like 'Microsoft.VC*.CRT' -and $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $crt) { throw 'Reviewed x64 CRT not found' }
+          $package = Join-Path $env:BETA2_OUT 'package 中文 & [x]'
+          "BETA2_PACKAGE=$package" >> $env:GITHUB_ENV
+          $zip = Join-Path $env:BETA2_OUT 'public/contain-0.4.0-beta.2-windows-x64.zip'
+          python scripts/package-beta2-desktop.py prepare --viewer "$env:BETA2_OUT/viewer" --core target/debug/contain.exe --fixture-source target/debug/contain-test-installer.exe --fixtures "$env:BETA2_OUT/private/fixtures" --package $package --zip $zip --fixture "$env:BETA2_OUT/private/contain-test-installer.exe" --nuget "$env:USERPROFILE/.nuget/packages" --runtime-directory $crt.FullName --source $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Freeze failed' }
+          Copy-Item -LiteralPath (Join-Path $package 'BUILD.json') -Destination "$env:BETA2_OUT/public/BUILD-IDENTITY.json"
+          Get-FileHash -LiteralPath $zip -Algorithm SHA256 | Select-Object @{n='file';e={'contain-0.4.0-beta.2-windows-x64.zip'}},@{n='sha256';e={$_.Hash.ToLowerInvariant()}} | ConvertTo-Json | Set-Content "$env:BETA2_OUT/public/ZIP-IDENTITY.json" -Encoding utf8
+      - name: One actual frozen WPF and interactive fixture acceptance
+        id: desktop
+        timeout-minutes: 12
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $fixtureTemp = Join-Path $env:BETA2_OUT 'private/fixture-temp'
+          New-Item -ItemType Directory -Path $fixtureTemp | Out-Null
+          $env:TEMP = $fixtureTemp
+          $env:TMP = $fixtureTemp
+          $testArgs = @('--package',$env:BETA2_PACKAGE,'--fixtures',"$env:BETA2_OUT/private/fixtures",'--output',"$env:BETA2_OUT/public",'--private-output',"$env:BETA2_OUT/private/native",'--source',$env:GITHUB_SHA,'--install-fixture',"$env:BETA2_OUT/private/contain-test-installer.exe")
+          $quoted = $testArgs | ForEach-Object { '"' + $_.Replace('"', '\"') + '"' }
+          $harness = Start-Process -FilePath "$env:BETA2_OUT/harness/Contain.Desktop.Tests.exe" -ArgumentList $quoted -PassThru -NoNewWindow -RedirectStandardOutput "$env:BETA2_OUT/private/harness.log" -RedirectStandardError "$env:BETA2_OUT/private/harness-stderr.log"
+          $null = $harness.Handle
+          if (-not $harness.WaitForExit(600000)) { $harness.Kill(); throw 'Owned harness exceeded ten minutes' }
+          $harness.Refresh()
+          if ($null -eq $harness.ExitCode -or $harness.ExitCode -ne 0) { throw 'Native acceptance failed; retain all results' }
+      - name: Fixed same-runner ABBA source-loss comparison
+        id: comparison
+        if: ${{ !cancelled() && steps.freeze.outcome == 'success' && steps.desktop.outcome == 'success' }}
+        timeout-minutes: 18
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh release download v0.4.0-beta.1 --repo LuckyLivio/Contain --pattern contain-0.4.0-beta.1-windows-x64.zip --dir "$env:BETA2_OUT/private"
+          if ($LASTEXITCODE -ne 0) { throw 'Immutable baseline unavailable' }
+          ./scripts/beta2-capture-comparison.ps1 -BaselineZip "$env:BETA2_OUT/private/contain-0.4.0-beta.1-windows-x64.zip" -CandidateZip "$env:BETA2_OUT/public/contain-0.4.0-beta.2-windows-x64.zip" -CandidateSource $env:GITHUB_SHA -FixtureExecutable "$env:BETA2_OUT/private/contain-test-installer.exe" -OutputDirectory "$env:BETA2_OUT/comparison"
+      - name: Confirm tested ZIP and extracted bytes are unchanged
+        if: ${{ !cancelled() && steps.freeze.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          python scripts/package-beta2-desktop.py verify --zip "$env:BETA2_OUT/public/contain-0.4.0-beta.2-windows-x64.zip" --package $env:BETA2_PACKAGE > "$env:BETA2_OUT/private/package-verification.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen product changed' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beta2-windows-evidence
+          path: |
+            ${{ env.BETA2_OUT }}/public/*.json
+            ${{ env.BETA2_OUT }}/public/*-version.txt
+            ${{ env.BETA2_OUT }}/public/controls/*.json
+            ${{ env.BETA2_OUT }}/public/screenshots/*.png
+            ${{ env.BETA2_OUT }}/public/reports/*.html
+            ${{ env.BETA2_OUT }}/comparison/public/*.json
+            ${{ env.BETA2_OUT }}/comparison/r*/**/public/*.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.freeze.outcome == 'success' }}
+        with:
+          name: beta2-frozen-windows-package
+          path: ${{ env.BETA2_OUT }}/public/contain-0.4.0-beta.2-windows-x64.zip
+          if-no-files-found: error

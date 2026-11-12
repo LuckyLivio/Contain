@@ -76,6 +76,7 @@ internal sealed class NativeSuite(Options options)
             maximum_native_captures = options.InstallFixture is null ? 0 : 1,
             native_install_requested = options.InstallFixture is not null,
             deadlines_ms = new { ready = 40000, uia = 20000, transition = 30000, installation = 180000, close = 20000 },
+            interactive_destination = options.InstallFixture is not null, destination_supplied_to_contain = false,
             fixture = new { event_count = 130, matches = 53, first_page = 50, second_page = 3, selected_event = "synthetic-search-event-120" },
             product_process_only = true, real_user_records_accessed = false,
             failure_policy = "Stop the dependent stage on its first failure; retain failed and unexecuted checks. Never retry a launch to obtain a pass."
@@ -247,6 +248,7 @@ internal sealed class NativeSuite(Options options)
         await Shot("events-search-explain.png", "synthetic-130-events-53-matches");
         var report = Path.Combine(options.PrivateOutput, "all-matches.html");
         await D.ChooseFileAsync("ExportMatches", report, save: true);
+        RequireDefaultName("ExportMatches", "匹配结果", "synthetic-search");
         await D.UntilAsync("full_match_export", "ExportMatches", async () => File.Exists(report) && await D.EnabledAsync("ExportMatches"));
         var html = WebUtility.HtmlDecode(await File.ReadAllTextAsync(report));
         exportedIds = Regex.Matches(html, "data-event-id=\"([^\"]+)\"").Select(match => match.Groups[1].Value).ToArray();
@@ -263,6 +265,7 @@ internal sealed class NativeSuite(Options options)
         await D.UntilAsync("clear_search", "EventList", async () => (await D.RowIdsAsync("EventList", "event:")).FirstOrDefault() == "synthetic-search-event-000");
         var pageReport = Path.Combine(options.PrivateOutput, "current-page.html");
         await D.ChooseFileAsync("ExportPage", pageReport, save: true);
+        RequireDefaultName("ExportPage", "本页报告", "synthetic-search");
         await D.UntilAsync("page_export", "ExportPage", async () => File.Exists(pageReport) && await D.EnabledAsync("ExportPage"));
         Require((await File.ReadAllTextAsync(pageReport)).Contains("synthetic-search-event-000", StringComparison.Ordinal), "current-page report includes current first event");
     }
@@ -333,11 +336,12 @@ internal sealed class NativeSuite(Options options)
             var id = record.GetProperty("id").GetString()!;
             earlierLiveRecords.Add(id, await Cli(liveDatabase, "inspect", "--summary", "--json", "--", id));
         }
-        // The unchanged fixture authorizes only direct TEMP children with its guarded prefix.
-        liveRoot = Path.Combine(Path.GetTempPath(), "contain-demo-modern-" + Guid.NewGuid().ToString("N")); truthRoot = liveRoot + "-truth";
+        // The fixture authorizes only direct TEMP children with its guarded prefix.
+        liveRoot = Path.Combine(Path.GetTempPath(), "contain-demo-modern-" + Guid.NewGuid().ToString("N"));
+        truthRoot = Path.Combine(Path.GetTempPath(), "contain-demo-modern-truth-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(liveRoot); Directory.CreateDirectory(truthRoot); Directory.CreateDirectory(Path.Combine(liveRoot, "A"));
         foreach (var dir in new[] { liveRoot, truthRoot }) await File.WriteAllTextAsync(Path.Combine(dir, ".contain-demo-marker"), "Contain test fixture");
-        var environment = new Dictionary<string, string> { ["CONTAIN_FIXTURE_TRUTH"] = truthRoot, ["CONTAIN_FIXTURE_ROOT"] = liveRoot, ["CONTAIN_FIXTURE_FOLLOW"] = "1" };
+        var environment = new Dictionary<string, string> { ["CONTAIN_FIXTURE_TRUTH"] = truthRoot, ["CONTAIN_FIXTURE_INTERACTIVE"] = "1", ["CONTAIN_FIXTURE_FOLLOW"] = "1" };
         Start(currentRoot, "live-first-working", environment); await D.ReadyAsync();
         var initial = Hash(liveDatabase); await D.InvokeAsync("NewInstall");
         await D.UntilAsync("live_config", "PickInstaller", () => D.VisibleAsync("PickInstaller"));
@@ -360,25 +364,25 @@ internal sealed class NativeSuite(Options options)
         try { await D.InvokeAsync("StartRecording"); } catch (System.Windows.Automation.ElementNotEnabledException) { duplicateRefused = true; }
         Require(duplicateRefused, "disabled start cannot invoke second task");
         await D.RequestCloseAsync(); Require(!D.HasExited, "close request preserves active recording");
-        var capturedRunning = false;
+        await D.UntilAsync("interactive_capturing_stage", "TaskStatus", async () =>
+        {
+            if (await D.TryHelpAsync("TaskStatus") != "stage:capturing") return false;
+            foreach (var control in new[] { "TaskStatus", "TaskElapsed", "TaskProgress", "TaskStep", "TaskMeasurements" })
+                if (!await D.VisibleInOwnedViewportAsync(control)) return false;
+            return true;
+        });
+        foreach (var control in new[] { "TaskStatus", "TaskElapsed", "TaskProgress", "TaskStep", "TaskMeasurements" })
+            Require(!string.IsNullOrWhiteSpace(await D.TextAsync(control)), "capturing task field contains readable actual state: " + control);
+        await Shot("task-real-recording.png", "real-controlled-interactive-etw-capture");
+        screenshots.Add(await InteractiveInstaller.ChooseDirectoryAsync(options.InstallFixture!, liveRoot!, Path.Combine(options.Output, "screenshots")));
         await D.UntilAsync("installation_saved_exact_uuid", "SessionTitle", async () =>
         {
             var identity = await D.TryHelpAsync("SessionTitle");
             if (identity is not null && identity.StartsWith("session:", StringComparison.Ordinal) && Guid.TryParse(identity[8..], out _))
             { liveSession = identity[8..]; return true; }
-            var status = await D.TryHelpAsync("TaskStatus");
-            if (!capturedRunning && status == "stage:capturing")
-            {
-                foreach (var control in new[] { "TaskStatus", "TaskElapsed", "TaskProgress", "TaskStep", "TaskMeasurements" })
-                {
-                    if (!await D.VisibleInOwnedViewportAsync(control)) return false;
-                    Require(!string.IsNullOrWhiteSpace(await D.TextAsync(control)), "capturing task field contains readable actual state: " + control);
-                }
-                await Shot("task-real-recording.png", "real-controlled-etw-capture"); capturedRunning = true;
-            }
             return false;
         }, TimeSpan.FromSeconds(180));
-        Require(capturedRunning, "actual running stage screenshot captured");
+        Require(screenshots.Any(shot => shot.Name == "task-real-recording.png"), "actual running stage screenshot captured");
         var summary = await Cli(liveDatabase!, "inspect", "--summary", "--json", "--", liveSession!);
         Require(summary.GetProperty("id").GetString() == liveSession && summary.GetProperty("capture_state").GetString() == "finished", "exact GUI UUID is finished and read back");
         Require(summary.GetProperty("exit_code").GetInt32() == 0, "installer exit separately measured");
@@ -387,7 +391,11 @@ internal sealed class NativeSuite(Options options)
             Require(JsonElement.DeepEquals(earlier.Value, await Cli(liveDatabase!, "inspect", "--summary", "--json", "--", earlier.Key)), "older exact records remain unchanged after saving");
         Require(summary.GetProperty("watch_roots").GetArrayLength() == 0 && summary.GetProperty("backend").TryGetProperty("follow_installer", out _), "default no-watch follow mode persisted");
         await D.InvokeAsync("OverviewTab"); await Shot("real-saved-overview.png", "real-controlled-etw-saved");
-        await D.InvokeAsync("CurrentTask"); await D.ExpandAsync("TaskDetails");
+        await D.InvokeAsync("CurrentTask");
+        Require(!await D.VisibleAsync("TaskStep") && !await D.VisibleAsync("TaskMeasurements"), "finished task hides running step and measurement noise");
+        Require(await D.VisibleAsync("TaskElapsed") && await D.VisibleAsync("OpenCapturedSession"), "finished task retains total elapsed and exact-record entry");
+        await Shot("real-terminal-task.png", "real-controlled-etw-finished");
+        await D.ExpandAsync("TaskDetails");
         var task = await D.TextAsync("TaskDiagnostics");
         Require(task.Contains("会话 ID：" + liveSession, StringComparison.Ordinal) && task.Contains("记录已保存", StringComparison.Ordinal), "task result independently reports exact saved UUID");
         Require(task.Contains("采集停止：True；数据保存：True", StringComparison.Ordinal), "task confirms capture stopped and data saved as separate facts");
@@ -463,14 +471,33 @@ internal sealed class NativeSuite(Options options)
         await Shot("real-event-explanation.png", "real-controlled-etw-saved");
         await SelectTimelineEvent(liveEvent!);
         var report = Path.Combine(options.PrivateOutput, "real-current-page.html"); await D.ChooseFileAsync("ExportPage", report, save: true);
+        RequireDefaultName("ExportPage", "本页报告", liveSession!);
         await D.UntilAsync("real_report", "ExportPage", async () => File.Exists(report) && await D.EnabledAsync("ExportPage"));
         var html = WebUtility.HtmlDecode(await File.ReadAllTextAsync(report)); Require(html.Contains(liveSession!, StringComparison.Ordinal) && html.Contains(liveEvent!, StringComparison.Ordinal), "real report exact session and selected event");
+        var full = await Cli(liveDatabase!, "inspect", "--json", "--", liveSession!);
+        foreach (var operation in new[] { "process_start", "process_stop" })
+        {
+            var processEvent = full.GetProperty("events").EnumerateArray().FirstOrDefault(e => e.GetProperty("operation").GetString() == operation);
+            Require(processEvent.ValueKind == JsonValueKind.Object, "actual capture retained " + operation);
+            var id = processEvent.GetProperty("id").GetString()!;
+            await SelectTimelineEvent(id); await CopyEvent(id);
+            await DesktopDriver.SetClipboardAsync("SYNTHETIC clipboard sentinel");
+            await D.InvokeAsync("CopyEventPath");
+            Require(await DesktopDriver.ClipboardAsync() == processEvent.GetProperty("resource").GetString(), "process event resource copy preserves exact value");
+            await Shot("real-" + operation + "-explanation.png", "real-controlled-process-event");
+        }
         var firstPid = D.ProcessId; await D.CloseAsync(); PreserveLaunch(); D.Dispose(); desktop = null;
         Start(currentRoot!, "live-different-cold-working"); await D.ReadyAsync(); Require(D.ProcessId != firstPid, "real cold start new process and changed cwd");
         await OpenRecord(liveSession!); await Events(); await Search("child-target.txt", null, null); await Explain(liveEvent!, liveSession!);
         await CopyEvent(liveEvent!);
         await Shot("real-cold-restart.png", "real-controlled-etw-saved-cold-restart");
         await D.CloseAsync(); coldRestart = true;
+    }
+    private void RequireDefaultName(string action, string type, string session)
+    {
+        Require(D.SaveDialogNames.TryGetValue(action, out var name), "actual save dialog default name observed");
+        Require(name!.EndsWith("_" + type + ".html", StringComparison.Ordinal) && name.Contains("UTC", StringComparison.Ordinal), "default name has export type and explicit UTC time");
+        Require(name.Contains(session[..Math.Min(8, session.Length)], StringComparison.Ordinal), "default name has exact current session short identity");
     }
     private Task CheckUnchanged()
     {

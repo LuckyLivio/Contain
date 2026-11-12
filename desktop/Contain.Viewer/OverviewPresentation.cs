@@ -47,19 +47,26 @@ internal sealed record OverviewPresentation(string Installer, string InstallerNo
         var diagnostics = Diagnostics(summary).ToArray();
         var streamError = Text(Field(backend, "stream"), "error");
         var alerts = new List<string>();
-        if (finished && HasRecordedLoss(summary)) alerts.Add("记录已保存；采集期间丢失了部分记录。");
+        var counts = Field(summary, "summary_counts");
+        var drainTimeout = Field(counts, "drain_timed_out").ValueKind == JsonValueKind.True;
+        if (finished && Positive(backend, "etw_events_lost"))
+            alerts.Add("记录已保存，但采集期间丢失部分 ETW 事件" + (drainTimeout ? "，且收尾等待超时。" : "。"));
+        else
+        {
+            if (finished && HasRecordedLoss(summary)) alerts.Add("记录已保存；采集期间丢失了部分记录。");
+            if (finished && drainTimeout) alerts.Add("收尾等待超时，后续操作可能未被记录。");
+        }
         if (streamError is not null) alerts.Add("记录来源报告错误；完整原因可在技术详情中查看或复制。");
         if (diagnostics.Any(text => text.Contains("Legacy capture:", StringComparison.Ordinal)))
             alerts.Add("旧记录未保存完整覆盖元数据；缺失统计不可按 0 解读。");
         var losses = new List<string>();
-        var counts = Field(summary, "summary_counts");
         AddNonzero(losses, backend, "etw_events_lost", "ETW 丢失事件");
         AddNonzero(losses, backend, "etw_buffers_lost", "丢失缓冲区");
         AddNonzero(losses, counts, "application_records_dropped", "丢弃记录");
         AddNonzero(losses, counts, "decode_errors", "解码错误");
         AddNonzero(losses, counts, "snapshot_gaps", "快照缺口");
         AddNonzero(losses, counts, "notification_gaps", "通知缺口");
-        if (Field(counts, "drain_timed_out").ValueKind == JsonValueKind.True) losses.Add("排空超时");
+        if (drainTimeout) losses.Add("收尾等待超时，后续操作可能未被记录");
         if (losses.Count > 0) alerts.Add("已记录的缺口：" + string.Join("；", losses) + "。");
         if (streamError is null && diagnostics.Length > 0)
         {

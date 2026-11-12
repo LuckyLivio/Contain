@@ -13,8 +13,11 @@ dotnet publish desktop/Contain.Desktop.Tests -c Release -r win-x64 --self-contai
 
 The caller sets a new isolated `TEMP`/`TMP` directory before starting the harness.
 Every personal library has the existing production isolation marker; no real
-personal library is consulted. The unchanged fixture permits only a direct TEMP
-child named `contain-demo-*`. Private outputs retain database copies, raw process
+personal library is consulted. The controlled fixture permits only a direct TEMP
+child named `contain-demo-*`. Its opt-in native installer window starts with a blank
+destination; the harness enters a new marked destination and invokes Install once.
+Contain receives neither a watch root nor the destination environment setting.
+Independent truth goes to a separately named temporary directory. Private outputs retain database copies, raw process
 errors, independent truth and full capture data. They are not release assets.
 
 `modern-desktop-plan.json` declares the ordered checks, deadlines and zero retries
@@ -91,7 +94,10 @@ The native regression verifies the corrected selection contract, with product
 virtualization, exact UUID/event checks and page limits unchanged.
 
 The single real install uses the new GUI's default follow path and unchanged
-`verify-follow-installer-experiment.py` oracle. Its parent, direct child and
+`verify-follow-installer-experiment.py` oracle. The GUI directory choice occurs in
+the fixture installer process itself, preserving root and direct-child identity.
+A screenshot records the actual custom destination before Install. This is an
+independent controlled installer, not a third-party 7-Zip installation. Its parent, direct child and
 independent unrelated writer supply independent syscall truth. No installer is
 started by file selection. Receiver, handoff, candidate and raw-save loss gates
 remain strict; bounded storage and identity/completion rules are not replaced by
@@ -102,3 +108,8 @@ different working directory must agree.
 Omitting `--install-fixture` runs the fixed viewer preview checks and exits zero
 only when they all pass. The four live checks remain explicitly `not_run`, and
 `accepted` remains false. A viewer preview is never full native release evidence.
+
+Beta.2 additionally reads both actual Save dialogs before replacing the suggested
+filename, checks session/time/type components, verifies real process start/stop
+selection, explanation and copies, and checks the finished task hides runtime
+step/measurement noise while retaining elapsed time and its record entry.

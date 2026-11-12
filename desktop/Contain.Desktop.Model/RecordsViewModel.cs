@@ -23,6 +23,8 @@ public sealed class RecordsViewModel : ObservableObject, IDisposable
     private string? database;
     private string? recordId;
     private string sessionTitle = "选择一条记录";
+    private string sessionStartedAt = "";
+    private string sessionExportName = "";
     private string search = "";
     private string searchDraft = "";
     private bool searchCommitted;
@@ -31,7 +33,7 @@ public sealed class RecordsViewModel : ObservableObject, IDisposable
     private string errorMessage = "";
     private Exception? lastError;
     private string technical = "";
-    private string eventExplanation = "选择一条文件操作，查看执行进程和依据。";
+    private string eventExplanation = "选择一条事件，查看其类型、进程关联和依据。";
     private string rawExplanation = "";
     private string? selectedEventId;
     private string changeExplanation = "选择一项状态变化查看记录的依据。";
@@ -166,7 +168,7 @@ public sealed class RecordsViewModel : ObservableObject, IDisposable
                 if (Sessions.Count(item => item.Id == id) != 1)
                     throw new InvalidDataException("数据库中未找到本次启动的准确会话；未选择其他记录替代。已有证据保持不变。");
                 await LoadRecordAsync(full, id, ticket);
-                SetStatus("记录已保存，可以查看文件操作。");
+                SetStatus("记录已保存，可以查看事件与依据。");
             }
             catch (Exception error) { failure = error; throw; }
         }, "正在按准确会话读回保存结果…");
@@ -230,7 +232,7 @@ public sealed class RecordsViewModel : ObservableObject, IDisposable
     {
         if (matches ? !CanExportMatches : !CanExportPage) return null;
         return new(database!, recordId!, selectedEventId, eventOffset, matches ? search : null,
-            matches ? fingerprint : null, matches ? matched : null, requests.Version);
+            matches ? fingerprint : null, matches ? matched : null, requests.Version, sessionExportName, sessionStartedAt);
     }
 
     public Task<bool> ExportAsync(RecordExportContext context, string target, CancellationToken token = default)
@@ -238,14 +240,14 @@ public sealed class RecordsViewModel : ObservableObject, IDisposable
         ArgumentNullException.ThrowIfNull(context);
         if (context.Search is null) return ExportAsync(async cancellation =>
         {
-            await service.ExportPageAsync(context.Database, context.SessionId, context.SelectedEventId, PageSize, context.Offset, target, cancellation);
+            await service.ExportPageAsync(context.Database, context.SessionId, context.SelectedEventId, PageSize, context.Offset, target, context.Identity, cancellation);
             return "已导出本页报告：当前未筛选事件页、所选解释及本记录状态变化。";
         }, token, viewVersion: context.ViewVersion);
         return ExportAsync(async cancellation =>
         {
             if (context.Fingerprint is null || context.MatchCount is not > 0)
                 throw new InvalidDataException("导出上下文缺少已完成搜索的内容标识或数量。");
-            var actual = await service.ExportMatchesAsync(context.Database, context.SessionId, context.Search, context.Fingerprint, context.MatchCount.Value, target, cancellation);
+            var actual = await service.ExportMatchesAsync(context.Database, context.SessionId, context.Search, context.Fingerprint, context.MatchCount.Value, target, context.Identity, cancellation);
             if (actual != context.MatchCount.Value) throw new InvalidDataException("导出结果数量与开始时的完整搜索快照不一致。");
             return $"已导出全部 {actual} 条匹配结果；顺序与搜索一致。";
         }, token, () => { if (database == context.Database && recordId == context.SessionId && search == context.Search) fingerprint = null; }, context.ViewVersion);
@@ -340,6 +342,8 @@ public sealed class RecordsViewModel : ObservableObject, IDisposable
             changes.AddRange(JsonView.Items(JsonView.Field(diff.Data, pair.Item2)).Select(item => ChangeRow.From(pair.Item1, item)));
         // All required initial reads commit together. No old session data survives a failed load.
         database = db; recordId = id; follow = isFollow; sessionTitle = RecordText.Value(summary.Data, "name");
+        sessionStartedAt = JsonView.Text(JsonView.Field(summary.Data, "started_at"), "");
+        sessionExportName = JsonView.Text(JsonView.Field(summary.Data, "name"), "");
         overview = OverviewPresentation.Build(summary.Data, diff.Data);
         technical = RecordPresentation.Technical(summary.Data, db);
         allChanges = changes; search = query ?? ""; searchDraft = search;
@@ -403,7 +407,7 @@ public sealed class RecordsViewModel : ObservableObject, IDisposable
         changeOffset = Math.Min(changeOffset, filtered.Count == 0 ? 0 : (filtered.Count - 1) / PageSize * PageSize);
         Changes.Clear();
         foreach (var row in filtered.Skip(changeOffset).Take(PageSize)) Changes.Add(row);
-        changeExplanation = follow ? "没有安装前文件基线，请到文件操作查看来源事件。空状态差异不表示没有文件操作。"
+        changeExplanation = follow ? "没有安装前文件基线，请到“事件与依据”查看来源事件。空状态差异不表示没有文件操作。"
             : filtered.Count == 0 ? "没有符合当前筛选的状态变化；未观察到不等于没有发生。" : "选择一项状态变化查看记录的依据。";
         NotifyState(); OnPropertyChanged(nameof(ChangeExplanation));
     }
@@ -416,6 +420,8 @@ public sealed class RecordsViewModel : ObservableObject, IDisposable
     private void ClearRecord()
     {
         recordId = null; sessionTitle = "选择一条记录"; overview = null; technical = ""; follow = false;
+        sessionStartedAt = "";
+        sessionExportName = "";
         search = ""; searchDraft = ""; searchCommitted = false; changeFilter = ""; eventOffset = 0; changeOffset = 0; matched = null; fingerprint = null; moreEvents = false;
         allChanges = []; Events.Clear(); Changes.Clear(); ClearExplanation(); NotifyRecord(); NotifyState();
     }
@@ -423,7 +429,7 @@ public sealed class RecordsViewModel : ObservableObject, IDisposable
     private void ClearExplanation()
     {
         selectedEventId = null; rawExplanation = "";
-        eventExplanation = "选择一条文件操作，查看执行进程和依据。Unknown 表示证据不足，不表示危险。";
+        eventExplanation = "选择一条事件，查看其类型、进程关联和依据。Unknown 表示证据不足，不表示危险。";
         NotifyExplanation();
     }
 

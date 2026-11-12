@@ -45,6 +45,7 @@ internal sealed class DesktopDriver : IDisposable
     internal string? LastErrorType { get; private set; }
     internal bool LiveInstallationStarted { get; set; }
     internal int ChooserInteractions { get; private set; }
+    internal Dictionary<string, string> SaveDialogNames { get; } = new(StringComparer.Ordinal);
 
     internal DesktopDriver(string package, string working, string isolatedRoot, IReadOnlyDictionary<string, string>? environment = null)
     {
@@ -434,9 +435,11 @@ internal sealed class DesktopDriver : IDisposable
             await Sta(() =>
             {
                 SetForegroundWindow(dialog);
-                if (path is null) { Forms.SendKeys.SendWait("{ESC}"); return; }
+                if (path is null && !save) { Forms.SendKeys.SendWait("{ESC}"); return; }
                 var edits = NativeChildren(dialog).Where(item => item.Id is 1001 or 1148 or 1152 && item.Class == "Edit" && IsWindowVisible(item.Window)).ToArray();
                 if (edits.Length != 1) throw new InvalidOperationException("Native file picker has no unique filename entry.");
+                if (save) SaveDialogNames[action] = NativeText(edits[0].Window);
+                if (path is null) { Forms.SendKeys.SendWait("{ESC}"); return; }
                 AutomationElement.FromHandle(edits[0].Window).SetFocus();
                 Forms.SendKeys.SendWait("^a"); Forms.SendKeys.SendWait(KeysLiteral(Path.GetFullPath(path)));
                 Forms.SendKeys.SendWait("{TAB}");

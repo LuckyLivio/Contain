@@ -123,6 +123,44 @@ internal static class InstallChecks
             Contains(model.SavedState, "记录已保存", "saving remains separate");
             True(!model.StatusMessage.Contains("安装成功", StringComparison.Ordinal), "no installation success claim");
         });
+        await Check("completed task hides running measurements while diagnostics preserve exact values", async () =>
+        {
+            var service = new ControlledInstall();
+            var model = Ready(service);
+            var run = model.StartAsync();
+            service.Progress!(Status("capturing", 2));
+            True(model.ShowLiveProgress, "actual running progress remains visible");
+            var finished = Status("finished", 5) with
+            {
+                QualityLevel = "Incomplete", StageElapsedMilliseconds = 0, StepElapsedMilliseconds = 0,
+                ProcessedCount = null, ProcessedUnit = null,
+                QualityReasons = ["Source loss, decode failure, bounded cache/channel overflow or raw journal/checkpoint failure was reported.",
+                    "Session reached its maximum drain duration; later changes may be missing."]
+            };
+            service.Complete(Finished() with { LastStatus = finished });
+            await run;
+            True(!model.ShowLiveProgress && model.CanOpenSession, "terminal view hides live fields and preserves exact record action");
+            Contains(model.StatusMessage, "记录已保存", "saved fact explicit");
+            Contains(model.StatusMessage, "来源或保存损失", "generic stream reason not relabelled as ETW loss");
+            Contains(model.StatusMessage, "收尾等待超时", "deadline gap explicit");
+            Contains(model.InstallerOutcome, "退出码 0", "exit retained");
+            Contains(model.Coverage, "Incomplete", "coverage retained");
+            Contains(model.Diagnostics, "阶段耗时：0 毫秒", "actual zero remains in technical detail");
+            Contains(model.Diagnostics, "已处理：未提供", "missing count remains missing in technical detail");
+            Contains(model.Diagnostics, finished.QualityReasons[1], "full original diagnostic retained");
+            Equal("100 毫秒", model.Elapsed, "task total time retained");
+        });
+        await Check("unknown incomplete reason stays explicit without manufacturing a source diagnosis", async () =>
+        {
+            var service = new ControlledInstall();
+            var model = Ready(service);
+            var run = model.StartAsync();
+            service.Complete(Finished() with { LastStatus = Status("finished", 5) with { QualityLevel = "Incomplete", QualityReasons = ["new backend diagnostic"] } });
+            await run;
+            Contains(model.StatusMessage, "证据覆盖不完整", "incomplete remains visible");
+            True(!model.StatusMessage.Contains("ETW", StringComparison.Ordinal) && !model.StatusMessage.Contains("超时", StringComparison.Ordinal), "no inferred cause from unknown diagnostic");
+            Contains(model.Diagnostics, "new backend diagnostic", "new original reason retained");
+        });
         await Check("unfinished saved evidence opens its exact session only on request", async () =>
         {
             var service = new ControlledInstall();

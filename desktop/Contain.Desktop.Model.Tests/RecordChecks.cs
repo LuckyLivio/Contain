@@ -96,6 +96,32 @@ public static class RecordChecks
             Require(!await old && vm.SelectedEventId == second.Id && vm.EventIdentity == "event:" + second.Id && vm.EventExplanation.Contains(second.Id, StringComparison.Ordinal), "selected explanation remains exact");
         });
 
+        await Check("process start and stop remain selectable explainable and copyable as lifecycle evidence", async () =>
+        {
+            foreach (var operation in new[] { "process_start", "process_stop" })
+            {
+                var process = Event("A-process", "C:/synthetic/chrome.exe");
+                process["event_type"] = "process"; process["operation"] = operation;
+                process["evidence"] = new { pid = 42, process_creation_time = "134385000000000001", process_image = "C:/synthetic/chrome.exe", source = "etw" };
+                var service = new FakeService
+                {
+                    HistoryOverride = (id, _, _, _, _) => Task.FromResult(Response("history", new { app_id = id, events = new[] { process } })),
+                    ExplainOverride = (id, _, _) => Task.FromResult(Response("explain", new { app_id = id, @event = process, edges = Array.Empty<object>(), operations = Array.Empty<object>() }))
+                };
+                using var vm = await Ready(service);
+                await vm.OpenSessionAsync("A");
+                var row = vm.Events.Single();
+                Require(row.OperationLabel == (operation == "process_start" ? "进程启动" : "进程退出"), "lifecycle type label exact");
+                Require(await vm.SelectEventAsync(row) && vm.CanCopyEvent && vm.SelectedEventId == "A-process"
+                    && vm.SelectedEventResource == "C:/synthetic/chrome.exe", "process event identity and resource support copy: " + vm.ErrorMessage + "; selection=" + vm.SelectedEventId + "; copy=" + vm.CanCopyEvent + "; resource=" + vm.SelectedEventResource);
+                Require(vm.EventExplanation.Contains("进程生命周期观测", StringComparison.Ordinal)
+                    && vm.EventExplanation.Contains("不是文件写入请求", StringComparison.Ordinal)
+                    && vm.EventExplanation.Contains("134385000000000001", StringComparison.Ordinal)
+                    && !vm.EventExplanation.Contains("请求完成结果", StringComparison.Ordinal)
+                    && !vm.EventExplanation.Contains("名称来源", StringComparison.Ordinal), "process explanation preserves identity without file completion/path assertions");
+            }
+        });
+
         await Check("mismatched event payload refuses explain and copy", async () =>
         {
             var service = new FakeService { ExplainOverride = (id, eventId, _) => Task.FromResult(Explain(id, eventId, "changed resource")) };
@@ -135,10 +161,13 @@ public static class RecordChecks
             using var vm = await Ready(service);
             await vm.OpenSessionAsync("A"); await vm.SearchAsync("match"); await vm.NextEventsAsync();
             var context = vm.CaptureExportContext(true)!;
+            var filename = context.DefaultFileName;
             await vm.OpenSessionAsync("B"); await vm.SearchAsync("none");
             var currentMessage = vm.StatusMessage;
             Require(await vm.ExportAsync(context, Path.GetFullPath("unused-report.html")), "captured export succeeds");
             Require(service.LastExport is { SessionId: "A", Search: "match", MatchCount: 53, Offset: 0 } && vm.ActiveRecordId == "B" && vm.SearchText == "none" && vm.StatusMessage == currentMessage, "old export never mixes new view or overwrites new status");
+            Require(service.LastExport!.DefaultFileName == filename && context.Identity == service.LastExport.Identity
+                && filename == "same name_开始20261107-010000UTC_A_匹配结果.html", "frozen filename and exported identity stay together");
         });
 
         await Check("page export freezes selected event and offset", async () =>
@@ -147,9 +176,12 @@ public static class RecordChecks
             using var vm = await Ready(service);
             await vm.OpenSessionAsync("A"); await vm.NextEventsAsync(); await vm.SelectEventAsync(vm.Events[3]);
             var context = vm.CaptureExportContext(false)!;
+            var filename = context.DefaultFileName;
             await vm.OpenSessionAsync("B");
             Require(await vm.ExportAsync(context, Path.GetFullPath("unused-page.html")), "page export");
             Require(service.LastExport is { SessionId: "A", SelectedEventId: "A-053", Offset: 50, Search: null }, "frozen page identity");
+            Require(service.LastExport!.DefaultFileName == filename && context.Identity == service.LastExport.Identity
+                && filename == "same name_开始20261107-010000UTC_A_本页报告.html", "frozen page filename and report identity");
         });
 
         await Check("export cancellation preserves selection and does not become error", async () =>
@@ -376,14 +408,14 @@ public static class RecordChecks
             return HistoryOverride?.Invoke(id, limit, offset, query, token) ?? Task.FromResult(History(id, limit, offset, query));
         }
         public Task<CoreResponse> ExplainAsync(string database, string id, string eventId, CancellationToken token) => ExplainOverride?.Invoke(id, eventId, token) ?? Task.FromResult(Explain(id, eventId));
-        public Task ExportPageAsync(string database, string id, string? eventId, int pageSize, long offset, string target, CancellationToken token)
+        public Task ExportPageAsync(string database, string id, string? eventId, int pageSize, long offset, string target, ReportExportIdentity identity, CancellationToken token)
         {
-            LastExport = new(database, id, eventId, offset, null, null, null, 0);
+            LastExport = new(database, id, eventId, offset, null, null, null, 0, identity.Name, identity.StartedAt);
             return Task.CompletedTask;
         }
-        public Task<long> ExportMatchesAsync(string database, string id, string query, string fingerprint, long count, string target, CancellationToken token)
+        public Task<long> ExportMatchesAsync(string database, string id, string query, string fingerprint, long count, string target, ReportExportIdentity identity, CancellationToken token)
         {
-            LastExport = new(database, id, null, 0, query, fingerprint, count, 0);
+            LastExport = new(database, id, null, 0, query, fingerprint, count, 0, identity.Name, identity.StartedAt);
             return ExportOverride?.Invoke(token) ?? Task.FromResult(count);
         }
     }

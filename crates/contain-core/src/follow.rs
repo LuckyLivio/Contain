@@ -27,6 +27,9 @@ pub(crate) struct FollowBuffer {
     #[cfg(test)]
     retry_visits: u64,
     pub stats: FollowInstallerStats,
+    /// Monotonic activity generation, updated only by admitted mutation requests
+    /// from verified target instances. Resource-context reads are still retained.
+    pub target_mutations: u64,
 }
 impl Default for FollowBuffer {
     fn default() -> Self {
@@ -53,6 +56,7 @@ impl Default for FollowBuffer {
                 baseline_available: false,
                 ..Default::default()
             },
+            target_mutations: 0,
         }
     }
 }
@@ -475,6 +479,15 @@ impl FollowBuffer {
                     self.changed(Change::Request);
                 }
             }
+            if matches
+                && event.event_type == "file"
+                && matches!(
+                    event.operation.as_str(),
+                    "write_requested" | "delete_requested" | "rename_requested" | "create_new_file"
+                )
+            {
+                self.target_mutations = self.target_mutations.saturating_add(1);
+            }
             self.stats.admitted += 1;
             Selection::Admit
         } else if final_pass || known_other || unrelated_completion || unselected_metadata {
@@ -582,6 +595,89 @@ mod tests {
             event.raw.related_event = Some("unresolved-0".into());
         }
         event
+    }
+    #[test]
+    fn drain_activity_ignores_reads_and_other_writers_on_retained_resources() {
+        let mut follow = FollowBuffer::default();
+        let mut cache = cache();
+        follow.bind((1, 100), "s");
+        let mut child = root();
+        child.pid = 2;
+        child.creation_time = Some(120);
+        child.parent_pid = Some(1);
+        child.parent_creation_time = Some(100);
+        child.confidence = Confidence::High;
+        cache.seed(child);
+        let mut other = root();
+        other.pid = 3;
+        other.creation_time = Some(130);
+        other.confidence = Confidence::Unknown;
+        other.parent_pid = Some(99);
+        cache.seed(other);
+        let request = |id: &str, pid, birth, operation: &str| {
+            let mut event = file(id, 0);
+            event.resource = "shared-resource".into();
+            event.operation = operation.into();
+            event.evidence.pid = Some(pid);
+            event.evidence.process_creation_time = Some(birth);
+            event
+        };
+        // Reads/context remain searchable; admitting them must not extend wait.
+        assert_eq!(
+            follow
+                .receive(
+                    vec![request("open", 1, 100, "open_requested")],
+                    &mut cache,
+                    true
+                )
+                .len(),
+            1
+        );
+        assert_eq!(follow.target_mutations, 0);
+        assert_eq!(
+            follow
+                .receive(
+                    vec![request("parent-write", 1, 100, "write_requested")],
+                    &mut cache,
+                    false
+                )
+                .len(),
+            1
+        );
+        assert_eq!(follow.target_mutations, 1);
+        assert_eq!(
+            follow
+                .receive(
+                    vec![request("other-write", 3, 130, "write_requested")],
+                    &mut cache,
+                    false
+                )
+                .len(),
+            1
+        );
+        let mut unknown = file("unknown-write", 999);
+        unknown.resource = "shared-resource".into();
+        assert_eq!(follow.receive(vec![unknown], &mut cache, false).len(), 1);
+        assert_eq!(follow.target_mutations, 1);
+        assert_eq!(
+            follow
+                .receive(
+                    vec![request("child-create", 2, 120, "create_new_file")],
+                    &mut cache,
+                    false
+                )
+                .len(),
+            1
+        );
+        assert_eq!(follow.target_mutations, 2);
+        for operation in ["close", "operation_end", "process_start"] {
+            follow.receive(
+                vec![request(operation, 2, 120, operation)],
+                &mut cache,
+                false,
+            );
+        }
+        assert_eq!(follow.target_mutations, 2);
     }
     #[test]
     fn diagnostics_separate_pending_capacity_loss_from_normal_filtering() {

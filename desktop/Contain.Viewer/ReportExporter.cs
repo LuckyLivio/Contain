@@ -6,18 +6,34 @@ using System.Text.Json;
 
 namespace Contain.Viewer;
 
+/// <summary>Frozen record identity used by the filename and report, before a save dialog opens.</summary>
+public sealed record ReportExportIdentity(string SessionId, string Name, string StartedAt)
+{
+    public void ValidateSummary(JsonElement data) => Validate(data, "id", true);
+    public void ValidateSearch(JsonElement data) => Validate(data, "app_id", false);
+
+    private void Validate(JsonElement data, string idField, bool includeTime)
+    {
+        if (JsonView.Text(JsonView.Field(data, idField), "") != SessionId
+            || JsonView.Text(JsonView.Field(data, "name"), "") != Name
+            || (includeTime && JsonView.Text(JsonView.Field(data, "started_at"), "") != StartedAt))
+            throw new CoreClientException("export_record_changed", "记录身份、名称或开始时间与打开保存对话框时不同；未导出混合报告，请刷新后重试。");
+    }
+}
+
 /// <summary>A local report from the same read-only CLI contracts used by the viewer.</summary>
 public static partial class ReportExporter
 {
     public static async Task ExportAsync(CoreClient client, string database, string recordId,
         string? eventId, int pageSize, long offset, string outputPath,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, ReportExportIdentity? identity = null)
     {
         var target = ValidateTarget(client, database, outputPath);
         var db = Path.GetFullPath(database);
         var parent = Path.GetDirectoryName(target)!;
 
         var summary = await client.SummaryAsync(db, recordId, cancellationToken);
+        identity?.ValidateSummary(summary.Data);
         var changes = await client.DiffAsync(db, recordId, cancellationToken);
         var history = await client.HistoryAsync(db, recordId, pageSize, offset, cancellationToken);
         CoreResponse? explanation = null;

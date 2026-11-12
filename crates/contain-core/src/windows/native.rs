@@ -379,19 +379,29 @@ pub fn control_trace(name: &str, control: u32) -> Result<TraceLoss, u32> {
         Ok(TraceLoss {
             events: u64::from(buffer.properties.EventsLost),
             realtime_buffers: u64::from(buffer.properties.RealTimeBuffersLost),
+            log_buffers: u64::from(buffer.properties.LogBuffersLost),
             allocated_buffers: u64::from(buffer.properties.NumberOfBuffers),
+            free_buffers: u64::from(buffer.properties.FreeBuffers),
             buffer_size_kib: u64::from(buffer.properties.BufferSize),
+            min_buffers: u64::from(buffer.properties.MinimumBuffers),
+            max_buffers: u64::from(buffer.properties.MaximumBuffers),
+            buffers_written: u64::from(buffer.properties.BuffersWritten),
             buffers: u64::from(buffer.properties.LogBuffersLost)
                 + u64::from(buffer.properties.RealTimeBuffersLost),
         })
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct TraceLoss {
     pub realtime_buffers: u64,
+    pub log_buffers: u64,
     pub allocated_buffers: u64,
+    pub free_buffers: u64,
     pub buffer_size_kib: u64,
+    pub min_buffers: u64,
+    pub max_buffers: u64,
+    pub buffers_written: u64,
     pub events: u64,
     pub buffers: u64,
 }

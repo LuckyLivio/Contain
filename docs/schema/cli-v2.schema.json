@@ -734,6 +734,17 @@
               "type": "null"
             }
           ]
+        },
+        "pipeline": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "etw_session": {
+              "$ref": "#/$defs/etwSessionDiagnostics"
+            }
+          }
         }
       }
     },
@@ -843,6 +854,14 @@
         },
         "backend": {
           "$ref": "#/$defs/backend"
+        },
+        "stats": {
+          "type": "object",
+          "properties": {
+            "drain": {
+              "$ref": "#/$defs/drainDiagnostics"
+            }
+          }
         }
       }
     },
@@ -988,6 +1007,261 @@
           },
           "started_at": {
             "type": "string"
+          }
+        }
+      }
+    },
+    "etwTraceSample": {
+      "type": "object",
+      "properties": {
+        "elapsed_ns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "query_elapsed_ns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "callback_records": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "callback_elapsed_ns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lock_wait_ns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "control_error": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "events_lost": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "realtime_buffers_lost": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "log_buffers_lost": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "allocated_buffers": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "free_buffers": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "buffer_size_kib": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "min_buffers": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "max_buffers": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "buffers_written": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "etwSessionDiagnostics": {
+      "type": "object",
+      "description": "Three session-local cumulative observations; do not add samples or mix them with application drops. Missing queries remain null.",
+      "properties": {
+        "requested_buffer_size_kib": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "requested_min_buffers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "requested_max_buffers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ready": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/etwTraceSample"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "before_stop": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/etwTraceSample"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stopped": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/etwTraceSample"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stop_control_elapsed_ns": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "consumer_join_elapsed_ns": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "drainDiagnostics": {
+      "type": "object",
+      "description": "Bounded pre-STOP wait, separate from source shutdown and queued-record drain.",
+      "properties": {
+        "elapsed_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "quiet_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pending_verified_instances": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lifecycle_context_lost": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_records_during_wait": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stop_reason": {
+          "type": "string"
+        },
+        "pending_examples": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": [
+              "pid",
+              "creation_time"
+            ],
+            "properties": {
+              "pid": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "creation_time": {
+                "type": "string",
+                "pattern": "^[0-9]+$"
+              }
+            }
           }
         }
       }

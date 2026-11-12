@@ -6,6 +6,9 @@ from pathlib import Path
 
 PROVIDER_FIELDS = 'callback_records identity_queries unresolved enqueued filtered overflow disconnected decode_failed context_evictions'.split()
 SNAPSHOT_COUNTS = '''enumerated queried resolved failed skipped query_ns elapsed_ns thread_enumerated thread_queried thread_resolved thread_failed thread_outside_boundary thread_query_ns thread_unqueried'''.split()
+PROVIDER_TIMES = 'callback lock_wait schema_lookup property_decode identity_query path_normalization event_construction enqueue queue_delay context'.split()
+ETW_SAMPLE_FIELDS = '''elapsed_ns query_elapsed_ns control_error events_lost realtime_buffers_lost log_buffers_lost allocated_buffers free_buffers buffer_size_kib min_buffers max_buffers buffers_written callback_records callback_elapsed_ns lock_wait_ns'''.split()
+ETW_SESSION_FIELDS = 'requested_buffer_size_kib requested_min_buffers requested_max_buffers stop_control_elapsed_ns consumer_join_elapsed_ns'.split()
 
 
 def number(value):
@@ -19,6 +22,13 @@ def summarize(capture):
     backend = capture['data'].get('backend') or {}
     pipeline = backend.get('pipeline') or {}
     providers = pipeline.get('providers') or {}
+    session = pipeline.get('etw_session')
+    clean_session = None
+    if isinstance(session, dict):
+        clean_session = {key: number(session.get(key)) for key in ETW_SESSION_FIELDS}
+        for phase in ('ready', 'before_stop', 'stopped'):
+            sample = session.get(phase)
+            clean_session[phase] = {key: number(sample.get(key)) for key in ETW_SAMPLE_FIELDS} if isinstance(sample, dict) else None
     snapshot = backend.get('initial_identity_snapshot')
     clean_snapshot = None
     if isinstance(snapshot, dict):
@@ -37,9 +47,13 @@ def summarize(capture):
     return dict(schema_version=1, protocol='contain-existing-source-facts-1',
         providers={key: {field: number(providers[key].get(field)) for field in PROVIDER_FIELDS}
             if isinstance(providers.get(key), dict) else None for key in ('file', 'process', 'registry')},
+        provider_elapsed_ns={key: {field: number((providers[key].get('elapsed_ns') or {}).get(field)) for field in PROVIDER_TIMES}
+            if isinstance(providers.get(key), dict) and isinstance(providers[key].get('elapsed_ns'), dict) else None for key in ('file', 'process', 'registry')},
+        etw_session=clean_session,
         initial_identity_snapshot=clean_snapshot,
         limitations=['Existing saved fields only; absent historical fields remain null.',
             'Enumeration completion is not complete identity coverage; query failures and observation boundaries still apply.',
+            'ETW samples are cumulative within one trace; do not add phases, events and buffers, or application drops.',
             'No paths, arbitrary error text, or host process/thread inventory are exported.'])
 
 
