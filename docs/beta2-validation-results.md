@@ -61,3 +61,15 @@
 保留native cache与checked unsigned SQL转换；不新增WASM后端或迁移schema。
 完整Linux offline历史/只读/备份/WAL回归及Windows GNU workspace Clippy通过。
 Linux交叉fuzz构建缺MinGW g++，未执行fuzz语义；最终由Windows MSVC固定ASan smoke验证。
+
+## B3：本地时钟测试调度依赖，原生运行主动取消
+
+源码`85ca4eeede9acb0a9ba087da698212ef7a226749`的完整Linux offline为104通过/8既有忽略。
+同源码本地模型首次执行失败：新增终态UI测试期望恰好100ms，实际101ms。
+既有`InstallProgressClock`为防止显示回退保留单调本地时间下限；测试将真实Stopwatch
+调度误当成固定输入。修正为后端100ms原值不变、显示不小于后端测量、终态不标为本地续计、
+Tick不再推进冻结显示；不改变生产时钟或降低产品行为要求，不在原条件下反复跑选绿。
+
+[原生run 43196063690](https://github.com/LuckyLivio/Contain/actions/runs/43196063690)
+在`Locked desktop regressions and native harness build`阶段请求取消；取消生效前Windows模型/导航已通过，
+Freeze阶段被取消，未完成ZIP、窗口采集、交互安装或ABBA对照。该取消和本地失败均保留，不计为原生通过。

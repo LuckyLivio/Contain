@@ -148,7 +148,20 @@ internal static class InstallChecks
             Contains(model.Diagnostics, "阶段耗时：0 毫秒", "actual zero remains in technical detail");
             Contains(model.Diagnostics, "已处理：未提供", "missing count remains missing in technical detail");
             Contains(model.Diagnostics, finished.QualityReasons[1], "full original diagnostic retained");
-            Equal("100 毫秒", model.Elapsed, "task total time retained");
+            // The display clock intentionally preserves its monotonic local
+            // floor: scheduler time may have advanced 100 to 101 ms before the
+            // terminal status. Verify the backend measurement and frozen display,
+            // not a wall-clock-dependent exact rendering.
+            Equal(100UL, model.LastStatus!.ElapsedMilliseconds!.Value, "backend total measurement retained exactly");
+            True(!string.IsNullOrWhiteSpace(model.Elapsed) && !model.Elapsed.Contains("本地", StringComparison.Ordinal)
+                && !model.Elapsed.Contains("未提供", StringComparison.Ordinal), "terminal total duration stays visible without local advancement");
+            var terminalElapsed = model.Elapsed;
+            var displayedMilliseconds = terminalElapsed.EndsWith(" 毫秒", StringComparison.Ordinal)
+                ? ulong.Parse(terminalElapsed[..^3], System.Globalization.CultureInfo.InvariantCulture)
+                : (ulong)TimeSpan.Parse(terminalElapsed, System.Globalization.CultureInfo.InvariantCulture).TotalMilliseconds;
+            True(displayedMilliseconds >= 100, "displayed total never falls below the measured backend total");
+            model.Tick();
+            Equal(terminalElapsed, model.Elapsed, "terminal clock tick cannot advance frozen total time");
         });
         await Check("unknown incomplete reason stays explicit without manufacturing a source diagnosis", async () =>
         {
