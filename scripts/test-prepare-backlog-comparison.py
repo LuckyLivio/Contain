@@ -47,6 +47,24 @@ class PreparationContracts(unittest.TestCase):
             result['samples'].pop()
             with self.assertRaisesRegex(ValueError,'reviewed_offline_samples_incomplete'): S.validate_offline(root,result)
 
+    def test_each_variant_has_a_new_private_target_and_distinct_binary_guard_before_live(self):
+        script = Path(__file__).with_name('receiver-backlog-comparison.ps1').read_text()
+        loop = script.index("foreach ($variant in @('baseline','candidate'))")
+        target = script.index("$variantTarget = Join-Path $private ('build-target-'+$variant)")
+        fresh_guard = script.index("Require (-not (Test-Path -LiteralPath $variantTarget))")
+        assignment = script.index('$env:CARGO_TARGET_DIR = $variantTarget')
+        first_cargo = script.index('cargo test ', loop)
+        self.assertTrue(loop < target < fresh_guard < assignment < first_cargo)
+        self.assertNotIn("$env:CARGO_TARGET_DIR = Join-Path $repo", script)
+        immediate_copy = script.index("Copy-Item -LiteralPath (Join-Path $env:CARGO_TARGET_DIR 'debug/contain.exe')", loop)
+        self.assertLess(first_cargo, immediate_copy)
+        self.assertLess(immediate_copy, script.index("$phase = 'existing_candidate_synthetic_bench'"))
+        distinct = script.index("Require ($binaries['baseline-contain.exe'].sha256 -cne $binaries['candidate-contain.exe'].sha256)")
+        self.assertLess(script.index("$phase = 'freeze_native_identities'"), distinct)
+        self.assertLess(distinct, script.index('$preflight.accepted = $true'))
+        self.assertLess(distinct, script.index('foreach ($name in $order)'))
+        self.assertNotIn('Remove-Item', script, 'old targets/evidence must be retained, never cleaned to force a build')
+
     def test_paths_exclude_capture_behavior_and_schema(self):
         self.assertNotIn('crates/contain-core/src/capture.rs', S.OBSERVER_FILES)
         self.assertNotIn('crates/contain-core/src/ingest.rs', S.OBSERVER_FILES)

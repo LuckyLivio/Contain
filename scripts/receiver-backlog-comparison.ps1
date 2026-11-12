@@ -64,12 +64,16 @@ try {
     $toolchain = [ordered]@{rustc=$compiler;cargo=((& cargo -V | Out-String).Trim());git=((& git --version | Out-String).Trim());python=((& python --version | Out-String).Trim());windows=[Environment]::OSVersion.Version.ToString();os_architecture=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString();process_architecture=[Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString();runner_architecture=$env:RUNNER_ARCH;emulation_verified=$false}
     Write-Json $toolchain (Join-Path $public 'toolchain.json')
     $toolchainSha = Hash (Join-Path $public 'toolchain.json')
-    $env:CARGO_TARGET_DIR = Join-Path $repo 'target/receiver-backlog-build'
     Copy-Item -LiteralPath (Join-Path $repo 'docs/examples/beta2/receiver-window-offline-summary.json') -Destination (Join-Path $public 'offline-cost.json')
     $producerTest = 'windows::etw::metrics::tests::producer_milestones_use_successful_admission_and_keep_first_time'
     $invariance = 'ingest::integration_tests::profiling_switch_preserves_actual_follow_receiver_evidence_and_boundaries'
     foreach ($variant in @('baseline','candidate')) {
         $phase = 'offline_observation_gates_' + $variant
+        # Worktrees with equal package versions must never reuse Cargo outputs.
+        # Refuse an existing target instead of clearing or inheriting its cache.
+        $variantTarget = Join-Path $private ('build-target-'+$variant)
+        Require (-not (Test-Path -LiteralPath $variantTarget)) 'Variant build target already exists; retain it and stop'
+        $env:CARGO_TARGET_DIR = $variantTarget
         Push-Location $paths[$variant]
         try {
             cargo test -p contain-core --lib --locked -- --list *> (Join-Path $private ($variant+'-test-list.log'))
@@ -108,7 +112,7 @@ try {
             }
             cargo build -p contain-cli -p contain-test-installer --locked *> (Join-Path $private ($variant+'-build.log'))
             $buildExit=$LASTEXITCODE
-            $preflight.builds += [ordered]@{variant=$variant;profile='debug';packages=@('contain-cli','contain-test-installer');exit_code=$buildExit}
+            $preflight.builds += [ordered]@{variant=$variant;fresh_private_target=$true;target_scope=$variant;profile='debug';packages=@('contain-cli','contain-test-installer');exit_code=$buildExit}
             Require ($buildExit -eq 0) 'Native debug product or independent fixture build failed'
             Copy-Item -LiteralPath (Join-Path $env:CARGO_TARGET_DIR 'debug/contain.exe') -Destination (Join-Path $frozen ($variant+'-contain.exe'))
             if ($variant -eq 'candidate') {
@@ -138,6 +142,7 @@ try {
     foreach ($name in @('baseline-contain.exe','candidate-contain.exe','contain-test-installer.exe')) {
         $binaries[$name] = [ordered]@{sha256=(Hash (Join-Path $frozen $name));bytes=(Get-Item -LiteralPath (Join-Path $frozen $name)).Length}
     }
+    Require ($binaries['baseline-contain.exe'].sha256 -cne $binaries['candidate-contain.exe'].sha256) 'Distinct behavior variants produced identical core binaries; no live capture permitted'
     $buildIdentity = [ordered]@{schema_version=1;source_inputs=$identity;configuration='debug';target='x86_64-pc-windows-msvc';toolchain_sha256=$toolchainSha;offline_summary_sha256=$identity.reviewed_offline_summary_sha256;existing_bench_summary_sha256=(Hash (Join-Path $public 'existing-bench.json'));binaries=$binaries;fixture_source=$Source;written_plan_sha256=$PlanSha256;common_observer_patch_sha256=$ObserverPatchSha256;profile=$true;backlog_window=$true;thread_cpu=$true;rebuilt_diagnostic=$true;original_release_zip=$false}
     Write-Json $buildIdentity (Join-Path $public 'build-identity.json')
     Write-Json $buildIdentity (Join-Path $frozen 'BUILD.json')

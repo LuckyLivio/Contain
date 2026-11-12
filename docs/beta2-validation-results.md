@@ -130,3 +130,68 @@ Check在`test-publish-modern-desktop.py`（27项中1失败）停止：当前nati
 
 后续仅测试fixture、README及本交付记录变更，冻结ZIP保持原字节/源码身份；普通CI验证
 新分支HEAD，原生B5失败不会因这项测试修正而被清除。
+
+## 本轮独立阶段 B1：构建身份人工否决，停止本轮调查
+
+本节指用户将体验交付A与观察调查B拆分后的**唯一一次B原生实验**；上方历史B1–B5原样保留。
+调查[PR22](https://github.com/LuckyLivio/Contain/pull/22)与A交付分支独立，未将观察代码混入A。
+
+- 冻结源码：`072829579bf7f373a0f6eef71dfd842de72a70a8`；
+  [唯一dispatch运行43215661372](https://github.com/LuckyLivio/Contain/actions/runs/43215661372)，attempt 1。
+- 公共观察补丁 SHA-256：`98c145d06428b7042b46ad880254222afa7b07422c9f0febcefb075e45218cd6`；
+  完整书面计划 SHA-256：`f55921b1e5dfc1f3951a9d70d757cadd4df0a35a790d67c3297709b07a6c1117`。
+  源码、补丁、计划、统一依赖锁及toolchain摘要已独立核对，保留输入等价与Bench的原始范围。
+- Windows `10.0.26100.0`，系统/进程均X64；MSVC x64 Rust/Cargo 1.99.1，核心debug。
+  两侧被编排为重建并启用相同profiling，均不是原发布ZIP；统一安全SQLite依赖。
+  构建命令退出0不足以证明两种行为均被实际重建，最终字节核对已将该假设否决。
+- 预定四次顺序与输入完整执行、零重试。自动emitter输出`not_reproduced`、`measurement_valid=true`。
+  **人工审查将最终结论判为`measurement_or_test_failed`**：回下载的两个CLI实际逐字相同，
+  都是13,059,072字节、SHA-256
+  `95d9d838fec94de3c879c08d8ba88a808a92881feaa732d1ef5f5c2fc1e66d77`。
+
+声明的基线行为源码为`f76a8618426945093eacdd5751d49d2633635e78`，候选行为基底为
+`347a86ee730c4fd2d9ee775add60a6c5deddf7fa`，二者确有9个采集/模型等路径差异。
+公共观察补丁及名义构建通过不足以证明下载的相同字节来自两种不同生产行为，故不能认定
+有效ABBA对照或选择其中一侧作为原因解释。共享`CARGO_TARGET_DIR`的构建产物复用是疑点，
+现有公开构建聚合不提供确定根因；不把这一假设写成已经证实的缓存问题。
+
+以下仅按**执行槽位**保留同一实际二进制的观测，不归因于两种行为差异：
+
+| 槽位（保留原计划标签） | 实际回调 / 收到 | 队列高水位 | 最大记录排队年龄 | 最大窗口前 / 后记录 |
+| --- | --- | --- | --- | --- |
+| r1/baseline | 684,154 / 216,005 | 343 | 49.7804ms | 0 / 64 |
+| r1/candidate | 683,313 / 216,391 | 388 | 56.5408ms | 0 / 64 |
+| r2/candidate | 679,689 / 216,409 | 286 | 39.7231ms | 0 / 64 |
+| r2/baseline | 679,932 / 216,478 | 392 | 47.1182ms | 64 / 64 |
+
+四槽ETW事件/缓冲、应用接收、候选、上下文、交付、原始保存/配额和解码丢失均为0，
+收尾均未超时；各36,000次背景操作、父/直接子/无关目标独立真值、原严格oracle、归因负例、
+8项会计守恒、保存准确会话冷读及所有自有进程退出均通过。原始失败和未解决问题不会因此清除。
+
+四槽都没有记录到首次1,024阈值积压或首次溢出标记，因此没有可用于解释历史溢出的首次
+触发因果窗口。前三槽最大窗口没有前置记录，其depth还包含历史source high-water：
+触发观察行的pending前/后分别为0/0、11/0、20/0，不能将该receiver观察时刻当成历史峰值
+发生时刻。第四槽有64条前置及64条后置记录；最大`receiver_idle_wait`墙钟14.2865ms，
+这是命名等待阶段，不证明某线程暂停。`receiver_follow_classify`一次墙钟2.8933ms对应
+CPU计数增量15.625ms，其余多数CPU值为0，体现Windows记账量化边界；不能用wall−CPU推断
+暂停或把0解释为没有CPU工作，也不能相加重叠阶段。
+
+本轮不能提出有证据的最小产品修复。具体缺口是**不同二进制与两种行为源码的可靠绑定**，
+以及历史首次积压/溢出触发前后的有效receiver阶段窗口。调查按“测量或测试失效”完成，
+不再新增live、重跑、dispatch、合并或发布；后续产品修复需另定范围和验收。
+
+[人工审查白名单摘要](examples/beta2/receiver-backlog-B1-review.json)保留自动输出与人工否决的
+区别，以及四槽全部分项和最大窗口阶段样本。未修改原emitter的`result.json`；完整原结果在
+[原安全证据artifact](https://github.com/LuckyLivio/Contain/actions/runs/43215661372/artifacts/13942638657)。
+[固定诊断二进制及公共补丁](https://github.com/LuckyLivio/Contain/actions/runs/43215661372/artifacts/13943722617)
+保留供核对，明确不是A的发行包，也不提供原主机可靠性保证。
+
+随后只对原安全产物离线重解析，新增身份门给出`measurement_or_test_failed`、
+`comparison_identity_valid=false`、`baseline_candidate_binaries_identical`；不新增采集。
+原artifact中`result.json`仍为原字节，SHA-256
+`d28aee3aa503cdb24bb43652fff55b589af02492960f328871dff0cca12a06a6`，
+其自动成功字段只作为历史emitter输出保留，不能作为最终审查结论。
+
+调查工具随后补充每侧独立且全新的私有Cargo构建目录，并在任何live前拒绝两侧核心SHA相同；
+最终汇总也增加相同二进制的否决。真实B1身份fixture的离线回归通过，原安全产物重解析
+正确判为测量失效。此后的工具修正未再执行Windows构建或采集，不能反向证明原对照有效。

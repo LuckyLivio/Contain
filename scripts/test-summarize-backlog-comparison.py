@@ -37,12 +37,35 @@ def inputs(reproduced=False):
     sample = dict(measurement_valid=True, strict_oracle_accepted=not reproduced,
         receiver_backlog=S.safe_profile(raw, pipeline))
     plan = dict(protocol='contain-receiver-backlog-plan-1', order=S.ORDER, maximum_native_captures=4,
-        retries=0, background_files=12000, profile=True, backlog_window=True, thread_cpu=True)
+        retries=0, background_files=12000, profile=True, backlog_window=True, thread_cpu=True,
+        build_identity=dict(configuration='debug', target='x86_64-pc-windows-msvc', binaries={
+            'baseline-contain.exe': dict(sha256='a'*64, bytes=100),
+            'candidate-contain.exe': dict(sha256='b'*64, bytes=110)}))
     execution = dict(attempted=S.ORDER, not_run=[], stop_reason=None)
     return plan, execution, {name: copy.deepcopy(sample) for name in S.ORDER}
 
 
 class Windows(unittest.TestCase):
+    def test_actual_B1_identical_cores_veto_comparison_even_when_every_sample_passes(self):
+        args = inputs()
+        fixture = json.loads((Path(__file__).parent/'fixtures/receiver-backlog-identical-binaries.json').read_text(encoding='utf-8'))
+        args[0]['build_identity']['binaries'] = fixture['binaries']
+        result = S.summarize(*args)
+        self.assertTrue(result['complete'])
+        self.assertTrue(all(case['measurement_valid'] for case in result['cases'].values()))
+        self.assertFalse(result['comparison_identity_valid'])
+        self.assertEqual(result['comparison_identity_errors'], ['baseline_candidate_binaries_identical'])
+        self.assertEqual(result['outcome'], 'measurement_or_test_failed')
+        self.assertFalse(result['measurement_valid'])
+
+    def test_missing_or_malformed_build_identity_cannot_be_a_valid_comparison(self):
+        for identity in (None, {}, dict(configuration='debug', target='x86_64-pc-windows-msvc', binaries={
+                'baseline-contain.exe': dict(sha256='a'*64, bytes=0),
+                'candidate-contain.exe': dict(sha256='b'*64, bytes=1)})):
+            args = inputs()
+            args[0]['build_identity'] = identity
+            self.assertFalse(S.summarize(*args)['measurement_valid'])
+
     def test_real_bounds_and_missing_cpu_are_preserved(self):
         raw, saved = profile()
         result = S.safe_profile(raw, saved)

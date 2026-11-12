@@ -7,6 +7,7 @@ import argparse
 import importlib.util
 import json
 import math
+import re
 from pathlib import Path
 
 
@@ -208,17 +209,40 @@ def summarize_sample(directory):
         existing_sample=sample, attribution_safety=safety, receiver_backlog=profile)
 
 
+def comparison_identity_errors(plan):
+    """This protocol compares known different behavior; identical cores invalidate it.
+
+    Hash stability within a sample does not prove which source was built. Keep
+    source bindings and independent build targets in preflight, then veto an
+    impossible identical pair again when interpreting the retained campaign.
+    """
+    build = plan.get('build_identity') or {}
+    binaries = build.get('binaries') or {}
+    errors = []
+    rows = [binaries.get(name) or {} for name in ('baseline-contain.exe', 'candidate-contain.exe')]
+    if any(not isinstance(row.get('sha256'), str) or not re.fullmatch('[0-9a-f]{64}', row['sha256'])
+           or number(row.get('bytes')) in (None, 0) for row in rows):
+        errors.append('comparison_binary_identities_unavailable')
+    elif rows[0]['sha256'] == rows[1]['sha256']:
+        errors.append('baseline_candidate_binaries_identical')
+    if build.get('configuration') != 'debug' or build.get('target') != 'x86_64-pc-windows-msvc':
+        errors.append('comparison_build_configuration_unverified')
+    return errors
+
+
 def summarize(plan, execution, cases):
     valid_plan = plan.get('protocol') == 'contain-receiver-backlog-plan-1' and plan.get('order') == ORDER \
         and plan.get('maximum_native_captures') == 4 and plan.get('retries') == 0 and plan.get('background_files') == 12000 \
         and plan.get('profile') is True and plan.get('backlog_window') is True and plan.get('thread_cpu') is True
     complete = execution.get('attempted') == ORDER and execution.get('not_run') == [] and execution.get('stop_reason') is None
-    measurements = valid_plan and complete and all(cases.get(name, {}).get('measurement_valid') is True for name in ORDER)
+    identity_errors = comparison_identity_errors(plan)
+    measurements = valid_plan and complete and not identity_errors and all(cases.get(name, {}).get('measurement_valid') is True for name in ORDER)
     reproduced = any(cases.get(name, {}).get('receiver_backlog', {}).get('first_backlog') is not None
         or cases.get(name, {}).get('receiver_backlog', {}).get('first_overflow') is not None for name in ORDER)
     outcome = 'measurement_or_test_failed' if not measurements else 'reproduced_with_window' if reproduced else 'not_reproduced'
     return dict(schema_version=1, protocol='contain-receiver-backlog-result-1', measurement_kind='instrumented_real_etw',
         same_runner=True, plan_valid=valid_plan, complete=complete, measurement_valid=measurements, outcome=outcome,
+        comparison_identity_valid=not identity_errors, comparison_identity_errors=identity_errors,
         backlog_observed=reproduced, maximum_native_captures=4, retries=0, order=ORDER, cases=cases,
         build_identity=plan.get('build_identity'), product_fix_claim=False, release_accepted=False,
         limitations=['Retain strict no-loss oracle failures separately; a measurement is not release acceptance.',
