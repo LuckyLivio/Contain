@@ -124,3 +124,12 @@ failure; the original discovery deadline is unchanged. The first Beta.2 native
 attempt did not retain its observed default value, so its filename assertion
 failure alone does not establish a product naming defect or an extension-hiding
 cause. This targeted attempt tests those hypotheses without changing product code.
+
+B2 retained both UIA and WM_GETTEXT showing the correct default stem. Its actual
+native Save dialog screenshot shows the selected label `本地 HTML 报告`, without
+`*.html`; the old guessed native ComboBox ID returned no type text. The next
+observation reads current SelectionPattern/ValuePattern values from at most eight
+owned dialog ComboBoxes, requires a unique visible enabled HTML type control and
+its exact selected label, and preserves bounded provider diagnostics. This fixes
+the test's type-reading assumption; B2 remains a failed attempt. The actual
+no-extension save must still produce the exact `.html` file before acceptance.

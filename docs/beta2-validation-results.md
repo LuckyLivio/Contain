@@ -31,3 +31,33 @@
 - 原机未验证：Chrome/7-Zip当时具体等待实例、生命周期完整性、ETW丢失阶段及逐条写入归因。
   Chrome可运行与启动观测不证明chrome.exe写入；7-Zip自定义路径请求不自动证明可靠归因或完成。
   不将Parallels环境本身判为原因。C1、D5、历史Parallels与M11仍开放。
+
+## B1 质量门：依赖公告阻塞
+
+[CI 43193260754](https://github.com/LuckyLivio/Contain/actions/runs/43193260754)
+的 Windows Check、Coverage 和原包覆盖检查通过，Dependencies 拒绝
+`libsqlite3-sys 0.35.0`（rusqlite 0.37.0 bundled SQLite）：
+`RUSTSEC-2026-0459` / `CVE-2026-119375`，特制DB/WAL页大小不一致可读出未初始化缓存。
+项目存在外部只读库入口，因此不增加公告忽略；最小升级 SQLite 修复版本，重验历史迁移、
+外部只读及 WAL。生产/模糊测试锁文件保持一致。新二进制需要重新冻结与原生验收。
+
+## B2：保存框显示规则已观测，测试类型读取仍失败
+
+- 源码 `7dba1b6e0e9ae7af08fc33297c9c8dc280b993a9`；
+  [run 43194618890](https://github.com/LuckyLivio/Contain/actions/runs/43194618890)。
+- 冻结ZIP `49925ed612efc28d5393654f45c6f70674db34a07a15d82b3f875bcfd8dad6f1`，验后未变。
+- 4组通过、1失败、9未运行，486断言；失败在`native_save_default/ExportMatches`。
+- 双读取（UIA ValuePattern及WM_GETTEXT）均返回正确的记录名、UTC开始时间、短会话ID及类型主体；
+  Windows保存框隐藏`.html`。原始截图明确显示类型标签“本地 HTML 报告”，没有`*.html`。
+  测试以原生ComboBox窗口文本读取类型得到空值，并错误要求可见标签含通配符。
+  这是已观测的测试假设问题；未发现产品默认名生成错误。
+- 将读取所属对话框准确类型选项，并保留“无扩展名输入实际生成.html且无裸stem文件”的行为门。
+  B2尚未执行该实际保存、交互安装、ETW及四次对照，不能计为这些行为通过。
+- B1未保留默认文本，不能恢复其当时的读取值；B2的新证据不改写B1失败记录。
+
+## SQLite修补候选的离线边界
+
+最小升级rusqlite 0.41.1 / libsqlite3-sys 0.39.1，实际SQL查询链接库为SQLite 3.54.1。
+保留native cache与checked unsigned SQL转换；不新增WASM后端或迁移schema。
+完整Linux offline历史/只读/备份/WAL回归及Windows GNU workspace Clippy通过。
+Linux交叉fuzz构建缺MinGW g++，未执行fuzz语义；最终由Windows MSVC固定ASan smoke验证。

@@ -10,9 +10,12 @@ using Forms = System.Windows.Forms;
 namespace Contain.Desktop.Tests;
 
 internal sealed record Screenshot(string Name, string Sha256, int Width, int Height, uint Dpi, string DataKind);
+internal sealed record FileTypeControlObservation(string AutomationId, string SafeName, bool Owned, bool Visible,
+    bool ValueSupported, string? HtmlValue, bool SelectionSupported, int SelectionCount, string[] HtmlSelections);
 internal sealed record SaveNameObservation(string Action, string UiaValue, string WindowMessageValue, string FileType,
     string? ExpectedFullName, bool FullMatch, bool HiddenExtensionMatch, bool ExtensionProbe,
-    bool OwnedEdit, bool ExtensionVerified = false, string? ErrorType = null);
+    bool OwnedEdit, bool ExtensionVerified = false, string? ErrorType = null,
+    FileTypeControlObservation[]? TypeControls = null, string? LegacyTypeMessage = null);
 internal sealed record Probe(string Stage, string Control, long ElapsedMs, bool ProcessAlive, string? ErrorType);
 internal sealed record ActionProbe(string Control, string Pattern, bool Passed, string? ErrorType);
 internal sealed record RowSelectionProbe(string List, string Item, int ItemsInspected, bool TargetRealized,
@@ -457,14 +460,16 @@ internal sealed class DesktopDriver : IDisposable
                     if (!owned) throw new InvalidOperationException("Filename edit is not owned by the retained product.");
                     var value = ((ValuePattern)element.GetCurrentPattern(ValuePattern.Pattern)).Current.Value;
                     var messageValue = NativeText(edit.Window);
-                    var type = NativeChildren(dialog).Where(item => item.Id == 1136 && item.Class == "ComboBox")
+                    var legacyTypeMessage = NativeChildren(dialog).Where(item => item.Id == 1136 && item.Class == "ComboBox")
                         .Select(item => NativeText(item.Window)).SingleOrDefault() ?? "";
+                    var type = ReadHtmlFileType(dialog, out var typeControls);
                     SaveDialogNames[action] = value;
                     var full = expectedDefaultName is not null && value == expectedDefaultName;
                     var hidden = expectedDefaultName is not null && value == Path.GetFileNameWithoutExtension(expectedDefaultName)
-                        && type.Contains("*.html", StringComparison.OrdinalIgnoreCase);
-                    SaveDialogObservations[action] = new(action, value, messageValue, type, expectedDefaultName, full, hidden, probeHtmlExtension, owned);
-                    return expectedDefaultName is null || full || hidden;
+                        && IsHtmlFileType(type);
+                    SaveDialogObservations[action] = new(action, value, messageValue, type, expectedDefaultName, full, hidden, probeHtmlExtension, owned,
+                        TypeControls: typeControls, LegacyTypeMessage: legacyTypeMessage);
+                    return expectedDefaultName is null || ((full || hidden) && IsHtmlFileType(type));
                 }), readyBudget);
                 if (PickerEvidenceDirectory is not null)
                     PickerScreenshots.Add(await Sta(() => CaptureWindow(dialog, PickerEvidenceDirectory,
@@ -510,6 +515,41 @@ internal sealed class DesktopDriver : IDisposable
         {
             if (save && SaveDialogObservations.TryGetValue(action, out var observed)) SaveDialogHistory.Add(observed);
         }
+    }
+
+    private static bool IsHtmlFileType(string value) => value is "本地 HTML 报告" or "本地 HTML 报告 (*.html)";
+    private string ReadHtmlFileType(IntPtr dialog, out FileTypeControlObservation[] observations)
+    {
+        var controls = AutomationElement.FromHandle(dialog).FindAll(TreeScope.Descendants,
+            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ComboBox));
+        if (controls.Count > 8) throw new InvalidOperationException("Native save dialog exceeds bounded ComboBox inspection.");
+        var diagnostics = new List<FileTypeControlObservation>(); var matched = new List<string>();
+        foreach (AutomationElement control in controls)
+        {
+            var current = control.Current;
+            var owned = current.ProcessId == process.Id;
+            var visible = !current.IsOffscreen && current.IsEnabled;
+            var hasValue = control.TryGetCurrentPattern(ValuePattern.Pattern, out var valuePattern);
+            var value = hasValue ? ((ValuePattern)valuePattern).Current.Value : "";
+            var hasSelection = control.TryGetCurrentPattern(SelectionPattern.Pattern, out var selectionPattern);
+            var selection = hasSelection ? ((SelectionPattern)selectionPattern).Current.GetSelection() : [];
+            if (selection.Length > 8) throw new InvalidOperationException("Native file-type selection exceeds bound.");
+            var selected = selection.Where(item => item.Current.ProcessId == process.Id).Select(item => item.Current.Name).ToArray();
+            var htmlValues = selected.Where(IsHtmlFileType).ToArray();
+            // Publish only fixed type labels. Address/name ComboBoxes may contain paths.
+            var safeName = current.Name is "Save as type:" or "Save as type" or "保存类型:" or "保存类型：" or "文件类型:" or "文件类型："
+                || IsHtmlFileType(current.Name) ? current.Name : "unrelated-combobox";
+            diagnostics.Add(new(current.AutomationId, safeName, owned, visible, hasValue,
+                IsHtmlFileType(value) ? value : null, hasSelection, selection.Length, htmlValues));
+            if (owned && visible)
+            {
+                if (hasSelection && selection.Length == 1 && htmlValues.Length == 1) matched.Add(htmlValues[0]);
+                else if (hasValue && IsHtmlFileType(value)) matched.Add(value);
+            }
+        }
+        observations = diagnostics.ToArray();
+        if (matched.Count > 1) throw new InvalidOperationException("HTML file-type control is not unique.");
+        return matched.SingleOrDefault() ?? "";
     }
 
     private static (IntPtr Window, int Id, string Class) FilenameEdit(IntPtr dialog)

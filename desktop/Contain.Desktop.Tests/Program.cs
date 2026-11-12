@@ -410,6 +410,14 @@ internal sealed class NativeSuite(Options options)
     private async Task VerifyLiveOracle()
     {
         var capture = await Cli(liveDatabase!, "inspect", "--json", "--", liveSession!);
+        // Commit evidence before any source/drain gate can stop this stage.
+        // Full records stay private; the public helper exports only reviewed fields.
+        var capturePath = Path.Combine(options.PrivateOutput, "live-capture.json");
+        var captureTemporary = capturePath + ".tmp";
+        await File.WriteAllTextAsync(captureTemporary, JsonSerializer.Serialize(new { schema_version = 3, kind = "inspect", data = capture }));
+        File.Move(captureTemporary, capturePath, overwrite: false);
+        await RunProcess("python", [Path.GetFullPath("scripts/summarize-source-capture-facts.py"), "--capture", capturePath,
+            "--output", Path.Combine(options.Output, "gui-source-capture-facts.json")], TimeSpan.FromSeconds(30));
         var backend = capture.GetProperty("backend");
         Require(backend.GetProperty("etw_process").GetString() == "active" && backend.GetProperty("etw_file").GetString() == "active", "real process and file ETW active");
         foreach (var name in new[] { "etw_events_lost", "etw_buffers_lost", "dropped_events", "context_losses", "decode_errors" }) Require(backend.GetProperty(name).GetUInt64() == 0, "zero measured live source loss: " + name);
@@ -428,9 +436,6 @@ internal sealed class NativeSuite(Options options)
             raw_storage = NumericFields(stream, "persisted", "failed", "quota_dropped", "quota_bytes", "committed_bytes"),
             drain_timed_out = stats.GetProperty("drain_timed_out")
         });
-        // Full capture and paths are private. Only the independent oracle's reviewed aggregates are published.
-        var capturePath = Path.Combine(options.PrivateOutput, "live-capture.json");
-        await File.WriteAllTextAsync(capturePath, JsonSerializer.Serialize(new { schema_version = 3, kind = "inspect", data = capture }));
         await unrelated!.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10)); await unrelatedOutput!; await unrelatedError!;
         var targets = new[]
         {
@@ -509,6 +514,7 @@ internal sealed class NativeSuite(Options options)
         Require(D.SaveDialogObservations.TryGetValue(action, out var observation), "actual save dialog default name observed");
         Require(observation!.ExpectedFullName is not null && observation.OwnedEdit, "default name checked against frozen exact record in owned dialog");
         Require(observation.FullMatch || observation.HiddenExtensionMatch, "default display exactly matches record name UTC start short identity and export type");
+        Require(observation.FileType is "本地 HTML 报告" or "本地 HTML 报告 (*.html)", "owned visible file-type ComboBox selects the exact HTML report type");
         Require(observation.ExpectedFullName!.EndsWith("_" + type + ".html", StringComparison.Ordinal)
             && observation.ExpectedFullName.Contains("UTC_" + session[..8], StringComparison.Ordinal), "expected name preserves explicit UTC time session and export type");
         Require(observation.ExtensionProbe && File.Exists(actualReport) && Path.GetExtension(actualReport) == ".html"
