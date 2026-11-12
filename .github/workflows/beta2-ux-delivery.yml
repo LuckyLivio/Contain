@@ -29,7 +29,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           if ($env:GITHUB_RUN_ATTEMPT -ne '1') { throw 'Retain failures; no repeat-to-green run' }
           $out = Join-Path $env:RUNNER_TEMP ('contain-ux-build-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
-          New-Item -ItemType Directory -Path $out,(Join-Path $out 'public'),(Join-Path $out 'tools'),(Join-Path $out 'tools/fixtures') | Out-Null
+          New-Item -ItemType Directory -Path $out,(Join-Path $out 'public'),(Join-Path $out 'tools') | Out-Null
           "UX_OUT=$out" >> $env:GITHUB_ENV
           [ordered]@{schema_version=1;protocol='contain-ux-delivery-plan-1';source_sha=$env:GITHUB_SHA;maximum_native_captures=2;maximum_gui_installations=1;maximum_load_captures=1;background_files=12000;successful_background_operations=36000;retries=0;zip_frozen_before_native=$true;core_configuration='debug';viewer_configuration='Release';capture_algorithms='main follow/ingest/drain/ETW; SQLite dependency safety update';independent_windows_jobs=@('wpf','capture');same_frozen_zip=$true;one_job_failure_does_not_skip_other=$true;required=@('repository_quality','full_wpf_native_acceptance','independent_fixed_load_oracle','exact_frozen_bytes');scope='experience fixes and reviewed dependency safety update; no capture-reliability fix'} | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $out 'public/plan.json') -Encoding utf8
       - uses: actions/setup-dotnet@v4
