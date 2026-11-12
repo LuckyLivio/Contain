@@ -7,7 +7,7 @@ exclude = ["vendor/ferrisetw"]
 ferrisetw = { path = "vendor/ferrisetw" }
 
 [workspace.package]
-version = "0.3.2-beta.10"
+version = "0.4.0-beta.2"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/LuckyLivio/Contain"

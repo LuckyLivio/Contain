@@ -75,6 +75,20 @@ Require(Details(historical).Contains("上下文丢失总数：未提供", String
 historical["backend"]!["context_losses"] = 3;
 Require(Details(historical).Contains("上下文丢失总数：3", StringComparison.Ordinal), "positive legacy context loss remains visible");
 
+var etwLoss = filtered.DeepClone().AsObject();
+etwLoss["backend"]!["follow_installer"]!["candidate_dropped"] = 0;
+etwLoss["backend"]!["etw_events_lost"] = 192055;
+etwLoss["summary_counts"]!["drain_timed_out"] = true;
+var etwOutcome = Model(etwLoss);
+Require(etwOutcome.Alert.Contains("记录已保存，但采集期间丢失部分 ETW 事件，且收尾等待超时。", StringComparison.Ordinal), "ETW source loss and drain deadline are explicit independent gaps");
+Require(etwOutcome.Alert.Contains("ETW 丢失事件 192055", StringComparison.Ordinal) && etwOutcome.Coverage.Contains("Incomplete", StringComparison.Ordinal), "exact ETW counter and incomplete level retained");
+etwLoss["backend"]!["etw_events_lost"] = 0;
+var timeoutOnly = Model(etwLoss);
+Require(timeoutOnly.Alert.Contains("收尾等待超时，后续操作可能未被记录", StringComparison.Ordinal)
+    && !timeoutOnly.Alert.Contains("丢失部分 ETW", StringComparison.Ordinal), "deadline alone does not manufacture ETW loss");
+etwLoss["summary_counts"]!.AsObject().Remove("drain_timed_out");
+Require(!Model(etwLoss).Alert.Contains("超时", StringComparison.Ordinal), "missing deadline measurement is not true");
+
 Console.WriteLine($"Saved loss presentation: {checks} passed, 0 failed (synthetic projection only).");
 ReadyDiagnosticsChecks.Run();
 RequiredLookupDiagnosticsChecks.Run();

@@ -8,7 +8,7 @@
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
             <StackPanel>
                 <TextBlock Text="我的记录" Style="{StaticResource PageTitle}" />
-                <TextBlock Text="找回安装记录，查看发生过的文件操作。" Style="{StaticResource MutedText}" />
+                <TextBlock Text="找回安装记录，查看事件及其依据。" Style="{StaticResource MutedText}" />
             </StackPanel>
             <ui:Button Grid.Column="1" Content="新建记录" Appearance="Primary" VerticalAlignment="Center" Margin="16,0,0,0" Click="OnNew" AutomationProperties.AutomationId="NewRecordButton">
                 <ui:Button.Icon><ui:SymbolIcon Symbol="DocumentAdd24" /></ui:Button.Icon>

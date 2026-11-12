@@ -13,8 +13,11 @@ dotnet publish desktop/Contain.Desktop.Tests -c Release -r win-x64 --self-contai
 
 The caller sets a new isolated `TEMP`/`TMP` directory before starting the harness.
 Every personal library has the existing production isolation marker; no real
-personal library is consulted. The unchanged fixture permits only a direct TEMP
-child named `contain-demo-*`. Private outputs retain database copies, raw process
+personal library is consulted. The controlled fixture permits only a direct TEMP
+child named `contain-demo-*`. Its opt-in native installer window starts with a blank
+destination; the harness enters a new marked destination and invokes Install once.
+Contain receives neither a watch root nor the destination environment setting.
+Independent truth goes to a separately named temporary directory. Private outputs retain database copies, raw process
 errors, independent truth and full capture data. They are not release assets.
 
 `modern-desktop-plan.json` declares the ordered checks, deadlines and zero retries
@@ -91,7 +94,10 @@ The native regression verifies the corrected selection contract, with product
 virtualization, exact UUID/event checks and page limits unchanged.
 
 The single real install uses the new GUI's default follow path and unchanged
-`verify-follow-installer-experiment.py` oracle. Its parent, direct child and
+`verify-follow-installer-experiment.py` oracle. The GUI directory choice occurs in
+the fixture installer process itself, preserving root and direct-child identity.
+A screenshot records the actual custom destination before Install. This is an
+independent controlled installer, not a third-party 7-Zip installation. Its parent, direct child and
 independent unrelated writer supply independent syscall truth. No installer is
 started by file selection. Receiver, handoff, candidate and raw-save loss gates
 remain strict; bounded storage and identity/completion rules are not replaced by
@@ -102,3 +108,57 @@ different working directory must agree.
 Omitting `--install-fixture` runs the fixed viewer preview checks and exits zero
 only when they all pass. The four live checks remain explicitly `not_run`, and
 `accepted` remains false. A viewer preview is never full native release evidence.
+
+Beta.2 additionally reads both actual Save dialogs before replacing the suggested
+filename, checks session/time/type components, verifies real process start/stop
+selection, explanation and copies, and checks the finished task hides runtime
+step/measurement noise while retaining elapsed time and its record entry.
+
+Beta.2 default-name observation reads the unique owned filename Edit through UIA
+ValuePattern and retains the WM_GETTEXT comparison. It validates the complete
+expected record name, exact UTC start, short session identity and export type
+while the dialog is still open. A displayed stem is accepted only with the HTML
+file-type contract and a successful no-extension input that produces the exact
+`.html` output. Every dialog observation and a native dialog screenshot survive
+failure; the original discovery deadline is unchanged. The first Beta.2 native
+attempt did not retain its observed default value, so its filename assertion
+failure alone does not establish a product naming defect or an extension-hiding
+cause. This targeted attempt tests those hypotheses without changing product code.
+
+B2 retained both UIA and WM_GETTEXT showing the correct default stem. Its actual
+native Save dialog screenshot shows the selected label `本地 HTML 报告`, without
+`*.html`; the old guessed native ComboBox ID returned no type text. The next
+observation reads current SelectionPattern/ValuePattern values from at most eight
+owned dialog ComboBoxes, requires a unique visible enabled HTML type control and
+its exact selected label, and preserves bounded provider diagnostics. This fixes
+the test's type-reading assumption; B2 remains a failed attempt. The actual
+no-extension save must still produce the exact `.html` file before acceptance.
+
+B4's original clipboard check observed the expected event ID and then failed a
+second global read; it did not retain the second value, owner or sequence. Its
+root cause remains unconfirmed. The next harness uses an independent Win32
+OpenClipboard/CF_UNICODETEXT snapshot: it reads bounded Unicode text while the
+clipboard is locked, records sequence/owner role/content classification, and
+asserts against the same immutable snapshot that satisfied the original
+five-second wait. It does not require the global clipboard to remain unchanged
+later. A pre-install self-check writes/reads a controlled sentinel and then
+writes wrong content, verifying that the snapshot rejects the original expected
+sentinel. Public probes contain no clipboard text, hashes of foreign content,
+owner PID or window identity; only first/last bounded classifications and attempt
+counts are retained. Unexpected native errors still fail the stage.
+
+Stage A reuses these desktop observations and controlled interactive fixture only;
+it does not include PR20's capture behavior or new source-diagnostic schema. The
+harness reads historical capture fields and retains all existing zero-loss,
+identity, completion and exact-session oracle gates. Full captures remain private;
+no new-source-facts script is required.
+
+Before launching the isolated search-library copy, both same-name sessions receive
+one fixed name containing Chinese, illegal filename characters and more than 96
+characters. The original fixture files stay byte-identical. Actual Save dialogs
+for both export types must match a separately fixed safe basename, while HTML
+retains the complete original name. Both types test cancellation and existing-file
+refusal; current-page HTML checks exactly 50 ordered IDs, and a second same-name
+session's full export checks all 53 ordered IDs with no foreign-session event.
+Existing 820x640 keyboard/navigation checks and per-screenshot native DPI recording
+remain. This harness does not simulate or claim physical 144/192 DPI coverage.

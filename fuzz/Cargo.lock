@@ -121,7 +121,7 @@ checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
 name = "contain-core"
-version = "0.3.2-beta.10"
+version = "0.4.0-beta.2"
 dependencies = [
  "anyhow",
  "blake3",

@@ -37,7 +37,11 @@ public sealed record ChangeRow(string Kind, string Operation, string Resource, s
 
 /// <summary>Captured before a save dialog's nested message loop; query, identity and page stay fixed.</summary>
 public sealed record RecordExportContext(string Database, string SessionId, string? SelectedEventId, long Offset,
-    string? Search, string? Fingerprint, long? MatchCount, long ViewVersion);
+    string? Search, string? Fingerprint, long? MatchCount, long ViewVersion, string RecordName = "", string StartedAt = "")
+{
+    public ReportExportIdentity Identity => new(SessionId, RecordName, StartedAt);
+    public string DefaultFileName => ExportFileName.Create(RecordName, StartedAt, SessionId, Search is not null);
+}
 
 internal static class RecordText
 {
@@ -50,9 +54,11 @@ internal static class RecordText
     internal static string Confidence(string value) => value == "Unknown" ? "Unknown · 证据不足" : value;
     internal static string Operation(string value) => value switch
     {
-        "write_requested" => "写入请求", "read_requested" => "读取请求", "create_requested" => "创建 / 打开请求",
+        "write_requested" => "文件写入请求", "read_requested" => "文件读取请求", "create_requested" => "文件创建 / 打开请求",
+        "open_requested" => "文件打开请求", "create_new_file" => "观测到新建文件",
+        "operation_end" => "操作完成",
         "delete_requested" => "删除请求", "rename_requested" => "重命名请求", "close" => "关闭文件",
-        "process_start" => "进程启动", "process_end" => "进程退出", "file_created" => "观测到文件新增",
+        "process_start" => "进程启动", "process_stop" or "process_end" => "进程退出", "file_created" => "观测到文件新增",
         "file_modified" => "观测到文件变化", "file_deleted" => "观测到文件消失", _ => value
     };
 }

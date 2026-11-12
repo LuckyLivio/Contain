@@ -13,6 +13,7 @@ internal static class Program
         {
             passed.AddRange(await InstallChecks.RunAsync());
             passed.AddRange(await RecordChecks.RunAsync());
+            passed.AddRange(ExportChecks.Run());
         }
         catch (Exception error)
         {
