@@ -12,7 +12,7 @@ A的发布不以B查明原因作为条件。
 | A：必要SQLite安全升级的独立审查/提交 | 通过：独立提交925d713，离线兼容/版本回归通过 |
 | A：离线/原生质量及冻结ZIP验收 | 进行中：A1编排失败，保留后修正目录创建顺序 |
 | A：满足全部门后合并、main CI、Prerelease和公开回下载 | 待做 |
-| B：独立分支有界窗口观测/离线不变性和开销 | 待做；A完成或明确阻塞后开始 |
+| B：独立分支有界窗口观测/离线不变性和开销 | 进行中：A2具体测试阻塞已留证，另建diag分支；不混入A |
 | B：冻结一次同profiling的ABBA，四次、零重试 | 待做 |
 | 队列/候选容量、归因/过滤/截止或架构改造 | 本轮不做 |
 
@@ -67,3 +67,9 @@ SHA3-256 `e2b869d3003b33c942b7dd7063604fbc53553e1b66609570df39b9b7b558ee81`。
 | 尝试 | 源码 / 运行 | 结果与下一步依据 |
 | --- | --- | --- |
 | A1 | `1d69fc1df731bbe05557010aee929765eefe9f4f` / [43205873863](https://github.com/LuckyLivio/Contain/actions/runs/43205873863) | Rust构建完成；workflow预创建tools/fixtures触发生成器拒覆盖。未冻结ZIP，WPF/压力未执行。仅取消预创建，保留生成器保护；不是产品采集失败。 |
+
+| A2 | `69820241e2f64336a87fe0867be8bc58b209fc1b` / [43206472661](https://github.com/LuckyLivio/Contain/actions/runs/43206472661) | 目录修正有效；core/fixture、模型、WPF/harness构建通过。新增聚合测试默认CP1252读取中文Program.cs失败，未冻结ZIP/未采集。改显式UTF-8，断言保留；普通CI同一失败一并修复。 |
+
+A3同时把既有inspect文档的`backend.stream.sqlite_version`白名单字符串纳入负载摘要，
+严格核对锁定的3.54.1，不增加core/schema字段或采集次数，落实既定实际链接版本验收。
+B在A2明确测试阻塞后另建独立观测分支；A的继续验证与发布不等待B结论。

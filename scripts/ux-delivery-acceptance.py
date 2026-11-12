@@ -23,6 +23,7 @@ def module(name, filename):
 
 PAIR = module("existing_capture_summary", "summarize-capture-loss-pair.py")
 PACKAGE = module("ux_frozen_package", "package-beta2-desktop.py")
+SQLITE_VERSION = "3.54.1"
 NATIVE_CHECKS = [
     "frozen_package_identity", "empty_personal_library_and_native_picker_cancel", "saved_records_exact_identity_and_outcomes",
     "search_130_events_53_matches_exact_order", "search_copy_explain_and_export_all", "external_legacy_readonly_and_return",
@@ -58,11 +59,24 @@ def read(path):
         return {}
 
 
+def captured_sqlite_version(directory):
+    # Reuse saved evidence only. Never export arbitrary stream/error text.
+    document = read(Path(directory) / "private/inspect.stdout")
+    if not isinstance(document, dict) or document.get("schema_version") != 3 or document.get("kind") != "inspect":
+        return None
+    value = document.get("data")
+    for key in ("backend", "stream", "sqlite_version"):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+    return value if isinstance(value, str) and re.fullmatch(r"[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}", value) else None
+
+
 def capture(directory, source, zip_hash):
     result = PAIR.summarize(directory)
     result.update(schema_version=1, protocol="contain-ux-load-acceptance-1", source_sha=source,
                   zip_sha256=zip_hash, maximum_native_captures=1, retries=0,
-                  background_files=12000, measurement_kind="real_etw",
+                  background_files=12000, measurement_kind="real_etw", sqlite_version=captured_sqlite_version(directory),
                   validation_environment=dict(os=platform.system(), windows_version=platform.win32_ver()[1],
                       machine=platform.machine(), python=platform.python_version(), process_bits=struct.calcsize("P")*8,
                       emulation_verified=False))
@@ -76,6 +90,7 @@ def capture(directory, source, zip_hash):
 
 def final(needs, desktop, load, build, source, zip_hash):
     checks = {
+        "linked_sqlite_version": load.get("sqlite_version") == SQLITE_VERSION,
         "all_independent_jobs_succeeded": all(needs.get(name, {}).get("result") == "success" for name in ("build", "wpf", "capture")),
         "exact_frozen_source_and_zip": re.fullmatch(r"[0-9a-f]{40}", source) is not None
             and re.fullmatch(r"[0-9a-f]{64}", zip_hash) is not None

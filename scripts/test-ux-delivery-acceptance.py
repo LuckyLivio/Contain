@@ -24,7 +24,7 @@ def inputs():
                    planned_checks=S.NATIVE_CHECKS.copy(), checks=[dict(name=name,status="passed") for name in S.NATIVE_CHECKS],
                    core_sha256=build["core_sha256"], viewer_exe_sha256="4" * 64, viewer_dll_sha256="5" * 64)
     load = dict(accepted=True, source_sha=SOURCE, zip_sha256=ZIP, maximum_native_captures=1,
-                retries=0, background_files=12000, core_sha256=build["core_sha256"])
+                retries=0, background_files=12000, core_sha256=build["core_sha256"], sqlite_version="3.54.1")
     return [needs, desktop, load, build, SOURCE, ZIP]
 
 
@@ -41,7 +41,7 @@ class NativeResultContracts(unittest.TestCase):
             self.assertEqual(result["load"], args[2])
 
     def test_native_plan_matches_the_actual_harness(self):
-        source = (Path(__file__).parents[1] / "desktop/Contain.Desktop.Tests/Program.cs").read_text()
+        source = (Path(__file__).parents[1] / "desktop/Contain.Desktop.Tests/Program.cs").read_text(encoding="utf-8-sig")
         actual = re.search(r'internal static readonly string\[\] Plan\s*=\s*\[(.*?)\];', source, re.S)
         self.assertIsNotNone(actual)
         self.assertEqual(re.findall(r'"([^"\n]+)"', actual.group(1)), S.NATIVE_CHECKS)
@@ -109,6 +109,42 @@ class NativeResultContracts(unittest.TestCase):
             args[1][field] = value
             self.assertFalse(S.final(*args)["accepted"])
 
+    def test_final_requires_the_exact_linked_safe_sqlite_version(self):
+        for value in [None, "3.54.0", "3.53.1", "3.54.01", "3.54.1\n", 35401, {}]:
+            args = inputs()
+            args[2]["sqlite_version"] = value
+            with self.subTest(value=value):
+                result = S.final(*args)
+                self.assertFalse(result["accepted"])
+                self.assertFalse(result["checks"]["linked_sqlite_version"])
+        args = inputs()
+        args[2].pop("sqlite_version")
+        self.assertFalse(S.final(*args)["accepted"])
+
+    def test_capture_exports_only_a_valid_version_from_the_existing_inspect_document(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "public").mkdir()
+            (root / "private").mkdir()
+            (root / "public/follow-experiment-summary.json").write_text(json.dumps(dict(source_sha=SOURCE)), encoding="utf-8")
+            inspect = root / "private/inspect.stdout"
+            sample = dict(accepted=True, workload_complete=True, all_owned_processes_exited=True, background=dict(files=12000))
+            for value, expected in [("3.54.1", "3.54.1"), ("3.53.1", "3.53.1"), (None, None),
+                                    (35401, None), ("3.54.1 arbitrary private text", None), ("3.54.1\n", None), ({}, None)]:
+                document = dict(schema_version=3, kind="inspect", data=dict(backend=dict(stream=dict(sqlite_version=value))))
+                inspect.write_text(json.dumps(document), encoding="utf-8-sig")
+                with self.subTest(value=value), patch.object(S.PAIR, "summarize", return_value=sample.copy()):
+                    self.assertEqual(S.capture(root, SOURCE, ZIP)["sqlite_version"], expected)
+            for invalid in [{}, dict(schema_version=3,kind="events",data={}),
+                            dict(schema_version=2,kind="inspect",data={}),
+                            dict(schema_version=3,kind="inspect",data=dict(backend=dict(stream=[])))]:
+                inspect.write_text(json.dumps(invalid), encoding="utf-8")
+                with patch.object(S.PAIR, "summarize", return_value=sample.copy()):
+                    self.assertIsNone(S.capture(root, SOURCE, ZIP)["sqlite_version"])
+            inspect.unlink()
+            with patch.object(S.PAIR, "summarize", return_value=sample.copy()):
+                self.assertIsNone(S.capture(root, SOURCE, ZIP)["sqlite_version"])
+
     def test_wrong_workload_and_live_count_fail(self):
         for field, value in [("background_files",11999),("maximum_native_captures",2),("retries",1),("accepted",False)]:
             args = inputs()
@@ -121,6 +157,9 @@ class NativeResultContracts(unittest.TestCase):
             (root / "public").mkdir()
             path = root / "public/follow-experiment-summary.json"
             path.write_text(json.dumps(dict(source_sha=SOURCE)))
+            (root / "private").mkdir()
+            inspect = {"schema_version": 3, "kind": "inspect", "data": {"backend": {"stream": {"sqlite_version": "3.54.1"}}}}
+            (root / "private/inspect.stdout").write_text(json.dumps(inspect), encoding="utf-8")
             sample = dict(accepted=True, workload_complete=True, all_owned_processes_exited=True, background=dict(files=12000))
             with patch.object(S.PAIR, "summarize", return_value=sample):
                 self.assertTrue(S.capture(root, SOURCE, ZIP)["accepted"])
