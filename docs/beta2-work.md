@@ -12,8 +12,8 @@ A的发布不以B查明原因作为条件。
 | A：必要SQLite安全升级的独立审查/提交 | 通过：独立提交925d713，离线兼容/版本回归通过 |
 | A：离线/原生质量及冻结ZIP验收 | 阻塞并停止本轮A原生尝试：A4压力出现15,381条ETW来源丢失；小窗解释的完整控件可见断言也失败 |
 | A：满足全部门后合并、main CI、Prerelease和公开回下载 | 阻塞：PR21保持草稿，不合并、不发布；仅交付标明失败的诊断ZIP |
-| B：独立分支有界窗口观测/离线不变性和开销 | 进行中：A2具体测试阻塞已留证，另建diag分支；不混入A |
-| B：冻结一次同profiling的ABBA，四次、零重试 | 待做 |
+| B：独立分支有界窗口观测/离线不变性和开销 | 已完成：离线与普通Windows质量通过；仅在独立PR22，不混入A |
+| B：冻结一次同profiling的ABBA，四次、零重试 | 本轮结束但测量失效：四次执行后发现两侧EXE字节相同，不能采用有效对照结论；保留全部，不追加采集 |
 | 队列/候选容量、归因/过滤/截止或架构改造 | 本轮不做 |
 
 ## A实施前固定验收
@@ -137,3 +137,16 @@ Check/Coverage/CoverageOriginal/Dependencies/Companion及Windows只读CLI检查�
 [WPF证据](https://github.com/LuckyLivio/Contain/actions/runs/43211340696/artifacts/13942415738)、
 [最终拒绝通过的汇总](https://github.com/LuckyLivio/Contain/actions/runs/43211340696/artifacts/13941142976)。
 公开材料只含受控夹具及有界统计，没有用户个人数据库、完整原始载荷或未经审查的真实用户报告。
+
+## B本轮结论
+
+[独立PR22](https://github.com/LuckyLivio/Contain/pull/22)及
+[唯一原生运行43215661372](https://github.com/LuckyLivio/Contain/actions/runs/43215661372)保留四次样本。
+下载复核发现基线和候选EXE的实际SHA均为
+`95d9d838fec94de3c879c08d8ba88a808a92881feaa732d1ef5f5c2fc1e66d77`，
+与已知源码行为差异不相容，故人工身份门否决工具初始的`not_reproduced`。
+最终是**测量／测试失效**，不是有效ABBA未复现，也不是采集修复。
+四次已执行二进制的窗口与零损失事实保留，不能分别归属于预期的两种行为。
+构建目录复用是待核实的编排疑点；调查分支已补独立新构建目录及相同二进制否决，
+修正后不再执行本轮Windows采集。详见PR22的既有验证记录及安全审查汇总。
+B不合并、不发布，不解除A4阻塞。原始Parallels来源丢失、收尾超时及B5接收溢出的原因仍开放。
