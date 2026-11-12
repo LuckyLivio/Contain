@@ -10,7 +10,7 @@ A的发布不以B查明原因作为条件。
 | 核对main、PR20、Release及未提交改动 | 通过：main/PR20未推进，工作区干净，beta.2不存在 |
 | A：按依赖拆分UX及回归 | 通过：只迁桌面/测试；核心采集/schema边界零diff |
 | A：必要SQLite安全升级的独立审查/提交 | 通过：独立提交925d713，离线兼容/版本回归通过 |
-| A：离线/原生质量及冻结ZIP验收 | 进行中：A1编排失败，保留后修正目录创建顺序 |
+| A：离线/原生质量及冻结ZIP验收 | 阻塞：A3自动门通过，但长名称小窗实图中事件正文不可见；A4进行最小布局修复及可见性回归 |
 | A：满足全部门后合并、main CI、Prerelease和公开回下载 | 待做 |
 | B：独立分支有界窗口观测/离线不变性和开销 | 进行中：A2具体测试阻塞已留证，另建diag分支；不混入A |
 | B：冻结一次同profiling的ABBA，四次、零重试 | 待做 |
@@ -67,8 +67,15 @@ SHA3-256 `e2b869d3003b33c942b7dd7063604fbc53553e1b66609570df39b9b7b558ee81`。
 | 尝试 | 源码 / 运行 | 结果与下一步依据 |
 | --- | --- | --- |
 | A1 | `1d69fc1df731bbe05557010aee929765eefe9f4f` / [43205873863](https://github.com/LuckyLivio/Contain/actions/runs/43205873863) | Rust构建完成；workflow预创建tools/fixtures触发生成器拒覆盖。未冻结ZIP，WPF/压力未执行。仅取消预创建，保留生成器保护；不是产品采集失败。 |
-
 | A2 | `69820241e2f64336a87fe0867be8bc58b209fc1b` / [43206472661](https://github.com/LuckyLivio/Contain/actions/runs/43206472661) | 目录修正有效；core/fixture、模型、WPF/harness构建通过。新增聚合测试默认CP1252读取中文Program.cs失败，未冻结ZIP/未采集。改显式UTF-8，断言保留；普通CI同一失败一并修复。 |
+| A3 | `f76a8618426945093eacdd5751d49d2633635e78` / [43208532124](https://github.com/LuckyLivio/Contain/actions/runs/43208532124) | 同一冻结ZIP的WPF、独立压力和最终自动汇总全部通过，实际链接SQLite为3.54.1；人工审图发现长名称在820×640小窗挤没事件列表与解释正文，既有检查只确认搜索/分页按钮可见，故不发布。自动成功结果和人工失败均保留。 |
+| A4 | 新代码及回归准备中，尚未启动原生验收 | 最小约束长名称标题布局，增加事件正文、列表及复制操作的实际可见性回归；完成后重新构建并冻结新包，执行既定两个独立Windows作业。这是有明确产品修复依据的新尝试，不重跑A3碰运气。 |
+
+A3原ZIP为`contain-0.4.0-beta.2-windows-x64.zip`，70,103,800字节，SHA-256
+`5140b1367359219ecea3c9fda373092f708dd0c40e1e821bf7f3d82dd8795381`，
+已回下载核对SHA、CRC、完整清单及构建身份。原包源码和核心源码均为上述A3 SHA，
+UI Release、核心debug、.NET运行时10.0.14。缺陷原图为WPF证据中的`compact-events.png`，
+实测96 DPI；不是模拟缩放。A4若更改二进制或运行配置，不继承A3的原包验收结果。
 
 A3同时把既有inspect文档的`backend.stream.sqlite_version`白名单字符串纳入负载摘要，
 严格核对锁定的3.54.1，不增加core/schema字段或采集次数，落实既定实际链接版本验收。

@@ -116,6 +116,7 @@ internal sealed class DesktopDriver : IDisposable
     // Boolean state probes accept absence while a view is being constructed.
     // Required text/action reads remain strict, and unexpected UIA errors propagate.
     internal Task<bool> VisibleAsync(string id) => OptionalAsync(id, Visible);
+    internal Task<double> HeightAsync(string id) => Ui(id, () => Required(id).Current.BoundingRectangle.Height);
     internal Task<bool> VisibleInOwnedViewportAsync(string id) => OptionalAsync(id, element =>
     {
         if (element.Current.ProcessId != process.Id || !Visible(element)) return false;

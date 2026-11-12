@@ -8,7 +8,9 @@
             <ui:Button Content="返回我的记录" Appearance="Transparent" HorizontalAlignment="Left" Padding="0,8" Click="OnBack" AutomationProperties.AutomationId="BackToRecords">
                 <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowLeft24" /></ui:Button.Icon>
             </ui:Button>
-            <TextBlock Text="{Binding Records.SessionTitle}" Style="{StaticResource PageTitle}" Margin="0,8,0,4" AutomationProperties.AutomationId="SessionTitle" AutomationProperties.HelpText="{Binding Records.SessionIdentity}" />
+            <TextBlock Text="{Binding Records.SessionTitle}" Style="{StaticResource PageTitle}" Margin="0,8,0,4"
+                       TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding Records.SessionTitle}"
+                       AutomationProperties.Name="{Binding Records.SessionTitle}" AutomationProperties.AutomationId="SessionTitle" AutomationProperties.HelpText="{Binding Records.SessionIdentity}" />
             <TextBlock Text="{Binding Records.OverviewRecordNote}" Style="{StaticResource MutedText}" AutomationProperties.AutomationId="SavedState" />
         </StackPanel>
         <Border Grid.Row="1" Background="#EDF3F0" CornerRadius="8" Padding="12" Margin="0,12,0,16">
@@ -61,7 +63,7 @@
                             <ui:Button Content="{Binding Records.MatchExportLabel}" Appearance="Transparent" Click="OnExportMatches" IsEnabled="{Binding Records.CanExportMatches}" Margin="0,0,0,8" AutomationProperties.AutomationId="ExportMatches" />
                             <ui:Button Content="停止导出" Appearance="Transparent" Click="OnCancelExport" Margin="8,0,0,8" Visibility="{Binding Records.IsExporting, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="CancelExport" />
                         </WrapPanel>
-                      <ScrollViewer x:Name="EventBodyScroll" Grid.Row="2" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Disabled" SizeChanged="OnBodySizeChanged">
+                      <ScrollViewer x:Name="EventBodyScroll" Grid.Row="2" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Disabled" SizeChanged="OnBodySizeChanged" AutomationProperties.AutomationId="EventBodyScroll" AutomationProperties.Name="事件列表与依据滚动区域">
                         <Grid x:Name="EventColumns">
                             <Grid.ColumnDefinitions><ColumnDefinition x:Name="ListColumn" Width="3*" /><ColumnDefinition x:Name="ExplanationColumn" Width="2*" /></Grid.ColumnDefinitions>
                             <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="0" /></Grid.RowDefinitions>

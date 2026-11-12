@@ -344,7 +344,21 @@ internal sealed class NativeSuite(Options options)
         foreach (var id in new[] { "SearchText", "SearchEvents", "ClearSearch", "NextEvents" })
             await D.UntilAsync("compact_visible", id, () => D.VisibleAsync(id), TimeSpan.FromSeconds(10));
         await D.KeyboardReachAsync("SearchText");
+        Require(await D.HeightAsync("SessionTitle") < 50, "long record title occupies one line in the compact view");
+        Require(await D.HeightAsync("EventBodyScroll") >= 120, "compact long-name record retains a usable event body viewport");
+        const string compactEvent = "synthetic-search-event-000";
+        await Explain(compactEvent, "synthetic-search");
+        await D.KeyboardReachAsync("event:" + compactEvent);
+        await D.UntilAsync("compact_event_row_visible", "event:" + compactEvent,
+            () => D.VisibleInOwnedViewportAsync("event:" + compactEvent));
         await Shot("compact-events.png", "synthetic-viewer-fixtures");
+        await D.KeyboardReachAsync("EventDetails");
+        Require(await D.VisibleAsync("EventDetails") && await D.HelpAsync("EventDetails") == "event:" + compactEvent,
+            "compact explanation remains reachable for the exact selected event");
+        await D.KeyboardReachAsync("CopyEventId");
+        await D.UntilAsync("compact_copy_visible", "CopyEventId", () => D.VisibleInOwnedViewportAsync("CopyEventId"));
+        await CopyEvent(compactEvent);
+        await Shot("compact-explanation.png", "synthetic-viewer-fixtures");
         await D.InvokeAsync("NewInstall"); await D.UntilAsync("compact_config", "PickInstaller", () => D.VisibleAsync("PickInstaller"));
         Require(await D.VisibleAsync("StartRecording"), "compact configuration primary action visible");
         await Shot("compact-new-record.png", "isolated-configuration-no-install");
