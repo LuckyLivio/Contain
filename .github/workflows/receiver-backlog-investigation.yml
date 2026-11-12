@@ -1,0 +1,75 @@
+name: One bounded receiver backlog investigation
+on:
+  push:
+    branches: [diag/receiver-backlog-window]
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact reviewed diagnostic source (40 lowercase hex)
+        required: true
+      observer_patch_sha256:
+        description: SHA-256 of reviewed common observation patch
+        required: true
+      written_plan_sha256:
+        description: SHA-256 of docs/beta2-validation-plan.md including frozen B plan
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: receiver-backlog-one-investigation
+  cancel-in-progress: false
+jobs:
+  register:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Registration only. No Windows tests or capture; a reviewed explicit dispatch is required.'
+  investigate:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'LuckyLivio/Contain' && github.ref == 'refs/heads/diag/receiver-backlog-window' && github.run_attempt == 1 }}
+    runs-on: windows-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Read-only script guards before any native capture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($script in @('scripts/receiver-backlog-comparison.ps1','scripts/follow-installer-experiment.ps1')) {
+            $tokens=$null; $errors=$null
+            $null=[Management.Automation.Language.Parser]::ParseFile([IO.Path]::GetFullPath($script),[ref]$tokens,[ref]$errors)
+            if ($errors.Count) { throw 'PowerShell syntax failed before capture' }
+          }
+          foreach ($test in @('scripts/test-prepare-backlog-comparison.py','scripts/test-summarize-backlog-comparison.py','scripts/test-receiver-window-overhead.py')) {
+            python $test
+            if ($LASTEXITCODE -ne 0) { throw 'Observation gate failed before any native capture' }
+          }
+      - name: Bind source patch plan; actual offline gates; one four-capture ABBA
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE: ${{ inputs.source_sha }}
+          OBSERVER_PATCH_SHA256: ${{ inputs.observer_patch_sha256 }}
+          WRITTEN_PLAN_SHA256: ${{ inputs.written_plan_sha256 }}
+        run: |
+          $out=Join-Path $env:RUNNER_TEMP ('contain-receiver-backlog-'+$env:GITHUB_RUN_ID+'-'+$env:GITHUB_RUN_ATTEMPT)
+          "BACKLOG_OUTPUT=$out" >> $env:GITHUB_ENV
+          ./scripts/receiver-backlog-comparison.ps1 -Source $env:EXPECTED_SOURCE -ObserverPatchSha256 $env:OBSERVER_PATCH_SHA256 -PlanSha256 $env:WRITTEN_PLAN_SHA256 -OutputDirectory $out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: receiver-backlog-investigation-evidence
+          path: ${{ env.BACKLOG_OUTPUT }}/public/*.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: receiver-backlog-rebuilt-diagnostic-binaries
+          path: |
+            ${{ env.BACKLOG_OUTPUT }}/frozen-binaries/*-contain.exe
+            ${{ env.BACKLOG_OUTPUT }}/frozen-binaries/contain-test-installer.exe
+            ${{ env.BACKLOG_OUTPUT }}/frozen-binaries/BUILD.json
+            ${{ env.BACKLOG_OUTPUT }}/frozen-binaries/common-observer.patch
+          if-no-files-found: warn

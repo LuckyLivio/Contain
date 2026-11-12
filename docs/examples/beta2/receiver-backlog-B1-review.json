@@ -1,0 +1,814 @@
+{
+  "schema_version": 1,
+  "protocol": "contain-receiver-backlog-B1-reviewed-summary-1",
+  "reviewed_outcome": "measurement_or_test_failed",
+  "comparison_identity_verified": false,
+  "product_fix_claim": false,
+  "release_accepted": false,
+  "run_id": 43215661372,
+  "source_sha": "072829579bf7f373a0f6eef71dfd842de72a70a8",
+  "run_url": "https://github.com/LuckyLivio/Contain/actions/runs/43215661372",
+  "original_emitter": {
+    "outcome": "not_reproduced",
+    "measurement_valid": true,
+    "result_sha256": "d28aee3aa503cdb24bb43652fff55b589af02492960f328871dff0cca12a06a6",
+    "unmodified_artifact_url": "https://github.com/LuckyLivio/Contain/actions/runs/43215661372/artifacts/13942638657"
+  },
+  "rebuilt_binaries_artifact_url": "https://github.com/LuckyLivio/Contain/actions/runs/43215661372/artifacts/13943722617",
+  "expected_sources": {
+    "baseline": "f76a8618426945093eacdd5751d49d2633635e78",
+    "candidate_behavior_base": "347a86ee730c4fd2d9ee775add60a6c5deddf7fa",
+    "candidate": "072829579bf7f373a0f6eef71dfd842de72a70a8"
+  },
+  "verified_metadata": {
+    "common_observer_patch_sha256": "98c145d06428b7042b46ad880254222afa7b07422c9f0febcefb075e45218cd6",
+    "written_plan_sha256": "f55921b1e5dfc1f3951a9d70d757cadd4df0a35a790d67c3297709b07a6c1117",
+    "cargo_lock_sha256": "2135765c6d00696880284ef269435405230dd6dec9152609ef2246e0c3fab7cc",
+    "toolchain_sha256": "1667cc6d00b58710d0a3716730b38edb04186e45288b90192602116babb2b5ee",
+    "existing_bench_summary_sha256": "201ce4eb58fac27f7fbb9bc5da0ed31e69fa5ddd5ba25465c0cd812d067b2211",
+    "offline_summary_sha256": "613ddc18c738ee3ecdf27eabdb2aecec8f5be5c2331b268e83023792725345f6"
+  },
+  "behavior_difference_files": [
+    "crates/contain-core/src/capture.rs",
+    "crates/contain-core/src/drain.rs",
+    "crates/contain-core/src/follow.rs",
+    "crates/contain-core/src/ingest.rs",
+    "crates/contain-core/src/model/reliability.rs",
+    "crates/contain-core/src/model/ticks.rs",
+    "crates/contain-core/src/windows/etw.rs",
+    "crates/contain-core/src/windows/native.rs",
+    "tools/offline/src/lib.rs"
+  ],
+  "observed_frozen_binaries": {
+    "baseline-contain.exe": {
+      "sha256": "95d9d838fec94de3c879c08d8ba88a808a92881feaa732d1ef5f5c2fc1e66d77",
+      "bytes": 13059072
+    },
+    "candidate-contain.exe": {
+      "sha256": "95d9d838fec94de3c879c08d8ba88a808a92881feaa732d1ef5f5c2fc1e66d77",
+      "bytes": 13059072
+    },
+    "contain-test-installer.exe": {
+      "sha256": "2fe5e3dcbc9b88e2786e9ec692211de78f89bf0fd30bea1a3d3fc609eaea2378",
+      "bytes": 2256896
+    }
+  },
+  "manual_identity_failure": "Baseline and candidate CLI files were downloaded and independently verified byte-identical although their declared behavior sources differ in nine core paths. The four slots do not establish a two-behavior ABBA comparison. Shared CARGO_TARGET_DIR artifact reuse is an investigation hypothesis, not a verified cause.",
+  "toolchain": {
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\r\nbinary: rustc\r\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\r\ncommit-date: 2026-10-13\r\nhost: x86_64-pc-windows-msvc\r\nrelease: 1.99.1\r\nLLVM version: 23.1.1",
+    "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+    "git": "git version 2.56.0.windows.4",
+    "python": "Python 3.12.10",
+    "windows": "10.0.26100.0",
+    "os_architecture": "X64",
+    "process_architecture": "X64",
+    "runner_architecture": "X64",
+    "emulation_verified": false
+  },
+  "order": [
+    "r1/baseline",
+    "r1/candidate",
+    "r2/candidate",
+    "r2/baseline"
+  ],
+  "execution": {
+    "attempted": [
+      "r1/baseline",
+      "r1/candidate",
+      "r2/candidate",
+      "r2/baseline"
+    ],
+    "not_run": [],
+    "stop_reason": null
+  },
+  "maximum_native_captures": 4,
+  "retries": 0,
+  "preflight": {
+    "emitter_accepted": true,
+    "native_captures_started": 4,
+    "tests": [
+      {
+        "variant": "baseline",
+        "filter": "ingest::integration_tests::profiling_switch_preserves_actual_follow_receiver_evidence_and_boundaries",
+        "exit_code": 0,
+        "summary_available": true,
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 253
+      },
+      {
+        "variant": "baseline",
+        "filter": "profile::backlog::tests",
+        "exit_code": 0,
+        "summary_available": true,
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 251
+      },
+      {
+        "variant": "baseline",
+        "filter": "windows::etw::metrics::tests::producer_milestones_use_successful_admission_and_keep_first_time",
+        "exit_code": 0,
+        "summary_available": true,
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 253
+      },
+      {
+        "variant": "baseline",
+        "filter": "follow::tests::profiling_switch_preserves_saturated_follow_boundaries_and_conservative_evidence",
+        "exit_code": 0,
+        "summary_available": true,
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 253
+      },
+      {
+        "variant": "baseline",
+        "filter": "follow::tests::final_flush_checkpoint_preserves_empty_admission_and_discarded_pending_state",
+        "exit_code": 0,
+        "summary_available": true,
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 253
+      },
+      {
+        "variant": "candidate",
+        "filter": "ingest::integration_tests::profiling_switch_preserves_actual_follow_receiver_evidence_and_boundaries",
+        "exit_code": 0,
+        "summary_available": true,
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 253
+      },
+      {
+        "variant": "candidate",
+        "filter": "profile::backlog::tests",
+        "exit_code": 0,
+        "summary_available": true,
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 251
+      },
+      {
+        "variant": "candidate",
+        "filter": "windows::etw::metrics::tests::producer_milestones_use_successful_admission_and_keep_first_time",
+        "exit_code": 0,
+        "summary_available": true,
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 253
+      },
+      {
+        "variant": "candidate",
+        "filter": "follow::tests::profiling_switch_preserves_saturated_follow_boundaries_and_conservative_evidence",
+        "exit_code": 0,
+        "summary_available": true,
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 253
+      },
+      {
+        "variant": "candidate",
+        "filter": "follow::tests::final_flush_checkpoint_preserves_empty_admission_and_discarded_pending_state",
+        "exit_code": 0,
+        "summary_available": true,
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 253
+      }
+    ],
+    "bench": {
+      "mode": "Bench",
+      "source_sha": "072829579bf7f373a0f6eef71dfd842de72a70a8",
+      "fixed_events": 20000,
+      "fixed_samples": 7,
+      "passed": true,
+      "error_type": null,
+      "safe_summary_exit_code": 0,
+      "synthetic": true,
+      "real_etw": false
+    }
+  },
+  "one_binary_observations_only": [
+    {
+      "execution_slot": "r1/baseline",
+      "variant_identity_verified": false,
+      "strict_oracle_accepted": true,
+      "callbacks": 684154,
+      "received": 216005,
+      "timeline": 1780,
+      "normalized": 24,
+      "losses": {
+        "etw_events": 0,
+        "etw_buffers": 0,
+        "application": 0,
+        "decode": 0,
+        "handoff": 0,
+        "raw_persistence": 0,
+        "raw_quota": 0,
+        "candidate": 0,
+        "context": 0
+      },
+      "queue_high_water": 343,
+      "max_record_queue_age_ns": 49780400,
+      "drain_timed_out": false,
+      "independent_background_operations": {
+        "write_requested": 12000,
+        "rename_requested": 12000,
+        "delete_requested": 12000
+      },
+      "background_false_promotions": 0,
+      "attribution_safety": {
+        "verified": true,
+        "target_false_promotions": 0
+      },
+      "workload_complete": true,
+      "exact_session_cold_read": true,
+      "all_owned_processes_exited": true,
+      "accounting": {
+        "receive_queue": true,
+        "receive_drain": true,
+        "handoff_input": true,
+        "handoff_drain": true,
+        "raw_input": true,
+        "raw_persistence": true,
+        "application_loss": true,
+        "finished_workers": true
+      },
+      "first_backlog_ns": null,
+      "first_overflow_ns": null,
+      "maximum_window": {
+        "trigger_ns": 232492900,
+        "observed_at_ns": 232492900,
+        "detection_lag_ns": 0,
+        "queue_depth": 343,
+        "pre_records": 0,
+        "post_records": 64,
+        "earlier_observations_omitted": 0,
+        "later_observations_omitted": 334475,
+        "pre_capacity_full": false,
+        "post_capacity_full": true,
+        "trigger_before_retained_context": false,
+        "trigger_contained_by_completed_span": true
+      },
+      "maximum_window_observation": {
+        "stage": "receiver_drain",
+        "pending_before": 0,
+        "pending_after": 0,
+        "recorded_high_water_before": 343,
+        "recorded_high_water_after": 343
+      },
+      "maximum_window_stage_samples": {
+        "receiver_drain": {
+          "samples": 14,
+          "max_wall_ns": 47800,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 14
+        },
+        "receiver_idle_wait": {
+          "samples": 7,
+          "max_wall_ns": 1596200,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 7
+        },
+        "receiver_lock_wait": {
+          "samples": 6,
+          "max_wall_ns": 1800,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 6
+        },
+        "receiver_lifecycle_ingest": {
+          "samples": 6,
+          "max_wall_ns": 10000,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 6
+        },
+        "receiver_page_split": {
+          "samples": 6,
+          "max_wall_ns": 5500,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 6
+        },
+        "receiver_follow_cache_attach": {
+          "samples": 1,
+          "max_wall_ns": 49100,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 1
+        },
+        "receiver_follow_register": {
+          "samples": 6,
+          "max_wall_ns": 45800,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 6
+        },
+        "receiver_follow_pending_scan": {
+          "samples": 1,
+          "max_wall_ns": 5400,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 1
+        },
+        "receiver_follow_classify": {
+          "samples": 6,
+          "max_wall_ns": 108100,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 6
+        },
+        "receiver_follow_page_observation": {
+          "samples": 6,
+          "max_wall_ns": 0,
+          "max_cpu_ns": null,
+          "cpu_null_samples": 6,
+          "cpu_zero_samples": 0
+        },
+        "receiver_handoff": {
+          "samples": 6,
+          "max_wall_ns": 2900,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 6
+        }
+      }
+    },
+    {
+      "execution_slot": "r1/candidate",
+      "variant_identity_verified": false,
+      "strict_oracle_accepted": true,
+      "callbacks": 683313,
+      "received": 216391,
+      "timeline": 1814,
+      "normalized": 24,
+      "losses": {
+        "etw_events": 0,
+        "etw_buffers": 0,
+        "application": 0,
+        "decode": 0,
+        "handoff": 0,
+        "raw_persistence": 0,
+        "raw_quota": 0,
+        "candidate": 0,
+        "context": 0
+      },
+      "queue_high_water": 388,
+      "max_record_queue_age_ns": 56540800,
+      "drain_timed_out": false,
+      "independent_background_operations": {
+        "write_requested": 12000,
+        "rename_requested": 12000,
+        "delete_requested": 12000
+      },
+      "background_false_promotions": 0,
+      "attribution_safety": {
+        "verified": true,
+        "target_false_promotions": 0
+      },
+      "workload_complete": true,
+      "exact_session_cold_read": true,
+      "all_owned_processes_exited": true,
+      "accounting": {
+        "receive_queue": true,
+        "receive_drain": true,
+        "handoff_input": true,
+        "handoff_drain": true,
+        "raw_input": true,
+        "raw_persistence": true,
+        "application_loss": true,
+        "finished_workers": true
+      },
+      "first_backlog_ns": null,
+      "first_overflow_ns": null,
+      "maximum_window": {
+        "trigger_ns": 278422800,
+        "observed_at_ns": 278422800,
+        "detection_lag_ns": 0,
+        "queue_depth": 388,
+        "pre_records": 0,
+        "post_records": 64,
+        "earlier_observations_omitted": 0,
+        "later_observations_omitted": 326761,
+        "pre_capacity_full": false,
+        "post_capacity_full": true,
+        "trigger_before_retained_context": false,
+        "trigger_contained_by_completed_span": true
+      },
+      "maximum_window_observation": {
+        "stage": "receiver_drain",
+        "pending_before": 11,
+        "pending_after": 0,
+        "recorded_high_water_before": 388,
+        "recorded_high_water_after": 388
+      },
+      "maximum_window_stage_samples": {
+        "receiver_drain": {
+          "samples": 22,
+          "max_wall_ns": 177900,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 22
+        },
+        "receiver_lock_wait": {
+          "samples": 3,
+          "max_wall_ns": 5983300,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 3
+        },
+        "receiver_lifecycle_ingest": {
+          "samples": 3,
+          "max_wall_ns": 24400,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 3
+        },
+        "receiver_page_split": {
+          "samples": 3,
+          "max_wall_ns": 56200,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 3
+        },
+        "receiver_follow_cache_attach": {
+          "samples": 2,
+          "max_wall_ns": 85900,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 2
+        },
+        "receiver_follow_register": {
+          "samples": 3,
+          "max_wall_ns": 72100,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 3
+        },
+        "receiver_follow_pending_scan": {
+          "samples": 2,
+          "max_wall_ns": 737600,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 2
+        },
+        "receiver_follow_classify": {
+          "samples": 3,
+          "max_wall_ns": 4499200,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 3
+        },
+        "receiver_follow_page_observation": {
+          "samples": 3,
+          "max_wall_ns": 0,
+          "max_cpu_ns": null,
+          "cpu_null_samples": 3,
+          "cpu_zero_samples": 0
+        },
+        "receiver_handoff": {
+          "samples": 3,
+          "max_wall_ns": 218300,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 3
+        },
+        "receiver_idle_wait": {
+          "samples": 18,
+          "max_wall_ns": 2888600,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 18
+        }
+      }
+    },
+    {
+      "execution_slot": "r2/candidate",
+      "variant_identity_verified": false,
+      "strict_oracle_accepted": true,
+      "callbacks": 679689,
+      "received": 216409,
+      "timeline": 1817,
+      "normalized": 24,
+      "losses": {
+        "etw_events": 0,
+        "etw_buffers": 0,
+        "application": 0,
+        "decode": 0,
+        "handoff": 0,
+        "raw_persistence": 0,
+        "raw_quota": 0,
+        "candidate": 0,
+        "context": 0
+      },
+      "queue_high_water": 286,
+      "max_record_queue_age_ns": 39723100,
+      "drain_timed_out": false,
+      "independent_background_operations": {
+        "write_requested": 12000,
+        "rename_requested": 12000,
+        "delete_requested": 12000
+      },
+      "background_false_promotions": 0,
+      "attribution_safety": {
+        "verified": true,
+        "target_false_promotions": 0
+      },
+      "workload_complete": true,
+      "exact_session_cold_read": true,
+      "all_owned_processes_exited": true,
+      "accounting": {
+        "receive_queue": true,
+        "receive_drain": true,
+        "handoff_input": true,
+        "handoff_drain": true,
+        "raw_input": true,
+        "raw_persistence": true,
+        "application_loss": true,
+        "finished_workers": true
+      },
+      "first_backlog_ns": null,
+      "first_overflow_ns": null,
+      "maximum_window": {
+        "trigger_ns": 218636800,
+        "observed_at_ns": 218636800,
+        "detection_lag_ns": 0,
+        "queue_depth": 286,
+        "pre_records": 0,
+        "post_records": 64,
+        "earlier_observations_omitted": 0,
+        "later_observations_omitted": 323866,
+        "pre_capacity_full": false,
+        "post_capacity_full": true,
+        "trigger_before_retained_context": false,
+        "trigger_contained_by_completed_span": true
+      },
+      "maximum_window_observation": {
+        "stage": "receiver_drain",
+        "pending_before": 20,
+        "pending_after": 0,
+        "recorded_high_water_before": 286,
+        "recorded_high_water_after": 286
+      },
+      "maximum_window_stage_samples": {
+        "receiver_drain": {
+          "samples": 12,
+          "max_wall_ns": 70700,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 12
+        },
+        "receiver_lock_wait": {
+          "samples": 7,
+          "max_wall_ns": 3802500,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 7
+        },
+        "receiver_lifecycle_ingest": {
+          "samples": 7,
+          "max_wall_ns": 17600,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 7
+        },
+        "receiver_page_split": {
+          "samples": 6,
+          "max_wall_ns": 50300,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 6
+        },
+        "receiver_follow_cache_attach": {
+          "samples": 2,
+          "max_wall_ns": 41500,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 2
+        },
+        "receiver_follow_register": {
+          "samples": 6,
+          "max_wall_ns": 45900,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 6
+        },
+        "receiver_follow_pending_scan": {
+          "samples": 2,
+          "max_wall_ns": 229600,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 2
+        },
+        "receiver_follow_classify": {
+          "samples": 6,
+          "max_wall_ns": 1925100,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 6
+        },
+        "receiver_follow_page_observation": {
+          "samples": 6,
+          "max_wall_ns": 0,
+          "max_cpu_ns": null,
+          "cpu_null_samples": 6,
+          "cpu_zero_samples": 0
+        },
+        "receiver_handoff": {
+          "samples": 6,
+          "max_wall_ns": 168300,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 6
+        },
+        "receiver_idle_wait": {
+          "samples": 5,
+          "max_wall_ns": 1748500,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 5
+        }
+      }
+    },
+    {
+      "execution_slot": "r2/baseline",
+      "variant_identity_verified": false,
+      "strict_oracle_accepted": true,
+      "callbacks": 679932,
+      "received": 216478,
+      "timeline": 1840,
+      "normalized": 24,
+      "losses": {
+        "etw_events": 0,
+        "etw_buffers": 0,
+        "application": 0,
+        "decode": 0,
+        "handoff": 0,
+        "raw_persistence": 0,
+        "raw_quota": 0,
+        "candidate": 0,
+        "context": 0
+      },
+      "queue_high_water": 392,
+      "max_record_queue_age_ns": 47118200,
+      "drain_timed_out": false,
+      "independent_background_operations": {
+        "write_requested": 12000,
+        "rename_requested": 12000,
+        "delete_requested": 12000
+      },
+      "background_false_promotions": 0,
+      "attribution_safety": {
+        "verified": true,
+        "target_false_promotions": 0
+      },
+      "workload_complete": true,
+      "exact_session_cold_read": true,
+      "all_owned_processes_exited": true,
+      "accounting": {
+        "receive_queue": true,
+        "receive_drain": true,
+        "handoff_input": true,
+        "handoff_drain": true,
+        "raw_input": true,
+        "raw_persistence": true,
+        "application_loss": true,
+        "finished_workers": true
+      },
+      "first_backlog_ns": null,
+      "first_overflow_ns": null,
+      "maximum_window": {
+        "trigger_ns": 12879898700,
+        "observed_at_ns": 12879898700,
+        "detection_lag_ns": 0,
+        "queue_depth": 392,
+        "pre_records": 64,
+        "post_records": 64,
+        "earlier_observations_omitted": 222670,
+        "later_observations_omitted": 104708,
+        "pre_capacity_full": true,
+        "post_capacity_full": true,
+        "trigger_before_retained_context": false,
+        "trigger_contained_by_completed_span": true
+      },
+      "maximum_window_observation": {
+        "stage": "receiver_drain",
+        "pending_before": 392,
+        "pending_after": 145,
+        "recorded_high_water_before": 392,
+        "recorded_high_water_after": 392
+      },
+      "maximum_window_stage_samples": {
+        "receiver_follow_register": {
+          "samples": 15,
+          "max_wall_ns": 368400,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 15
+        },
+        "receiver_follow_classify": {
+          "samples": 15,
+          "max_wall_ns": 2979400,
+          "max_cpu_ns": 15625000,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 14
+        },
+        "receiver_follow_page_observation": {
+          "samples": 15,
+          "max_wall_ns": 0,
+          "max_cpu_ns": null,
+          "cpu_null_samples": 15,
+          "cpu_zero_samples": 0
+        },
+        "receiver_handoff": {
+          "samples": 15,
+          "max_wall_ns": 3200,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 15
+        },
+        "receiver_drain": {
+          "samples": 20,
+          "max_wall_ns": 449300,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 20
+        },
+        "receiver_lock_wait": {
+          "samples": 15,
+          "max_wall_ns": 2700,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 15
+        },
+        "receiver_lifecycle_ingest": {
+          "samples": 15,
+          "max_wall_ns": 50100,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 15
+        },
+        "receiver_page_split": {
+          "samples": 14,
+          "max_wall_ns": 301700,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 14
+        },
+        "receiver_idle_wait": {
+          "samples": 5,
+          "max_wall_ns": 14286500,
+          "max_cpu_ns": 0,
+          "cpu_null_samples": 0,
+          "cpu_zero_samples": 5
+        }
+      }
+    }
+  ],
+  "interpretation": [
+    "Four slots executed the same measured executable bytes. Their observations are retained by slot, without attributing a difference to baseline or candidate behavior.",
+    "All four slots had zero losses, valid independent workloads, conservative attribution safety, exact-session persistence/readback, and owned-process exit. No marked first backlog above the 1024 occupancy estimate or first overflow was recorded.",
+    "The first three maximum windows have zero pre-records and 64 post-records. Their depth includes the historical source high-water mark; the receiver observation is not the time the historical maximum occurred.",
+    "The fourth maximum window has 64 pre-records and 64 post-records. Its largest idle_wait wall span is 14.2865 ms; this named wait is not evidence of a thread pause or the historical overflow cause.",
+    "Windows CPU values are coarse: most retained values are zero and one 2.8933 ms follow_classify wall span has a 15.625 ms CPU-counter increment. Do not subtract CPU from wall to infer a pause, sum overlapping stages, or compute precise CPU utilization.",
+    "No valid failure window or minimal product fix is established. The exact missing evidence is distinct binary-to-behavior-source binding and, for the historical overflow, a retained receiver stage spanning its first trigger.",
+    "This was the sole dispatched experiment. Retain both emitter and manual-review outcomes; do not rerun, merge, release, or expand into a product reliability fix."
+  ],
+  "post_review_offline_reparse": {
+    "measurement_valid": false,
+    "outcome": "measurement_or_test_failed",
+    "comparison_identity_valid": false,
+    "comparison_identity_errors": [
+      "baseline_candidate_binaries_identical"
+    ],
+    "product_fix_claim": false,
+    "release_accepted": false,
+    "result_sha256": "cb18a638b09e280bc8595edc59346fd23afd87542704c86d8e06216d024fd9d7",
+    "scope": "Original safe artifacts parsed offline with the added identity rejection; no new Windows build or live capture. Original emitter result remains unchanged."
+  }
+}

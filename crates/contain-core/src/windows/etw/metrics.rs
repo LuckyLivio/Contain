@@ -48,6 +48,9 @@ pub struct Metrics {
     peak_arrivals: AtomicU64,
     overflow_times: [AtomicU64; 64],
     last_overflow: AtomicU64,
+    backlog_start: Option<Instant>,
+    first_backlog: AtomicU64,
+    first_overflow: AtomicU64,
 }
 impl Default for Metrics {
     fn default() -> Self {
@@ -63,6 +66,11 @@ impl Default for Metrics {
             peak_arrivals: AtomicU64::new(0),
             overflow_times: std::array::from_fn(|_| AtomicU64::new(0)),
             last_overflow: AtomicU64::new(0),
+            backlog_start: crate::profile::backlog_enabled()
+                .then(crate::profile::epoch)
+                .flatten(),
+            first_backlog: AtomicU64::new(0),
+            first_overflow: AtomicU64::new(0),
         }
     }
 }
@@ -73,6 +81,11 @@ impl Metrics {
             overflow: self.get(Count::Overflow),
             dequeued: self.get(Count::Dequeued),
             pending: self.get(Count::Pending),
+            high_water: self.get(Count::HighWater),
+            max_delay_ns: self.max_delay.load(Relaxed),
+            // Stored +1 so an actual timestamp zero is distinguishable from absence.
+            first_backlog_ns: self.first_backlog.load(Relaxed).checked_sub(1),
+            first_overflow_ns: self.first_overflow.load(Relaxed).checked_sub(1),
         }
     }
 
@@ -97,6 +110,16 @@ impl Metrics {
             if prior < 64 {
                 self.overflow_times[prior as usize].store(at, Relaxed);
             }
+        }
+        if matches!(c, Count::Overflow)
+            && n > 0
+            && let Some(start) = self.backlog_start
+            && self.first_overflow.load(Relaxed) == 0
+        {
+            let at = (start.elapsed().as_nanos() as u64).saturating_add(1);
+            let _ = self
+                .first_overflow
+                .compare_exchange(0, at, Relaxed, Relaxed);
         }
     }
     pub fn get(&self, c: Count) -> u64 {
@@ -139,6 +162,13 @@ impl Metrics {
         self.counts[Count::HighWater as usize]
             .fetch_max(pending.min(super::QUEUE_CAPACITY as u64), Relaxed);
         self.add(Count::Enqueued, 1);
+        if pending >= crate::profile::backlog_threshold()
+            && let Some(start) = self.backlog_start
+            && self.first_backlog.load(Relaxed) == 0
+        {
+            let at = (start.elapsed().as_nanos() as u64).saturating_add(1);
+            let _ = self.first_backlog.compare_exchange(0, at, Relaxed, Relaxed);
+        }
     }
     pub fn leaving(&self) {
         self.counts[Count::Pending as usize].fetch_sub(1, Relaxed);
@@ -254,6 +284,31 @@ pub(super) use measured;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn producer_milestones_use_successful_admission_and_keep_first_time() {
+        assert_eq!(super::super::QUEUE_CAPACITY, 4096);
+        let _profile = crate::profile::test_backlog_profile(|| {
+            let metrics = Metrics::default();
+            for _ in 0..1023 {
+                let pending = metrics.entering();
+                metrics.admitted(pending);
+            }
+            assert!(metrics.queue_snapshot().first_backlog_ns.is_none());
+            // Entering alone is an attempted send, not successful occupancy.
+            let pending = metrics.entering();
+            assert!(metrics.queue_snapshot().first_backlog_ns.is_none());
+            metrics.admitted(pending);
+            let first = metrics.queue_snapshot().first_backlog_ns.unwrap();
+            metrics.admitted(pending);
+            assert_eq!(metrics.queue_snapshot().first_backlog_ns, Some(first));
+            metrics.add(Count::Overflow, 1);
+            let overflow = metrics.queue_snapshot().first_overflow_ns.unwrap();
+            metrics.add(Count::Overflow, 1);
+            assert_eq!(metrics.queue_snapshot().first_overflow_ns, Some(overflow));
+            assert!(overflow >= first);
+            assert_eq!(metrics.get(Count::Overflow), 2);
+        });
+    }
     #[test]
     fn arrival_windows_count_concurrent_updates_and_reset_on_next_window() {
         let metrics = std::sync::Arc::new(Metrics::default());

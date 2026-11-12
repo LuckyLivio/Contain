@@ -3,6 +3,8 @@
 //! thread CPU accounting is sampled at window boundaries, never per event.
 use serde::Serialize;
 use std::{cell::RefCell, collections::BTreeMap, time::Instant};
+#[path = "profile/backlog.rs"]
+mod backlog;
 
 const MAX_QUEUE_SPANS: usize = 8192;
 const MAX_COUNTERS: usize = 128;
@@ -15,9 +17,13 @@ pub struct QueueSnapshot {
     pub overflow: u64,
     pub dequeued: u64,
     pub pending: u64,
+    pub high_water: u64,
+    pub max_delay_ns: u64,
+    pub first_backlog_ns: Option<u64>,
+    pub first_overflow_ns: Option<u64>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct QueueSpan {
     stage: &'static str,
     start_ns: u64,
@@ -121,6 +127,8 @@ struct Profile {
     omitted_counter_names: u64,
     thread_cpu_enabled: bool,
     thread_cpu_timing: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    backlog_windows: Option<backlog::Windows>,
 }
 thread_local! {
     static DATA: RefCell<Option<Profile>> = const { RefCell::new(None) };
@@ -135,6 +143,7 @@ fn begin() {
             queue_stage_totals: BTreeMap::new(), counters: BTreeMap::new(), omitted_counter_names: 0,
             thread_cpu_enabled: std::env::var_os("CONTAIN_PROFILE_THREAD_CPU").is_some(),
             thread_cpu_timing: "optional Windows GetThreadTimes own-thread kernel+user; 100 ns units, accounting may be coarser; null/unavailable is not zero CPU",
+            backlog_windows: (std::env::var_os("CONTAIN_PROFILE_BACKLOG").is_some_and(|v| v == "1")).then(backlog::Windows::default),
         });
     });
 }
@@ -214,6 +223,9 @@ impl Drop for QueueTimer {
                     cpu_ns,
                 };
                 p.queue_stage_totals.entry(stage).or_default().add(&span);
+                if let Some(windows) = &mut p.backlog_windows {
+                    windows.observe(&span);
+                }
                 if p.queue_spans.len() < MAX_QUEUE_SPANS {
                     p.queue_spans.push(span);
                 } else {
@@ -264,10 +276,48 @@ pub fn epoch() -> Option<Instant> {
     DATA.with(|p| p.borrow().as_ref().map(|p| p.start))
 }
 
+pub(crate) fn backlog_enabled() -> bool {
+    DATA.with(|p| {
+        p.borrow()
+            .as_ref()
+            .is_some_and(|p| p.backlog_windows.is_some())
+    })
+}
+
+pub(crate) fn backlog_threshold() -> u64 {
+    backlog::BACKLOG_THRESHOLD
+}
+
+/// Fixed numeric follow state at a page boundary; no event/identity is copied.
+pub(crate) fn backlog_follow(pending_records: usize, pending_bytes: usize) {
+    DATA.with(|data| {
+        let mut data = data.borrow_mut();
+        let Some(data) = data.as_mut() else { return };
+        let Some(windows) = data.backlog_windows.as_mut() else {
+            return;
+        };
+        windows.follow_pending(pending_records as u64, pending_bytes as u64);
+        if let Some(probe) = &data.queue_probe {
+            let queue = probe();
+            let now = data.start.elapsed().as_nanos() as u64;
+            windows.observe(&QueueSpan {
+                stage: "receiver_follow_page_observation",
+                start_ns: now,
+                end_ns: now,
+                before: queue,
+                after: queue,
+                units: 0,
+                cpu_ns: None,
+            });
+        }
+    });
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct WorkerContext {
     epoch: Instant,
     thread_cpu_enabled: bool,
+    backlog_enabled: bool,
 }
 
 pub(crate) fn worker_context() -> Option<WorkerContext> {
@@ -275,6 +325,7 @@ pub(crate) fn worker_context() -> Option<WorkerContext> {
         p.borrow().as_ref().map(|p| WorkerContext {
             epoch: p.start,
             thread_cpu_enabled: p.thread_cpu_enabled,
+            backlog_enabled: p.backlog_windows.is_some(),
         })
     })
 }
@@ -290,6 +341,7 @@ pub(crate) struct WorkerProfile {
     queue_stage_totals: BTreeMap<&'static str, QueueStageTotal>,
     counters: BTreeMap<&'static str, u64>,
     omitted_counter_names: u64,
+    backlog_windows: Option<backlog::Windows>,
 }
 
 pub(crate) fn worker_start(context: Option<WorkerContext>) {
@@ -300,6 +352,7 @@ pub(crate) fn worker_start(context: Option<WorkerContext>) {
             let p = p.as_mut().unwrap();
             p.start = context.epoch;
             p.thread_cpu_enabled = context.thread_cpu_enabled;
+            p.backlog_windows = context.backlog_enabled.then(backlog::Windows::default);
         });
     } else {
         DATA.with(|p| *p.borrow_mut() = None);
@@ -316,6 +369,7 @@ pub(crate) fn worker_finish() -> Option<WorkerProfile> {
         queue_stage_totals: p.queue_stage_totals,
         counters: p.counters,
         omitted_counter_names: p.omitted_counter_names,
+        backlog_windows: p.backlog_windows,
     })
 }
 
@@ -324,6 +378,11 @@ pub(crate) fn merge_worker(worker: Option<WorkerProfile>) {
     DATA.with(|data| {
         let mut data = data.borrow_mut();
         let Some(data) = data.as_mut() else { return };
+        if let Some(windows) = worker.backlog_windows
+            && windows.observations() > 0
+        {
+            data.backlog_windows = Some(windows);
+        }
         for (stage, total) in worker.queue_stage_totals {
             data.queue_stage_totals
                 .entry(stage)
@@ -378,7 +437,12 @@ fn merge_counters(data: &mut Profile, values: impl IntoIterator<Item = (&'static
 pub(crate) fn counters(values: impl IntoIterator<Item = (&'static str, u64)>) {
     DATA.with(|data| {
         if let Some(data) = data.borrow_mut().as_mut() {
-            merge_counters(data, values);
+            for (name, value) in values {
+                if let Some(windows) = &mut data.backlog_windows {
+                    windows.counter(name, value);
+                }
+                merge_counters(data, [(name, value)]);
+            }
         }
     });
 }
@@ -452,8 +516,25 @@ pub(crate) use measured;
 #[cfg(test)]
 pub(crate) fn test_profile(action: impl FnOnce()) -> serde_json::Value {
     begin();
+    DATA.with(|p| p.borrow_mut().as_mut().unwrap().backlog_windows = None);
     action();
     serde_json::to_value(DATA.with(|p| p.borrow_mut().take()).unwrap()).unwrap()
+}
+
+#[cfg(test)]
+pub(crate) fn test_backlog_profile(action: impl FnOnce()) -> serde_json::Value {
+    begin();
+    DATA.with(|p| {
+        p.borrow_mut().as_mut().unwrap().backlog_windows = Some(backlog::Windows::default())
+    });
+    action();
+    serde_json::to_value(DATA.with(|p| p.borrow_mut().take()).unwrap()).unwrap()
+}
+
+#[cfg(test)]
+pub(crate) fn test_without_profile(action: impl FnOnce()) {
+    DATA.with(|p| *p.borrow_mut() = None);
+    action();
 }
 
 #[cfg(test)]
@@ -530,6 +611,7 @@ mod tests {
                     overflow: 5,
                     pending: 8,
                     dequeued: 0,
+                    ..Default::default()
                 });
             }
             counters.set(QueueSnapshot {
@@ -537,6 +619,7 @@ mod tests {
                 overflow: 7,
                 pending: 8,
                 dequeued: 0,
+                ..Default::default()
             });
         }
         let p = DATA.with(|p| p.borrow_mut().take()).unwrap();

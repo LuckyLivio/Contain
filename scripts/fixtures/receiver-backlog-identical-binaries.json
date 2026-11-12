@@ -1,0 +1,14 @@
+{
+  "source": "GitHub run 43215661372 downloaded binary hashes, independently verified; original artifacts unchanged",
+  "candidate_source": "072829579bf7f373a0f6eef71dfd842de72a70a8",
+  "binaries": {
+    "baseline-contain.exe": {
+      "sha256": "95d9d838fec94de3c879c08d8ba88a808a92881feaa732d1ef5f5c2fc1e66d77",
+      "bytes": 13059072
+    },
+    "candidate-contain.exe": {
+      "sha256": "95d9d838fec94de3c879c08d8ba88a808a92881feaa732d1ef5f5c2fc1e66d77",
+      "bytes": 13059072
+    }
+  }
+}

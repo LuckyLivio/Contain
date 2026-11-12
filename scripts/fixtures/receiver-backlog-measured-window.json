@@ -1,0 +1,57 @@
+{
+  "fixture_kind": "measured_synthetic_offline_profile_record_excerpt",
+  "real_etw": false,
+  "source_profile_basename": "03-window-profile.json",
+  "offline_summary_sha256": "613ddc18c738ee3ecdf27eabdb2aecec8f5be5c2331b268e83023792725345f6",
+  "observed_at_ns": 35178667,
+  "record": {
+    "stage": "receiver_follow_classify",
+    "start_ns": 35175410,
+    "end_ns": 35178667,
+    "before": {
+      "enqueued": 4064,
+      "overflow": 0,
+      "dequeued": 0,
+      "pending": 4064,
+      "high_water": 4064,
+      "max_delay_ns": 0,
+      "first_backlog_ns": 34513725,
+      "first_overflow_ns": null
+    },
+    "after": {
+      "enqueued": 4096,
+      "overflow": 1,
+      "dequeued": 0,
+      "pending": 4096,
+      "high_water": 4096,
+      "max_delay_ns": 0,
+      "first_backlog_ns": 34513725,
+      "first_overflow_ns": 35175520
+    },
+    "units": 32,
+    "cpu_ns": null,
+    "follow": {
+      "pending_records": 0,
+      "pending_bytes": 0,
+      "drops": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "pending_reason_drops": [
+        0,
+        0,
+        0
+      ],
+      "pending_attempts": [
+        0,
+        0,
+        0
+      ],
+      "scan_visits": 0
+    }
+  }
+}

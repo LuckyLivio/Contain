@@ -326,6 +326,7 @@ impl FollowBuffer {
         if let Some(diagnostics) = self.diagnostics.take() {
             diagnostics.finish();
         }
+        profile::backlog_follow(self.pending.len(), self.bytes);
         admitted
     }
     fn retry_changed(&mut self, cache: &LifetimeCache) -> Vec<SystemEvent> {
@@ -355,6 +356,7 @@ impl FollowBuffer {
         if let Some(diagnostics) = self.diagnostics.take() {
             diagnostics.finish();
         }
+        profile::backlog_follow(self.pending.len(), self.bytes);
         admitted
     }
     fn scan_pending(&mut self, cache: &LifetimeCache, final_pass: bool) -> Vec<SystemEvent> {
@@ -1361,5 +1363,136 @@ mod tests {
         oversized.resource = "x".repeat(CANDIDATE_RECORD_BYTES + 1);
         follow.push(oversized);
         assert_eq!(follow.stats.candidate_dropped, 2);
+    }
+    #[test]
+    fn final_flush_checkpoint_preserves_empty_admission_and_discarded_pending_state() {
+        let mut follow = FollowBuffer::default();
+        let mut cache = cache();
+        let report = profile::test_backlog_profile(|| {
+            profile::observe_queue(profile::QueueSnapshot::default);
+            follow.bind((1, 100), "s");
+            assert!(
+                follow
+                    .receive(vec![file("unresolved-final", 999)], &mut cache, true)
+                    .is_empty()
+            );
+            assert_eq!(follow.pending.len(), 1);
+            assert!(follow.flush(&mut cache, true).is_empty());
+        });
+        assert!(follow.pending.is_empty());
+        assert_eq!(follow.stats.unresolved, 1);
+        // Final scope rejection remains separate from capacity loss.
+        assert_eq!(follow.stats.candidate_dropped, 0);
+        let rows = report["backlog_windows"]["maximum_backlog"]["records"]
+            .as_array()
+            .unwrap();
+        let checkpoints: Vec<_> = rows
+            .iter()
+            .filter(|row| row["stage"] == "receiver_follow_page_observation")
+            .collect();
+        assert_eq!(checkpoints.len(), 2);
+        assert_eq!(checkpoints[0]["follow"]["pending_records"], 1);
+        assert_eq!(checkpoints[1]["follow"]["pending_records"], 0);
+        assert_eq!(checkpoints[1]["follow"]["pending_bytes"], 0);
+        assert_eq!(
+            checkpoints[1]["follow"]["drops"],
+            serde_json::json!([0, 0, 0, 0, 0, 0])
+        );
+    }
+    #[test]
+    fn profiling_switch_preserves_saturated_follow_boundaries_and_conservative_evidence() {
+        fn run() -> serde_json::Value {
+            let mut follow = FollowBuffer::default();
+            let mut cache = cache();
+            // Actual retained lifecycle facts establish the root/direct-child
+            // actors; a separate process remains outside that relationship.
+            cache.ingest(&lifecycle("thread_start", 1, None, None, Some(8), 110));
+            cache.ingest(&lifecycle(
+                "process_start",
+                2,
+                Some(120),
+                Some(1),
+                None,
+                120,
+            ));
+            cache.ingest(&lifecycle("thread_start", 2, None, None, Some(9), 121));
+            cache.ingest(&lifecycle(
+                "process_start",
+                4,
+                Some(130),
+                Some(99),
+                None,
+                130,
+            ));
+            cache.ingest(&lifecycle("thread_start", 4, None, None, Some(10), 131));
+            profile::observe_queue(profile::QueueSnapshot::default);
+            follow.bind((1, 100), "s");
+            let unresolved = (0..CANDIDATE_RECORDS + 1)
+                .map(|index| file(&format!("unresolved-{index}"), 999))
+                .collect();
+            assert!(follow.receive(unresolved, &mut cache, true).is_empty());
+            assert_eq!(follow.pending.len(), CANDIDATE_RECORDS);
+            assert_eq!(follow.stats.candidate_dropped, 1);
+            // Reuse the existing fixed pressure inputs: full-count rejection
+            // for completion/other, plus the record-size guard for three kinds.
+            let mut rejected = vec![
+                pending_by_kind("completion", "completion-cap"),
+                pending_by_kind("other", "other-cap"),
+            ];
+            for kind in ["file", "completion", "other"] {
+                let mut oversized = pending_by_kind(kind, &format!("{kind}-oversized"));
+                oversized.resource = "x".repeat(CANDIDATE_RECORD_BYTES);
+                rejected.push(oversized);
+            }
+            assert!(follow.receive(rejected, &mut cache, false).is_empty());
+            let parent = file("parent-target", 8);
+            let child = file("child-target", 9);
+            let mut competing = file("unrelated-same-resource", 10);
+            competing.resource = parent.resource.clone();
+            let accepted = follow.receive(
+                vec![
+                    parent,
+                    child,
+                    competing,
+                    file("unrelated-other-resource", 10),
+                ],
+                &mut cache,
+                false,
+            );
+            assert_eq!(
+                accepted
+                    .iter()
+                    .map(|event| event.id.as_str())
+                    .collect::<Vec<_>>(),
+                ["parent-target", "child-target", "unrelated-same-resource"]
+            );
+            assert!(
+                accepted
+                    .iter()
+                    .all(|event| event.confidence == Confidence::Unknown && !event.state_validated)
+            );
+            assert_eq!(cache.processes[&(1, 100)].confidence, Confidence::Certain);
+            assert_eq!(cache.processes[&(2, 120)].confidence, Confidence::High);
+            assert_eq!(cache.processes[&(4, 130)].confidence, Confidence::Unknown);
+            assert!(follow.flush(&mut cache, true).is_empty());
+            assert_eq!(follow.stats.candidate_dropped, 6);
+            assert_eq!(follow.stats.excluded_other, 1);
+            assert_eq!(
+                follow.stats.candidate_high_water_records,
+                CANDIDATE_RECORDS as u64
+            );
+            assert!(follow.stats.candidate_high_water_bytes <= CANDIDATE_BYTES as u64);
+            assert!(follow.pending.is_empty());
+            serde_json::json!({ "events": accepted, "follow": follow.stats,
+                "pending_records": follow.pending.len(), "pending_bytes": follow.bytes })
+        }
+        let mut off = None;
+        profile::test_without_profile(|| off = Some(run()));
+        let mut existing = None;
+        let _existing_profile = profile::test_profile(|| existing = Some(run()));
+        let mut window = None;
+        let _window_profile = profile::test_backlog_profile(|| window = Some(run()));
+        assert_eq!(off, existing);
+        assert_eq!(off, window);
     }
 }
