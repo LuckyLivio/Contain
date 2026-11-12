@@ -3,7 +3,7 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
-    <Version>0.4.0-beta.1</Version>
+    <Version>0.4.0-beta.2</Version>
     <UseWPF>true</UseWPF>
     <!-- Only the independent harness uses WinForms SendKeys and GDI screenshots. -->
     <UseWindowsForms>true</UseWindowsForms>

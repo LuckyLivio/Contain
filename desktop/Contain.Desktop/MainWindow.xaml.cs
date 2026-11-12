@@ -125,7 +125,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         SetPage(detailsView, true);
         detailsView.ShowOverview();
         localStatus = Install.Result?.Succeeded == true
-            ? "记录已保存，可以查看文件操作。"
+            ? "记录已保存，可以查看事件与依据。"
             : "已打开本次保存的证据；记录未确认完整结束。";
         Changed(nameof(StatusMessage));
     }
@@ -196,7 +196,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         var dialog = new SaveFileDialog
         {
             Title = matches ? "导出全部匹配结果" : "导出本页报告", Filter = "本地 HTML 报告|*.html",
-            DefaultExt = ".html", FileName = matches ? "Contain-匹配结果.html" : "Contain-本页报告.html",
+            DefaultExt = ".html", FileName = context.DefaultFileName,
             OverwritePrompt = false, CheckPathExists = true
         };
         if (dialog.ShowDialog(this) != true) return;
@@ -251,7 +251,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
                 Title = "关于 Contain", CloseButtonText = "关闭",
                 Content = new System.Windows.Controls.TextBlock
                 {
-                    Text = $"Contain {ProductVersion.Version}\n\n记录安装行为，找回记录，查看文件操作及其依据。\n\n桌面：WPF + WPF UI 4.3.0（第三方 MIT 开源组件）\nMVVM：CommunityToolkit.Mvvm 8.4.2\n运行时：.NET {Environment.Version}\n核心：{ProductVersion.CoreVersion}\n\nContain 的采集、证据关联、会话与报告属于项目业务实现。组件及运行库许可见包内 THIRD-PARTY-NOTICES。\n\n本 Beta 不承诺完整软件足迹、最终所有权或安全删除。",
+                    Text = $"Contain {ProductVersion.Version}\n\n记录安装行为，找回记录，查看事件与依据。\n\n桌面：WPF + WPF UI 4.3.0（第三方 MIT 开源组件）\nMVVM：CommunityToolkit.Mvvm 8.4.2\n运行时：.NET {Environment.Version}\n核心：{ProductVersion.CoreVersion}\n\nContain 的采集、证据关联、会话与报告属于项目业务实现。组件及运行库许可见包内 THIRD-PARTY-NOTICES。\n\n本 Beta 不承诺完整软件足迹、最终所有权或安全删除。",
                     TextWrapping = TextWrapping.Wrap, MaxWidth = 480
                 }
             };

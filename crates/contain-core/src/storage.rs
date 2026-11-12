@@ -406,6 +406,24 @@ fn parse_confidence(value: &str) -> Confidence {
 mod tests {
     use super::*;
     #[test]
+    fn linked_sqlite_meets_patched_database_wal_security_floor() {
+        // Check the library actually linked into this test executable, not only
+        // Cargo metadata. RUSTSEC-2026-0459 is patched in SQLite >= 3.54.0.
+        // Historical/read-only/WAL behavior is exercised by the existing tests;
+        // this version guard does not claim to reproduce the memory disclosure.
+        let connection = Connection::open_in_memory().unwrap();
+        let version: String = connection
+            .query_row("SELECT sqlite_version()", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, rusqlite::version());
+        assert!(
+            rusqlite::version_number() >= 3_054_000,
+            "linked SQLite {version} is below the patched WAL floor"
+        );
+        eprintln!("linked_sqlite={version}; patched_wal_floor=3.54.0");
+    }
+
+    #[test]
     fn migrates_real_v1_tables_without_rewriting_history() {
         let connection = Connection::open_in_memory().unwrap();
         connection

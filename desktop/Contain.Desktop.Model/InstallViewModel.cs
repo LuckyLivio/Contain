@@ -95,6 +95,7 @@ public sealed class InstallViewModel : ObservableObject
     public bool Busy => Volatile.Read(ref busyGate) != 0;
     public bool IsActive => active;
     public bool IsChecking => checking;
+    public bool ShowLiveProgress => active && Result is null && LastStatus?.Stage is not ("finished" or "failed");
     public bool ConfigurationEnabled => !Busy && !consumed;
     public bool CanStart => ConfigurationEnabled && !string.IsNullOrWhiteSpace(InstallerPath)
         && (FollowInstaller || !string.IsNullOrWhiteSpace(WatchRoot));
@@ -117,7 +118,7 @@ public sealed class InstallViewModel : ObservableObject
         : value.InstallerExitCode is null ? "已退出，未提供退出码"
         : value.InstallerExitCode == 0 ? "退出码 0 · 最终安装状态未验证"
         : $"退出码 {value.InstallerExitCode} · 非零，含义由安装器定义";
-    public string SavedState => Result?.Succeeded == true ? "记录已保存，可以查看文件操作"
+    public string SavedState => Result?.Succeeded == true ? "记录已保存，可以查看事件与依据"
         : LastStatus?.DataSaved == true ? "已有证据保存，尚未确认完整结束" : "保存尚未确认";
     public string Coverage => LastStatus?.QualityLevel switch
     {
@@ -367,7 +368,7 @@ public sealed class InstallViewModel : ObservableObject
             "finished" => completion == true ? "记录已保存" : "正在确认最终结果",
             "failed" => "记录失败或未确认结束", _ => "记录状态未确认"
         };
-        StatusMessage = completion == true ? "记录已保存，可以查看文件操作。"
+        StatusMessage = completion == true ? SavedCompletionMessage(value)
             : completion == false || value.Stage == "failed" ? "本次记录未确认完整结束，请查看技术详情。" + (value.DataSaved ? "可打开本次记录查看已保存的证据。" : "")
             : value.Stage == "finished" ? "已收到最终状态，正在确认采集进程退出与本次结果。"
             : value.Step == "result_readback" ? "记录正在按准确会话 ID 读回，等待最终结果确认。"
@@ -376,6 +377,19 @@ public sealed class InstallViewModel : ObservableObject
             : value.InstallerInteraction == "may_need_input" ? "安装器仍在运行，可能需要您在安装器窗口继续操作。"
             : "正在准备本次记录，安装器启动状态以实际来源为准。";
         RenderMeasurements();
+    }
+
+    private static string SavedCompletionMessage(InstallStatus status)
+    {
+        // The existing stream reports combined loss reasons, not per-source
+        // counters. Do not relabel this generic warning as ETW source loss.
+        var loss = status.QualityReasons.Contains("Source loss, decode failure, bounded cache/channel overflow or raw journal/checkpoint failure was reported.", StringComparer.Ordinal);
+        var timeout = status.QualityReasons.Contains("Session reached its maximum drain duration; later changes may be missing.", StringComparer.Ordinal);
+        if (loss && timeout) return "记录已保存，但采集报告来源或保存损失，且收尾等待超时；后续操作可能未被记录。";
+        if (loss) return "记录已保存，但采集报告来源或保存损失；请查看本次记录中的具体缺口。";
+        if (timeout) return "记录已保存，但收尾等待超时，后续操作可能未被记录。";
+        return status.QualityLevel == "Incomplete" ? "记录已保存，但证据覆盖不完整；请查看技术详情中的具体缺口。"
+            : "记录已保存，可以查看事件与依据。";
     }
 
     private void RenderMeasurements()
@@ -392,7 +406,7 @@ public sealed class InstallViewModel : ObservableObject
 
     private void NotifyState()
     {
-        foreach (var property in new[] { nameof(Busy), nameof(IsActive), nameof(IsChecking), nameof(ConfigurationEnabled),
+        foreach (var property in new[] { nameof(Busy), nameof(IsActive), nameof(IsChecking), nameof(ShowLiveProgress), nameof(ConfigurationEnabled),
             nameof(CanStart), nameof(CanCheckEnvironment), nameof(CanOpenSession), nameof(HasTask), nameof(LastStatus),
             nameof(Result), nameof(SessionId), nameof(Step), nameof(InstallerOutcome), nameof(SavedState), nameof(Coverage),
             nameof(TaskSummary), nameof(Diagnostics) }) OnPropertyChanged(property);

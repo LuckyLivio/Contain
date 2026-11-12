@@ -51,7 +51,9 @@ public partial class RecordDetailsView : UserControl
     private void UpdateEventLayout()
     {
         if (EventColumns is null || EventBodyScroll is null) return;
-        var compact = ActualWidth < 760;
+        // Navigation and page margins reduce the event area's usable width.
+        // Choose the stacked layout from that area, rather than the whole view.
+        var compact = EventBodyScroll.ActualWidth < 760;
         ListColumn.Width = new GridLength(compact ? 1 : 3, GridUnitType.Star);
         ExplanationColumn.Width = compact ? new GridLength(0) : new GridLength(2, GridUnitType.Star);
         Grid.SetColumn(ExplanationSurface, compact ? 0 : 1);

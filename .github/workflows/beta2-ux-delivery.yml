@@ -1,0 +1,273 @@
+name: Beta.2 experience delivery acceptance
+on:
+  push:
+    branches: ['fix/beta2-ux-delivery']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  build:
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[ux-acceptance]') }}
+    runs-on: windows-latest
+    timeout-minutes: 25
+    outputs:
+      zip_sha256: ${{ steps.freeze.outputs.zip_sha256 }}
+      tools_sha256: ${{ steps.freeze.outputs.tools_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Enforce Stage A capture and schema boundary
+        shell: pwsh
+        run: |
+          git diff --exit-code ddafeb26a89ea7bf625421e6f958b3e8ca49c31b -- crates/contain-core/src/capture.rs crates/contain-core/src/drain.rs crates/contain-core/src/follow.rs crates/contain-core/src/ingest.rs crates/contain-core/src/model.rs crates/contain-core/src/model crates/contain-core/src/windows docs/schema tools/offline/src/lib.rs vendor
+          if ($LASTEXITCODE -ne 0) { throw 'Stage A cannot include capture behavior, attribution schema or PR20 diagnostic changes' }
+      - name: Declare Stage A's two independent live checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_RUN_ATTEMPT -ne '1') { throw 'Retain failures; no repeat-to-green run' }
+          $out = Join-Path $env:RUNNER_TEMP ('contain-ux-build-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+          New-Item -ItemType Directory -Path $out,(Join-Path $out 'public'),(Join-Path $out 'tools') | Out-Null
+          "UX_OUT=$out" >> $env:GITHUB_ENV
+          [ordered]@{schema_version=1;protocol='contain-ux-delivery-plan-1';source_sha=$env:GITHUB_SHA;maximum_native_captures=2;maximum_gui_installations=1;maximum_load_captures=1;background_files=12000;successful_background_operations=36000;retries=0;zip_frozen_before_native=$true;core_configuration='debug';viewer_configuration='Release';capture_algorithms='main follow/ingest/drain/ETW; SQLite dependency safety update';independent_windows_jobs=@('wpf','capture');same_frozen_zip=$true;one_job_failure_does_not_skip_other=$true;required=@('repository_quality','full_wpf_native_acceptance','independent_fixed_load_oracle','exact_frozen_bytes');scope='experience fixes and reviewed dependency safety update; no capture-reliability fix'} | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $out 'public/plan.json') -Encoding utf8
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.403
+            8.0.427
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the exact core and separate controlled fixture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo build --workspace --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Core and controlled fixture build failed' }
+          ./target/debug/viewer-fixtures.exe "$env:UX_OUT/tools/fixtures"
+          if ($LASTEXITCODE -ne 0) { throw 'Isolated synthetic stores failed' }
+          python -c "import pathlib,shutil,sqlite3,sys; p=pathlib.Path(sys.argv[1]); shutil.copyfile(p/'empty.db',p/'future.db'); c=sqlite3.connect(p/'future.db'); c.execute('PRAGMA user_version=99'); c.close(); (p/'corrupt.db').write_bytes(b'SYNTHETIC corrupt database'); c=sqlite3.connect(p/'unrelated.db'); c.execute('CREATE TABLE unrelated(value TEXT)'); c.close()" "$env:UX_OUT/tools/fixtures"
+          if ($LASTEXITCODE -ne 0) { throw 'Adverse synthetic stores failed' }
+          rustc --version > "$env:UX_OUT/public/rust-version.txt"
+          dotnet --version > "$env:UX_OUT/public/dotnet-version.txt"
+      - name: Locked desktop regressions and native harness build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet restore desktop/Contain.Desktop.Model.Tests --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Model restore failed' }
+          dotnet run --project desktop/Contain.Desktop.Model.Tests -c Release --no-restore -- "$env:UX_OUT/public/model-checks.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Model regression failed' }
+          dotnet run --project desktop/Contain.Viewer.Presentation.Tests -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Shared presentation regression failed' }
+          dotnet restore desktop/Contain.Desktop -p:RuntimeIdentifier=win-x64 -p:RuntimeIdentifiers=win-x64 -p:SelfContained=true --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'WPF restore failed' }
+          dotnet publish desktop/Contain.Desktop -c Release -r win-x64 --self-contained true --no-restore -o "$env:UX_OUT/viewer"
+          if ($LASTEXITCODE -ne 0) { throw 'WPF publish failed' }
+          dotnet restore desktop/Contain.Desktop.Tests -p:RuntimeIdentifier=win-x64 -p:RuntimeIdentifiers=win-x64 -p:SelfContained=true --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Native harness restore failed' }
+          dotnet publish desktop/Contain.Desktop.Tests -c Release -r win-x64 --self-contained true --no-restore -o "$env:UX_OUT/tools/harness"
+          if ($LASTEXITCODE -ne 0) { throw 'Native harness publish failed' }
+          python scripts/test-package-beta2-desktop.py
+          if ($LASTEXITCODE -ne 0) { throw 'Freeze contract failed' }
+          python scripts/test-ux-delivery-acceptance.py
+          if ($LASTEXITCODE -ne 0) { throw 'Independent result aggregation failed' }
+      - name: Freeze one ZIP and immutable synthetic validation tools
+        id: freeze
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vsRoot = & $vswhere -latest -products '*' -property installationPath
+          $crt = Get-ChildItem -LiteralPath (Join-Path $vsRoot 'VC/Redist/MSVC') -Directory -Recurse | Where-Object { $_.Name -like 'Microsoft.VC*.CRT' -and $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $crt) { throw 'Reviewed x64 CRT unavailable' }
+          python scripts/package-beta2-desktop.py prepare --viewer "$env:UX_OUT/viewer" --core target/debug/contain.exe --fixture-source target/debug/contain-test-installer.exe --fixtures "$env:UX_OUT/tools/fixtures" --package "$env:UX_OUT/package" --zip "$env:UX_OUT/public/contain-0.4.0-beta.2-windows-x64.zip" --fixture "$env:UX_OUT/tools/contain-test-installer.exe" --nuget "$env:USERPROFILE/.nuget/packages" --runtime-directory $crt.FullName --source $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Freeze failed' }
+          Copy-Item -LiteralPath "$env:UX_OUT/package/BUILD.json" -Destination "$env:UX_OUT/public/BUILD-IDENTITY.json"
+          Copy-Item -LiteralPath (Join-Path $crt.FullName 'vcruntime140.dll') -Destination "$env:UX_OUT/tools/vcruntime140.dll"
+          python -c "import hashlib,json,pathlib,sys; r=pathlib.Path(sys.argv[1]); rows=[dict(path=p.relative_to(r).as_posix(),sha256=hashlib.file_digest(p.open('rb'),'sha256').hexdigest()) for p in sorted(r.rglob('*')) if p.is_file()]; (r/'TOOLS.json').write_text(json.dumps(dict(source_sha=sys.argv[2],synthetic_stores_only=True,files=rows),indent=2)+'\n')" "$env:UX_OUT/tools" $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Validation tools identity failed' }
+          $zipHash = (Get-FileHash -LiteralPath "$env:UX_OUT/public/contain-0.4.0-beta.2-windows-x64.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $toolsHash = (Get-FileHash -LiteralPath "$env:UX_OUT/tools/TOOLS.json" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "zip_sha256=$zipHash" >> $env:GITHUB_OUTPUT
+          "tools_sha256=$toolsHash" >> $env:GITHUB_OUTPUT
+          [ordered]@{source_sha=$env:GITHUB_SHA;file='contain-0.4.0-beta.2-windows-x64.zip';sha256=$zipHash;tools_manifest_sha256=$toolsHash} | ConvertTo-Json | Set-Content "$env:UX_OUT/public/ZIP-IDENTITY.json" -Encoding utf8
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ux-build-evidence
+          path: |
+            ${{ env.UX_OUT }}/public/*.json
+            ${{ env.UX_OUT }}/public/*-version.txt
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: steps.freeze.outcome == 'success'
+        with:
+          name: ux-frozen-windows-package
+          path: ${{ env.UX_OUT }}/public/contain-0.4.0-beta.2-windows-x64.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: steps.freeze.outcome == 'success'
+        with:
+          name: ux-synthetic-validation-tools
+          path: ${{ env.UX_OUT }}/tools
+          if-no-files-found: error
+
+  wpf:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      UX_EXPECTED_ZIP: ${{ needs.build.outputs.zip_sha256 }}
+      UX_EXPECTED_TOOLS: ${{ needs.build.outputs.tools_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ux-frozen-windows-package
+          path: frozen
+      - uses: actions/download-artifact@v4
+        with:
+          name: ux-synthetic-validation-tools
+          path: validation-tools
+      - name: Verify the exact shared frozen product and tools
+        id: verify
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_RUN_ATTEMPT -ne '1') { throw 'Retain the original failed attempt' }
+          if ((Get-FileHash frozen/contain-0.4.0-beta.2-windows-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:UX_EXPECTED_ZIP) { throw 'Shared ZIP differs' }
+          if ((Get-FileHash validation-tools/TOOLS.json -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:UX_EXPECTED_TOOLS) { throw 'Validation tools differ' }
+          python scripts/ux-delivery-acceptance.py tools --directory validation-tools --source $env:GITHUB_SHA --tools-sha256 $env:UX_EXPECTED_TOOLS
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic tool manifest verification failed' }
+          Expand-Archive -LiteralPath frozen/contain-0.4.0-beta.2-windows-x64.zip -DestinationPath 'package 中文 & [x]'
+          python scripts/package-beta2-desktop.py verify --zip frozen/contain-0.4.0-beta.2-windows-x64.zip --package 'package 中文 & [x]' > package-verification.json
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen product failed verification' }
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.403
+      - name: Existing actual WPF navigation regressions
+        shell: pwsh
+        run: |
+          dotnet restore desktop/Contain.Desktop.Controls.Tests --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Control restore failed' }
+          dotnet run --project desktop/Contain.Desktop.Controls.Tests -c Release --no-restore -- "$env:RUNNER_TEMP/ux-wpf/public/controls"
+          if ($LASTEXITCODE -ne 0) { throw 'Actual WPF navigation control failed' }
+      - name: One complete frozen WPF and controlled interactive installation
+        timeout-minutes: 12
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'ux-wpf'
+          New-Item -ItemType Directory -Path (Join-Path $out 'private'),(Join-Path $out 'fixture-temp') -ErrorAction Stop | Out-Null
+          $env:TEMP = Join-Path $out 'fixture-temp'
+          $env:TMP = $env:TEMP
+          $testArgs = @('--package',([IO.Path]::GetFullPath('package 中文 & [x]')),'--fixtures',([IO.Path]::GetFullPath('validation-tools/fixtures')),'--output',(Join-Path $out 'public'),'--private-output',(Join-Path $out 'private'),'--source',$env:GITHUB_SHA,'--install-fixture',([IO.Path]::GetFullPath('validation-tools/contain-test-installer.exe')))
+          $quoted = $testArgs | ForEach-Object { '"' + $_.Replace('"', '\"') + '"' }
+          $harness = Start-Process -FilePath ([IO.Path]::GetFullPath('validation-tools/harness/Contain.Desktop.Tests.exe')) -ArgumentList $quoted -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $out 'private/harness.log') -RedirectStandardError (Join-Path $out 'private/harness-stderr.log')
+          $null = $harness.Handle
+          if (-not $harness.WaitForExit(600000)) { $harness.Kill(); throw 'Owned harness exceeded ten minutes' }
+          $harness.Refresh()
+          if ($null -eq $harness.ExitCode -or $harness.ExitCode -ne 0) { throw 'WPF native acceptance failed; retain result' }
+      - name: Confirm the tested product remains unchanged
+        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          python scripts/package-beta2-desktop.py verify --zip frozen/contain-0.4.0-beta.2-windows-x64.zip --package 'package 中文 & [x]' > package-after.json
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen product changed during WPF validation' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ux-wpf-evidence
+          path: |
+            ${{ runner.temp }}/ux-wpf/public/*.json
+            ${{ runner.temp }}/ux-wpf/public/controls/*.json
+            ${{ runner.temp }}/ux-wpf/public/screenshots/*.png
+            ${{ runner.temp }}/ux-wpf/public/reports/*.html
+          if-no-files-found: warn
+
+  capture:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 10
+    env:
+      UX_EXPECTED_ZIP: ${{ needs.build.outputs.zip_sha256 }}
+      UX_EXPECTED_TOOLS: ${{ needs.build.outputs.tools_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ux-frozen-windows-package
+          path: frozen
+      - uses: actions/download-artifact@v4
+        with:
+          name: ux-synthetic-validation-tools
+          path: validation-tools
+      - name: Verify the same frozen ZIP before one fixed load capture
+        id: verify
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_RUN_ATTEMPT -ne '1') { throw 'Retain the original failed attempt' }
+          if ((Get-FileHash frozen/contain-0.4.0-beta.2-windows-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:UX_EXPECTED_ZIP) { throw 'Shared ZIP differs' }
+          if ((Get-FileHash validation-tools/TOOLS.json -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:UX_EXPECTED_TOOLS) { throw 'Validation tools differ' }
+          python scripts/ux-delivery-acceptance.py tools --directory validation-tools --source $env:GITHUB_SHA --tools-sha256 $env:UX_EXPECTED_TOOLS
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic tool manifest verification failed' }
+          Expand-Archive -LiteralPath frozen/contain-0.4.0-beta.2-windows-x64.zip -DestinationPath package
+          python scripts/package-beta2-desktop.py verify --zip frozen/contain-0.4.0-beta.2-windows-x64.zip --package package > package-verification.json
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen product failed verification' }
+      - name: One independent 12000-file capture and unchanged truth oracle
+        shell: pwsh
+        run: |
+          ./scripts/follow-installer-experiment.ps1 -ContainExecutable package/contain.exe -FixtureExecutable validation-tools/contain-test-installer.exe -OutputDirectory "$env:RUNNER_TEMP/ux-load" -Source $env:GITHUB_SHA -BackgroundFiles 12000
+      - name: Preserve exact load accounting and acceptance
+        if: always()
+        shell: pwsh
+        run: |
+          python scripts/ux-delivery-acceptance.py capture --directory "$env:RUNNER_TEMP/ux-load" --source $env:GITHUB_SHA --zip-sha256 $env:UX_EXPECTED_ZIP --zip frozen/contain-0.4.0-beta.2-windows-x64.zip --output "$env:RUNNER_TEMP/ux-load/public/load-summary.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Independent fixed-load acceptance failed; keep all evidence' }
+      - name: Confirm frozen product remains unchanged
+        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          python scripts/package-beta2-desktop.py verify --zip frozen/contain-0.4.0-beta.2-windows-x64.zip --package package > package-after.json
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen product changed during fixed-load validation' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ux-capture-evidence
+          path: ${{ runner.temp }}/ux-load/public/*.json
+          if-no-files-found: warn
+
+  acceptance:
+    needs: [build, wpf, capture]
+    if: ${{ always() && needs.build.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      STAGE_A_NEEDS: ${{ toJSON(needs) }}
+      UX_EXPECTED_ZIP: ${{ needs.build.outputs.zip_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        if: needs.build.result == 'success'
+        with:
+          name: ux-frozen-windows-package
+          path: frozen
+      - name: Download each retained independent result
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p retained/wpf retained/capture
+          gh run download "$GITHUB_RUN_ID" --name ux-wpf-evidence --dir retained/wpf || true
+          gh run download "$GITHUB_RUN_ID" --name ux-capture-evidence --dir retained/capture || true
+      - name: Require both native results for this exact ZIP
+        run: |
+          python scripts/ux-delivery-acceptance.py final --source "$GITHUB_SHA" --zip-sha256 "$UX_EXPECTED_ZIP" --zip frozen/contain-0.4.0-beta.2-windows-x64.zip --desktop-summary retained/wpf/modern-desktop-summary.json --capture-summary retained/capture/load-summary.json --output FINAL-ACCEPTANCE.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ux-final-native-acceptance
+          path: FINAL-ACCEPTANCE.json
+          if-no-files-found: error
