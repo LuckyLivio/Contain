@@ -599,7 +599,6 @@ internal sealed class DesktopDriver : IDisposable
         Directory.CreateDirectory(output); var path = Path.Combine(output, name); bitmap.Save(path, ImageFormat.Png);
         return new Screenshot(name, Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant(), bitmap.Width, bitmap.Height, GetDpiForWindow(window), kind);
     }
-    internal static Task<string> ClipboardAsync() => Sta(Forms.Clipboard.GetText);
     internal static Task SetClipboardAsync(string value) => Sta(() => Forms.Clipboard.SetText(value));
     internal Task<object> NavigationDiagnosticsAsync() => Ui<object>("fixed_navigation_diagnostics", () =>
     {

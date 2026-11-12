@@ -23,7 +23,7 @@ jobs:
           $out = Join-Path $env:RUNNER_TEMP ('contain-beta2-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
           New-Item -ItemType Directory -Path $out,(Join-Path $out 'public'),(Join-Path $out 'private') | Out-Null
           "BETA2_OUT=$out" >> $env:GITHUB_ENV
-          [ordered]@{schema_version=1;protocol='contain-beta2-plan-1';source_sha=$env:GITHUB_SHA;native_windows=$true;maximum_gui_installations=1;maximum_comparison_captures=4;retries=0;capture_core_changed=$true;zip_frozen_before_native=$true;comparison_order=@('r1/baseline','r1/candidate','r2/candidate','r2/baseline');background_files=12000;baseline_version='0.4.0-beta.1';baseline_sha256='953b243bb3dd8ea32e61dcf5fdeaf143b9e697ea4a57021fb85ffd961ef907e3';success=@('exact_frozen_package','all_native_wpf_checks','independent_parent_child_and_unrelated_truth','both_candidate_comparisons_pass_unchanged_oracle','zero_candidate_source_and_application_loss','exact_session_cold_restart','interactive_installer_custom_directory');failures_retained=$true} | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $out 'public/plan.json') -Encoding utf8
+          [ordered]@{schema_version=1;protocol='contain-beta2-plan-1';source_sha=$env:GITHUB_SHA;native_windows=$true;maximum_gui_installations=1;maximum_comparison_captures=4;retries=0;capture_core_changed=$true;zip_frozen_before_native=$true;execution_order=@('freeze_product_zip','four_fixed_abba_captures','verify_comparison_owned_processes_exited','one_wpf_interactive_acceptance','verify_frozen_bytes');order_change_reason='B5: prior GUI observation failures prevented source-loss measurement; compare source capture first with unchanged workload and thresholds';comparison_order=@('r1/baseline','r1/candidate','r2/candidate','r2/baseline');background_files=12000;baseline_version='0.4.0-beta.1';baseline_sha256='953b243bb3dd8ea32e61dcf5fdeaf143b9e697ea4a57021fb85ffd961ef907e3';success=@('exact_frozen_package','all_native_wpf_checks','independent_parent_child_and_unrelated_truth','both_candidate_comparisons_pass_unchanged_oracle','zero_candidate_source_and_application_loss','exact_session_cold_restart','interactive_installer_custom_directory');failures_retained=$true} | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $out 'public/plan.json') -Encoding utf8
           [ordered]@{windows=[Environment]::OSVersion.Version.ToString();os_architecture=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString();process_architecture=[Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString();runner_arch=$env:RUNNER_ARCH;processor_architecture=$env:PROCESSOR_ARCHITECTURE;processor_architew6432=$env:PROCESSOR_ARCHITEW6432;tool='GitHub hosted windows-latest';emulation_verified=$false} | ConvertTo-Json | Set-Content (Join-Path $out 'public/platform.json') -Encoding utf8
       - uses: actions/setup-dotnet@v4
         with:
@@ -86,8 +86,28 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Freeze failed' }
           Copy-Item -LiteralPath (Join-Path $package 'BUILD.json') -Destination "$env:BETA2_OUT/public/BUILD-IDENTITY.json"
           Get-FileHash -LiteralPath $zip -Algorithm SHA256 | Select-Object @{n='file';e={'contain-0.4.0-beta.2-windows-x64.zip'}},@{n='sha256';e={$_.Hash.ToLowerInvariant()}} | ConvertTo-Json | Set-Content "$env:BETA2_OUT/public/ZIP-IDENTITY.json" -Encoding utf8
+      - name: Fixed same-runner ABBA source-loss comparison
+        id: comparison
+        if: ${{ !cancelled() && steps.freeze.outcome == 'success' }}
+        timeout-minutes: 18
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh release download v0.4.0-beta.1 --repo LuckyLivio/Contain --pattern contain-0.4.0-beta.1-windows-x64.zip --dir "$env:BETA2_OUT/private"
+          if ($LASTEXITCODE -ne 0) { throw 'Immutable baseline unavailable' }
+          ./scripts/beta2-capture-comparison.ps1 -BaselineZip "$env:BETA2_OUT/private/contain-0.4.0-beta.1-windows-x64.zip" -CandidateZip "$env:BETA2_OUT/public/contain-0.4.0-beta.2-windows-x64.zip" -CandidateSource $env:GITHUB_SHA -FixtureExecutable "$env:BETA2_OUT/private/contain-test-installer.exe" -OutputDirectory "$env:BETA2_OUT/comparison"
+          if ($LASTEXITCODE -ne 0) { throw 'Fixed comparison failed; do not start WPF capture' }
+          $comparison = Get-Content -LiteralPath "$env:BETA2_OUT/comparison/public/comparison.json" -Raw | ConvertFrom-Json
+          $samples = @($comparison.cases.PSObject.Properties.Value)
+          if ($comparison.accepted -ne $true -or $samples.Count -ne 4 -or @($samples | Where-Object { $_.all_owned_processes_exited -ne $true }).Count -ne 0) {
+            throw 'All four comparison workloads must complete with owned processes exited before WPF acceptance'
+          }
+          "quiescent=true" >> $env:GITHUB_OUTPUT
       - name: One actual frozen WPF and interactive fixture acceptance
         id: desktop
+        if: ${{ !cancelled() && steps.comparison.outcome == 'success' && steps.comparison.outputs.quiescent == 'true' }}
         timeout-minutes: 12
         shell: pwsh
         run: |
@@ -103,18 +123,6 @@ jobs:
           if (-not $harness.WaitForExit(600000)) { $harness.Kill(); throw 'Owned harness exceeded ten minutes' }
           $harness.Refresh()
           if ($null -eq $harness.ExitCode -or $harness.ExitCode -ne 0) { throw 'Native acceptance failed; retain all results' }
-      - name: Fixed same-runner ABBA source-loss comparison
-        id: comparison
-        if: ${{ !cancelled() && steps.freeze.outcome == 'success' && steps.desktop.outcome == 'success' }}
-        timeout-minutes: 18
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          gh release download v0.4.0-beta.1 --repo LuckyLivio/Contain --pattern contain-0.4.0-beta.1-windows-x64.zip --dir "$env:BETA2_OUT/private"
-          if ($LASTEXITCODE -ne 0) { throw 'Immutable baseline unavailable' }
-          ./scripts/beta2-capture-comparison.ps1 -BaselineZip "$env:BETA2_OUT/private/contain-0.4.0-beta.1-windows-x64.zip" -CandidateZip "$env:BETA2_OUT/public/contain-0.4.0-beta.2-windows-x64.zip" -CandidateSource $env:GITHUB_SHA -FixtureExecutable "$env:BETA2_OUT/private/contain-test-installer.exe" -OutputDirectory "$env:BETA2_OUT/comparison"
       - name: Confirm tested ZIP and extracted bytes are unchanged
         if: ${{ !cancelled() && steps.freeze.outcome == 'success' }}
         shell: pwsh

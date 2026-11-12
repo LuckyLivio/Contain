@@ -133,3 +133,16 @@ owned dialog ComboBoxes, requires a unique visible enabled HTML type control and
 its exact selected label, and preserves bounded provider diagnostics. This fixes
 the test's type-reading assumption; B2 remains a failed attempt. The actual
 no-extension save must still produce the exact `.html` file before acceptance.
+
+B4's original clipboard check observed the expected event ID and then failed a
+second global read; it did not retain the second value, owner or sequence. Its
+root cause remains unconfirmed. The next harness uses an independent Win32
+OpenClipboard/CF_UNICODETEXT snapshot: it reads bounded Unicode text while the
+clipboard is locked, records sequence/owner role/content classification, and
+asserts against the same immutable snapshot that satisfied the original
+five-second wait. It does not require the global clipboard to remain unchanged
+later. A pre-install self-check writes/reads a controlled sentinel and then
+writes wrong content, verifying that the snapshot rejects the original expected
+sentinel. Public probes contain no clipboard text, hashes of foreign content,
+owner PID or window identity; only first/last bounded classifications and attempt
+counts are retained. Unexpected native errors still fail the stage.

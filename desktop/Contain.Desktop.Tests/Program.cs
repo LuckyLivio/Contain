@@ -19,6 +19,8 @@ internal sealed record Options(string Package, string Fixtures, string Output, s
             Path.GetFullPath(values["--private-output"]), values["--source"], values.TryGetValue("--install-fixture", out var fixture) ? Path.GetFullPath(fixture) : null);
     }
 }
+internal sealed record ClipboardProbe(string Purpose, int Attempts, ClipboardObservation? First,
+    ClipboardObservation? Last, bool ConditionObserved, string? ErrorType);
 internal sealed record Check(string Name, string Status, string? ErrorType = null, string? Stage = null, string? Control = null, string? SafeReason = null, string[]? CallSites = null);
 internal sealed class AssertionException(string reason) : Exception(reason);
 
@@ -48,6 +50,7 @@ internal sealed class NativeSuite(Options options)
     private readonly List<object> launches = [];
     private readonly List<object> failureScreenshots = [];
     private readonly List<object> navigationDiagnostics = [];
+    private readonly List<ClipboardProbe> clipboardProbes = [];
     private readonly Dictionary<string, string> hashes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, JsonElement> earlierLiveRecords = new(StringComparer.Ordinal);
     private readonly string[] expected = Enumerable.Range(70, 53).Select(i => $"synthetic-search-event-{i:000}").ToArray();
@@ -121,7 +124,7 @@ internal sealed class NativeSuite(Options options)
                 core_sha256 = HashIfPresent(Core), package_manifest_sha256 = HashIfPresent(Path.Combine(options.Package, "BUILD.json")),
                 planned_checks = Plan, checks, assertions, passed = checks.Count(c => c.Status == "passed"), failed = checks.Count(c => c.Status == "failed"),
                 not_run = checks.Count(c => c.Status == "not_run"), retries = 0, screenshots, launches, failure_screenshots = failureScreenshots,
-                navigation_diagnostics = navigationDiagnostics,
+                navigation_diagnostics = navigationDiagnostics, clipboard_probes = clipboardProbes,
                 search = new { expected_ids = expected, first_page_ids = actualFirst, second_page_ids = actualSecond, exported_ids = exportedIds, selected_event_id = selectedId },
                 live = new { session_id = liveSession, selected_event_id = liveEvent, accounting = liveAccounting, follow_oracle = followOracle },
                 scope = "One native WPF package, isolated synthetic stores and at most one real follow-installer capture. Native DPI is measured per screenshot. No simulated scaling is reported as physical DPI."
@@ -163,6 +166,7 @@ internal sealed class NativeSuite(Options options)
     {
         await ObservedWait.VerifyContractAsync();
         HitTargetGuard.VerifyContract();
+        await ClipboardSelfTest();
         Require(options.Source.Length == 40 && options.Source.All(Uri.IsHexDigit), "source SHA shape");
         foreach (var file in new[] { "Contain.Viewer.exe", "Contain.Viewer.dll", "contain.exe", "BUILD.json" }) Track(Path.Combine(options.Package, file));
         using var build = JsonDocument.Parse(File.ReadAllText(Path.Combine(options.Package, "BUILD.json")));
@@ -292,7 +296,8 @@ internal sealed class NativeSuite(Options options)
         await Explain("synthetic-search-event-080", "synthetic-search");
         await DesktopDriver.SetClipboardAsync("SYNTHETIC pending explicit full path copy"); await D.InvokeAsync("CopyEventPath");
         const string fullPath = @"C:\synthetic\含 空格\Needle 中文文件 100%_done.txt";
-        await D.UntilAsync("clipboard_full_path", "CopyEventPath", async () => await DesktopDriver.ClipboardAsync() == fullPath, TimeSpan.FromSeconds(5));
+        var fullPathSnapshot = await WaitForClipboard(fullPath, "resource_path", "CopyEventPath");
+        Require(fullPathSnapshot.Matches(fullPath), "full path copy equals the exact resource in the retained OS snapshot");
         await Search("never-present-synthetic", 0, 0);
         Require(!await D.EnabledAsync("CopyEventId") && !await D.EnabledAsync("ExportMatches"), "empty query cannot export or copy stale evidence");
         await D.InvokeAsync("ClearSearch");
@@ -489,7 +494,9 @@ internal sealed class NativeSuite(Options options)
             await SelectTimelineEvent(id); await CopyEvent(id);
             await DesktopDriver.SetClipboardAsync("SYNTHETIC clipboard sentinel");
             await D.InvokeAsync("CopyEventPath");
-            Require(await DesktopDriver.ClipboardAsync() == processEvent.GetProperty("resource").GetString(), "process event resource copy preserves exact value");
+            var resource = processEvent.GetProperty("resource").GetString()!;
+            var resourceSnapshot = await WaitForClipboard(resource, "process_resource", "CopyEventPath");
+            Require(resourceSnapshot.Matches(resource), "process event resource copy preserves exact value in the retained OS snapshot");
             await Shot("real-" + operation + "-explanation.png", "real-controlled-process-event");
         }
         var firstPid = D.ProcessId; await D.CloseAsync(); PreserveLaunch(); D.Dispose(); desktop = null;
@@ -610,12 +617,53 @@ internal sealed class NativeSuite(Options options)
     }
     private static string Database(string root) => Path.Combine(root, "Contain", "Records", "contain.db");
     private DesktopDriver D => desktop ?? throw new InvalidOperationException("Required packaged desktop is not running.");
+    private async Task ClipboardSelfTest()
+    {
+        const string sentinel = "SYNTHETIC native clipboard sentinel";
+        const string wrong = "SYNTHETIC native clipboard wrong content";
+        await DesktopDriver.SetClipboardAsync(sentinel);
+        var correct = await WaitForClipboard(sentinel, "selftest_sentinel", "clipboard_selftest");
+        Require(correct.Matches(sentinel) && !correct.Matches(wrong), "native locked snapshot reads sentinel and rejects a wrong expectation");
+        await DesktopDriver.SetClipboardAsync(wrong);
+        var rejected = await WaitForClipboard(sentinel, "selftest_wrong_content", "clipboard_selftest", observedText: wrong);
+        Require(rejected.Matches(wrong) && !rejected.Matches(sentinel) && !rejected.Observation.MatchesExpected,
+            "native snapshot of actual wrong clipboard content cannot satisfy expected sentinel");
+    }
+    private async Task<ClipboardSnapshot> WaitForClipboard(string expected, string purpose, string control, string? observedText = null)
+    {
+        if (clipboardProbes.Count >= 64) throw new InvalidOperationException("Clipboard probe count exceeded its declared bound.");
+        ClipboardSnapshot? snapshot = null; ClipboardObservation? first = null, last = null;
+        var attempts = 0; var accepted = false; string? errorType = null;
+        async Task<bool> Observe()
+        {
+            snapshot = await NativeClipboard.ReadAsync(purpose, expected, desktop?.ProcessId ?? 0);
+            attempts++; first ??= snapshot.Observation; last = snapshot.Observation;
+            if (last.ReadClass == "native_error") throw new System.ComponentModel.Win32Exception(last.Win32Error ?? 0, "Native clipboard snapshot failed.");
+            return snapshot.Matches(observedText ?? expected);
+        }
+        try
+        {
+            if (desktop is not null) await D.UntilAsync("clipboard_" + purpose, control, Observe, TimeSpan.FromSeconds(5));
+            else
+            {
+                var clock = Stopwatch.StartNew();
+                await ObservedWait.RunAsync(Observe, () => { }, TimeSpan.FromSeconds(5), () => clock.Elapsed, Task.Delay);
+            }
+            accepted = snapshot!.Matches(observedText ?? expected);
+            return snapshot;
+        }
+        catch (Exception error) { errorType = error.GetType().Name; throw; }
+        finally
+        {
+            clipboardProbes.Add(new(purpose, attempts, first, last, accepted, errorType));
+        }
+    }
     private async Task CopyEvent(string id)
     {
         await DesktopDriver.SetClipboardAsync("SYNTHETIC pending explicit event copy");
         await D.InvokeAsync("CopyEventId");
-        await D.UntilAsync("clipboard_exact_event", "CopyEventId", async () => await DesktopDriver.ClipboardAsync() == id, TimeSpan.FromSeconds(5));
-        Require(await DesktopDriver.ClipboardAsync() == id, "copied ID equals currently explained original event");
+        var snapshot = await WaitForClipboard(id, "exact_event_id", "CopyEventId");
+        Require(snapshot.Matches(id), "copied ID equals currently explained original event in the same retained OS snapshot");
     }
     private void PreserveLaunch()
     {

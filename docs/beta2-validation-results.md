@@ -73,3 +73,31 @@ Tick不再推进冻结显示；不改变生产时钟或降低产品行为要求�
 [原生run 43196063690](https://github.com/LuckyLivio/Contain/actions/runs/43196063690)
 在`Locked desktop regressions and native harness build`阶段请求取消；取消生效前Windows模型/导航已通过，
 Freeze阶段被取消，未完成ZIP、窗口采集、交互安装或ABBA对照。该取消和本地失败均保留，不计为原生通过。
+
+## B4：复制后二次读取不一致，保留失败并改进观测边界
+
+- 源码`fd2e27c1b41284afef8c6b7246f50ec6fbf44d04`，
+  [run 43196822200](https://github.com/LuckyLivio/Contain/actions/runs/43196822200)。
+- 冻结ZIP `cf008d661be59a794f8114200f7894ccdcbaf3f00a105483cb175066c815473e`，验后未变。
+- 3组通过、1失败、10未运行，479断言。搜索事件095选择/解释正常且“已复制”可见。
+- `clipboard_exact_event`在85ms内成功，证明至少一次实际读取匹配当前事件ID；
+  紧接第二次独立读取未匹配。B4没有保留第二次值、owner或sequence，不能判定原因，
+  不宣称产品复制出错、外部覆盖或STA读取问题已被证实。
+- 原测试把两次读取当同一时点；全局剪贴板允许在两次读取间变化。
+  新观测采用OpenClipboard锁内有界CF_UNICODETEXT快照，并保留sequence/owner角色及安全值分类；
+  以同一快照核验准确ID，错误内容及忙碌截止仍拒绝，不承诺外部剪贴板以后永不变化。
+- 未执行导出、交互安装、ETW及ABBA。后续先执行原有独立四次ETW对照，再进行完整WPF；
+  次数、输入、阈值及零重试保持，只有顺序调整，以便来源诊断不再被前置界面观测阻塞。
+
+## 扩展质量证据（固定运行，不择优重跑）
+
+`fd2e27c`的[Windows extended 43196822202](https://github.com/LuckyLivio/Contain/actions/runs/43196822202)
+通过MSVC ASan `nightly-2026-11-05`：event_json/lifetime_sequences/completion_correlation各30秒。
+B5仅改原生测试观察与执行顺序，Cargo、crates、fuzz、vendor和bench源码/锁文件与fd2一致；
+该扩展结果按此模块等价关系使用，明确保留原生产者SHA，不冒称在B5源码上重新执行。
+最终普通Windows Check/Coverage/Dependencies仍在B5精确源码运行。
+
+Bench为同runner纯内存阶段，4项各7×20,000 work，保留全部56样本，不测ETW或SQLite。
+fd2的lifetime中位耗时517.390→332.785ns/work，历史85ca同项351.845→486.665ns/work，
+方向相反。两个源码生产模块相同；没有依据宣称稳定性能提升或退化的具体原因。
+这两组观测均保留，不能选较好结果作为吞吐提升证明。原始安全汇总在各run扩展artifact。
