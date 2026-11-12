@@ -1,5 +1,7 @@
 # Contain
 
+**v0.4.0-beta.2 诊断候选（未发布，PR草稿）**：[下载、固定负载失败与准确身份](docs/beta2-diagnostic.md)。候选第二轮出现应用接收/候选损失，未达到合并和Prerelease门槛；日常已发布下载仍为下方beta.1。
+
 Windows 安装记录与证据查看工具。选择 EXE，记录安装行为，找回记录，查看文件操作及其依据。
 
 **v0.4.0-beta.1** 采用 WPF + WPF UI + MVVM 新桌面，接入原 Rust 核心与 CLI。

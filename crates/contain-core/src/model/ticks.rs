@@ -44,7 +44,39 @@ pub mod optional {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::{AttributionEvidence, SystemEvent};
+    use crate::model::{
+        AttributionEvidence, CaptureStats, DrainDiagnostics, DrainProcess, SystemEvent,
+    };
+    #[test]
+    fn drain_diagnostics_are_optional_in_history_and_keep_exact_process_identity() {
+        let old: CaptureStats = serde_json::from_str("{\"drain_timed_out\":true}").unwrap();
+        assert!(old.drain_timed_out);
+        assert!(old.drain.is_none());
+        let ticks = 134_385_075_882_875_960;
+        let stats = CaptureStats {
+            drain_timed_out: true,
+            drain: Some(DrainDiagnostics {
+                stop_reason: "deadline_pending_process_exit".into(),
+                pending_verified_instances: 1,
+                pending_examples: vec![DrainProcess {
+                    pid: 4032,
+                    creation_time: ticks,
+                }],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(stats).unwrap();
+        assert_eq!(
+            json["drain"]["pending_examples"][0]["creation_time"],
+            ticks.to_string()
+        );
+        let restored: CaptureStats = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            restored.drain.unwrap().pending_examples[0].creation_time,
+            ticks
+        );
+    }
     #[test]
     fn filetime_json_preserves_precision_and_reads_early_numeric_evidence() {
         let ticks = 134_350_000_000_000_017;

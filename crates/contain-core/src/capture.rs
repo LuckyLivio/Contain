@@ -349,8 +349,7 @@ fn install_inner(
             let drain_received_start = live.received();
             live.reset_activity();
             let drain_start = Instant::now();
-            let mut drain_timed_out = false;
-            loop {
+            let (drain_timed_out, drain_diagnostics) = loop {
                 if Instant::now() >= progress_at {
                     status.processed(
                         live.received().saturating_sub(drain_received_start),
@@ -363,28 +362,41 @@ fn install_inner(
                     measured!("capture_process_poll", process_observer.poll());
                     poll_at = Instant::now() + Duration::from_millis(30);
                 }
-                let descendants_live = live.descendants(
+                let mut drain = live.drain_state(
                     process_observer.records(),
                     (root_pid, root_birth),
                     &id,
                     lifecycle_receiver,
                 );
+                drain.elapsed_ms = drain_start.elapsed().as_millis() as u64;
+                drain.source_records_during_wait =
+                    live.received().saturating_sub(drain_received_start);
                 match crate::drain::decide(
-                    drain_start.elapsed().as_millis() as u64,
-                    live.quiet_ms(),
-                    descendants_live,
+                    drain.elapsed_ms,
+                    drain.quiet_ms,
+                    drain.pending_verified_instances > 0 || drain.lifecycle_context_lost > 0,
                     options.settle_ms.max(if options.etw { 1200 } else { 0 }),
                     options.max_drain_ms,
                 ) {
                     crate::drain::Decision::Timeout => {
-                        drain_timed_out = true;
-                        break;
+                        drain.stop_reason = if drain.lifecycle_context_lost > 0 {
+                            "deadline_lifecycle_context_lost"
+                        } else if drain.pending_verified_instances > 0 {
+                            "deadline_pending_process_exit"
+                        } else {
+                            "deadline_recent_activity"
+                        }
+                        .into();
+                        break (true, drain);
                     }
-                    crate::drain::Decision::Quiet => break,
+                    crate::drain::Decision::Quiet => {
+                        drain.stop_reason = "quiet_and_no_pending_process_exit".into();
+                        break (false, drain);
+                    }
                     crate::drain::Decision::Wait => {}
                 }
                 thread::sleep(Duration::from_millis(1));
-            }
+            };
             status.processed(
                 live.received().saturating_sub(drain_received_start),
                 "source_records",
@@ -423,6 +435,7 @@ fn install_inner(
                 exited_at,
                 started_at,
                 drain_timed_out,
+                drain_diagnostics,
             ))
         },
     )?;
@@ -441,6 +454,7 @@ fn install_inner(
         exited_at,
         started_at,
         drain_timed_out,
+        drain_diagnostics,
     ) = observations;
     let after_files = observed.finish(
         &before_files,
@@ -824,6 +838,7 @@ fn install_inner(
     capture.stats.phase_ms = phases;
     capture.stats.capture_elapsed_ms = capture_clock.elapsed().as_millis() as u64;
     capture.stats.drain_timed_out = drain_timed_out;
+    capture.stats.drain = Some(drain_diagnostics);
     capture.stats.snapshot_gaps = skipped as u64;
     capture.stats.notification_gaps = notification_gaps;
     crate::timeline::complete(&mut capture, exited_at);

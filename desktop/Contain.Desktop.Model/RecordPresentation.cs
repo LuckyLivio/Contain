@@ -39,7 +39,11 @@ internal static class RecordPresentation
             .AppendLine($"ETW 丢失事件：{RecordText.Value(backend, "etw_events_lost")} · 丢失缓冲区：{RecordText.Value(backend, "etw_buffers_lost")}")
             .AppendLine($"应用丢弃：{RecordText.Value(counts, "application_records_dropped")} · 解码错误：{RecordText.Value(counts, "decode_errors")}")
             .AppendLine($"快照缺口：{RecordText.Value(counts, "snapshot_gaps")} · 通知缺口：{RecordText.Value(counts, "notification_gaps")} · 排空超时：{RecordText.Value(counts, "drain_timed_out")}")
-            .AppendLine(OverviewPresentation.LossDetails(data));
+            .AppendLine(OverviewPresentation.LossDetails(data))
+            .AppendLine("ETW 会话阶段诊断（原始 JSON；阶段计数是累计值，不重复相加）：")
+            .AppendLine(OptionalRaw(JsonView.Field(JsonView.Field(backend, "pipeline"), "etw_session")))
+            .AppendLine("收尾等待诊断（原始 JSON；不同于来源停止和队列排空）：")
+            .AppendLine(OptionalRaw(JsonView.Field(JsonView.Field(data, "stats"), "drain")));
         foreach (var reason in OverviewPresentation.Diagnostics(data)) text.AppendLine(reason);
         text.AppendLine().AppendLine("进程证据：PID 与创建时间共同标识进程实例。");
         var processes = JsonView.Items(JsonView.Field(data, "processes")).ToArray();
@@ -50,6 +54,9 @@ internal static class RecordPresentation
         return text.ToString();
     }
 
+    private static string OptionalRaw(JsonElement value) => value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
+        ? "未提供" : value.GetRawText();
+
     internal static string Explain(JsonElement data, bool follow)
     {
         var item = JsonView.Field(data, "event");
@@ -58,27 +65,31 @@ internal static class RecordPresentation
         var operation = RecordText.Value(item, "operation");
         var confidence = RecordText.Value(item, "confidence");
         var success = JsonView.Field(item, "success");
+        var processEvent = RecordText.Value(item, "event_type") == "process" || operation is "process_start" or "process_stop" or "process_end";
         var text = new StringBuilder()
             .AppendLine(RecordText.Operation(operation))
             .AppendLine(confidence == "High" ? "有依据的执行进程关联；不等于最终文件所有权。" : confidence == "Unknown"
                 ? "当前证据不足以确定关联；Unknown 不表示危险。" : "保留原始置信标签：" + confidence)
-            .AppendLine(success.ValueKind == JsonValueKind.True ? "请求完成结果：成功。请求成功不自动证明文件前后状态。"
+            .AppendLine(processEvent ? "这是进程生命周期观测，不是文件写入请求，也不证明该进程写入了文件。"
+                : success.ValueKind == JsonValueKind.True ? "请求完成结果：成功。请求成功不自动证明文件前后状态。"
                 : success.ValueKind == JsonValueKind.False ? "请求完成结果：未成功。" : "请求完成结果：未提供 / 尚无可靠完成依据。")
-            .AppendLine("资源：" + RecordText.Value(item, "resource"))
-            .AppendLine("执行进程：" + RecordText.Value(evidence, "process_image"))
+            .AppendLine((processEvent ? "进程资源：" : "资源：") + RecordText.Value(item, "resource"))
+            .AppendLine("记录中的进程映像：" + RecordText.Value(evidence, "process_image"))
             .AppendLine($"PID：{RecordText.Value(evidence, "pid")} · 创建时间（精确 FILETIME）：{RecordText.Value(evidence, "process_creation_time")}")
             .AppendLine("依据 / 未知原因：" + RecordText.Value(item, "reason"))
             .AppendLine("事件 ID：" + RecordText.Value(item, "id"))
             .AppendLine($"原始操作：{operation} · 来源：{RecordText.Value(evidence, "source")}")
-            .AppendLine("观测时间：" + RecordText.Value(item, "timestamp"))
-            .AppendLine("名称来源：" + RecordText.Value(fileName, "path_source"))
-            .AppendLine(RecordText.Value(fileName, "path_source") == "file_object_cache"
-                ? "历史缓存名称不是已验证的当前路径。" : "保留所记录名称，不能推导现在的路径或最终归属。")
-            .AppendLine("名称观察时间（精确 FILETIME）：" + RecordText.Value(fileName, "observed_ticks"));
+            .AppendLine("观测时间：" + RecordText.Value(item, "timestamp"));
+        if (!processEvent)
+            text.AppendLine("名称来源：" + RecordText.Value(fileName, "path_source"))
+                .AppendLine(RecordText.Value(fileName, "path_source") == "file_object_cache"
+                    ? "历史缓存名称不是已验证的当前路径。" : "保留所记录名称，不能推导现在的路径或最终归属。")
+                .AppendLine("名称观察时间（精确 FILETIME）：" + RecordText.Value(fileName, "observed_ticks"));
         foreach (var edge in JsonView.Items(JsonView.Field(data, "edges")))
             text.AppendLine($"{RecordText.Value(edge, "relation")} [{RecordText.Value(edge, "confidence")}]：{RecordText.Value(edge, "reason")}");
-        if (follow) text.AppendLine("本次跟随记录没有安装前文件基线，不能据此断言文件新增。");
-        text.AppendLine("完整请求完成依据、原始字段与关联规则可展开原始 JSON 查看。High 不是删除许可。");
+        if (follow && !processEvent) text.AppendLine("本次跟随记录没有安装前文件基线，不能据此断言文件新增。");
+        text.AppendLine(processEvent ? "完整进程原始字段与关联规则可展开原始 JSON 查看。进程启动不证明文件写入。"
+            : "完整请求完成依据、原始字段与关联规则可展开原始 JSON 查看。High 不是删除许可。");
         return text.ToString();
     }
 }

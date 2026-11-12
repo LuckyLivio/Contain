@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -18,6 +19,8 @@ internal sealed record Options(string Package, string Fixtures, string Output, s
             Path.GetFullPath(values["--private-output"]), values["--source"], values.TryGetValue("--install-fixture", out var fixture) ? Path.GetFullPath(fixture) : null);
     }
 }
+internal sealed record ClipboardProbe(string Purpose, int Attempts, ClipboardObservation? First,
+    ClipboardObservation? Last, bool ConditionObserved, string? ErrorType);
 internal sealed record Check(string Name, string Status, string? ErrorType = null, string? Stage = null, string? Control = null, string? SafeReason = null, string[]? CallSites = null);
 internal sealed class AssertionException(string reason) : Exception(reason);
 
@@ -47,6 +50,7 @@ internal sealed class NativeSuite(Options options)
     private readonly List<object> launches = [];
     private readonly List<object> failureScreenshots = [];
     private readonly List<object> navigationDiagnostics = [];
+    private readonly List<ClipboardProbe> clipboardProbes = [];
     private readonly Dictionary<string, string> hashes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, JsonElement> earlierLiveRecords = new(StringComparer.Ordinal);
     private readonly string[] expected = Enumerable.Range(70, 53).Select(i => $"synthetic-search-event-{i:000}").ToArray();
@@ -76,6 +80,7 @@ internal sealed class NativeSuite(Options options)
             maximum_native_captures = options.InstallFixture is null ? 0 : 1,
             native_install_requested = options.InstallFixture is not null,
             deadlines_ms = new { ready = 40000, uia = 20000, transition = 30000, installation = 180000, close = 20000 },
+            interactive_destination = options.InstallFixture is not null, destination_supplied_to_contain = false,
             fixture = new { event_count = 130, matches = 53, first_page = 50, second_page = 3, selected_event = "synthetic-search-event-120" },
             product_process_only = true, real_user_records_accessed = false,
             failure_policy = "Stop the dependent stage on its first failure; retain failed and unexecuted checks. Never retry a launch to obtain a pass."
@@ -119,7 +124,7 @@ internal sealed class NativeSuite(Options options)
                 core_sha256 = HashIfPresent(Core), package_manifest_sha256 = HashIfPresent(Path.Combine(options.Package, "BUILD.json")),
                 planned_checks = Plan, checks, assertions, passed = checks.Count(c => c.Status == "passed"), failed = checks.Count(c => c.Status == "failed"),
                 not_run = checks.Count(c => c.Status == "not_run"), retries = 0, screenshots, launches, failure_screenshots = failureScreenshots,
-                navigation_diagnostics = navigationDiagnostics,
+                navigation_diagnostics = navigationDiagnostics, clipboard_probes = clipboardProbes,
                 search = new { expected_ids = expected, first_page_ids = actualFirst, second_page_ids = actualSecond, exported_ids = exportedIds, selected_event_id = selectedId },
                 live = new { session_id = liveSession, selected_event_id = liveEvent, accounting = liveAccounting, follow_oracle = followOracle },
                 scope = "One native WPF package, isolated synthetic stores and at most one real follow-installer capture. Native DPI is measured per screenshot. No simulated scaling is reported as physical DPI."
@@ -161,6 +166,7 @@ internal sealed class NativeSuite(Options options)
     {
         await ObservedWait.VerifyContractAsync();
         HitTargetGuard.VerifyContract();
+        await ClipboardSelfTest();
         Require(options.Source.Length == 40 && options.Source.All(Uri.IsHexDigit), "source SHA shape");
         foreach (var file in new[] { "Contain.Viewer.exe", "Contain.Viewer.dll", "contain.exe", "BUILD.json" }) Track(Path.Combine(options.Package, file));
         using var build = JsonDocument.Parse(File.ReadAllText(Path.Combine(options.Package, "BUILD.json")));
@@ -246,8 +252,9 @@ internal sealed class NativeSuite(Options options)
         await CopyEvent(selectedId);
         await Shot("events-search-explain.png", "synthetic-130-events-53-matches");
         var report = Path.Combine(options.PrivateOutput, "all-matches.html");
-        await D.ChooseFileAsync("ExportMatches", report, save: true);
+        await D.ChooseFileAsync("ExportMatches", report, save: true, expectedDefaultName: await ExpectedDefaultName("匹配结果", "synthetic-search"), probeHtmlExtension: true);
         await D.UntilAsync("full_match_export", "ExportMatches", async () => File.Exists(report) && await D.EnabledAsync("ExportMatches"));
+        RequireDefaultName("ExportMatches", "匹配结果", "synthetic-search", report);
         var html = WebUtility.HtmlDecode(await File.ReadAllTextAsync(report));
         exportedIds = Regex.Matches(html, "data-event-id=\"([^\"]+)\"").Select(match => match.Groups[1].Value).ToArray();
         Require(exportedIds.SequenceEqual(expected), "all 53 exported IDs match independent ordered oracle");
@@ -262,8 +269,9 @@ internal sealed class NativeSuite(Options options)
         await D.InvokeAsync("ClearSearch");
         await D.UntilAsync("clear_search", "EventList", async () => (await D.RowIdsAsync("EventList", "event:")).FirstOrDefault() == "synthetic-search-event-000");
         var pageReport = Path.Combine(options.PrivateOutput, "current-page.html");
-        await D.ChooseFileAsync("ExportPage", pageReport, save: true);
+        await D.ChooseFileAsync("ExportPage", pageReport, save: true, expectedDefaultName: await ExpectedDefaultName("本页报告", "synthetic-search"), probeHtmlExtension: true);
         await D.UntilAsync("page_export", "ExportPage", async () => File.Exists(pageReport) && await D.EnabledAsync("ExportPage"));
+        RequireDefaultName("ExportPage", "本页报告", "synthetic-search", pageReport);
         Require((await File.ReadAllTextAsync(pageReport)).Contains("synthetic-search-event-000", StringComparison.Ordinal), "current-page report includes current first event");
     }
     private async Task ExternalReadOnly()
@@ -288,7 +296,8 @@ internal sealed class NativeSuite(Options options)
         await Explain("synthetic-search-event-080", "synthetic-search");
         await DesktopDriver.SetClipboardAsync("SYNTHETIC pending explicit full path copy"); await D.InvokeAsync("CopyEventPath");
         const string fullPath = @"C:\synthetic\含 空格\Needle 中文文件 100%_done.txt";
-        await D.UntilAsync("clipboard_full_path", "CopyEventPath", async () => await DesktopDriver.ClipboardAsync() == fullPath, TimeSpan.FromSeconds(5));
+        var fullPathSnapshot = await WaitForClipboard(fullPath, "resource_path", "CopyEventPath");
+        Require(fullPathSnapshot.Matches(fullPath), "full path copy equals the exact resource in the retained OS snapshot");
         await Search("never-present-synthetic", 0, 0);
         Require(!await D.EnabledAsync("CopyEventId") && !await D.EnabledAsync("ExportMatches"), "empty query cannot export or copy stale evidence");
         await D.InvokeAsync("ClearSearch");
@@ -333,11 +342,12 @@ internal sealed class NativeSuite(Options options)
             var id = record.GetProperty("id").GetString()!;
             earlierLiveRecords.Add(id, await Cli(liveDatabase, "inspect", "--summary", "--json", "--", id));
         }
-        // The unchanged fixture authorizes only direct TEMP children with its guarded prefix.
-        liveRoot = Path.Combine(Path.GetTempPath(), "contain-demo-modern-" + Guid.NewGuid().ToString("N")); truthRoot = liveRoot + "-truth";
+        // The fixture authorizes only direct TEMP children with its guarded prefix.
+        liveRoot = Path.Combine(Path.GetTempPath(), "contain-demo-modern-" + Guid.NewGuid().ToString("N"));
+        truthRoot = Path.Combine(Path.GetTempPath(), "contain-demo-modern-truth-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(liveRoot); Directory.CreateDirectory(truthRoot); Directory.CreateDirectory(Path.Combine(liveRoot, "A"));
         foreach (var dir in new[] { liveRoot, truthRoot }) await File.WriteAllTextAsync(Path.Combine(dir, ".contain-demo-marker"), "Contain test fixture");
-        var environment = new Dictionary<string, string> { ["CONTAIN_FIXTURE_TRUTH"] = truthRoot, ["CONTAIN_FIXTURE_ROOT"] = liveRoot, ["CONTAIN_FIXTURE_FOLLOW"] = "1" };
+        var environment = new Dictionary<string, string> { ["CONTAIN_FIXTURE_TRUTH"] = truthRoot, ["CONTAIN_FIXTURE_INTERACTIVE"] = "1", ["CONTAIN_FIXTURE_FOLLOW"] = "1" };
         Start(currentRoot, "live-first-working", environment); await D.ReadyAsync();
         var initial = Hash(liveDatabase); await D.InvokeAsync("NewInstall");
         await D.UntilAsync("live_config", "PickInstaller", () => D.VisibleAsync("PickInstaller"));
@@ -360,25 +370,25 @@ internal sealed class NativeSuite(Options options)
         try { await D.InvokeAsync("StartRecording"); } catch (System.Windows.Automation.ElementNotEnabledException) { duplicateRefused = true; }
         Require(duplicateRefused, "disabled start cannot invoke second task");
         await D.RequestCloseAsync(); Require(!D.HasExited, "close request preserves active recording");
-        var capturedRunning = false;
+        await D.UntilAsync("interactive_capturing_stage", "TaskStatus", async () =>
+        {
+            if (await D.TryHelpAsync("TaskStatus") != "stage:capturing") return false;
+            foreach (var control in new[] { "TaskStatus", "TaskElapsed", "TaskProgress", "TaskStep", "TaskMeasurements" })
+                if (!await D.VisibleInOwnedViewportAsync(control)) return false;
+            return true;
+        });
+        foreach (var control in new[] { "TaskStatus", "TaskElapsed", "TaskProgress", "TaskStep", "TaskMeasurements" })
+            Require(!string.IsNullOrWhiteSpace(await D.TextAsync(control)), "capturing task field contains readable actual state: " + control);
+        await Shot("task-real-recording.png", "real-controlled-interactive-etw-capture");
+        screenshots.Add(await InteractiveInstaller.ChooseDirectoryAsync(options.InstallFixture!, liveRoot!, Path.Combine(options.Output, "screenshots")));
         await D.UntilAsync("installation_saved_exact_uuid", "SessionTitle", async () =>
         {
             var identity = await D.TryHelpAsync("SessionTitle");
             if (identity is not null && identity.StartsWith("session:", StringComparison.Ordinal) && Guid.TryParse(identity[8..], out _))
             { liveSession = identity[8..]; return true; }
-            var status = await D.TryHelpAsync("TaskStatus");
-            if (!capturedRunning && status == "stage:capturing")
-            {
-                foreach (var control in new[] { "TaskStatus", "TaskElapsed", "TaskProgress", "TaskStep", "TaskMeasurements" })
-                {
-                    if (!await D.VisibleInOwnedViewportAsync(control)) return false;
-                    Require(!string.IsNullOrWhiteSpace(await D.TextAsync(control)), "capturing task field contains readable actual state: " + control);
-                }
-                await Shot("task-real-recording.png", "real-controlled-etw-capture"); capturedRunning = true;
-            }
             return false;
         }, TimeSpan.FromSeconds(180));
-        Require(capturedRunning, "actual running stage screenshot captured");
+        Require(screenshots.Any(shot => shot.Name == "task-real-recording.png"), "actual running stage screenshot captured");
         var summary = await Cli(liveDatabase!, "inspect", "--summary", "--json", "--", liveSession!);
         Require(summary.GetProperty("id").GetString() == liveSession && summary.GetProperty("capture_state").GetString() == "finished", "exact GUI UUID is finished and read back");
         Require(summary.GetProperty("exit_code").GetInt32() == 0, "installer exit separately measured");
@@ -387,7 +397,11 @@ internal sealed class NativeSuite(Options options)
             Require(JsonElement.DeepEquals(earlier.Value, await Cli(liveDatabase!, "inspect", "--summary", "--json", "--", earlier.Key)), "older exact records remain unchanged after saving");
         Require(summary.GetProperty("watch_roots").GetArrayLength() == 0 && summary.GetProperty("backend").TryGetProperty("follow_installer", out _), "default no-watch follow mode persisted");
         await D.InvokeAsync("OverviewTab"); await Shot("real-saved-overview.png", "real-controlled-etw-saved");
-        await D.InvokeAsync("CurrentTask"); await D.ExpandAsync("TaskDetails");
+        await D.InvokeAsync("CurrentTask");
+        Require(!await D.VisibleAsync("TaskStep") && !await D.VisibleAsync("TaskMeasurements"), "finished task hides running step and measurement noise");
+        Require(await D.VisibleAsync("TaskElapsed") && await D.VisibleAsync("OpenCapturedSession"), "finished task retains total elapsed and exact-record entry");
+        await Shot("real-terminal-task.png", "real-controlled-etw-finished");
+        await D.ExpandAsync("TaskDetails");
         var task = await D.TextAsync("TaskDiagnostics");
         Require(task.Contains("会话 ID：" + liveSession, StringComparison.Ordinal) && task.Contains("记录已保存", StringComparison.Ordinal), "task result independently reports exact saved UUID");
         Require(task.Contains("采集停止：True；数据保存：True", StringComparison.Ordinal), "task confirms capture stopped and data saved as separate facts");
@@ -401,6 +415,14 @@ internal sealed class NativeSuite(Options options)
     private async Task VerifyLiveOracle()
     {
         var capture = await Cli(liveDatabase!, "inspect", "--json", "--", liveSession!);
+        // Commit evidence before any source/drain gate can stop this stage.
+        // Full records stay private; the public helper exports only reviewed fields.
+        var capturePath = Path.Combine(options.PrivateOutput, "live-capture.json");
+        var captureTemporary = capturePath + ".tmp";
+        await File.WriteAllTextAsync(captureTemporary, JsonSerializer.Serialize(new { schema_version = 3, kind = "inspect", data = capture }));
+        File.Move(captureTemporary, capturePath, overwrite: false);
+        await RunProcess("python", [Path.GetFullPath("scripts/summarize-source-capture-facts.py"), "--capture", capturePath,
+            "--output", Path.Combine(options.Output, "gui-source-capture-facts.json")], TimeSpan.FromSeconds(30));
         var backend = capture.GetProperty("backend");
         Require(backend.GetProperty("etw_process").GetString() == "active" && backend.GetProperty("etw_file").GetString() == "active", "real process and file ETW active");
         foreach (var name in new[] { "etw_events_lost", "etw_buffers_lost", "dropped_events", "context_losses", "decode_errors" }) Require(backend.GetProperty(name).GetUInt64() == 0, "zero measured live source loss: " + name);
@@ -419,9 +441,6 @@ internal sealed class NativeSuite(Options options)
             raw_storage = NumericFields(stream, "persisted", "failed", "quota_dropped", "quota_bytes", "committed_bytes"),
             drain_timed_out = stats.GetProperty("drain_timed_out")
         });
-        // Full capture and paths are private. Only the independent oracle's reviewed aggregates are published.
-        var capturePath = Path.Combine(options.PrivateOutput, "live-capture.json");
-        await File.WriteAllTextAsync(capturePath, JsonSerializer.Serialize(new { schema_version = 3, kind = "inspect", data = capture }));
         await unrelated!.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10)); await unrelatedOutput!; await unrelatedError!;
         var targets = new[]
         {
@@ -462,15 +481,54 @@ internal sealed class NativeSuite(Options options)
         await CopyEvent(liveEvent!);
         await Shot("real-event-explanation.png", "real-controlled-etw-saved");
         await SelectTimelineEvent(liveEvent!);
-        var report = Path.Combine(options.PrivateOutput, "real-current-page.html"); await D.ChooseFileAsync("ExportPage", report, save: true);
+        var report = Path.Combine(options.PrivateOutput, "real-current-page.html"); await D.ChooseFileAsync("ExportPage", report, save: true, expectedDefaultName: await ExpectedDefaultName("本页报告", liveSession!), probeHtmlExtension: true);
         await D.UntilAsync("real_report", "ExportPage", async () => File.Exists(report) && await D.EnabledAsync("ExportPage"));
+        RequireDefaultName("ExportPage", "本页报告", liveSession!, report);
         var html = WebUtility.HtmlDecode(await File.ReadAllTextAsync(report)); Require(html.Contains(liveSession!, StringComparison.Ordinal) && html.Contains(liveEvent!, StringComparison.Ordinal), "real report exact session and selected event");
+        var full = await Cli(liveDatabase!, "inspect", "--json", "--", liveSession!);
+        foreach (var operation in new[] { "process_start", "process_stop" })
+        {
+            var processEvent = full.GetProperty("events").EnumerateArray().FirstOrDefault(e => e.GetProperty("operation").GetString() == operation);
+            Require(processEvent.ValueKind == JsonValueKind.Object, "actual capture retained " + operation);
+            var id = processEvent.GetProperty("id").GetString()!;
+            await SelectTimelineEvent(id); await CopyEvent(id);
+            await DesktopDriver.SetClipboardAsync("SYNTHETIC clipboard sentinel");
+            await D.InvokeAsync("CopyEventPath");
+            var resource = processEvent.GetProperty("resource").GetString()!;
+            var resourceSnapshot = await WaitForClipboard(resource, "process_resource", "CopyEventPath");
+            Require(resourceSnapshot.Matches(resource), "process event resource copy preserves exact value in the retained OS snapshot");
+            await Shot("real-" + operation + "-explanation.png", "real-controlled-process-event");
+        }
         var firstPid = D.ProcessId; await D.CloseAsync(); PreserveLaunch(); D.Dispose(); desktop = null;
         Start(currentRoot!, "live-different-cold-working"); await D.ReadyAsync(); Require(D.ProcessId != firstPid, "real cold start new process and changed cwd");
         await OpenRecord(liveSession!); await Events(); await Search("child-target.txt", null, null); await Explain(liveEvent!, liveSession!);
         await CopyEvent(liveEvent!);
         await Shot("real-cold-restart.png", "real-controlled-etw-saved-cold-restart");
         await D.CloseAsync(); coldRestart = true;
+    }
+    private async Task<string> ExpectedDefaultName(string type, string session)
+    {
+        var summary = await Cli(Database(currentRoot!), "inspect", "--summary", "--json", "--", session);
+        var name = summary.GetProperty("name").GetString()!;
+        Require(name.Length <= 96 && name.IndexOfAny("<>:\"/\\|?*".ToCharArray()) < 0, "controlled record name needs no filename substitution");
+        var started = DateTimeOffset.Parse(summary.GetProperty("started_at").GetString()!, CultureInfo.InvariantCulture);
+        var id = Guid.TryParse(session, out var uuid) ? uuid.ToString("N")[..8] : session[..8];
+        return name + "_开始" + started.UtcDateTime.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture)
+            + "UTC_" + id + "_" + type + ".html";
+    }
+    private void RequireDefaultName(string action, string type, string session, string actualReport)
+    {
+        Require(D.SaveDialogObservations.TryGetValue(action, out var observation), "actual save dialog default name observed");
+        Require(observation!.ExpectedFullName is not null && observation.OwnedEdit, "default name checked against frozen exact record in owned dialog");
+        Require(observation.FullMatch || observation.HiddenExtensionMatch, "default display exactly matches record name UTC start short identity and export type");
+        Require(observation.FileType is "本地 HTML 报告" or "本地 HTML 报告 (*.html)", "owned visible file-type ComboBox selects the exact HTML report type");
+        Require(observation.ExpectedFullName!.EndsWith("_" + type + ".html", StringComparison.Ordinal)
+            && observation.ExpectedFullName.Contains("UTC_" + session[..8], StringComparison.Ordinal), "expected name preserves explicit UTC time session and export type");
+        Require(observation.ExtensionProbe && File.Exists(actualReport) && Path.GetExtension(actualReport) == ".html"
+            && !File.Exists(Path.ChangeExtension(actualReport, null)), "native save adds HTML extension after filename input omits it");
+        var verified = observation with { ExtensionVerified = true };
+        D.SaveDialogObservations[action] = verified;
+        D.SaveDialogHistory[^1] = verified;
     }
     private Task CheckUnchanged()
     {
@@ -540,7 +598,11 @@ internal sealed class NativeSuite(Options options)
         if (Encoding.UTF8.GetByteCount(text) > 64 * 1024 * 1024) throw new IOException("Verification output exceeded established bound.");
         return text;
     }
-    private void Start(string root, string working, IReadOnlyDictionary<string, string>? environment = null) => desktop = new(options.Package, Path.Combine(root, working), root, environment);
+    private void Start(string root, string working, IReadOnlyDictionary<string, string>? environment = null)
+    {
+        desktop = new(options.Package, Path.Combine(root, working), root, environment)
+            { PickerEvidenceDirectory = Path.Combine(options.Output, "screenshots") };
+    }
     private string Root(string label)
     {
         var path = Path.Combine(options.PrivateOutput, "records-" + label);
@@ -555,17 +617,59 @@ internal sealed class NativeSuite(Options options)
     }
     private static string Database(string root) => Path.Combine(root, "Contain", "Records", "contain.db");
     private DesktopDriver D => desktop ?? throw new InvalidOperationException("Required packaged desktop is not running.");
+    private async Task ClipboardSelfTest()
+    {
+        const string sentinel = "SYNTHETIC native clipboard sentinel";
+        const string wrong = "SYNTHETIC native clipboard wrong content";
+        await DesktopDriver.SetClipboardAsync(sentinel);
+        var correct = await WaitForClipboard(sentinel, "selftest_sentinel", "clipboard_selftest");
+        Require(correct.Matches(sentinel) && !correct.Matches(wrong), "native locked snapshot reads sentinel and rejects a wrong expectation");
+        await DesktopDriver.SetClipboardAsync(wrong);
+        var rejected = await WaitForClipboard(sentinel, "selftest_wrong_content", "clipboard_selftest", observedText: wrong);
+        Require(rejected.Matches(wrong) && !rejected.Matches(sentinel) && !rejected.Observation.MatchesExpected,
+            "native snapshot of actual wrong clipboard content cannot satisfy expected sentinel");
+    }
+    private async Task<ClipboardSnapshot> WaitForClipboard(string expected, string purpose, string control, string? observedText = null)
+    {
+        if (clipboardProbes.Count >= 64) throw new InvalidOperationException("Clipboard probe count exceeded its declared bound.");
+        ClipboardSnapshot? snapshot = null; ClipboardObservation? first = null, last = null;
+        var attempts = 0; var accepted = false; string? errorType = null;
+        async Task<bool> Observe()
+        {
+            snapshot = await NativeClipboard.ReadAsync(purpose, expected, desktop?.ProcessId ?? 0);
+            attempts++; first ??= snapshot.Observation; last = snapshot.Observation;
+            if (last.ReadClass == "native_error") throw new System.ComponentModel.Win32Exception(last.Win32Error ?? 0, "Native clipboard snapshot failed.");
+            return snapshot.Matches(observedText ?? expected);
+        }
+        try
+        {
+            if (desktop is not null) await D.UntilAsync("clipboard_" + purpose, control, Observe, TimeSpan.FromSeconds(5));
+            else
+            {
+                var clock = Stopwatch.StartNew();
+                await ObservedWait.RunAsync(Observe, () => { }, TimeSpan.FromSeconds(5), () => clock.Elapsed, Task.Delay);
+            }
+            accepted = snapshot!.Matches(observedText ?? expected);
+            return snapshot;
+        }
+        catch (Exception error) { errorType = error.GetType().Name; throw; }
+        finally
+        {
+            clipboardProbes.Add(new(purpose, attempts, first, last, accepted, errorType));
+        }
+    }
     private async Task CopyEvent(string id)
     {
         await DesktopDriver.SetClipboardAsync("SYNTHETIC pending explicit event copy");
         await D.InvokeAsync("CopyEventId");
-        await D.UntilAsync("clipboard_exact_event", "CopyEventId", async () => await DesktopDriver.ClipboardAsync() == id, TimeSpan.FromSeconds(5));
-        Require(await DesktopDriver.ClipboardAsync() == id, "copied ID equals currently explained original event");
+        var snapshot = await WaitForClipboard(id, "exact_event_id", "CopyEventId");
+        Require(snapshot.Matches(id), "copied ID equals currently explained original event in the same retained OS snapshot");
     }
     private void PreserveLaunch()
     {
         if (desktop is null) return;
         launches.Add(new { process_id = desktop.ProcessId, probes = desktop.Probes.ToArray(), actions = desktop.Actions.ToArray(), row_selections = desktop.RowSelections.ToArray(), clicks = desktop.Clicks.ToArray(), last_stage = desktop.Stage, last_control = desktop.LastControl,
+            save_dialog_observations = desktop.SaveDialogHistory.ToArray(), save_dialog_current = desktop.SaveDialogObservations.Values.ToArray(), picker_screenshots = desktop.PickerScreenshots.ToArray(),
             last_error_type = desktop.LastErrorType, process_exited = desktop.HasExited, normal_close = desktop.CloseObservation });
     }
     private async Task Shot(string name, string kind) => screenshots.Add(await D.CaptureAsync(Path.Combine(options.Output, "screenshots"), name, kind));

@@ -237,11 +237,40 @@ pub struct CaptureStats {
     pub high_confidence_events: u64,
     pub capture_elapsed_ms: u64,
     pub drain_timed_out: bool,
+    /// Absent in historical records. This describes the pre-STOP descendant /
+    /// quiet wait, separately from ETW STOP and receiver/writer queue draining.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drain: Option<DrainDiagnostics>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DrainDiagnostics {
+    pub elapsed_ms: u64,
+    pub quiet_ms: u64,
+    pub stop_reason: String,
+    /// Verified instances whose exit has not been confirmed; not proof of life.
+    pub pending_verified_instances: u64,
+    /// At most eight examples. The count above includes omitted instances.
+    pub pending_examples: Vec<DrainProcess>,
+    pub lifecycle_context_lost: u64,
+    pub source_records_during_wait: u64,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct DrainProcess {
+    pub pid: u32,
+    #[serde(with = "ticks")]
+    pub creation_time: u64,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PipelineStats {
+    /// Three fixed session-local observations; absence means not collected by
+    /// this version. These are cumulative Windows counters, never loss deltas.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub etw_session: Option<EtwSessionDiagnostics>,
     pub providers: std::collections::BTreeMap<String, ProviderStats>,
     pub arrival_peak_per_100ms: Option<u64>,
     pub overflow_first_ns: Vec<u64>,
@@ -269,6 +298,90 @@ pub struct PipelineStats {
     pub etw_log_buffers_lost: Option<u64>,
     pub etw_allocated_buffers: Option<u64>,
     pub etw_buffer_size_kib: Option<u64>,
+}
+
+/// Bounded controller-side diagnostics. No synchronous callback logging or
+/// per-record samples, and no user paths or machine inventory are retained.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EtwSessionDiagnostics {
+    pub requested_buffer_size_kib: u32,
+    pub requested_min_buffers: u32,
+    pub requested_max_buffers: u32,
+    pub ready: Option<EtwTraceSample>,
+    pub before_stop: Option<EtwTraceSample>,
+    pub stopped: Option<EtwTraceSample>,
+    pub stop_control_elapsed_ns: Option<u64>,
+    pub consumer_join_elapsed_ns: Option<u64>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EtwTraceSample {
+    pub elapsed_ns: u64,
+    pub query_elapsed_ns: u64,
+    pub control_error: Option<u32>,
+    pub events_lost: Option<u64>,
+    pub realtime_buffers_lost: Option<u64>,
+    pub log_buffers_lost: Option<u64>,
+    pub allocated_buffers: Option<u64>,
+    pub free_buffers: Option<u64>,
+    pub buffer_size_kib: Option<u64>,
+    pub min_buffers: Option<u64>,
+    pub max_buffers: Option<u64>,
+    pub buffers_written: Option<u64>,
+    pub callback_records: u64,
+    pub callback_elapsed_ns: u64,
+    pub lock_wait_ns: u64,
+}
+
+#[cfg(test)]
+mod etw_diagnostic_tests {
+    use super::*;
+
+    #[test]
+    fn historical_pipeline_has_no_invented_source_observations() {
+        let stats: PipelineStats = serde_json::from_str("{\"enqueued\":17}").unwrap();
+        assert!(stats.etw_session.is_none());
+        assert!(stats.etw_realtime_buffers_lost.is_none());
+        assert!(
+            serde_json::to_value(stats)
+                .unwrap()
+                .get("etw_session")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn cumulative_source_samples_roundtrip_independently_of_application_loss() {
+        let mut stats = PipelineStats {
+            queue_overflow: 3,
+            etw_session: Some(EtwSessionDiagnostics {
+                ready: Some(EtwTraceSample {
+                    events_lost: Some(7),
+                    ..Default::default()
+                }),
+                before_stop: Some(EtwTraceSample {
+                    events_lost: Some(11),
+                    ..Default::default()
+                }),
+                stopped: Some(EtwTraceSample {
+                    events_lost: Some(13),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        stats = serde_json::from_value(serde_json::to_value(stats).unwrap()).unwrap();
+        let source = stats.etw_session.unwrap();
+        assert_eq!(source.ready.unwrap().events_lost, Some(7));
+        assert_eq!(source.before_stop.unwrap().events_lost, Some(11));
+        assert_eq!(source.stopped.unwrap().events_lost, Some(13));
+        assert_eq!(stats.queue_overflow, 3);
+        let unavailable: EtwTraceSample = serde_json::from_str("{\"control_error\":5}").unwrap();
+        assert!(unavailable.events_lost.is_none());
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

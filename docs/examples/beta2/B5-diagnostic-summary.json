@@ -1,0 +1,1340 @@
+{
+  "schema_version": 1,
+  "protocol": "contain-beta2-b5-public-diagnostic-summary-1",
+  "run_id": 43198739683,
+  "run_url": "https://github.com/LuckyLivio/Contain/actions/runs/43198739683",
+  "source_sha": "4161c4225e419d2baa51a3331d4efea8009d277f",
+  "package_artifact_id": 13933454658,
+  "evidence_artifact_id": 13933713893,
+  "zip_sha256": "9c53e207e7c126d3c80e149b89db864d054392446f60331e333d29d9de35d709",
+  "local_download_manifest_and_sha_verified": true,
+  "accepted": false,
+  "release_eligible": false,
+  "native_wpf_executed": false,
+  "wpf_screenshots_available": false,
+  "measurement_kind": "real_etw",
+  "order": [
+    "r1/baseline",
+    "r1/candidate",
+    "r2/candidate",
+    "r2/baseline"
+  ],
+  "retries": 0,
+  "fixed_workload": {
+    "background_files_per_capture": 12000,
+    "successful_background_writes_per_capture": 12000,
+    "successful_background_renames_per_capture": 12000,
+    "successful_background_deletes_per_capture": 12000,
+    "independent_parent_child_unrelated_successful_writes_per_capture": 3
+  },
+  "findings": [
+    "All four workloads finished and were saved, cold-read by exact session, and all owned processes exited. All eight accounting checks passed for every sample.",
+    "The second candidate failed with 3843 file-callback application receive-queue overflows and 7624 separately counted follow-candidate/context drops. These are not ETW source losses and must not be added together.",
+    "ETW events/buffers lost and decode failures were zero in all four captures. Both baseline captures and the first candidate passed the independent actor/completion oracle.",
+    "The failed candidate retained two parent and two child write requests as EventLoss Unknown, with no promoted unrelated/background operations. Independent syscall/content truth still passed. Reliable target attribution was not established in this failed sample.",
+    "Both candidate ETW ready/pre-stop/STOP samples reported zero cumulative source loss with no ControlTrace error. STOP and consumer join took milliseconds, not a long observed stop stall.",
+    "Both candidate drain waits ended after 1500/1501 milliseconds with zero pending verified process instances and zero lifecycle-context losses, despite 19/139 source records arriving during the wait.",
+    "Initial snapshot enumeration completed and did not exhaust its budget in either candidate, while identity queries still had failures and time-boundary exclusions. Completion does not mean full identity coverage.",
+    "The failing candidate had lower aggregate file-callback time and lock-wait time than the passing candidate; these totals do not reveal short stalls, receiver-stage timing, drop ordering, or the historical Parallels cause.",
+    "This unprofiled plan did not retain receiver/follow drop-reason or stage profiles. Candidate record high-water reached 2048; byte high-water was 2218701 of 8388608. Capacity pressure is observed, but counts cannot be assigned to a specific drop reason or receiver phase from these aggregates.",
+    "No new live run, relaxed gate, merge, or prerelease follows this failure. The frozen package is diagnostic only; WPF acceptance was skipped by the source-comparison gate."
+  ],
+  "comparison": {
+    "schema_version": 1,
+    "protocol": "contain-beta2-comparison-result-1",
+    "measurement_kind": "real_etw",
+    "same_runner": true,
+    "plan_valid": true,
+    "complete": true,
+    "accepted": false,
+    "maximum_native_captures": 4,
+    "retries": 0,
+    "order": [
+      "r1/baseline",
+      "r1/candidate",
+      "r2/candidate",
+      "r2/baseline"
+    ],
+    "package_identity": {
+      "baseline": {
+        "core_sha256": "a45f193a84fb3d5556e0258941d9f55bddded677098959c6b1a07b1e724e66f6",
+        "source_sha": "5a6ce89867e4c8c9d428de0a80b67b421bbd9717",
+        "version": "0.4.0-beta.1",
+        "zip_sha256": "953b243bb3dd8ea32e61dcf5fdeaf143b9e697ea4a57021fb85ffd961ef907e3",
+        "core_source_sha": "b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4"
+      },
+      "candidate": {
+        "core_sha256": "149378df134b0828553933a3bf4a5adae05d7d2d327c6a3f572a9eaf733f65d1",
+        "source_sha": "4161c4225e419d2baa51a3331d4efea8009d277f",
+        "version": "0.4.0-beta.2",
+        "zip_sha256": "9c53e207e7c126d3c80e149b89db864d054392446f60331e333d29d9de35d709",
+        "core_source_sha": "4161c4225e419d2baa51a3331d4efea8009d277f"
+      }
+    },
+    "cases": {
+      "r1/baseline": {
+        "experiment_accepted": true,
+        "available": true,
+        "all_owned_processes_exited": true,
+        "terminal": {
+          "stage": "finished",
+          "installer_exited": true,
+          "installer_exit_code": 0,
+          "capture_finished": true,
+          "data_saved": true
+        },
+        "cold_query_exact_session": true,
+        "capture_finished": true,
+        "capture_exit_code": 0,
+        "independent_exit_code": 0,
+        "quality_level": "Degraded",
+        "counters": {
+          "events_received": 217911,
+          "dropped_events": 0,
+          "etw_events_lost": 0,
+          "etw_buffers_lost": 0,
+          "decode_errors": 0,
+          "context_losses": 0
+        },
+        "stats": {
+          "events_received": 217911,
+          "events_retained": 1832,
+          "events_normalized": 24,
+          "known_actor_events": 1705,
+          "unknown_actor_events": 12,
+          "drain_timed_out": false
+        },
+        "providers_active": {
+          "etw_process": true,
+          "etw_file": true
+        },
+        "pipeline": {
+          "callback_records": 691500,
+          "deliberately_filtered": 473589,
+          "unsupported_records": 0,
+          "decode_attempted": 691500,
+          "decode_succeeded": 691500,
+          "decode_failed": 0,
+          "failed_without_output": 0,
+          "enqueue_disconnected": 0,
+          "enqueued": 217911,
+          "queue_overflow": 0,
+          "dequeued": 217911,
+          "queue_pending": 0,
+          "queue_high_water": 426,
+          "queue_max_delay_ns": 43756300,
+          "context_evictions": 0,
+          "retention_dropped": 0,
+          "persistence_succeeded": 1967,
+          "persistence_failed": 0
+        },
+        "handoff": {
+          "initial_accepted": 18,
+          "received": 1949,
+          "submitted": 1949,
+          "overflow": 0,
+          "oversized": 0,
+          "disconnected": 0,
+          "serialize_failed": 0,
+          "drained": 1949,
+          "pending": 0,
+          "high_water_records": 8,
+          "high_water_bytes": 8524,
+          "record_capacity": 4096,
+          "byte_capacity": 16777216,
+          "receiver_finished": true,
+          "writer_finished": true
+        },
+        "stream": {
+          "accepted": 1967,
+          "persisted": 1967,
+          "failed": 0,
+          "quota_dropped": 0,
+          "committed_bytes": 2350834,
+          "quota_bytes": 67108864,
+          "batches": 175,
+          "max_batch_bytes": 149542,
+          "error_present": false
+        },
+        "follow_installer": {
+          "direct_children_only": true,
+          "baseline_available": false,
+          "candidate_record_limit": 2048,
+          "candidate_byte_limit": 8388608,
+          "resource_limit": 4096,
+          "candidates": 216729,
+          "admitted": 1733,
+          "excluded_other": 156012,
+          "unresolved": 58984,
+          "excluded_self_io": 0,
+          "candidate_dropped": 0,
+          "candidate_high_water_records": 66,
+          "candidate_high_water_bytes": 78081
+        },
+        "targets": [
+          {
+            "label": "parent",
+            "independent_successful_writes": 1,
+            "content_verified": true,
+            "retained_write_requests": 2,
+            "promoted_write_requests": 1,
+            "verified_actor_and_interval": true,
+            "event_ids": [
+              "8a30c308-7862-42e1-9c25-37734434a048",
+              "f85e0fa5-6119-44e4-b0df-91f8bbccde9b"
+            ]
+          },
+          {
+            "label": "child",
+            "independent_successful_writes": 1,
+            "content_verified": true,
+            "retained_write_requests": 2,
+            "promoted_write_requests": 1,
+            "verified_actor_and_interval": true,
+            "event_ids": [
+              "30be81a6-1739-4698-9b9c-6673438dd86d",
+              "12808aa9-7879-4eed-8115-df07c4864a56"
+            ]
+          },
+          {
+            "label": "unrelated",
+            "independent_successful_writes": 1,
+            "content_verified": true,
+            "retained_write_requests": 0,
+            "promoted_write_requests": 0,
+            "verified_actor_and_interval": null,
+            "event_ids": []
+          }
+        ],
+        "background": {
+          "files": 12000,
+          "successful_operations": {
+            "write_requested": 12000,
+            "rename_requested": 12000,
+            "delete_requested": 12000
+          },
+          "exit_code": 0,
+          "signal_exit_code": 0,
+          "observed_events": 0,
+          "falsely_attributed_events": 0,
+          "complete": true,
+          "window": {
+            "all_noise_within_root_lifetime": true,
+            "all_noise_within_capture": true,
+            "spans_parent_write": true,
+            "spans_child_write": true
+          }
+        },
+        "accounting": {
+          "receive_queue": true,
+          "receive_drain": true,
+          "handoff_input": true,
+          "handoff_drain": true,
+          "raw_input": true,
+          "raw_persistence": true,
+          "application_loss": true,
+          "finished_workers": true
+        },
+        "accepted": true,
+        "workload_complete": true
+      },
+      "r1/candidate": {
+        "experiment_accepted": true,
+        "available": true,
+        "all_owned_processes_exited": true,
+        "terminal": {
+          "stage": "finished",
+          "installer_exited": true,
+          "installer_exit_code": 0,
+          "capture_finished": true,
+          "data_saved": true
+        },
+        "cold_query_exact_session": true,
+        "capture_finished": true,
+        "capture_exit_code": 0,
+        "independent_exit_code": 0,
+        "quality_level": "Degraded",
+        "counters": {
+          "events_received": 232152,
+          "dropped_events": 0,
+          "etw_events_lost": 0,
+          "etw_buffers_lost": 0,
+          "decode_errors": 0,
+          "context_losses": 0
+        },
+        "stats": {
+          "events_received": 232152,
+          "events_retained": 1880,
+          "events_normalized": 24,
+          "known_actor_events": 1751,
+          "unknown_actor_events": 13,
+          "drain_timed_out": false
+        },
+        "providers_active": {
+          "etw_process": true,
+          "etw_file": true
+        },
+        "pipeline": {
+          "callback_records": 702419,
+          "deliberately_filtered": 470267,
+          "unsupported_records": 0,
+          "decode_attempted": 702419,
+          "decode_succeeded": 702419,
+          "decode_failed": 0,
+          "failed_without_output": 0,
+          "enqueue_disconnected": 0,
+          "enqueued": 232152,
+          "queue_overflow": 0,
+          "dequeued": 232152,
+          "queue_pending": 0,
+          "queue_high_water": 400,
+          "queue_max_delay_ns": 56330700,
+          "context_evictions": 0,
+          "retention_dropped": 0,
+          "persistence_succeeded": 1997,
+          "persistence_failed": 0
+        },
+        "handoff": {
+          "initial_accepted": 19,
+          "received": 1978,
+          "submitted": 1978,
+          "overflow": 0,
+          "oversized": 0,
+          "disconnected": 0,
+          "serialize_failed": 0,
+          "drained": 1978,
+          "pending": 0,
+          "high_water_records": 13,
+          "high_water_bytes": 14217,
+          "record_capacity": 4096,
+          "byte_capacity": 16777216,
+          "receiver_finished": true,
+          "writer_finished": true
+        },
+        "stream": {
+          "accepted": 1997,
+          "persisted": 1997,
+          "failed": 0,
+          "quota_dropped": 0,
+          "committed_bytes": 2393737,
+          "quota_bytes": 67108864,
+          "batches": 175,
+          "max_batch_bytes": 119696,
+          "error_present": false
+        },
+        "follow_installer": {
+          "direct_children_only": true,
+          "baseline_available": false,
+          "candidate_record_limit": 2048,
+          "candidate_byte_limit": 8388608,
+          "resource_limit": 4096,
+          "candidates": 231059,
+          "admitted": 1780,
+          "excluded_other": 163058,
+          "unresolved": 66221,
+          "excluded_self_io": 0,
+          "candidate_dropped": 0,
+          "candidate_high_water_records": 28,
+          "candidate_high_water_bytes": 33248
+        },
+        "targets": [
+          {
+            "label": "parent",
+            "independent_successful_writes": 1,
+            "content_verified": true,
+            "retained_write_requests": 2,
+            "promoted_write_requests": 1,
+            "verified_actor_and_interval": true,
+            "event_ids": [
+              "80c08174-93ad-4d20-b012-d438a0fd04d9",
+              "4beded68-fd29-4b36-a589-a8e4bfac6ea6"
+            ]
+          },
+          {
+            "label": "child",
+            "independent_successful_writes": 1,
+            "content_verified": true,
+            "retained_write_requests": 2,
+            "promoted_write_requests": 1,
+            "verified_actor_and_interval": true,
+            "event_ids": [
+              "8ec257a4-a7e8-48bf-a5ef-429cda8e22d5",
+              "76a0e01f-fa53-4920-8adb-0d331ae1b66e"
+            ]
+          },
+          {
+            "label": "unrelated",
+            "independent_successful_writes": 1,
+            "content_verified": true,
+            "retained_write_requests": 0,
+            "promoted_write_requests": 0,
+            "verified_actor_and_interval": null,
+            "event_ids": []
+          }
+        ],
+        "background": {
+          "files": 12000,
+          "successful_operations": {
+            "write_requested": 12000,
+            "rename_requested": 12000,
+            "delete_requested": 12000
+          },
+          "exit_code": 0,
+          "signal_exit_code": 0,
+          "observed_events": 0,
+          "falsely_attributed_events": 0,
+          "complete": true,
+          "window": {
+            "all_noise_within_root_lifetime": true,
+            "all_noise_within_capture": true,
+            "spans_parent_write": true,
+            "spans_child_write": true
+          }
+        },
+        "accounting": {
+          "receive_queue": true,
+          "receive_drain": true,
+          "handoff_input": true,
+          "handoff_drain": true,
+          "raw_input": true,
+          "raw_persistence": true,
+          "application_loss": true,
+          "finished_workers": true
+        },
+        "accepted": true,
+        "workload_complete": true
+      },
+      "r2/candidate": {
+        "experiment_accepted": false,
+        "available": true,
+        "all_owned_processes_exited": true,
+        "terminal": {
+          "stage": "finished",
+          "installer_exited": true,
+          "installer_exit_code": 0,
+          "capture_finished": true,
+          "data_saved": true
+        },
+        "cold_query_exact_session": true,
+        "capture_finished": true,
+        "capture_exit_code": 0,
+        "independent_exit_code": 0,
+        "quality_level": "Incomplete",
+        "counters": {
+          "events_received": 216800,
+          "dropped_events": 3843,
+          "etw_events_lost": 0,
+          "etw_buffers_lost": 0,
+          "decode_errors": 0,
+          "context_losses": 7624
+        },
+        "stats": {
+          "events_received": 216800,
+          "events_retained": 1822,
+          "events_normalized": 24,
+          "known_actor_events": 0,
+          "unknown_actor_events": 1705,
+          "drain_timed_out": false
+        },
+        "providers_active": {
+          "etw_process": true,
+          "etw_file": true
+        },
+        "pipeline": {
+          "callback_records": 680867,
+          "deliberately_filtered": 464067,
+          "unsupported_records": 0,
+          "decode_attempted": 680867,
+          "decode_succeeded": 680867,
+          "decode_failed": 0,
+          "failed_without_output": 0,
+          "enqueue_disconnected": 0,
+          "enqueued": 212957,
+          "queue_overflow": 3843,
+          "dequeued": 212957,
+          "queue_pending": 0,
+          "queue_high_water": 4096,
+          "queue_max_delay_ns": 246050600,
+          "context_evictions": 0,
+          "retention_dropped": 0,
+          "persistence_succeeded": 2029,
+          "persistence_failed": 0
+        },
+        "handoff": {
+          "initial_accepted": 17,
+          "received": 2012,
+          "submitted": 2012,
+          "overflow": 0,
+          "oversized": 0,
+          "disconnected": 0,
+          "serialize_failed": 0,
+          "drained": 2012,
+          "pending": 0,
+          "high_water_records": 13,
+          "high_water_bytes": 13454,
+          "record_capacity": 4096,
+          "byte_capacity": 16777216,
+          "receiver_finished": true,
+          "writer_finished": true
+        },
+        "stream": {
+          "accepted": 2029,
+          "persisted": 2029,
+          "failed": 0,
+          "quota_dropped": 0,
+          "committed_bytes": 2401101,
+          "quota_bytes": 67108864,
+          "batches": 168,
+          "max_batch_bytes": 144263,
+          "error_present": false
+        },
+        "follow_installer": {
+          "direct_children_only": true,
+          "baseline_available": false,
+          "candidate_record_limit": 2048,
+          "candidate_byte_limit": 8388608,
+          "resource_limit": 4096,
+          "candidates": 211633,
+          "admitted": 1721,
+          "excluded_other": 144497,
+          "unresolved": 57791,
+          "excluded_self_io": 0,
+          "candidate_dropped": 7624,
+          "candidate_high_water_records": 2048,
+          "candidate_high_water_bytes": 2218701
+        },
+        "targets": [
+          {
+            "label": "parent",
+            "independent_successful_writes": 1,
+            "content_verified": true,
+            "retained_write_requests": 2,
+            "promoted_write_requests": 0,
+            "verified_actor_and_interval": false,
+            "event_ids": [
+              "d96402cb-ac20-4d94-98bb-3f9e80fefdf6",
+              "dfa01bd1-f171-4a37-ba06-6b9ce9fb8436"
+            ]
+          },
+          {
+            "label": "child",
+            "independent_successful_writes": 1,
+            "content_verified": true,
+            "retained_write_requests": 2,
+            "promoted_write_requests": 0,
+            "verified_actor_and_interval": false,
+            "event_ids": [
+              "ef8e7126-8e7c-47da-8025-9a74242245c1",
+              "dfacc26e-b747-4f54-b07d-7b3a8823f6fe"
+            ]
+          },
+          {
+            "label": "unrelated",
+            "independent_successful_writes": 1,
+            "content_verified": true,
+            "retained_write_requests": 0,
+            "promoted_write_requests": 0,
+            "verified_actor_and_interval": null,
+            "event_ids": []
+          }
+        ],
+        "background": {
+          "files": 12000,
+          "successful_operations": {
+            "write_requested": 12000,
+            "rename_requested": 12000,
+            "delete_requested": 12000
+          },
+          "exit_code": 0,
+          "signal_exit_code": 0,
+          "observed_events": 0,
+          "falsely_attributed_events": 0,
+          "complete": true,
+          "window": {
+            "all_noise_within_root_lifetime": true,
+            "all_noise_within_capture": true,
+            "spans_parent_write": true,
+            "spans_child_write": true
+          }
+        },
+        "accounting": {
+          "receive_queue": true,
+          "receive_drain": true,
+          "handoff_input": true,
+          "handoff_drain": true,
+          "raw_input": true,
+          "raw_persistence": true,
+          "application_loss": true,
+          "finished_workers": true
+        },
+        "accepted": false,
+        "workload_complete": true
+      },
+      "r2/baseline": {
+        "experiment_accepted": true,
+        "available": true,
+        "all_owned_processes_exited": true,
+        "terminal": {
+          "stage": "finished",
+          "installer_exited": true,
+          "installer_exit_code": 0,
+          "capture_finished": true,
+          "data_saved": true
+        },
+        "cold_query_exact_session": true,
+        "capture_finished": true,
+        "capture_exit_code": 0,
+        "independent_exit_code": 0,
+        "quality_level": "Degraded",
+        "counters": {
+          "events_received": 216741,
+          "dropped_events": 0,
+          "etw_events_lost": 0,
+          "etw_buffers_lost": 0,
+          "decode_errors": 0,
+          "context_losses": 0
+        },
+        "stats": {
+          "events_received": 216741,
+          "events_retained": 1817,
+          "events_normalized": 24,
+          "known_actor_events": 1688,
+          "unknown_actor_events": 13,
+          "drain_timed_out": false
+        },
+        "providers_active": {
+          "etw_process": true,
+          "etw_file": true
+        },
+        "pipeline": {
+          "callback_records": 680779,
+          "deliberately_filtered": 464038,
+          "unsupported_records": 0,
+          "decode_attempted": 680779,
+          "decode_succeeded": 680779,
+          "decode_failed": 0,
+          "failed_without_output": 0,
+          "enqueue_disconnected": 0,
+          "enqueued": 216741,
+          "queue_overflow": 0,
+          "dequeued": 216741,
+          "queue_pending": 0,
+          "queue_high_water": 228,
+          "queue_max_delay_ns": 55369500,
+          "context_evictions": 0,
+          "retention_dropped": 0,
+          "persistence_succeeded": 1925,
+          "persistence_failed": 0
+        },
+        "handoff": {
+          "initial_accepted": 19,
+          "received": 1906,
+          "submitted": 1906,
+          "overflow": 0,
+          "oversized": 0,
+          "disconnected": 0,
+          "serialize_failed": 0,
+          "drained": 1906,
+          "pending": 0,
+          "high_water_records": 8,
+          "high_water_bytes": 8739,
+          "record_capacity": 4096,
+          "byte_capacity": 16777216,
+          "receiver_finished": true,
+          "writer_finished": true
+        },
+        "stream": {
+          "accepted": 1925,
+          "persisted": 1925,
+          "failed": 0,
+          "quota_dropped": 0,
+          "committed_bytes": 2307289,
+          "quota_bytes": 67108864,
+          "batches": 170,
+          "max_batch_bytes": 140875,
+          "error_present": false
+        },
+        "follow_installer": {
+          "direct_children_only": true,
+          "baseline_available": false,
+          "candidate_record_limit": 2048,
+          "candidate_byte_limit": 8388608,
+          "resource_limit": 4096,
+          "candidates": 215494,
+          "admitted": 1717,
+          "excluded_other": 155106,
+          "unresolved": 58671,
+          "excluded_self_io": 0,
+          "candidate_dropped": 0,
+          "candidate_high_water_records": 16,
+          "candidate_high_water_bytes": 17461
+        },
+        "targets": [
+          {
+            "label": "parent",
+            "independent_successful_writes": 1,
+            "content_verified": true,
+            "retained_write_requests": 2,
+            "promoted_write_requests": 1,
+            "verified_actor_and_interval": true,
+            "event_ids": [
+              "3d04f10c-729a-44b4-b8d2-b74115c97c75",
+              "6c14ee70-5717-45a3-8503-9f3919240835"
+            ]
+          },
+          {
+            "label": "child",
+            "independent_successful_writes": 1,
+            "content_verified": true,
+            "retained_write_requests": 2,
+            "promoted_write_requests": 1,
+            "verified_actor_and_interval": true,
+            "event_ids": [
+              "418c145d-fd6c-4ec4-b284-ba8bbe7e7222",
+              "9efcc260-45cd-4dd9-89e2-3ae2e2dd7b57"
+            ]
+          },
+          {
+            "label": "unrelated",
+            "independent_successful_writes": 1,
+            "content_verified": true,
+            "retained_write_requests": 0,
+            "promoted_write_requests": 0,
+            "verified_actor_and_interval": null,
+            "event_ids": []
+          }
+        ],
+        "background": {
+          "files": 12000,
+          "successful_operations": {
+            "write_requested": 12000,
+            "rename_requested": 12000,
+            "delete_requested": 12000
+          },
+          "exit_code": 0,
+          "signal_exit_code": 0,
+          "observed_events": 0,
+          "falsely_attributed_events": 0,
+          "complete": true,
+          "window": {
+            "all_noise_within_root_lifetime": true,
+            "all_noise_within_capture": true,
+            "spans_parent_write": true,
+            "spans_child_write": true
+          }
+        },
+        "accounting": {
+          "receive_queue": true,
+          "receive_drain": true,
+          "handoff_input": true,
+          "handoff_drain": true,
+          "raw_input": true,
+          "raw_persistence": true,
+          "application_loss": true,
+          "finished_workers": true
+        },
+        "accepted": true,
+        "workload_complete": true
+      }
+    },
+    "comparisons": [
+      {
+        "round": "r1",
+        "comparable": true,
+        "candidate_accepted": true,
+        "source_events_lost_before": 0,
+        "source_events_lost_after": 0
+      },
+      {
+        "round": "r2",
+        "comparable": true,
+        "candidate_accepted": false,
+        "source_events_lost_before": 0,
+        "source_events_lost_after": 0
+      }
+    ],
+    "source_loss_improvement_claim": false,
+    "limitations": [
+      "Same syscall workload, not identical incidental ETW stream.",
+      "GitHub hosted Windows runner is not the user's original Parallels environment.",
+      "Zero losses in both versions does not establish a source-loss improvement or historical root cause."
+    ]
+  },
+  "source_facts": {
+    "r1/baseline": {
+      "schema_version": 1,
+      "protocol": "contain-existing-source-facts-1",
+      "providers": {
+        "file": {
+          "callback_records": 691266,
+          "identity_queries": 0,
+          "unresolved": 0,
+          "enqueued": 217677,
+          "filtered": 473589,
+          "overflow": 0,
+          "disconnected": 0,
+          "decode_failed": 0,
+          "context_evictions": 0
+        },
+        "process": {
+          "callback_records": 234,
+          "identity_queries": 0,
+          "unresolved": 0,
+          "enqueued": 234,
+          "filtered": 0,
+          "overflow": 0,
+          "disconnected": 0,
+          "decode_failed": 0,
+          "context_evictions": 0
+        },
+        "registry": {
+          "callback_records": 0,
+          "identity_queries": 0,
+          "unresolved": 0,
+          "enqueued": 0,
+          "filtered": 0,
+          "overflow": 0,
+          "disconnected": 0,
+          "decode_failed": 0,
+          "context_evictions": 0
+        }
+      },
+      "provider_elapsed_ns": {
+        "file": {
+          "callback": 16354238200,
+          "lock_wait": 209332400,
+          "schema_lookup": 1138872900,
+          "property_decode": 7248829700,
+          "identity_query": 0,
+          "path_normalization": 1057620900,
+          "event_construction": 1977071700,
+          "enqueue": 237408500,
+          "queue_delay": 0,
+          "context": 0
+        },
+        "process": {
+          "callback": 13247600,
+          "lock_wait": 59500,
+          "schema_lookup": 2788300,
+          "property_decode": 6626600,
+          "identity_query": 0,
+          "path_normalization": 86200,
+          "event_construction": 3629800,
+          "enqueue": 201600,
+          "queue_delay": 0,
+          "context": 0
+        },
+        "registry": {
+          "callback": 0,
+          "lock_wait": 0,
+          "schema_lookup": 0,
+          "property_decode": 0,
+          "identity_query": 0,
+          "path_normalization": 0,
+          "event_construction": 0,
+          "enqueue": 0,
+          "queue_delay": 0,
+          "context": 0
+        }
+      },
+      "etw_session": null,
+      "drain": null,
+      "initial_identity_snapshot": {
+        "enumerated": 147,
+        "queried": 147,
+        "resolved": 143,
+        "failed": 4,
+        "skipped": 0,
+        "query_ns": 10175600,
+        "elapsed_ns": 219038900,
+        "thread_enumerated": 1443,
+        "thread_queried": 1443,
+        "thread_resolved": 1209,
+        "thread_failed": 224,
+        "thread_outside_boundary": 10,
+        "thread_query_ns": 120517800,
+        "thread_unqueried": 0,
+        "thread_enumeration_complete": true,
+        "budget_exhausted": false,
+        "query_errors": {
+          "thread_query_win32_31": 211,
+          "thread_query_win32_87": 13
+        },
+        "omitted_error_labels": 0
+      },
+      "limitations": [
+        "Existing saved fields only; absent historical fields remain null.",
+        "Enumeration completion is not complete identity coverage; query failures and observation boundaries still apply.",
+        "ETW samples are cumulative within one trace; do not add phases, events and buffers, or application drops.",
+        "Drain describes the pre-STOP quiet/process wait, not queued-record completion; instance examples are hashed and capped at eight.",
+        "No paths, arbitrary error text, or host process/thread inventory are exported."
+      ]
+    },
+    "r1/candidate": {
+      "schema_version": 1,
+      "protocol": "contain-existing-source-facts-1",
+      "providers": {
+        "file": {
+          "callback_records": 702202,
+          "identity_queries": 0,
+          "unresolved": 0,
+          "enqueued": 231935,
+          "filtered": 470267,
+          "overflow": 0,
+          "disconnected": 0,
+          "decode_failed": 0,
+          "context_evictions": 0
+        },
+        "process": {
+          "callback_records": 217,
+          "identity_queries": 0,
+          "unresolved": 0,
+          "enqueued": 217,
+          "filtered": 0,
+          "overflow": 0,
+          "disconnected": 0,
+          "decode_failed": 0,
+          "context_evictions": 0
+        },
+        "registry": {
+          "callback_records": 0,
+          "identity_queries": 0,
+          "unresolved": 0,
+          "enqueued": 0,
+          "filtered": 0,
+          "overflow": 0,
+          "disconnected": 0,
+          "decode_failed": 0,
+          "context_evictions": 0
+        }
+      },
+      "provider_elapsed_ns": {
+        "file": {
+          "callback": 16773481200,
+          "lock_wait": 225730600,
+          "schema_lookup": 1157274000,
+          "property_decode": 7397243800,
+          "identity_query": 0,
+          "path_normalization": 1027943100,
+          "event_construction": 2030223800,
+          "enqueue": 261321200,
+          "queue_delay": 0,
+          "context": 0
+        },
+        "process": {
+          "callback": 11336200,
+          "lock_wait": 91400,
+          "schema_lookup": 2863200,
+          "property_decode": 4708500,
+          "identity_query": 0,
+          "path_normalization": 90600,
+          "event_construction": 3392900,
+          "enqueue": 223700,
+          "queue_delay": 0,
+          "context": 0
+        },
+        "registry": {
+          "callback": 0,
+          "lock_wait": 0,
+          "schema_lookup": 0,
+          "property_decode": 0,
+          "identity_query": 0,
+          "path_normalization": 0,
+          "event_construction": 0,
+          "enqueue": 0,
+          "queue_delay": 0,
+          "context": 0
+        }
+      },
+      "etw_session": {
+        "requested_buffer_size_kib": 64,
+        "requested_min_buffers": 8,
+        "requested_max_buffers": 64,
+        "stop_control_elapsed_ns": 2783300,
+        "consumer_join_elapsed_ns": 1574000,
+        "ready": {
+          "elapsed_ns": 23378400,
+          "query_elapsed_ns": 48700,
+          "control_error": null,
+          "events_lost": 0,
+          "realtime_buffers_lost": 0,
+          "log_buffers_lost": 0,
+          "allocated_buffers": 8,
+          "free_buffers": 7,
+          "buffer_size_kib": 64,
+          "min_buffers": 8,
+          "max_buffers": 64,
+          "buffers_written": 1,
+          "callback_records": 0,
+          "callback_elapsed_ns": 0,
+          "lock_wait_ns": 0
+        },
+        "before_stop": {
+          "elapsed_ns": 21706791300,
+          "query_elapsed_ns": 46600,
+          "control_error": null,
+          "events_lost": 0,
+          "realtime_buffers_lost": 0,
+          "log_buffers_lost": 0,
+          "allocated_buffers": 8,
+          "free_buffers": 7,
+          "buffer_size_kib": 64,
+          "min_buffers": 8,
+          "max_buffers": 64,
+          "buffers_written": 1737,
+          "callback_records": 702292,
+          "callback_elapsed_ns": 16782777600,
+          "lock_wait_ns": 225794200
+        },
+        "stopped": {
+          "elapsed_ns": 21709648100,
+          "query_elapsed_ns": 2783300,
+          "control_error": null,
+          "events_lost": 0,
+          "realtime_buffers_lost": 0,
+          "log_buffers_lost": 0,
+          "allocated_buffers": 8,
+          "free_buffers": 8,
+          "buffer_size_kib": 64,
+          "min_buffers": 8,
+          "max_buffers": 64,
+          "buffers_written": 1738,
+          "callback_records": 702399,
+          "callback_elapsed_ns": 16784448300,
+          "lock_wait_ns": 225818000
+        }
+      },
+      "drain": {
+        "elapsed_ms": 1500,
+        "quiet_ms": 1500,
+        "pending_verified_instances": 0,
+        "lifecycle_context_lost": 0,
+        "source_records_during_wait": 19,
+        "stop_reason": "quiet_and_no_pending_process_exit",
+        "pending_instance_hashes": [],
+        "examples_omitted": 0
+      },
+      "initial_identity_snapshot": {
+        "enumerated": 146,
+        "queried": 146,
+        "resolved": 142,
+        "failed": 4,
+        "skipped": 0,
+        "query_ns": 16465800,
+        "elapsed_ns": 233986100,
+        "thread_enumerated": 1471,
+        "thread_queried": 1471,
+        "thread_resolved": 1239,
+        "thread_failed": 224,
+        "thread_outside_boundary": 8,
+        "thread_query_ns": 107752500,
+        "thread_unqueried": 0,
+        "thread_enumeration_complete": true,
+        "budget_exhausted": false,
+        "query_errors": {
+          "thread_query_win32_31": 211,
+          "thread_query_win32_87": 13
+        },
+        "omitted_error_labels": 0
+      },
+      "limitations": [
+        "Existing saved fields only; absent historical fields remain null.",
+        "Enumeration completion is not complete identity coverage; query failures and observation boundaries still apply.",
+        "ETW samples are cumulative within one trace; do not add phases, events and buffers, or application drops.",
+        "Drain describes the pre-STOP quiet/process wait, not queued-record completion; instance examples are hashed and capped at eight.",
+        "No paths, arbitrary error text, or host process/thread inventory are exported."
+      ]
+    },
+    "r2/candidate": {
+      "schema_version": 1,
+      "protocol": "contain-existing-source-facts-1",
+      "providers": {
+        "file": {
+          "callback_records": 680559,
+          "identity_queries": 0,
+          "unresolved": 0,
+          "enqueued": 212649,
+          "filtered": 464067,
+          "overflow": 3843,
+          "disconnected": 0,
+          "decode_failed": 0,
+          "context_evictions": 0
+        },
+        "process": {
+          "callback_records": 308,
+          "identity_queries": 0,
+          "unresolved": 0,
+          "enqueued": 308,
+          "filtered": 0,
+          "overflow": 0,
+          "disconnected": 0,
+          "decode_failed": 0,
+          "context_evictions": 0
+        },
+        "registry": {
+          "callback_records": 0,
+          "identity_queries": 0,
+          "unresolved": 0,
+          "enqueued": 0,
+          "filtered": 0,
+          "overflow": 0,
+          "disconnected": 0,
+          "decode_failed": 0,
+          "context_evictions": 0
+        }
+      },
+      "provider_elapsed_ns": {
+        "file": {
+          "callback": 15836981100,
+          "lock_wait": 212339800,
+          "schema_lookup": 1085311100,
+          "property_decode": 7062299700,
+          "identity_query": 0,
+          "path_normalization": 1005377600,
+          "event_construction": 1862811900,
+          "enqueue": 237082100,
+          "queue_delay": 0,
+          "context": 0
+        },
+        "process": {
+          "callback": 15554200,
+          "lock_wait": 81600,
+          "schema_lookup": 3516100,
+          "property_decode": 6778200,
+          "identity_query": 0,
+          "path_normalization": 106800,
+          "event_construction": 5165500,
+          "enqueue": 378700,
+          "queue_delay": 0,
+          "context": 0
+        },
+        "registry": {
+          "callback": 0,
+          "lock_wait": 0,
+          "schema_lookup": 0,
+          "property_decode": 0,
+          "identity_query": 0,
+          "path_normalization": 0,
+          "event_construction": 0,
+          "enqueue": 0,
+          "queue_delay": 0,
+          "context": 0
+        }
+      },
+      "etw_session": {
+        "requested_buffer_size_kib": 64,
+        "requested_min_buffers": 8,
+        "requested_max_buffers": 64,
+        "stop_control_elapsed_ns": 2002300,
+        "consumer_join_elapsed_ns": 1174800,
+        "ready": {
+          "elapsed_ns": 44973400,
+          "query_elapsed_ns": 37300,
+          "control_error": null,
+          "events_lost": 0,
+          "realtime_buffers_lost": 0,
+          "log_buffers_lost": 0,
+          "allocated_buffers": 8,
+          "free_buffers": 7,
+          "buffer_size_kib": 64,
+          "min_buffers": 8,
+          "max_buffers": 64,
+          "buffers_written": 2,
+          "callback_records": 291,
+          "callback_elapsed_ns": 12072200,
+          "lock_wait_ns": 96400
+        },
+        "before_stop": {
+          "elapsed_ns": 21132586500,
+          "query_elapsed_ns": 51800,
+          "control_error": null,
+          "events_lost": 0,
+          "realtime_buffers_lost": 0,
+          "log_buffers_lost": 0,
+          "allocated_buffers": 8,
+          "free_buffers": 7,
+          "buffer_size_kib": 64,
+          "min_buffers": 8,
+          "max_buffers": 64,
+          "buffers_written": 1694,
+          "callback_records": 680824,
+          "callback_elapsed_ns": 15851652200,
+          "lock_wait_ns": 212404600
+        },
+        "stopped": {
+          "elapsed_ns": 21134652400,
+          "query_elapsed_ns": 2002300,
+          "control_error": null,
+          "events_lost": 0,
+          "realtime_buffers_lost": 0,
+          "log_buffers_lost": 0,
+          "allocated_buffers": 8,
+          "free_buffers": 8,
+          "buffer_size_kib": 64,
+          "min_buffers": 8,
+          "max_buffers": 64,
+          "buffers_written": 1695,
+          "callback_records": 680836,
+          "callback_elapsed_ns": 15852124400,
+          "lock_wait_ns": 212415300
+        }
+      },
+      "drain": {
+        "elapsed_ms": 1501,
+        "quiet_ms": 1501,
+        "pending_verified_instances": 0,
+        "lifecycle_context_lost": 0,
+        "source_records_during_wait": 139,
+        "stop_reason": "quiet_and_no_pending_process_exit",
+        "pending_instance_hashes": [],
+        "examples_omitted": 0
+      },
+      "initial_identity_snapshot": {
+        "enumerated": 144,
+        "queried": 144,
+        "resolved": 140,
+        "failed": 4,
+        "skipped": 0,
+        "query_ns": 11107500,
+        "elapsed_ns": 217904500,
+        "thread_enumerated": 1456,
+        "thread_queried": 1456,
+        "thread_resolved": 1220,
+        "thread_failed": 223,
+        "thread_outside_boundary": 13,
+        "thread_query_ns": 96780300,
+        "thread_unqueried": 0,
+        "thread_enumeration_complete": true,
+        "budget_exhausted": false,
+        "query_errors": {
+          "thread_query_win32_31": 211,
+          "thread_query_win32_87": 12
+        },
+        "omitted_error_labels": 0
+      },
+      "limitations": [
+        "Existing saved fields only; absent historical fields remain null.",
+        "Enumeration completion is not complete identity coverage; query failures and observation boundaries still apply.",
+        "ETW samples are cumulative within one trace; do not add phases, events and buffers, or application drops.",
+        "Drain describes the pre-STOP quiet/process wait, not queued-record completion; instance examples are hashed and capped at eight.",
+        "No paths, arbitrary error text, or host process/thread inventory are exported."
+      ]
+    },
+    "r2/baseline": {
+      "schema_version": 1,
+      "protocol": "contain-existing-source-facts-1",
+      "providers": {
+        "file": {
+          "callback_records": 680571,
+          "identity_queries": 0,
+          "unresolved": 0,
+          "enqueued": 216533,
+          "filtered": 464038,
+          "overflow": 0,
+          "disconnected": 0,
+          "decode_failed": 0,
+          "context_evictions": 0
+        },
+        "process": {
+          "callback_records": 208,
+          "identity_queries": 0,
+          "unresolved": 0,
+          "enqueued": 208,
+          "filtered": 0,
+          "overflow": 0,
+          "disconnected": 0,
+          "decode_failed": 0,
+          "context_evictions": 0
+        },
+        "registry": {
+          "callback_records": 0,
+          "identity_queries": 0,
+          "unresolved": 0,
+          "enqueued": 0,
+          "filtered": 0,
+          "overflow": 0,
+          "disconnected": 0,
+          "decode_failed": 0,
+          "context_evictions": 0
+        }
+      },
+      "provider_elapsed_ns": {
+        "file": {
+          "callback": 15733589800,
+          "lock_wait": 202093900,
+          "schema_lookup": 1076086300,
+          "property_decode": 6987330500,
+          "identity_query": 0,
+          "path_normalization": 1020023400,
+          "event_construction": 1910427700,
+          "enqueue": 235208700,
+          "queue_delay": 0,
+          "context": 0
+        },
+        "process": {
+          "callback": 11616400,
+          "lock_wait": 78000,
+          "schema_lookup": 2950500,
+          "property_decode": 4850200,
+          "identity_query": 0,
+          "path_normalization": 108200,
+          "event_construction": 3513500,
+          "enqueue": 239800,
+          "queue_delay": 0,
+          "context": 0
+        },
+        "registry": {
+          "callback": 0,
+          "lock_wait": 0,
+          "schema_lookup": 0,
+          "property_decode": 0,
+          "identity_query": 0,
+          "path_normalization": 0,
+          "event_construction": 0,
+          "enqueue": 0,
+          "queue_delay": 0,
+          "context": 0
+        }
+      },
+      "etw_session": null,
+      "drain": null,
+      "initial_identity_snapshot": {
+        "enumerated": 143,
+        "queried": 143,
+        "resolved": 139,
+        "failed": 4,
+        "skipped": 0,
+        "query_ns": 14676100,
+        "elapsed_ns": 260219600,
+        "thread_enumerated": 1357,
+        "thread_queried": 1357,
+        "thread_resolved": 1121,
+        "thread_failed": 223,
+        "thread_outside_boundary": 13,
+        "thread_query_ns": 135509200,
+        "thread_unqueried": 0,
+        "thread_enumeration_complete": true,
+        "budget_exhausted": false,
+        "query_errors": {
+          "thread_query_win32_31": 211,
+          "thread_query_win32_87": 12
+        },
+        "omitted_error_labels": 0
+      },
+      "limitations": [
+        "Existing saved fields only; absent historical fields remain null.",
+        "Enumeration completion is not complete identity coverage; query failures and observation boundaries still apply.",
+        "ETW samples are cumulative within one trace; do not add phases, events and buffers, or application drops.",
+        "Drain describes the pre-STOP quiet/process wait, not queued-record completion; instance examples are hashed and capped at eight.",
+        "No paths, arbitrary error text, or host process/thread inventory are exported."
+      ]
+    }
+  },
+  "limitations": [
+    "GitHub hosted Windows 10.0.26100 x64 is not the original user Parallels environment.",
+    "Same fixed syscall workload does not make incidental ETW streams identical.",
+    "No source-loss improvement is established when all source-loss counts are zero.",
+    "Stage timings are cumulative elapsed measurements, not CPU percentages or evidence about a particular overflow burst.",
+    "Historical user sessions, actual Chrome writes, interactive custom-directory WPF capture and final clipboard behavior remain unverified in B5."
+  ]
+}

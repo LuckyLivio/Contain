@@ -1,4 +1,5 @@
 mod follow_experiment;
+mod interactive;
 mod root_input;
 mod truth;
 use anyhow::{Context, Result};
@@ -112,7 +113,15 @@ fn hold_for_observation() {
 
 fn run() -> Result<()> {
     let mut args = Args::parse();
-    let configured = std::env::var_os("CONTAIN_FIXTURE_ROOT");
+    let interactive = args.root.is_none()
+        && !args.cleanup
+        && matches!(args.role, Role::Parent)
+        && std::env::var_os("CONTAIN_FIXTURE_INTERACTIVE").is_some_and(|value| value == "1");
+    // Test-only installer UI chooses its own destination. Contain never receives it.
+    let chosen = interactive.then(interactive::choose_root).transpose()?;
+    let configured = chosen
+        .map(PathBuf::into_os_string)
+        .or_else(|| std::env::var_os("CONTAIN_FIXTURE_ROOT"));
     let (root, name) = configured_root(args.root.as_deref(), configured.as_deref(), args.cleanup)?;
     let key_path = format!("Software\\Contain\\Demo\\{name}");
     if args.cleanup {

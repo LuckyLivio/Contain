@@ -29,3 +29,8 @@ pub mod workflow;
 #[cfg(test)]
 #[path = "../../../vendor/ferrisetw/src/trace/startup_ownership.rs"]
 mod etw_startup_ownership;
+
+// Exercise the actual monotonic boundary policy without simulating Windows.
+#[cfg(test)]
+#[path = "../../../crates/contain-core/src/drain.rs"]
+mod drain;

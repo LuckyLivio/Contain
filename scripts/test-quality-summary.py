@@ -167,6 +167,50 @@ class SummaryTests(unittest.TestCase):
             self.assertNotIn("PRIVATE_NAME", json.dumps(result))
             self.assertNotIn("SECRET", json.dumps(result))
 
+    def test_capture_drain_and_etw_changed_function_regions_include_uncovered_paths(self):
+        # Synthetic LLVM records test report selection only. This does not
+        # execute or supply coverage evidence for the named production code.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sources = {
+                "crates/contain-core/src/capture.rs": ["install_inner"],
+                "crates/contain-core/src/drain.rs": ["decide"],
+                "crates/contain-core/src/follow.rs": ["select"],
+                "crates/contain-core/src/ingest.rs": ["drain_state", "record_while_mode"],
+                "crates/contain-core/src/windows/etw.rs": ["session_diagnostics", "sample", "query_sample", "stop_with", "final_report"],
+                "crates/contain-core/src/windows/native.rs": ["control_trace"],
+            }
+            functions = []
+            expected = set()
+            for source, names in sources.items():
+                path = root / source
+                path.parent.mkdir(parents=True, exist_ok=True)
+                definitions = names + ["unreviewed_helper"]
+                path.write_text("".join(f"pub fn {name}() {{\n    synthetic();\n}}\n" for name in definitions), encoding="utf-8")
+                for index, name in enumerate(definitions):
+                    start = index * 3 + 1
+                    count = 0 if name in {"control_trace", "query_sample"} else 2
+                    functions.append(dict(name="PRIVATE_MANGLED_SYMBOL", filenames=[str(path)], count=count,
+                                          regions=[[start, 1, start + 1, 10, count, 0, 0, 0],
+                                                   [start + 1, 11, start + 1, 20, 0, 0, 0, 0]]))
+                expected.update((source, name) for name in names)
+            totals = {"lines": {"count": 100, "covered": 70, "percent": 70},
+                      "functions": {"count": 20, "covered": 14, "percent": 70}}
+            report = root / "coverage.json"
+            report.write_text(json.dumps({"data": [{"totals": totals, "functions": functions}]}), encoding="utf-8")
+            result = SUMMARY.coverage(report, root)
+            self.assertEqual(result["export_totals"], [totals])
+            self.assertEqual({(row["source"], row["enclosing_function"]) for row in result["affected_functions"]}, expected)
+            for row in result["affected_functions"]:
+                with self.subTest(source=row["source"], function=row["enclosing_function"]):
+                    uncovered = row["enclosing_function"] in {"control_trace", "query_sample"}
+                    self.assertEqual(row["execution_count"], 0 if uncovered else 2)
+                    self.assertEqual(row["code_regions"], 2)
+                    self.assertEqual(row["covered_code_regions"], 0 if uncovered else 1)
+                    self.assertEqual(len(row["uncovered_code_regions"]), 2 if uncovered else 1)
+            self.assertNotIn("PRIVATE_MANGLED_SYMBOL", json.dumps(result))
+            self.assertNotIn(str(root), json.dumps(result))
+
     def test_viewer_read_only_and_summary_function_regions_are_exported_without_changing_totals(self):
         # Synthetic LLVM records exercise the actual public exporter. They are
         # not coverage evidence for the production functions named here.

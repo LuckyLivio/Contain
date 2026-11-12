@@ -1,6 +1,9 @@
 //! Manifest ETW providers, decoded through TDH by ferrisetw. No injection or elevation.
 use super::native;
-use crate::model::{AttributionEvidence, BackendReport, EvidenceSource, SystemEvent};
+use crate::model::{
+    AttributionEvidence, BackendReport, EtwSessionDiagnostics, EtwTraceSample, EvidenceSource,
+    SystemEvent,
+};
 use crate::monitor::EventSource;
 mod decode;
 mod file_diagnostics;
@@ -17,7 +20,9 @@ use std::sync::{
 };
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
-use windows_sys::Win32::System::Diagnostics::Etw::EVENT_TRACE_CONTROL_STOP;
+use windows_sys::Win32::System::Diagnostics::Etw::{
+    EVENT_TRACE_CONTROL_QUERY, EVENT_TRACE_CONTROL_STOP,
+};
 
 const FILE_PROVIDER: &str = "edd08927-9cc4-4e65-b970-c2560fb5c289";
 const REGISTRY_PROVIDER: &str = "70eb4f03-c1de-4f73-a051-33d13d5413bd";
@@ -25,6 +30,9 @@ const REGISTRY_PROVIDER: &str = "70eb4f03-c1de-4f73-a051-33d13d5413bd";
 // handoff. Splitting ownership does not enlarge the queued-record budget.
 const QUEUE_CAPACITY: usize = 4096;
 const OBJECT_CAPACITY: usize = 16384;
+const BUFFER_SIZE_KIB: u32 = 64;
+const MIN_BUFFERS: u32 = 8;
+const MAX_BUFFERS: u32 = 64;
 pub(crate) const FILE_EVENT_IDS: &[u16] = &[12, 14, 16, 24, 26, 27, 30];
 
 struct Decoder {
@@ -85,6 +93,7 @@ pub struct EtwSource {
     initial_records: Vec<(crate::model::ProcessRecord, u64)>,
     initial_threads: Vec<crate::model::InitialThreadIdentity>,
     identity_boundary: u64,
+    started: Instant,
     trace: Option<UserTrace>,
     consumer: Option<JoinHandle<Result<(), String>>>,
     name: String,
@@ -212,6 +221,7 @@ impl EtwSource {
             initial_records: Vec::new(),
             initial_threads: Vec::new(),
             identity_boundary: native::now_ticks(),
+            started: Instant::now(),
             trace: None,
             consumer: None,
             name: name.clone(),
@@ -298,7 +308,15 @@ impl EtwSource {
             received,
         }));
         source.decoder = Some(decoder.clone());
-        source.report.pipeline = Some(Default::default());
+        source.report.pipeline = Some(crate::model::PipelineStats {
+            etw_session: Some(EtwSessionDiagnostics {
+                requested_buffer_size_kib: BUFFER_SIZE_KIB,
+                requested_min_buffers: MIN_BUFFERS,
+                requested_max_buffers: MAX_BUFFERS,
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
         let file_decoder = decoder.clone();
         let filter_ids = std::env::var_os("CONTAIN_ETW_EVENT_ID_FILTER").is_none_or(|v| v != "0");
         source.report.file_event_id_filter = Some(filter_ids);
@@ -329,9 +347,9 @@ impl EtwSource {
             .enable(lifecycle)
             .enable(readiness_provider)
             .set_trace_properties(TraceProperties {
-                buffer_size: 64,
-                min_buffer: 8,
-                max_buffer: 64,
+                buffer_size: BUFFER_SIZE_KIB,
+                min_buffer: MIN_BUFFERS,
+                max_buffer: MAX_BUFFERS,
                 ..Default::default()
             });
         if registry_enabled {
@@ -450,8 +468,14 @@ impl EtwSource {
                             .warnings
                             .push(format!("{reason}; using snapshots."));
                     }
-                } else if let Some(clock) = &mut source.report.clock {
-                    super::clock::observe(clock, "consumer_ready");
+                } else {
+                    if let Some(clock) = &mut source.report.clock {
+                        super::clock::observe(clock, "consumer_ready");
+                    }
+                    let ready = source.query_sample();
+                    if let Some(diagnostic) = source.session_diagnostics() {
+                        diagnostic.ready = Some(ready);
+                    }
                 }
             }
             Err(error) => {
@@ -555,6 +579,45 @@ fn dispatch(
 }
 
 impl EtwSource {
+    fn session_diagnostics(&mut self) -> Option<&mut EtwSessionDiagnostics> {
+        self.report.pipeline.as_mut()?.etw_session.as_mut()
+    }
+
+    fn sample(&self, result: Result<native::TraceLoss, u32>, query_ns: u64) -> EtwTraceSample {
+        let pipeline = self.metrics.snapshot();
+        let mut sample = EtwTraceSample {
+            elapsed_ns: self.started.elapsed().as_nanos() as u64,
+            query_elapsed_ns: query_ns,
+            callback_records: pipeline.callback_records,
+            callback_elapsed_ns: pipeline.elapsed_ns["callback"],
+            lock_wait_ns: pipeline.elapsed_ns["lock_wait"],
+            ..Default::default()
+        };
+        match result {
+            Ok(stats) => {
+                sample.events_lost = Some(stats.events);
+                sample.realtime_buffers_lost = Some(stats.realtime_buffers);
+                sample.log_buffers_lost = Some(stats.log_buffers);
+                sample.allocated_buffers = Some(stats.allocated_buffers);
+                sample.free_buffers = Some(stats.free_buffers);
+                sample.buffer_size_kib = Some(stats.buffer_size_kib);
+                sample.min_buffers = Some(stats.min_buffers);
+                sample.max_buffers = Some(stats.max_buffers);
+                sample.buffers_written = Some(stats.buffers_written);
+            }
+            Err(code) => sample.control_error = Some(code),
+        }
+        sample
+    }
+
+    /// At most two QUERY calls per owned trace, outside the callback and after
+    /// readiness/before STOP. A query failure remains absent data, never zero.
+    fn query_sample(&self) -> EtwTraceSample {
+        let started = Instant::now();
+        let result = native::control_trace(&self.name, EVENT_TRACE_CONTROL_QUERY);
+        self.sample(result, started.elapsed().as_nanos() as u64)
+    }
+
     /// Setup only, before the installer starts. No process query holds the decoder
     /// lock. Drain committed raw pages between queries; no metadata worker or PID cache.
     pub fn initialize_identities(&mut self, mut sink: impl FnMut(Vec<SystemEvent>)) {
@@ -716,11 +779,16 @@ impl EtwSource {
     pub fn stop_with(&mut self, mut sink: impl FnMut(Vec<SystemEvent>)) -> BackendReport {
         let mut producer_stopped = false;
         if let Some(trace) = self.trace.take() {
+            let before_stop = self.query_sample();
+            if let Some(diagnostic) = self.session_diagnostics() {
+                diagnostic.before_stop = Some(before_stop);
+            }
             if let Some(clock) = &mut self.report.clock {
                 super::clock::observe(clock, "trace_stop_requested");
             }
             let mut trace = Some(trace);
             let name = self.name.clone();
+            let stop_started = Instant::now();
             // ControlTrace STOP may itself wait while final buffers are delivered.
             let stop =
                 thread::spawn(move || native::control_trace(&name, EVENT_TRACE_CONTROL_STOP));
@@ -728,13 +796,29 @@ impl EtwSource {
                 sink(self.drain());
                 thread::sleep(std::time::Duration::from_millis(1));
             }
-            match stop.join() {
+            let stopped = stop.join();
+            let stop_ns = stop_started.elapsed().as_nanos() as u64;
+            let sample = self.sample(
+                match &stopped {
+                    Ok(Ok(lost)) => Ok(*lost),
+                    Ok(Err(code)) => Err(*code),
+                    // ERROR_UNHANDLED_EXCEPTION; retained as a failed sample.
+                    Err(_) => Err(574),
+                },
+                stop_ns,
+            );
+            if let Some(diagnostic) = self.session_diagnostics() {
+                diagnostic.stopped = Some(sample);
+                diagnostic.stop_control_elapsed_ns = Some(stop_ns);
+            }
+            match stopped {
                 Ok(Ok(lost)) => {
                     producer_stopped = true;
                     self.report.etw_events_lost = Some(lost.events);
                     self.report.etw_buffers_lost = Some(lost.buffers);
                     if let Some(p) = &mut self.report.pipeline {
                         p.etw_realtime_buffers_lost = Some(lost.realtime_buffers);
+                        p.etw_log_buffers_lost = Some(lost.log_buffers);
                         p.etw_allocated_buffers = Some(lost.allocated_buffers);
                         p.etw_buffer_size_kib = Some(lost.buffer_size_kib);
                     }
@@ -747,6 +831,7 @@ impl EtwSource {
                 }
             }
             if let Some(consumer) = self.consumer.take() {
+                let join_started = Instant::now();
                 while !consumer.is_finished() {
                     sink(self.drain());
                     thread::sleep(std::time::Duration::from_millis(1));
@@ -756,6 +841,10 @@ impl EtwSource {
                     self.report
                         .warnings
                         .push("ETW consumer failed during drain".into());
+                }
+                if let Some(diagnostic) = self.session_diagnostics() {
+                    diagnostic.consumer_join_elapsed_ns =
+                        Some(join_started.elapsed().as_nanos() as u64);
                 }
             }
             sink(self.drain());
@@ -820,8 +909,10 @@ impl EtwSource {
         if let Some(old) = self.report.pipeline.take() {
             let mut p = self.metrics.snapshot();
             p.etw_realtime_buffers_lost = old.etw_realtime_buffers_lost;
+            p.etw_log_buffers_lost = old.etw_log_buffers_lost;
             p.etw_allocated_buffers = old.etw_allocated_buffers;
             p.etw_buffer_size_kib = old.etw_buffer_size_kib;
+            p.etw_session = old.etw_session;
             self.report.pipeline = Some(p);
         }
         self.report.clone()
@@ -831,6 +922,52 @@ impl EtwSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn final_report_preserves_stop_counters_and_samples_without_adding_them() {
+        let mut source = EtwSource::start(&[], None, false);
+        source.report.etw_events_lost = Some(13);
+        source.report.etw_buffers_lost = Some(5);
+        source.report.pipeline = Some(crate::model::PipelineStats {
+            etw_realtime_buffers_lost: Some(3),
+            etw_log_buffers_lost: Some(2),
+            etw_session: Some(EtwSessionDiagnostics {
+                ready: Some(EtwTraceSample {
+                    events_lost: Some(7),
+                    ..Default::default()
+                }),
+                stopped: Some(EtwTraceSample {
+                    events_lost: Some(13),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        for _ in 0..2 {
+            let report = source.final_report();
+            assert_eq!(report.etw_events_lost, Some(13));
+            assert_eq!(report.etw_buffers_lost, Some(5));
+            let pipeline = report.pipeline.unwrap();
+            assert_eq!(pipeline.etw_realtime_buffers_lost, Some(3));
+            assert_eq!(pipeline.etw_log_buffers_lost, Some(2));
+            let session = pipeline.etw_session.unwrap();
+            assert_eq!(session.ready.unwrap().events_lost, Some(7));
+            assert_eq!(session.stopped.unwrap().events_lost, Some(13));
+            assert!(session.before_stop.is_none());
+        }
+    }
+
+    #[test]
+    fn failed_statistics_query_retains_error_and_does_not_claim_zero_loss() {
+        let source = EtwSource::start(&[], None, false);
+        let sample = source.sample(Err(5), 123);
+        assert_eq!(sample.control_error, Some(5));
+        assert_eq!(sample.query_elapsed_ns, 123);
+        assert!(sample.events_lost.is_none());
+        assert!(sample.realtime_buffers_lost.is_none());
+        assert!(sample.allocated_buffers.is_none());
+    }
+
     #[test]
     fn startup_identity_sampling_is_available_without_registry_provider() {
         // Only the provider status is injected. The read-only identity queries
