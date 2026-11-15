@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "code_revision": "5c6e4027b2fa6afe8c5a9fe3835880b4f7252b0b",
+  "base_revision": "ddafeb26a89ea7bf625421e6f958b3e8ca49c31b",
+  "date": "2026-11-15",
+  "scope": "Linux x86_64 current-instance checks; no clean Windows execution",
+  "tests": {
+    "new_workflow": {
+      "passed": 27,
+      "failed": 0,
+      "ignored": 0,
+      "doctests": 0
+    },
+    "legacy_offline": {
+      "passed": 98,
+      "failed": 0,
+      "ignored": 8,
+      "doctests": 0
+    },
+    "desktop_model": {
+      "passed": 34,
+      "failed": 0
+    },
+    "presentation": {
+      "passed": 38,
+      "failed": 0
+    },
+    "python": {
+      "scripts_exit_zero": 38,
+      "unittest_passed": 612,
+      "unittest_skipped": 6,
+      "additional_windows_directory_cases_not_run": 7
+    }
+  },
+  "coverage": {
+    "scope": "contain-workflow Linux-compiled code only; excludes cfg(windows), not branch coverage",
+    "lines": {
+      "count": 803,
+      "covered": 622,
+      "percent": 77.45952677459526
+    },
+    "functions": {
+      "count": 71,
+      "covered": 59,
+      "percent": 83.09859154929578
+    },
+    "files": [
+      {
+        "name": "artifact.rs",
+        "lines": {
+          "count": 96,
+          "covered": 89,
+          "percent": 92.70833333333334
+        },
+        "functions": {
+          "count": 11,
+          "covered": 9,
+          "percent": 81.81818181818183
+        }
+      },
+      {
+        "name": "environment.rs",
+        "lines": {
+          "count": 106,
+          "covered": 85,
+          "percent": 80.18867924528303
+        },
+        "functions": {
+          "count": 10,
+          "covered": 7,
+          "percent": 70.0
+        }
+      },
+      {
+        "name": "main.rs",
+        "lines": {
+          "count": 55,
+          "covered": 31,
+          "percent": 56.36363636363636
+        },
+        "functions": {
+          "count": 7,
+          "covered": 5,
+          "percent": 71.42857142857143
+        }
+      },
+      {
+        "name": "manifest.rs",
+        "lines": {
+          "count": 124,
+          "covered": 114,
+          "percent": 91.93548387096774
+        },
+        "functions": {
+          "count": 15,
+          "covered": 15,
+          "percent": 100.0
+        }
+      },
+      {
+        "name": "package.rs",
+        "lines": {
+          "count": 258,
+          "covered": 167,
+          "percent": 64.72868217054264
+        },
+        "functions": {
+          "count": 13,
+          "covered": 10,
+          "percent": 76.92307692307693
+        }
+      },
+      {
+        "name": "report.rs",
+        "lines": {
+          "count": 61,
+          "covered": 57,
+          "percent": 93.44262295081968
+        },
+        "functions": {
+          "count": 8,
+          "covered": 8,
+          "percent": 100.0
+        }
+      },
+      {
+        "name": "runner.rs",
+        "lines": {
+          "count": 103,
+          "covered": 79,
+          "percent": 76.69902912621359
+        },
+        "functions": {
+          "count": 7,
+          "covered": 5,
+          "percent": 71.42857142857143
+        }
+      }
+    ]
+  },
+  "fuzz": {
+    "scope": "schema validation, Windows path names and PE-header bounds; not a ZIP implementation or Windows loader audit",
+    "runs": 643621,
+    "seconds": 31,
+    "crashes": 0,
+    "toolchain": "nightly 1.102.0-nightly (5f4effd57 2026-11-13)",
+    "tool": "cargo-fuzz 0.13.2"
+  },
+  "checks": {
+    "host_debug_release_build": "passed",
+    "formatting": "passed",
+    "portable_clippy": "passed_with_two_existing_manifest_unused_dependency_warnings",
+    "windows_msvc_all_targets_compile_check": "passed_not_linked_or_executed",
+    "workflow_scoped_dependencies": "passed_advisories_bans_licenses_sources",
+    "workflow_fuzz_scoped_dependencies": "passed_advisories_bans_licenses_sources",
+    "workspace_dependencies": "failed_inherited_RUSTSEC-2026-0459_libsqlite3-sys_0.35.0",
+    "repository_quality_check": "failed_on_Linux_winreg_requires_Windows",
+    "powershell_scripts": "syntax_parsed_only_not_executed_on_Windows",
+    "beta1_actual_zip": "static_pass_native_not_run",
+    "beta1_missing_coreclr": "expected_static_failure_launch_and_tests_not_run",
+    "pr22_condition": "synthetic_same_EXE_rejected_before_execution_original_artifact_HTTP_403"
+  },
+  "pending": [
+    "Clean Windows source missing/mismatch/restore/build acceptance",
+    "Standalone CLI Windows linking, static CRT and no-development-tools launch",
+    "Second clean Windows x64 WPF ZIP launch and specified tests",
+    "Broken-package native gate and full Windows Check/Coverage/Dependencies/Fuzz gates"
+  ]
+}

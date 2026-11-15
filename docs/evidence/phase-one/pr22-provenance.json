@@ -1,0 +1,7 @@
+{
+  "synthetic": true,
+  "native_execution": false,
+  "historical_exes": false,
+  "source": "PR #22 / 5c7ad35 identical actual EXE condition; original artifacts not obtained",
+  "exe_sha256": "db619c3e023ecffd5aa56dfe0fc344b9cc7251d2f1eb7c3e4010bb2b9bda0e1e"
+}

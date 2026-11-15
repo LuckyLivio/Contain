@@ -8,11 +8,22 @@
 
 版本化 `contain.environment.json` 描述 Windows x64 工具链、必需变量名称、实际构建和验证命令。CLI 检查缺失项及版本差异，给出补齐步骤；补齐后显式运行项目构建。没有清单时，只从明确支持的项目文件提取已声明要求，缺少依据的项目列为待确认。
 
+```powershell
+cargo run -p contain-workflow --locked -- check --project . --report target/workflow/check-01
+cargo run -p contain-workflow --locked -- build --project . --execute --report target/workflow/build-01
+```
+
 ## 发包前验证
 
 对实际 Windows x64 ZIP 固定 SHA-256、启动入口和预期结果。报告分别列出包身份、静态检查、启动检查及指定测试。Windows 上可显式运行窗口或自检检查；其他平台只做静态检查，运行项记为 **未实测**。比较不同构建时，先检查两个包内实际 EXE；字节相同则拒绝开跑。
 
 命令、清单格式与本分支验收状态见 [第一阶段说明](docs/phase-one.md)。本分支不代表已通过干净 Windows 验收。
+
+```powershell
+cargo run -p contain-workflow --locked -- verify --zip .\contain.zip --spec .\package-spec.json --report target/workflow/package-01
+```
+
+本分支实际状态（[逐项证据](docs/phase-one-results.md)）：新 CLI 27 项回归通过；实际 Beta.1 ZIP 静态检查通过；故意缺件和相同 EXE 对照被正确拒绝。干净 Windows 源码恢复、另一台无开发工具 Windows 上的启动及指定测试均**未实测**。新 CLI 独立依赖门通过；仓库级依赖门仍被旧核心 SQLite 公告阻塞。
 
 ## 后续里程碑
 
