@@ -10,7 +10,7 @@
 
 ```powershell
 cargo run -p contain-workflow --locked -- check --project . --report target/workflow/check-01
-cargo run -p contain-workflow --locked -- build --project . --execute --report target/workflow/build-01
+cargo run -p contain-workflow --locked -- build --project . --execute --delivery-dir target/workflow/delivery-01 --report target/workflow/build-01
 ```
 
 ## 发包前验证
@@ -23,7 +23,9 @@ cargo run -p contain-workflow --locked -- build --project . --execute --report t
 cargo run -p contain-workflow --locked -- verify --zip .\contain.zip --spec .\package-spec.json --report target/workflow/package-01
 ```
 
-本分支实际状态（[逐项证据](docs/phase-one-results.md)）：新 CLI 27 项回归通过；实际 Beta.1 ZIP 静态检查通过；故意缺件和相同 EXE 对照被正确拒绝。干净 Windows 源码恢复、另一台无开发工具 Windows 上的启动及指定测试均**未实测**。新 CLI 独立依赖门通过；仓库级依赖门仍被旧核心 SQLite 公告阻塞。
+本分支第二轮已补齐本次 Rust/WPF 产物的桌面 ZIP 组装、独立 CLI 打包和 A/B 交接脚本，并记录实际选中的 MSVC/SDK。架构改用 IsWow64Process2，ARM64 仿真和未知状态单独记录。[完整命令与产物位置](docs/phase-one.md) · [本轮结果与合并阻塞](docs/phase-one-round2-results.md)。
+
+当前只有 Linux 实测和合成夹具、Windows MSVC 编译检查；**尚未产出本次提交的完整 Windows ZIP，干净 A/B Windows 实测未完成**。新 CLI 独立依赖门通过，仓库级依赖门仍被旧核心 SQLite 公告阻塞，不能据此宣称可合并。上轮实际 Beta.1 包检查及 PR #22 门禁的[历史证据](docs/phase-one-results.md)保留。
 
 ## 后续里程碑
 

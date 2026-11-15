@@ -12,9 +12,17 @@ pub struct Tool {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct WindowsToolchain {
+    pub msvc_family: String,
+    pub sdk_version: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub schema_version: u32,
     pub target: String,
+    #[serde(default)]
+    pub windows_toolchain: Option<WindowsToolchain>,
     pub tools: Vec<Tool>,
     /// Names only. Secret values must never be serialized.
     pub required_variables: Vec<String>,
@@ -34,6 +42,26 @@ impl Manifest {
             self.schema_version == 1 && self.target == "windows-x64",
             "only schema 1 / windows-x64 supported"
         );
+        if let Some(t) = &self.windows_toolchain {
+            ensure!(
+                t.msvc_family.split('.').count() == 2
+                    && t.sdk_version.split('.').count() == 4
+                    && t.msvc_family
+                        .chars()
+                        .chain(t.sdk_version.chars())
+                        .all(|c| c.is_ascii_digit() || c == '.'),
+                "invalid Windows toolchain versions"
+            );
+        }
+        if let Some(t) = &self.windows_toolchain {
+            ensure!(
+                t.msvc_family
+                    .split('.')
+                    .chain(t.sdk_version.split('.'))
+                    .all(|v| !v.is_empty() && v.bytes().all(|c| c.is_ascii_digit())),
+                "invalid Windows toolchain numeric components"
+            );
+        }
         for v in &self.required_variables {
             ensure!(
                 valid_variable(v),
@@ -60,6 +88,12 @@ impl Manifest {
 }
 pub fn validate_step(s: &Step) -> Result<()> {
     ensure!(
+        s.stdout_sha256
+            .as_ref()
+            .is_none_or(|v| v.len() == 64 && v.bytes().all(|b| b.is_ascii_hexdigit())),
+        "invalid stdout SHA-256"
+    );
+    ensure!(
         !s.name.is_empty() && !s.program.is_empty() && (1..=3_600_000).contains(&s.timeout_ms),
         "invalid command or timeout (1..3600000 ms)"
     );
@@ -75,7 +109,7 @@ fn valid_variable(s: &str) -> bool {
 /// Intentionally bounded discovery: only root Cargo.toml, rust-toolchain.toml and global.json.
 /// A draft cannot execute until every unknown has been explicitly resolved.
 pub fn infer(root: &Path) -> Result<Manifest> {
-    let mut m = Manifest { schema_version:1, target:"windows-x64".into(), tools:vec![], required_variables:vec![], build:vec![], verify:vec![],
+    let mut m = Manifest { schema_version:1, target:"windows-x64".into(), windows_toolchain:None, tools:vec![], required_variables:vec![], build:vec![], verify:vec![],
         pending:vec!["Confirm Windows x64 target, native SDK/MSVC prerequisites and required variable names; these cannot be inferred from supported files".into()] };
     let cargo = root.join("Cargo.toml");
     if cargo.exists() {
@@ -159,6 +193,7 @@ fn step(name: &str, program: &str, args: &[&str]) -> Step {
         program: program.into(),
         args: args.iter().map(|s| (*s).into()).collect(),
         expected_exit: 0,
+        stdout_sha256: None,
         timeout_ms: 600000,
     }
 }

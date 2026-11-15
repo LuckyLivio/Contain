@@ -66,6 +66,7 @@ fn spec(path: &Path) -> PackageSpec {
             program: "app.exe".into(),
             args: vec!["--self-test".into()],
             expected_exit: 0,
+            stdout_sha256: None,
             timeout_ms: 200,
         }],
     }
@@ -74,6 +75,7 @@ fn manifest() -> Manifest {
     Manifest {
         schema_version: 1,
         target: "windows-x64".into(),
+        windows_toolchain: None,
         tools: vec![Tool {
             program: "rustc".into(),
             version: "1.100.0".into(),
@@ -86,6 +88,7 @@ fn manifest() -> Manifest {
             program: "cargo".into(),
             args: vec!["build".into()],
             expected_exit: 0,
+            stdout_sha256: None,
             timeout_ms: 200,
         }],
         verify: vec![],
@@ -439,6 +442,7 @@ fn subprocess_exit_and_timeout_are_observed_not_assumed() {
         program: program.into(),
         args: args.into_iter().map(str::to_string).collect(),
         expected_exit: 0,
+        stdout_sha256: None,
         timeout_ms: 100,
     };
     assert_eq!(runner::execute(&make(good), &t.0).status, Status::Passed);
@@ -489,6 +493,7 @@ fn source_gate_runs_real_build_only_after_requirements_pass() {
         program: program.into(),
         args: args.into_iter().map(str::to_string).collect(),
         expected_exit: 0,
+        stdout_sha256: None,
         timeout_ms: 3000,
     }];
     let missing = environment::check_with(
@@ -659,4 +664,45 @@ fn checked_in_environment_and_package_specs_are_valid() {
         let s: PackageSpec = serde_json::from_str(bytes).unwrap();
         s.validate().unwrap();
     }
+}
+
+#[test]
+fn child_inherits_selected_environment_and_checks_actual_stdout_digest() {
+    use std::collections::BTreeMap;
+    let t = Temp::new();
+    #[cfg(unix)]
+    let (program, args) = ("sh", vec!["-c", "printf %s \"$CONTAIN_TEST_SELECTED\""]);
+    #[cfg(windows)]
+    let (program, args) = (
+        "powershell.exe",
+        vec![
+            "-NoProfile",
+            "-Command",
+            "[Console]::Write($env:CONTAIN_TEST_SELECTED)",
+        ],
+    );
+    let step = Step {
+        name: "selected child".into(),
+        program: program.into(),
+        args: args.into_iter().map(str::to_string).collect(),
+        expected_exit: 0,
+        timeout_ms: 10000,
+        stdout_sha256: Some(sha256(b"selected_fixture")),
+    };
+    let env = BTreeMap::from([("CONTAIN_TEST_SELECTED".into(), "selected_fixture".into())]);
+    let r = runner::execute_in(&step, &t.0, &env);
+    assert_eq!(r.status, Status::Passed);
+    let wrong = BTreeMap::from([(
+        "CONTAIN_TEST_SELECTED".into(),
+        "SECRET_SENTINEL_wrong_selection".into(),
+    )]);
+    let r = runner::execute_in(&step, &t.0, &wrong);
+    assert_eq!(r.status, Status::Failed);
+    assert!(!r.detail.contains("SECRET_SENTINEL"));
+}
+#[test]
+fn stdout_digest_is_validated_as_input() {
+    let mut m = manifest();
+    m.build[0].stdout_sha256 = Some("not a hash".into());
+    assert!(m.validate().is_err());
 }

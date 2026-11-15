@@ -5,11 +5,22 @@ use crate::{
 };
 use std::path::Path;
 pub fn check(m: &Manifest, root: &Path) -> Report {
+    prepare(m, root).0
+}
+fn prepare(m: &Manifest, root: &Path) -> (Report, std::collections::BTreeMap<String, String>) {
+    let mut environment = std::collections::BTreeMap::new();
+    let selection = m
+        .windows_toolchain
+        .as_ref()
+        .map(|requirement| crate::toolchain::select(root, requirement));
+    if let Some(Ok(selected)) = &selection {
+        environment = selected.environment.clone();
+    }
     let mut report = check_with(
         m,
         std::env::consts::OS,
-        crate::report::host_arch(),
-        |program, args| runner::probe_in(program, args, Some(root)),
+        &crate::report::host_arch(),
+        |program, args| runner::probe_in_environment(program, args, Some(root), &environment),
         |name| std::env::var_os(name).is_some_and(|v| !v.is_empty()),
     );
     report.checks.push(Check::new(
@@ -30,7 +41,13 @@ pub fn check(m: &Manifest, root: &Path) -> Report {
             report.checks.push(Check::new("source_revision", Status::Passed, format!("Git HEAD {head}; worktree clean {clean:?}; HEAD does not identify uncommitted content")));
         }
     }
-    report
+    if let Some(selection) = selection {
+        report.checks.push(match selection {
+            Ok(selected)=>Check::new("selected_windows_toolchain",Status::Passed,format!("MSVC {}; Windows SDK {}; validated cl/link/rc resolution; build children inherit selected environment",selected.msvc,selected.sdk)),
+            Err(reason)=>Check::new("selected_windows_toolchain",Status::Failed,format!("{reason}; install required MSVC/SDK or use a fresh shell to resolve active-version conflicts")),
+        });
+    }
+    (report, environment)
 }
 pub fn check_with(
     m: &Manifest,
@@ -91,15 +108,37 @@ pub fn check_with(
     r
 }
 pub fn build(m: &Manifest, root: &Path, execute: bool) -> Report {
-    execute_build(m, root, execute, check(m, root))
+    build_to(m, root, execute, None)
+}
+pub fn build_to(m: &Manifest, root: &Path, execute: bool, delivery: Option<&Path>) -> Report {
+    let (report, mut environment) = prepare(m, root);
+    if let Some(path) = delivery {
+        environment.insert(
+            "CONTAIN_DELIVERY_DIR".into(),
+            std::path::absolute(path)
+                .unwrap_or_else(|_| path.to_path_buf())
+                .to_string_lossy()
+                .into(),
+        );
+    }
+    execute_build_in(m, root, execute, report, &environment)
 }
 /// Separated from probing so gate transitions can exercise real child processes in fixtures.
-pub fn execute_build(m: &Manifest, root: &Path, execute: bool, mut r: Report) -> Report {
+pub fn execute_build(m: &Manifest, root: &Path, execute: bool, r: Report) -> Report {
+    execute_build_in(m, root, execute, r, &std::collections::BTreeMap::new())
+}
+fn execute_build_in(
+    m: &Manifest,
+    root: &Path,
+    execute: bool,
+    mut r: Report,
+    environment: &std::collections::BTreeMap<String, String>,
+) -> Report {
     let ready = r.passed();
     let mut building = execute && ready;
     for s in &m.build {
         let check = if building {
-            runner::execute(s, root)
+            runner::execute_in(s, root, environment)
         } else {
             Check::new(
                 &s.name,
@@ -114,7 +153,7 @@ pub fn execute_build(m: &Manifest, root: &Path, execute: bool, mut r: Report) ->
     let mut verified = built;
     for s in &m.verify {
         let c = if verified {
-            runner::execute(s, root)
+            runner::execute_in(s, root, environment)
         } else {
             Check::new(
                 &s.name,

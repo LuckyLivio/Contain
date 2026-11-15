@@ -15,6 +15,8 @@ pub struct Step {
     #[serde(default)]
     pub args: Vec<String>,
     pub expected_exit: i32,
+    #[serde(default)]
+    pub stdout_sha256: Option<String>,
     pub timeout_ms: u64,
 }
 fn stop(child: &mut Child) {
@@ -30,21 +32,38 @@ fn stop(child: &mut Child) {
     let _ = child.wait();
 }
 pub fn execute(step: &Step, directory: &Path) -> Check {
-    match run(step, directory) {
-        Ok(code) if code == Some(step.expected_exit) => Check::new(
-            &step.name,
-            Status::Passed,
-            format!(
-                "expected exit {} observed; output omitted",
-                step.expected_exit
-            ),
-        ),
-        Ok(code) => Check::new(
+    execute_in(step, directory, &std::collections::BTreeMap::new())
+}
+pub fn execute_in(
+    step: &Step,
+    directory: &Path,
+    environment: &std::collections::BTreeMap<String, String>,
+) -> Check {
+    match run(step, directory, environment) {
+        Ok((code, digest))
+            if code == Some(step.expected_exit)
+                && step
+                    .stdout_sha256
+                    .as_ref()
+                    .is_none_or(|expected| Some(expected.to_lowercase()) == digest) =>
+        {
+            Check::new(
+                &step.name,
+                Status::Passed,
+                format!(
+                    "expected exit {} matched; observed stdout SHA-256 {}; output omitted",
+                    step.expected_exit,
+                    digest.as_deref().unwrap_or("not requested")
+                ),
+            )
+        }
+        Ok((code, digest)) => Check::new(
             &step.name,
             Status::Failed,
             format!(
-                "expected exit {}, observed {code:?}; output omitted",
-                step.expected_exit
+                "expected exit {}, observed {code:?}; stdout SHA-256 {}; exit or digest mismatch; output omitted",
+                step.expected_exit,
+                digest.as_deref().unwrap_or("not requested")
             ),
         ),
         Err(_) => Check::new(
@@ -54,25 +73,52 @@ pub fn execute(step: &Step, directory: &Path) -> Check {
         ),
     }
 }
-fn run(step: &Step, directory: &Path) -> Result<Option<i32>> {
+fn run(
+    step: &Step,
+    directory: &Path,
+    environment: &std::collections::BTreeMap<String, String>,
+) -> Result<(Option<i32>, Option<String>)> {
+    let capture = if step.stdout_sha256.is_some() {
+        Some(Capture::new()?)
+    } else {
+        None
+    };
+    let stdout = match &capture {
+        Some(c) => Stdio::from(c.file.try_clone()?),
+        None => Stdio::null(),
+    };
     let mut child = Command::new(&step.program)
         .args(&step.args)
+        .envs(environment)
         .current_dir(directory)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
+        .stdout(stdout)
         .stderr(Stdio::null())
         .spawn()?;
     let start = Instant::now();
     loop {
         match child.try_wait() {
-            Ok(Some(status)) => return Ok(status.code()),
+            Ok(Some(status)) => {
+                let digest = match &capture {
+                    Some(c) => {
+                        ensure_capture_size(c)?;
+                        Some(crate::artifact::sha256(&std::fs::read(&c.path)?))
+                    }
+                    None => None,
+                };
+                return Ok((status.code(), digest));
+            }
             Err(e) => {
                 stop(&mut child);
                 return Err(e.into());
             }
             _ => {}
         }
-        if start.elapsed() >= Duration::from_millis(step.timeout_ms) {
+        if capture
+            .as_ref()
+            .is_some_and(|c| ensure_capture_size(c).is_err())
+            || start.elapsed() >= Duration::from_millis(step.timeout_ms)
+        {
             stop(&mut child);
             bail!("timeout");
         }
@@ -85,6 +131,29 @@ pub fn probe(program: &str, args: &[String]) -> Result<String> {
     probe_in(program, args, None)
 }
 pub fn probe_in(program: &str, args: &[String], directory: Option<&Path>) -> Result<String> {
+    probe_in_environment(program, args, directory, &std::collections::BTreeMap::new())
+}
+pub fn probe_in_environment(
+    program: &str,
+    args: &[String],
+    directory: Option<&Path>,
+    environment: &std::collections::BTreeMap<String, String>,
+) -> Result<String> {
+    probe_with_timeout(
+        program,
+        args,
+        directory,
+        environment,
+        Duration::from_secs(10),
+    )
+}
+pub fn probe_with_timeout(
+    program: &str,
+    args: &[String],
+    directory: Option<&Path>,
+    environment: &std::collections::BTreeMap<String, String>,
+    timeout: Duration,
+) -> Result<String> {
     use std::io::{Read, Seek};
     let path = std::env::temp_dir().join(format!(
         "contain-probe-{}-{}",
@@ -99,6 +168,7 @@ pub fn probe_in(program: &str, args: &[String], directory: Option<&Path>) -> Res
     let result = (|| {
         let mut command = Command::new(program);
         command
+            .envs(environment)
             .args(args)
             .stdin(Stdio::null())
             .stdout(file.try_clone()?)
@@ -115,7 +185,7 @@ pub fn probe_in(program: &str, args: &[String], directory: Option<&Path>) -> Res
                 }
                 break;
             }
-            if file.metadata()?.len() > 65536 || start.elapsed() > Duration::from_secs(10) {
+            if file.metadata()?.len() > 65536 || start.elapsed() > timeout {
                 stop(&mut child);
                 bail!("probe timeout");
             }
@@ -217,4 +287,38 @@ fn has_window(pid: u32, title: &str) -> bool {
         EnumWindows(Some(visit), &mut query as *mut _ as LPARAM);
     }
     query.found
+}
+
+struct Capture {
+    path: std::path::PathBuf,
+    file: std::fs::File,
+}
+impl Capture {
+    fn new() -> Result<Self> {
+        let path = std::env::temp_dir().join(format!(
+            "contain-output-{}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_nanos(),
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)?;
+        Ok(Self { path, file })
+    }
+}
+impl Drop for Capture {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+fn ensure_capture_size(c: &Capture) -> Result<()> {
+    anyhow::ensure!(
+        c.file.metadata()?.len() <= 16 * 1024 * 1024,
+        "command output limit"
+    );
+    Ok(())
 }

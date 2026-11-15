@@ -29,131 +29,34 @@
       "remedy": "Install .NET SDK 10.0.403 x64 from https://dotnet.microsoft.com/download; global.json disables roll-forward"
     },
     {
-      "program": "powershell.exe",
-      "version": "14.44",
+      "program": "python",
+      "version": "3.12.10",
       "version_args": [
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        "$ErrorActionPreference='Stop'; $v=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'; $p=& $v -latest -products '*' -version '[17,18)' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath; if (!$p) {exit 1}; $ok=Get-ChildItem (Join-Path $p 'VC/Tools/MSVC') -Directory | Where-Object { $_.Name -like '14.44.*' -and (Test-Path (Join-Path $_.FullName 'bin/Hostx64/x64/link.exe')) }; if (!$ok) {exit 1}; Write-Output '14.44'"
+        "--version"
       ],
-      "remedy": "Install Visual Studio 2022 Build Tools with Desktop development with C++, MSVC v143 14.44 x64/x86 (individual components); this requirement pins the minor toolset family, not its patch"
-    },
-    {
-      "program": "powershell.exe",
-      "version": "10.0.26100.0",
-      "version_args": [
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        "$ErrorActionPreference='Stop'; $k=$null; foreach ($r in @('HKLM:\\SOFTWARE\\Microsoft\\Windows Kits\\Installed Roots','HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows Kits\\Installed Roots')) { if (Test-Path $r) { $k=(Get-ItemProperty $r).KitsRoot10; if ($k) {break} } }; if (!$k) {exit 1}; if (!(Test-Path (Join-Path $k 'Include/10.0.26100.0/um/Windows.h'))) {exit 1}; if (!(Test-Path (Join-Path $k 'Lib/10.0.26100.0/um/x64/kernel32.lib'))) {exit 1}; Write-Output '10.0.26100.0'"
-      ],
-      "remedy": "Install Windows SDK 10.0.26100.0 x64 using Visual Studio Installer individual components"
+      "remedy": "Install Python 3.12.10 x64 from python.org and enable its executable on PATH (build machine only)"
     }
   ],
   "required_variables": [],
   "pending": [],
   "build": [
     {
-      "name": "Rust workspace",
-      "program": "cargo",
-      "args": [
-        "build",
-        "--workspace",
-        "--locked",
-        "--target",
-        "x86_64-pc-windows-msvc"
-      ],
-      "expected_exit": 0,
-      "timeout_ms": 1200000
-    },
-    {
-      "name": "Standalone workflow CLI with static CRT",
+      "name": "Current-source desktop and CLI deliveries with regressions",
       "program": "powershell.exe",
       "args": [
         "-NoLogo",
         "-NoProfile",
         "-NonInteractive",
         "-File",
-        "scripts/build-workflow.ps1"
+        "scripts/build-source-delivery.ps1"
       ],
       "expected_exit": 0,
-      "timeout_ms": 1200000
-    },
-    {
-      "name": "WPF locked restore",
-      "program": "dotnet",
-      "args": [
-        "restore",
-        "desktop/Contain.Desktop",
-        "-p:RuntimeIdentifier=win-x64",
-        "-p:RuntimeIdentifiers=win-x64",
-        "-p:SelfContained=true",
-        "--locked-mode"
-      ],
-      "expected_exit": 0,
-      "timeout_ms": 1200000
-    },
-    {
-      "name": "WPF self-contained publish",
-      "program": "dotnet",
-      "args": [
-        "publish",
-        "desktop/Contain.Desktop",
-        "-c",
-        "Release",
-        "-r",
-        "win-x64",
-        "--self-contained",
-        "true",
-        "--no-restore",
-        "-o",
-        "target/workflow/wpf"
-      ],
-      "expected_exit": 0,
-      "timeout_ms": 1200000
+      "timeout_ms": 3600000
     }
   ],
-  "verify": [
-    {
-      "name": "Rust regression tests",
-      "program": "cargo",
-      "args": [
-        "test",
-        "--workspace",
-        "--locked",
-        "--target",
-        "x86_64-pc-windows-msvc"
-      ],
-      "expected_exit": 0,
-      "timeout_ms": 1200000
-    },
-    {
-      "name": "Desktop model locked restore",
-      "program": "dotnet",
-      "args": [
-        "restore",
-        "desktop/Contain.Desktop.Model.Tests",
-        "--locked-mode"
-      ],
-      "expected_exit": 0,
-      "timeout_ms": 1200000
-    },
-    {
-      "name": "Desktop model regressions",
-      "program": "dotnet",
-      "args": [
-        "run",
-        "--project",
-        "desktop/Contain.Desktop.Model.Tests",
-        "-c",
-        "Release",
-        "--no-restore"
-      ],
-      "expected_exit": 0,
-      "timeout_ms": 1200000
-    }
-  ]
+  "verify": [],
+  "windows_toolchain": {
+    "msvc_family": "14.44",
+    "sdk_version": "10.0.26100.0"
+  }
 }

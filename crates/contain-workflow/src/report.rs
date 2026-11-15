@@ -33,16 +33,20 @@ pub struct Report {
     pub host_arch: String,
     pub process_arch: String,
     pub os_version: Option<String>,
+    #[serde(default)]
+    pub architecture: Option<crate::architecture::Architecture>,
     pub checks: Vec<Check>,
 }
 impl Report {
     pub fn new(workflow: &str) -> Self {
+        let architecture = crate::architecture::detect();
         Self {
             schema_version: 1,
             workflow: workflow.into(),
             host_os: std::env::consts::OS.into(),
-            host_arch: host_arch().into(),
-            process_arch: std::env::consts::ARCH.into(),
+            host_arch: architecture.native.clone(),
+            process_arch: architecture.process.clone(),
+            architecture: Some(architecture),
             os_version: windows_version(),
             checks: vec![],
         }
@@ -67,6 +71,13 @@ impl Report {
             "# Contain {}\n\nPlatform: {} / {}\n\n",
             self.workflow, self.host_os, self.host_arch
         );
+        text.push_str(&format!("Process architecture: {}\n\n", self.process_arch));
+        if let Some(a) = &self.architecture {
+            text.push_str(&format!(
+                "Architecture probe: {}; emulated: {:?}\n\n",
+                a.probe, a.emulated
+            ));
+        }
         if let Some(v) = &self.os_version {
             text.push_str(&format!("Windows: {v}\n\n"));
         }
@@ -100,21 +111,6 @@ fn windows_version() -> Option<String> {
         None
     }
 }
-pub fn host_arch() -> &'static str {
-    #[cfg(windows)]
-    unsafe {
-        use windows_sys::Win32::System::SystemInformation::{GetNativeSystemInfo, SYSTEM_INFO};
-        let mut info: SYSTEM_INFO = std::mem::zeroed();
-        GetNativeSystemInfo(&mut info);
-        match info.Anonymous.Anonymous.wProcessorArchitecture {
-            9 => "x86_64",
-            12 => "aarch64",
-            0 => "x86",
-            _ => "unknown",
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        std::env::consts::ARCH
-    }
+pub fn host_arch() -> String {
+    crate::architecture::detect().native
 }

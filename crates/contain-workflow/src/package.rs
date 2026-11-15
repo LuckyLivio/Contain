@@ -313,6 +313,7 @@ pub fn verify(
                     program: exe.to_string_lossy().into(),
                     args: l.args.clone(),
                     expected_exit: l.expected_exit.unwrap(),
+                    stdout_sha256: None,
                     timeout_ms: l.timeout_ms,
                 },
                 root,

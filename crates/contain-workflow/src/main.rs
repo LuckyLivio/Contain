@@ -18,6 +18,11 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Record IsWow64Process2 native/process architectures; require native Windows x64.
+    Platform {
+        #[arg(long)]
+        report: PathBuf,
+    },
     /// Extract only declared requirements into a non-executable draft.
     Infer {
         #[arg(long)]
@@ -44,6 +49,8 @@ enum Command {
         report: PathBuf,
         #[arg(long)]
         execute: bool,
+        #[arg(long)]
+        delivery_dir: Option<PathBuf>,
     },
     /// Static ZIP inspection; --run explicitly executes the trusted package on Windows.
     Verify {
@@ -94,6 +101,16 @@ fn fresh(path: &std::path::Path) -> Result<()> {
 }
 fn run() -> Result<i32> {
     match Cli::parse().command {
+        Command::Platform { report } => {
+            fresh(&report)?;
+            let mut r = Report::new("platform");
+            let ok = cfg!(windows)
+                && r.host_arch == "x86_64"
+                && r.process_arch == "x86_64"
+                && r.os_version.is_some();
+            r.checks.push(contain_workflow::report::Check::new("native_windows_x64",if ok{Status::Passed}else{Status::Failed},"requires confirmed native x64 and x64 process; emulated/unknown architectures do not pass"));
+            output(r, report)
+        }
         Command::Infer { project, output } => {
             let m = manifest::infer(&project)?;
             fs::OpenOptions::new()
@@ -120,12 +137,16 @@ fn run() -> Result<i32> {
             manifest,
             report,
             execute,
+            delivery_dir,
         } => {
             fresh(&report)?;
             let m = Manifest::read(
                 &manifest.unwrap_or_else(|| project.join("contain.environment.json")),
             )?;
-            output(environment::build(&m, &project, execute), report)
+            output(
+                environment::build_to(&m, &project, execute, delivery_dir.as_deref()),
+                report,
+            )
         }
         Command::Verify {
             zip,
