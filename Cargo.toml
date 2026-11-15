@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/contain-core", "crates/contain-cli", "examples/test-installer", "tools/offline"]
+members = ["crates/contain-core", "crates/contain-cli", "crates/contain-workflow", "examples/test-installer", "tools/offline"]
 resolver = "2"
 exclude = ["vendor/ferrisetw"]
 

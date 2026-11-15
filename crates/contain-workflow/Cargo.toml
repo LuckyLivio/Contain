@@ -1,0 +1,18 @@
+[package]
+name = "contain-workflow"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Source environment recovery and Windows package verification, independent of ETW"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+toml = { version = "1.2.1", default-features = false, features = ["std", "serde", "parse"] }
+zip = { version = "9.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }
