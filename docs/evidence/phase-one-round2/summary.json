@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "review_baseline": "c0ea857efaa8d9cdf6fd6a735cb35f87cdcab9d8",
+  "code_revision": "51172ff2c1f93c11e5d95151e55508c0a9a2e8cb",
+  "host": "Linux x86_64",
+  "tests": {
+    "workflow_unit": 4,
+    "workflow_integration": 29,
+    "workflow_failed": 0,
+    "legacy_offline_passed": 98,
+    "legacy_offline_ignored": 8,
+    "doctests": 0,
+    "source_packager_synthetic": 8,
+    "historical_modern_packager": 22,
+    "powershell_toolchain_policy_synthetic": 6,
+    "powershell_receiver_policy_synthetic": 3,
+    "python_scripts_exit_zero": 39,
+    "python_unittest_passed": 620,
+    "python_unittest_skipped": 6,
+    "additional_native_path_cases_not_run": 7,
+    "desktop_model_passed": 34,
+    "presentation_passed": 38
+  },
+  "checks": {
+    "linux_debug_release": "passed",
+    "portable_clippy": "passed_existing_offline_manifest_warnings",
+    "windows_msvc_all_targets": "compile_check_passed_no_link_or_execution",
+    "powershell_syntax": "passed_not_native_execution",
+    "cli_dependencies": "passed",
+    "workspace_dependencies": "failed_RUSTSEC-2026-0459_libsqlite3-sys_0.35.0",
+    "quality_check": "failed_on_Linux_winreg_requires_Windows",
+    "ordinary_windows_CI": "not_verified_no_manual_dispatch",
+    "PR22": "retained_same_EXE_gate_passed_synthetic"
+  },
+  "coverage": {
+    "scope": "contain-workflow Linux compiled code, including inline unit tests; excludes cfg(windows); not branch coverage",
+    "lines": {
+      "count": 1082,
+      "covered": 837,
+      "percent": 77.35674676524954
+    },
+    "functions": {
+      "count": 104,
+      "covered": 83,
+      "percent": 79.8076923076923
+    },
+    "files": [
+      {
+        "file": "architecture.rs",
+        "lines": {
+          "count": 52,
+          "covered": 50,
+          "percent": 96.15384615384616
+        }
+      },
+      {
+        "file": "artifact.rs",
+        "lines": {
+          "count": 96,
+          "covered": 89,
+          "percent": 92.70833333333334
+        }
+      },
+      {
+        "file": "environment.rs",
+        "lines": {
+          "count": 141,
+          "covered": 105,
+          "percent": 74.46808510638297
+        }
+      },
+      {
+        "file": "main.rs",
+        "lines": {
+          "count": 66,
+          "covered": 31,
+          "percent": 46.96969696969697
+        }
+      },
+      {
+        "file": "manifest.rs",
+        "lines": {
+          "count": 150,
+          "covered": 137,
+          "percent": 91.33333333333333
+        }
+      },
+      {
+        "file": "package.rs",
+        "lines": {
+          "count": 259,
+          "covered": 167,
+          "percent": 64.47876447876449
+        }
+      },
+      {
+        "file": "report.rs",
+        "lines": {
+          "count": 70,
+          "covered": 65,
+          "percent": 92.85714285714286
+        }
+      },
+      {
+        "file": "runner.rs",
+        "lines": {
+          "count": 180,
+          "covered": 155,
+          "percent": 86.11111111111111
+        }
+      },
+      {
+        "file": "toolchain.rs",
+        "lines": {
+          "count": 68,
+          "covered": 38,
+          "percent": 55.88235294117647
+        }
+      }
+    ]
+  },
+  "fuzz": {
+    "runs": 689302,
+    "seconds": 31,
+    "crashes": 0,
+    "scope": "workflow_inputs schema/path/PE smoke; not Windows/API/native loader acceptance"
+  },
+  "windows_acceptance": {
+    "snapshot_A_missing": "not_run",
+    "snapshot_A_restored_build": "not_run",
+    "actual_selected_msvc_sdk": "not_run_on_Windows",
+    "current_desktop_zip": "not_produced",
+    "independent_windows_cli_zip": "not_produced",
+    "snapshot_B_development_tools_absent": "not_run",
+    "snapshot_B_native_or_emulated_API": "not_run",
+    "snapshot_B_desktop_launch": "not_run",
+    "snapshot_B_specified_tests": "not_run",
+    "snapshot_B_negative_package": "not_run",
+    "snapshot_B_cli_run": "not_run"
+  },
+  "merge_readiness": "blocked_clean_Windows_A_B_and_workspace_SQLite_advisory",
+  "sqlite_fix_reference": "925d713539a48c2794f88e4a6b8409f18bd53a3f",
+  "sqlite_fix_applied": false
+}

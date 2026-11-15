@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "workflow": "source",
+  "host_os": "linux",
+  "host_arch": "x86_64",
+  "process_arch": "x86_64",
+  "os_version": null,
+  "architecture": {
+    "native": "x86_64",
+    "process": "x86_64",
+    "emulated": false,
+    "probe": "non_windows_host"
+  },
+  "checks": [
+    {
+      "name": "platform",
+      "status": "failed",
+      "detail": "requires Windows x64"
+    },
+    {
+      "name": "tool:rustc",
+      "status": "passed",
+      "detail": "version matched; required 1.100.0; remedy: rustup toolchain install 1.100.0 --component rustfmt --component clippy"
+    },
+    {
+      "name": "tool:rustup",
+      "status": "passed",
+      "detail": "version matched; required x86_64-pc-windows-msvc; remedy: rustup target add --toolchain 1.100.0 x86_64-pc-windows-msvc"
+    },
+    {
+      "name": "tool:dotnet",
+      "status": "passed",
+      "detail": "version matched; required 10.0.403; remedy: Install .NET SDK 10.0.403 x64 from https://dotnet.microsoft.com/download; global.json disables roll-forward"
+    },
+    {
+      "name": "tool:python",
+      "status": "failed",
+      "detail": "version mismatch; required 3.12.10; remedy: Install Python 3.12.10 x64 from python.org and enable its executable on PATH (build machine only)"
+    },
+    {
+      "name": "environment_manifest",
+      "status": "passed",
+      "detail": "canonical JSON SHA-256 f3d083606db8b62ad84234004959350af1a72d91743c3425e49b7db23a76b02c"
+    },
+    {
+      "name": "source_revision",
+      "status": "passed",
+      "detail": "Git HEAD 51172ff2c1f93c11e5d95151e55508c0a9a2e8cb; worktree clean Some(false); HEAD does not identify uncommitted content"
+    },
+    {
+      "name": "selected_windows_toolchain",
+      "status": "failed",
+      "detail": "Windows toolchain selector unavailable; install required MSVC/SDK or use a fresh shell to resolve active-version conflicts"
+    }
+  ]
+}

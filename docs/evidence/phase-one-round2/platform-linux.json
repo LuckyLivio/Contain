@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "workflow": "platform",
+  "host_os": "linux",
+  "host_arch": "x86_64",
+  "process_arch": "x86_64",
+  "os_version": null,
+  "architecture": {
+    "native": "x86_64",
+    "process": "x86_64",
+    "emulated": false,
+    "probe": "non_windows_host"
+  },
+  "checks": [
+    {
+      "name": "native_windows_x64",
+      "status": "failed",
+      "detail": "requires confirmed native x64 and x64 process; emulated/unknown architectures do not pass"
+    }
+  ]
+}

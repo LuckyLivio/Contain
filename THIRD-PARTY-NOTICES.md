@@ -1,5 +1,14 @@
 # Third-party notices
 
+## Current-source desktop deliveries
+
+The `contain-source-desktop-package-1` path rebuilds both the Rust core and WPF
+from the recorded checkout. Its `BUILD.json` and external identity receipt name
+the current source commit and actual EXE hashes; it does not reuse the historically
+accepted Beta.10 core. The new builder includes the actual core dependency closure's
+notices under `licenses/rust/`. The historical migration/provenance statements below
+continue to describe the old Beta packages, not this new source-build path.
+
 ## Independent workflow CLI (phase one)
 
 `contain-workflow` is a native Rust CLI, without WPF or ETW dependencies. Its
