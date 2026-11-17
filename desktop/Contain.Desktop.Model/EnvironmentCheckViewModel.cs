@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -19,7 +20,8 @@ public sealed record EnvironmentItemRow(
     string StatusBadge,
     string SummaryLine,
     string RemedyLine,
-    string RawDetail);
+    string RawDetail,
+    string OfficialGuidanceLine = "");
 
 /// <summary>
 /// Drives the "检查项目环境" page. Folder selection only reads declaration file presence;
@@ -27,7 +29,16 @@ public sealed record EnvironmentItemRow(
 /// </summary>
 public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 {
+    private const string ManifestDigestPrefix = "canonical JSON SHA-256 ";
+
+    private sealed record CheckSnapshot(
+        string ProjectPath,
+        string RequirementSignature,
+        DateTimeOffset CheckedAt,
+        IReadOnlyDictionary<string, WorkflowCheckItem> ChecksByName);
+
     private readonly IEnvironmentCheckService service;
+    private readonly Func<DateTimeOffset> clock;
     private readonly LatestRequest requests = new();
     private readonly object operationsGate = new();
     private readonly HashSet<Task> pendingOperations = [];
@@ -36,21 +47,29 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
     private bool checking;
     private string folderInput = "";
     private ProjectFolderInfo? currentProject;
+    private CheckSnapshot? previousSnapshot;
     private EnvironmentOutcomeKind outcome = EnvironmentOutcomeKind.None;
     private string headline = "";
     private string outcomeNote = "";
+    private string lastCheckedText = "";
+    private string comparisonNote = "";
     private string errorDetail = "";
+    private string recheckFailureTitle = "";
+    private string recheckFailureText = "";
+    private string recheckFailureDetail = "";
     private string detailedReportText = "";
     private bool showDetailedReport;
     private bool passedExpanded;
     private string statusMessage = "";
 
-    public EnvironmentCheckViewModel(IEnvironmentCheckService service)
+    public EnvironmentCheckViewModel(IEnvironmentCheckService service, Func<DateTimeOffset>? clock = null)
     {
         this.service = service ?? throw new ArgumentNullException(nameof(service));
+        this.clock = clock ?? (() => DateTimeOffset.Now);
     }
 
     public ObservableCollection<EnvironmentItemRow> ActionItems { get; } = [];
+    public ObservableCollection<EnvironmentItemRow> ResolvedItems { get; } = [];
     public ObservableCollection<EnvironmentItemRow> PendingItems { get; } = [];
     public ObservableCollection<EnvironmentItemRow> PassedItems { get; } = [];
 
@@ -94,8 +113,16 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
     public string Headline => headline;
     public string OutcomeNote => outcomeNote;
+    public string LastCheckedText => lastCheckedText;
+    public string ComparisonNote => comparisonNote;
     public string ErrorDetail => errorDetail;
+    public bool HasRecheckFailure => recheckFailureText.Length > 0;
+    public string RecheckFailureTitle => recheckFailureTitle;
+    public string RecheckFailureText => recheckFailureText;
+    public string RecheckFailureDetail => recheckFailureDetail;
     public bool HasActionItems => ActionItems.Count > 0;
+    public bool HasResolvedItems => ResolvedItems.Count > 0;
+    public string ResolvedSectionTitle => $"本次复查已解决（{ResolvedItems.Count} 项）";
     public bool HasPendingItems => PendingItems.Count > 0;
     public bool HasPassedItems => PassedItems.Count > 0;
     public string PassedHeader => $"已满足的项目（{PassedItems.Count} 项）";
@@ -130,7 +157,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         if (disposed) return false;
         requests.Invalidate();
         checking = false;
-        ClearOutcomeCore();
+        ResetProjectSession();
 
         try
         {
@@ -168,7 +195,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
             requests.Invalidate();
             checking = false;
             currentProject = null;
-            ClearOutcomeCore();
+            ResetProjectSession();
             statusMessage = "";
             NotifyAll();
             return;
@@ -183,7 +210,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         requests.Invalidate();
         checking = false;
         currentProject = null;
-        ClearOutcomeCore();
+        ResetProjectSession();
         statusMessage = "输入的文件夹路径尚不存在；可继续输入完整路径或点击“选择文件夹”。";
         NotifyAll();
     }
@@ -194,10 +221,21 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
     {
         if (disposed || currentProject is null) return false;
         var targetProject = currentProject;
+        var hasValidPriorForProject = previousSnapshot is not null
+            && string.Equals(previousSnapshot.ProjectPath, targetProject.ProjectPath, StringComparison.OrdinalIgnoreCase);
+
         var ticket = requests.Begin();
         checking = true;
-        ClearOutcomeCore();
-        statusMessage = $"正在调用随包 contain-workflow 检查“{targetProject.ProjectName}”…";
+        if (hasValidPriorForProject)
+        {
+            ClearRecheckFailureBanner();
+            statusMessage = $"正在重新检查“{targetProject.ProjectName}”…";
+        }
+        else
+        {
+            ClearOutcomeCore();
+            statusMessage = $"正在调用随包 contain-workflow 检查“{targetProject.ProjectName}”…";
+        }
         NotifyAll();
 
         try
@@ -266,10 +304,35 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
     private void ApplyReport(ProjectFolderInfo project, EnvironmentCheckExecution execution)
     {
+        var checkedAt = clock();
         var report = execution.Report;
+        var currentSignature = ComputeRequirementSignature(report);
+
+        ActionItems.Clear();
+        ResolvedItems.Clear();
+        PendingItems.Clear();
+        PassedItems.Clear();
+        errorDetail = "";
+        comparisonNote = "";
+        ClearRecheckFailureBanner();
+
+        var canCompareWithPrevious = false;
+        if (previousSnapshot is not null
+            && string.Equals(previousSnapshot.ProjectPath, project.ProjectPath, StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.Equals(previousSnapshot.RequirementSignature, currentSignature, StringComparison.Ordinal))
+            {
+                canCompareWithPrevious = true;
+            }
+            else
+            {
+                comparisonNote = "检测到项目环境要求已变更，已按最新声明开始新的比较（修改项目要求不计为已解决）。";
+            }
+        }
+
         foreach (var check in report.Checks)
         {
-            var row = FormatRow(check);
+            var row = FormatRow(check, report.ManifestSource);
             switch (check.Status)
             {
                 case "failed":
@@ -277,6 +340,12 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
                     break;
                 case "passed":
                     PassedItems.Add(row);
+                    if (canCompareWithPrevious
+                        && previousSnapshot!.ChecksByName.TryGetValue(check.Name, out var prior)
+                        && !string.Equals(prior.Status, "passed", StringComparison.Ordinal))
+                    {
+                        ResolvedItems.Add(FormatResolvedRow(prior, check));
+                    }
                     break;
                 default:
                     PendingItems.Add(row);
@@ -284,48 +353,106 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
             }
         }
 
+        previousSnapshot = new CheckSnapshot(
+            project.ProjectPath,
+            currentSignature,
+            checkedAt,
+            BuildChecksMap(report.Checks));
+
         passedExpanded = false;
         showDetailedReport = false;
-        detailedReportText = BuildDetailedReport(project, execution);
+        lastCheckedText = $"检查时间：{FormatTimestamp(checkedAt)}";
+        detailedReportText = BuildDetailedReport(project, execution, checkedAt);
 
         if (ActionItems.Count > 0)
         {
             outcome = EnvironmentOutcomeKind.ActionRequired;
             headline = BuildActionHeadline(ActionItems[0], ActionItems.Count);
-            outcomeNote = PendingItems.Count > 0
-                ? $"另有 {PendingItems.Count} 项待确认，已满足的 {PassedItems.Count} 项已折叠在下方。按下方补齐建议操作后可点击“重新检查”。"
-                : $"共发现 {ActionItems.Count} 项缺失或版本不匹配；已满足的 {PassedItems.Count} 项默认收起。补齐后可点击“重新检查”。";
-            statusMessage = $"已完成“{project.ProjectName}”环境检查：需要补齐 {ActionItems.Count} 项。";
+            if (ResolvedItems.Count > 0)
+            {
+                outcomeNote = $"本次复查已确认解决 {ResolvedItems.Count} 项（见下方“本次复查已解决”）；仍缺的 {ActionItems.Count} 项继续置顶显示，已满足的 {PassedItems.Count} 项默认收起。";
+                statusMessage = $"已完成“{project.ProjectName}”重新检查：已解决 {ResolvedItems.Count} 项，仍需补齐 {ActionItems.Count} 项。";
+            }
+            else
+            {
+                outcomeNote = PendingItems.Count > 0
+                    ? $"另有 {PendingItems.Count} 项待确认，已满足的 {PassedItems.Count} 项已折叠在下方。按下方补齐建议操作后可点击“重新检查”。"
+                    : $"共发现 {ActionItems.Count} 项缺失或版本不匹配；已满足的 {PassedItems.Count} 项默认收起。补齐后可点击“重新检查”。";
+                statusMessage = $"已完成“{project.ProjectName}”环境检查：需要补齐 {ActionItems.Count} 项。";
+            }
         }
         else if (PendingItems.Count > 0)
         {
             outcome = EnvironmentOutcomeKind.InsufficientInfo;
-            headline = report.ManifestSource == "inferred_from_project_files"
-                ? $"信息不足：已检查可识别声明，仍有 {PendingItems.Count} 项要求待确认"
-                : $"信息不足：未发现明确冲突，但有 {PendingItems.Count} 项待确认或未实测";
-            outcomeNote = report.ManifestSource == "inferred_from_project_files"
-                ? $"该项目没有 contain.environment.json；已通过 infer 检查根目录支持文件中的已知要求（已满足 {PassedItems.Count} 项），其余工具链与构建方式需补充清单确认。"
-                : $"当前没有报错缺项（已满足 {PassedItems.Count} 项），但部分探测超出首版只读范围或尚未声明，不能判定为可直接构建。";
-            statusMessage = $"已完成“{project.ProjectName}”环境检查：含 {PendingItems.Count} 项待确认。";
+            if (ResolvedItems.Count > 0)
+            {
+                headline = $"{ResolvedItems[0].DisplayTitle} · 仍有 {PendingItems.Count} 项要求待确认";
+                outcomeNote = $"本次复查新报告已确认解决 {ResolvedItems.Count} 项；当前没有明确缺项（已满足 {PassedItems.Count} 项），其余 {PendingItems.Count} 项需人工确认。";
+                statusMessage = $"已完成“{project.ProjectName}”重新检查：已解决 {ResolvedItems.Count} 项，含 {PendingItems.Count} 项待确认。";
+            }
+            else
+            {
+                headline = report.ManifestSource == "inferred_from_project_files"
+                    ? $"信息不足：已检查可识别声明，仍有 {PendingItems.Count} 项要求待确认"
+                    : $"信息不足：未发现明确冲突，但有 {PendingItems.Count} 项待确认或未实测";
+                outcomeNote = report.ManifestSource == "inferred_from_project_files"
+                    ? $"该项目没有 contain.environment.json；已通过 infer 检查根目录支持文件中的已知要求（已满足 {PassedItems.Count} 项），其余工具链与构建方式需补充清单确认。"
+                    : $"当前没有报错缺项（已满足 {PassedItems.Count} 项），但部分探测超出首版只读范围或尚未声明，不能判定为可直接构建。";
+                statusMessage = $"已完成“{project.ProjectName}”环境检查：含 {PendingItems.Count} 项待确认。";
+            }
         }
         else
         {
             outcome = EnvironmentOutcomeKind.Ready;
-            headline = $"环境已满足：“{project.ProjectName}”声明的 {PassedItems.Count} 项检查全部通过";
-            outcomeNote = "本机已具备该项目清单声明的平台、工具版本与 Windows 编译工具链。可展开下方列表或查看详细报告核对每项结果。";
-            statusMessage = $"已完成“{project.ProjectName}”环境检查：全部 {PassedItems.Count} 项满足。";
+            if (ResolvedItems.Count == 1)
+            {
+                headline = $"{ResolvedItems[0].DisplayTitle} · “{project.ProjectName}”声明的 {PassedItems.Count} 项检查全部通过";
+                outcomeNote = $"同一项目且要求未变的前提下重新检查通过：{ResolvedItems[0].SummaryLine} 其余已满足项可在下方展开或查看详细报告。";
+                statusMessage = $"已完成“{project.ProjectName}”重新检查：{ResolvedItems[0].DisplayTitle}。";
+            }
+            else if (ResolvedItems.Count > 1)
+            {
+                headline = $"本次已解决 {ResolvedItems.Count} 项（含 {StripResolvedPrefix(ResolvedItems[0].DisplayTitle)}）· “{project.ProjectName}”全部 {PassedItems.Count} 项检查通过";
+                outcomeNote = $"同一项目且要求未变的前提下重新检查通过，新报告已确认上述 {ResolvedItems.Count} 项恢复正常。";
+                statusMessage = $"已完成“{project.ProjectName}”重新检查：已解决 {ResolvedItems.Count} 项，全部通过。";
+            }
+            else
+            {
+                headline = $"环境已满足：“{project.ProjectName}”声明的 {PassedItems.Count} 项检查全部通过";
+                outcomeNote = "本机已具备该项目清单声明的平台、工具版本与 Windows 编译工具链。可展开下方列表或查看详细报告核对每项结果。";
+                statusMessage = $"已完成“{project.ProjectName}”环境检查：全部 {PassedItems.Count} 项满足。";
+            }
         }
     }
 
     private void ApplyCheckerError(ProjectFolderInfo project, string message, string diagnostic)
     {
+        var failedAt = clock();
+        if (previousSnapshot is not null
+            && string.Equals(previousSnapshot.ProjectPath, project.ProjectPath, StringComparison.OrdinalIgnoreCase))
+        {
+            var priorTimeText = FormatTimestamp(previousSnapshot.CheckedAt);
+            var failTimeText = FormatTimestamp(failedAt);
+            ResolvedItems.Clear();
+            comparisonNote = "";
+            lastCheckedText = $"上次有效结果时间：{priorTimeText}";
+            recheckFailureTitle = $"重新检查未完成（失败时间：{failTimeText}）";
+            recheckFailureText = $"{message} 当前保留 {priorTimeText} 的上次有效检查结果。";
+            recheckFailureDetail = diagnostic;
+            statusMessage = $"“{project.ProjectName}”重新检查出错（{failTimeText}），已保留 {priorTimeText} 的上次有效结果。";
+            return;
+        }
+
+        ClearOutcomeCore();
         outcome = EnvironmentOutcomeKind.CheckerError;
         headline = "检查未能完成：检查程序或项目配置文件出错";
         outcomeNote = $"{message}（这不是“电脑缺少某项开发工具”的结论，请先检查桌面包完整性或项目配置文件格式。）";
+        lastCheckedText = $"检查失败时间：{FormatTimestamp(failedAt)}";
         errorDetail = diagnostic;
         var sb = new StringBuilder();
         sb.AppendLine($"项目名称：{project.ProjectName}");
         sb.AppendLine($"项目路径：{project.ProjectPath}");
+        sb.AppendLine($"失败时间：{FormatTimestamp(failedAt)}");
         sb.AppendLine($"错误说明：{message}");
         if (!string.IsNullOrWhiteSpace(diagnostic))
         {
@@ -344,7 +471,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         return $"需要补齐 {count} 项：优先处理“{first.DisplayTitle}”（{first.SummaryLine}）";
     }
 
-    internal static EnvironmentItemRow FormatRow(WorkflowCheckItem item)
+    public static EnvironmentItemRow FormatRow(WorkflowCheckItem item, string? manifestSource = null)
     {
         var label = FriendlyCheckTitle(item.Name);
         if (item.Status == "failed")
@@ -370,10 +497,13 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
                     $"{label} 不满足要求（项目要求 {item.Required}）",
                 _ => $"{label} 未通过检查"
             };
-            var remedy = !string.IsNullOrWhiteSpace(item.Remedy)
-                ? "下一步：" + item.Remedy
-                : "下一步：" + item.Detail;
-            return new EnvironmentItemRow(item.Name, label, badge, summary, remedy, item.Detail);
+
+            var officialGuidance = item.Name == "tool:dotnet"
+                ? BuildDotNetSdkGuidance(item.Required).GuidanceLine
+                : "";
+
+            var remedy = FormatProvenanceRemedy(item, manifestSource);
+            return new EnvironmentItemRow(item.Name, label, badge, summary, remedy, item.Detail, officialGuidance);
         }
 
         if (item.Status == "passed")
@@ -389,10 +519,121 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
             ? $"该项探测命令不在首版只读安全白名单内，未自动执行（声明要求：{item.Required}）"
             : item.Detail;
         var pendingRemedy = !string.IsNullOrWhiteSpace(item.Remedy) && item.Remedy != item.Detail
-            ? "参考说明：" + item.Remedy
+            ? FormatProvenanceRemedy(item, manifestSource)
             : "";
         return new EnvironmentItemRow(item.Name, label, pendingBadge, pendingSummary, pendingRemedy, item.Detail);
     }
+
+    public static EnvironmentItemRow FormatResolvedRow(WorkflowCheckItem previous, WorkflowCheckItem current)
+    {
+        var label = FriendlyCheckTitle(current.Name);
+        var confirmed = !string.IsNullOrWhiteSpace(current.Observed)
+            ? current.Observed
+            : current.Required;
+        var title = !string.IsNullOrWhiteSpace(confirmed)
+            ? $"已解决：{label} {confirmed}"
+            : $"已解决：{label}";
+
+        var summary = previous.Outcome switch
+        {
+            "version_mismatch" when !string.IsNullOrWhiteSpace(previous.Observed) && !string.IsNullOrWhiteSpace(confirmed) =>
+                $"上次检查检测到 {previous.Observed}（版本不匹配），本次新报告已确认通过（检测到 {confirmed}）。",
+            "unavailable" when !string.IsNullOrWhiteSpace(confirmed) =>
+                $"上次检查未检测到可用项，本次新报告已确认通过（检测到 {confirmed}）。",
+            _ when previous.Status == "failed" && !string.IsNullOrWhiteSpace(confirmed) =>
+                $"上次检查未满足要求，本次新报告已确认通过（{confirmed}）。",
+            _ =>
+                $"上次状态为“{previous.Status}”，本次新报告已确认通过（{confirmed ?? current.Detail}）。"
+        };
+
+        return new EnvironmentItemRow(current.Name, title, "本次已解决", summary, "", current.Detail);
+    }
+
+    public static (bool IsSupportedReleaseBand, string GuidanceLine) BuildDotNetSdkGuidance(string? required)
+    {
+        if (string.IsNullOrWhiteSpace(required))
+        {
+            return (false, "版本提示：项目未声明具体的 .NET SDK 版本号，请先核对项目环境配置（第一版由你决定是否安装）。");
+        }
+
+        var trimmed = required.Trim();
+        var parts = trimmed.Split('.');
+        if (parts.Length == 3
+            && parts.All(static p => p.Length > 0 && p.All(char.IsAsciiDigit))
+            && int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var major)
+            && int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var minor)
+            && int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var sdkPatch)
+            && major is 8 or 9 or 10
+            && minor == 0
+            && sdkPatch is >= 100 and <= 499
+            && (sdkPatch % 100) <= 59)
+        {
+            var url = $"https://dotnet.microsoft.com/download/dotnet/{major}.{minor}";
+            return (
+                true,
+                $"官方获取入口：前往微软 .NET {major}.{minor} 下载页 {url} 获取 .NET SDK {trimmed}（Windows x64，可与本机现有 SDK 并行安装；安装后可用 dotnet --list-sdks 核对，是否安装由你决定）。");
+        }
+
+        return (
+            false,
+            $"版本提示：项目要求 .NET SDK {trimmed}，不在已知受支持的微软正式 SDK 发行段内，不承诺该版本可从官方渠道下载；请先核对项目要求（是否安装或调整由你决定）。");
+    }
+
+    private static string FormatProvenanceRemedy(WorkflowCheckItem item, string? manifestSource)
+    {
+        if (string.IsNullOrWhiteSpace(item.Remedy))
+            return "检查说明：" + item.Detail;
+
+        if (item.Name.StartsWith("tool:", StringComparison.Ordinal))
+        {
+            if (string.Equals(manifestSource, "inferred_from_project_files", StringComparison.Ordinal))
+            {
+                var sourceFile = item.Name == "tool:dotnet" ? "global.json" : "rust-toolchain.toml";
+                return $"项目声明文件（{sourceFile}）推断说明：{item.Remedy}";
+            }
+            return $"项目清单（contain.environment.json）自带说明：{item.Remedy}";
+        }
+
+        return "下一步：" + item.Remedy;
+    }
+
+    public static string ComputeRequirementSignature(WorkflowReportData report)
+    {
+        var sb = new StringBuilder();
+        sb.Append("source=").Append(report.ManifestSource ?? "contain.environment.json").Append('\n');
+        foreach (var check in report.Checks)
+        {
+            if (check.Name == "environment_manifest"
+                && check.Detail.StartsWith(ManifestDigestPrefix, StringComparison.Ordinal))
+            {
+                sb.Append("manifest_sha=").Append(check.Detail[ManifestDigestPrefix.Length..].Trim()).Append('\n');
+                continue;
+            }
+            if (check.Name == "source_revision")
+                continue;
+
+            sb.Append(check.Name).Append('=').Append(check.Required ?? "").Append('\n');
+        }
+        return sb.ToString();
+    }
+
+    private static Dictionary<string, WorkflowCheckItem> BuildChecksMap(IReadOnlyList<WorkflowCheckItem> checks)
+    {
+        var map = new Dictionary<string, WorkflowCheckItem>(StringComparer.Ordinal);
+        foreach (var check in checks)
+        {
+            map.TryAdd(check.Name, check);
+        }
+        return map;
+    }
+
+    private static string StripResolvedPrefix(string displayTitle) =>
+        displayTitle.StartsWith("已解决：", StringComparison.Ordinal)
+            ? displayTitle["已解决：".Length..]
+            : displayTitle;
+
+    private static string FormatTimestamp(DateTimeOffset timestamp) =>
+        timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
     internal static string FriendlyCheckTitle(string rawName) => rawName switch
     {
@@ -413,11 +654,12 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         _ => rawName
     };
 
-    private static string BuildDetailedReport(ProjectFolderInfo project, EnvironmentCheckExecution execution)
+    private static string BuildDetailedReport(ProjectFolderInfo project, EnvironmentCheckExecution execution, DateTimeOffset checkedAt)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"项目名称：{project.ProjectName}");
         sb.AppendLine($"项目路径：{project.ProjectPath}");
+        sb.AppendLine($"检查时间：{FormatTimestamp(checkedAt)}");
         sb.AppendLine($"清单来源：{execution.Report.ManifestSource ?? "contain.environment.json"}");
         sb.AppendLine($"CLI 退出码：{execution.ExitCode}");
         sb.AppendLine();
@@ -432,15 +674,32 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         return sb.ToString().TrimEnd();
     }
 
+    private void ResetProjectSession()
+    {
+        previousSnapshot = null;
+        ClearOutcomeCore();
+    }
+
+    private void ClearRecheckFailureBanner()
+    {
+        recheckFailureTitle = "";
+        recheckFailureText = "";
+        recheckFailureDetail = "";
+    }
+
     private void ClearOutcomeCore()
     {
         ActionItems.Clear();
+        ResolvedItems.Clear();
         PendingItems.Clear();
         PassedItems.Clear();
         outcome = EnvironmentOutcomeKind.None;
         headline = "";
         outcomeNote = "";
+        lastCheckedText = "";
+        comparisonNote = "";
         errorDetail = "";
+        ClearRecheckFailureBanner();
         detailedReportText = "";
         showDetailedReport = false;
         passedExpanded = false;
@@ -482,8 +741,16 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(OutcomeBadge));
         OnPropertyChanged(nameof(Headline));
         OnPropertyChanged(nameof(OutcomeNote));
+        OnPropertyChanged(nameof(LastCheckedText));
+        OnPropertyChanged(nameof(ComparisonNote));
         OnPropertyChanged(nameof(ErrorDetail));
+        OnPropertyChanged(nameof(HasRecheckFailure));
+        OnPropertyChanged(nameof(RecheckFailureTitle));
+        OnPropertyChanged(nameof(RecheckFailureText));
+        OnPropertyChanged(nameof(RecheckFailureDetail));
         OnPropertyChanged(nameof(HasActionItems));
+        OnPropertyChanged(nameof(HasResolvedItems));
+        OnPropertyChanged(nameof(ResolvedSectionTitle));
         OnPropertyChanged(nameof(HasPendingItems));
         OnPropertyChanged(nameof(HasPassedItems));
         OnPropertyChanged(nameof(PassedHeader));

@@ -34,7 +34,7 @@
             <Border Style="{StaticResource Surface}" Visibility="{Binding EnvironmentCheck.IsChecking, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="CheckingProgressSurface">
                 <StackPanel>
                     <ProgressBar IsIndeterminate="True" Height="4" Margin="0,0,0,12" />
-                    <TextBlock Text="{Binding EnvironmentCheck.CheckingBannerText}" AutomationProperties.AutomationId="CheckingProgressBanner" />
+                    <TextBlock Text="{Binding EnvironmentCheck.CheckingBannerText}" TextWrapping="Wrap" AutomationProperties.AutomationId="CheckingProgressBanner" />
                 </StackPanel>
             </Border>
 
@@ -64,10 +64,24 @@
                     </Style>
                 </Border.Style>
                 <StackPanel>
-                    <TextBlock Text="{Binding EnvironmentCheck.OutcomeBadge}" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" AutomationProperties.AutomationId="EnvironmentOutcomeBadge" />
-                    <TextBlock Text="{Binding EnvironmentCheck.Headline}" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,8" AutomationProperties.AutomationId="EnvironmentHeadline" />
-                    <TextBlock Text="{Binding EnvironmentCheck.OutcomeNote}" Style="{StaticResource MutedText}" AutomationProperties.AutomationId="EnvironmentOutcomeNote" />
+                    <Grid Margin="0,0,0,6">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding EnvironmentCheck.OutcomeBadge}" FontSize="12" FontWeight="SemiBold" AutomationProperties.AutomationId="EnvironmentOutcomeBadge" />
+                        <TextBlock Grid.Column="1" Text="{Binding EnvironmentCheck.LastCheckedText}" Style="{StaticResource MutedText}" FontSize="12" Margin="12,0,0,0" Visibility="{Binding EnvironmentCheck.LastCheckedText, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="EnvironmentCheckedTime" />
+                    </Grid>
+                    <TextBlock Text="{Binding EnvironmentCheck.Headline}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8" AutomationProperties.AutomationId="EnvironmentHeadline" />
+                    <TextBlock Text="{Binding EnvironmentCheck.OutcomeNote}" Style="{StaticResource MutedText}" TextWrapping="Wrap" AutomationProperties.AutomationId="EnvironmentOutcomeNote" />
+                    <TextBlock Text="{Binding EnvironmentCheck.ComparisonNote}" Foreground="#7A5200" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,0" Visibility="{Binding EnvironmentCheck.ComparisonNote, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="EnvironmentComparisonNote" />
                     <TextBox Text="{Binding EnvironmentCheck.ErrorDetail, Mode=OneWay}" Style="{StaticResource SelectableText}" Foreground="#963D2E" Margin="0,12,0,0" Visibility="{Binding EnvironmentCheck.ErrorDetail, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="EnvironmentErrorDetail" AutomationProperties.Name="检查错误诊断" />
+
+                    <Border Background="#FFF0ED" BorderBrush="#B84A39" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,12,0,0" Visibility="{Binding EnvironmentCheck.HasRecheckFailure, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="RecheckFailureSurface">
+                        <StackPanel>
+                            <TextBlock Text="{Binding EnvironmentCheck.RecheckFailureTitle}" Foreground="#8F2D1E" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="RecheckFailureTitle" />
+                            <TextBlock Text="{Binding EnvironmentCheck.RecheckFailureText}" Foreground="#8F2D1E" TextWrapping="Wrap" Margin="0,4,0,0" AutomationProperties.AutomationId="RecheckFailureText" />
+                            <TextBox Text="{Binding EnvironmentCheck.RecheckFailureDetail, Mode=OneWay}" Style="{StaticResource SelectableText}" Foreground="#963D2E" Margin="0,6,0,0" Visibility="{Binding EnvironmentCheck.RecheckFailureDetail, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="RecheckFailureDetail" AutomationProperties.Name="重新检查失败诊断" />
+                        </StackPanel>
+                    </Border>
+
                     <WrapPanel Margin="0,16,0,0">
                         <ui:Button Content="重新检查" Margin="0,0,10,0" Click="OnStartCheck" IsEnabled="{Binding EnvironmentCheck.CanRecheck}" AutomationProperties.AutomationId="RecheckEnvironment">
                             <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowClockwise24" /></ui:Button.Icon>
@@ -87,11 +101,34 @@
                                     <StackPanel>
                                         <Grid>
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" FontSize="15" />
+                                            <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
                                             <TextBlock Grid.Column="1" Text="{Binding StatusBadge}" Foreground="#9A6400" FontWeight="SemiBold" FontSize="12" Margin="12,0,0,0" />
                                         </Grid>
-                                        <TextBlock Text="{Binding SummaryLine}" Margin="0,6,0,0" />
+                                        <TextBlock Text="{Binding SummaryLine}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                        <TextBox Text="{Binding OfficialGuidanceLine, Mode=OneWay}" Style="{StaticResource SelectableText}" Foreground="#0E5A53" Margin="0,6,0,0" Visibility="{Binding OfficialGuidanceLine, Converter={StaticResource TextVisibility}}" />
                                         <TextBox Text="{Binding RemedyLine, Mode=OneWay}" Style="{StaticResource SelectableText}" Foreground="{StaticResource MutedBrush}" Margin="0,6,0,0" Visibility="{Binding RemedyLine, Converter={StaticResource TextVisibility}}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Surface}" Visibility="{Binding EnvironmentCheck.HasResolvedItems, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="EnvironmentResolvedSurface">
+                <StackPanel>
+                    <TextBlock Text="{Binding EnvironmentCheck.ResolvedSectionTitle}" Style="{StaticResource SectionTitle}" AutomationProperties.AutomationId="EnvironmentResolvedTitle" />
+                    <ItemsControl ItemsSource="{Binding EnvironmentCheck.ResolvedItems}" AutomationProperties.AutomationId="EnvironmentResolvedList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="#F2FAF6" BorderBrush="#137D74" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,8,0,0">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding DisplayTitle}" Foreground="#0E5A53" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="1" Text="{Binding StatusBadge}" Foreground="#137D74" FontWeight="SemiBold" FontSize="12" Margin="12,0,0,0" />
+                                        </Grid>
+                                        <TextBlock Text="{Binding SummaryLine}" TextWrapping="Wrap" Margin="0,6,0,0" />
                                     </StackPanel>
                                 </Border>
                             </DataTemplate>
@@ -110,10 +147,10 @@
                                     <StackPanel>
                                         <Grid>
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" TextWrapping="Wrap" />
                                             <TextBlock Grid.Column="1" Text="{Binding StatusBadge}" Foreground="#2B5B84" FontWeight="SemiBold" FontSize="12" Margin="12,0,0,0" />
                                         </Grid>
-                                        <TextBlock Text="{Binding SummaryLine}" Margin="0,6,0,0" />
+                                        <TextBlock Text="{Binding SummaryLine}" TextWrapping="Wrap" Margin="0,6,0,0" />
                                         <TextBox Text="{Binding RemedyLine, Mode=OneWay}" Style="{StaticResource SelectableText}" Foreground="{StaticResource MutedBrush}" Margin="0,6,0,0" Visibility="{Binding RemedyLine, Converter={StaticResource TextVisibility}}" />
                                     </StackPanel>
                                 </Border>
@@ -132,8 +169,8 @@
                                     <Grid>
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel>
-                                            <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" />
-                                            <TextBlock Text="{Binding SummaryLine}" Style="{StaticResource MutedText}" FontSize="13" Margin="0,4,0,0" />
+                                            <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding SummaryLine}" Style="{StaticResource MutedText}" FontSize="13" TextWrapping="Wrap" Margin="0,4,0,0" />
                                         </StackPanel>
                                         <TextBlock Grid.Column="1" Text="{Binding StatusBadge}" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" FontSize="12" Margin="12,2,0,0" VerticalAlignment="Top" />
                                     </Grid>
