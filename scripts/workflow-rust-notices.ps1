@@ -1,11 +1,15 @@
-function Copy-WorkflowRustNotices([string]$PackageName,[string]$Files) {
+function Copy-WorkflowRustNotices([string[]]$PackageNames,[string]$Files) {
     $notices = (New-Item -ItemType Directory -Path (Join-Path $files 'licenses')).FullName
     # Collect notices from the actual locked CLI dependency closure, not the old ETW graph.
     $metadataText = & cargo metadata --locked --format-version 1 --filter-platform x86_64-pc-windows-msvc
     if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve locked license graph' }
     $metadata = $metadataText | ConvertFrom-Json
     $queue = New-Object Collections.Queue
-    $queue.Enqueue(($metadata.packages | Where-Object { $_.name -eq $PackageName }).id)
+    foreach ($packageName in $PackageNames) {
+        $rootPackage = $metadata.packages | Where-Object { $_.name -eq $packageName }
+        if (!$rootPackage) { throw "Unknown Cargo package $packageName" }
+        $queue.Enqueue($rootPackage.id)
+    }
     $seen = @{}
     $rows = @()
     while ($queue.Count -gt 0) {
@@ -15,7 +19,7 @@ function Copy-WorkflowRustNotices([string]$PackageName,[string]$Files) {
         $node = $metadata.resolve.nodes | Where-Object { $_.id -eq $id }
         foreach ($dep in $node.deps) { $queue.Enqueue($dep.pkg) }
         $package = $metadata.packages | Where-Object { $_.id -eq $id }
-        if ($package.name -eq $PackageName) { continue }
+        if ($package.name -in $PackageNames) { continue }
         $packageRoot = Split-Path $package.manifest_path -Parent
         $licenseFiles = @(Get-ChildItem -LiteralPath $packageRoot -File | Where-Object { $_.Name -match '^(LICENSE|COPYING|NOTICE|UNLICENSE)' })
         if (!$package.source) { $licenseFiles += Get-Item -LiteralPath (Join-Path $root 'LICENSE') }

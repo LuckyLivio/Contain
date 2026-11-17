@@ -24,15 +24,17 @@ class SourcePackageTests(unittest.TestCase):
         for n,b in FIX.published_members().items():(self.viewer/n).write_bytes(b)
         (self.viewer/'Contain.Viewer.exe').write_bytes(b'MZ-current-entry')
         self.core=self.root/'contain.exe';self.core.write_bytes(b'MZ-current-core-not-the-Beta10-core')
+        self.workflow_cli=self.root/'contain-workflow.exe';self.workflow_cli.write_bytes(b'MZ-current-workflow-cli')
         fixtures=self.root/'fixtures';fixtures.mkdir();(fixtures/'viewer-demo.db').write_bytes(b'SQLite format 3\0SYNTHETIC')
         licenses=self.root/'rust-licenses';licenses.mkdir();(licenses/'LICENSE.txt').write_text('synthetic license')
         tools=dict(status='passed',msvc='14.44.9',sdk='10.0.26100.0');self.tools=self.root/'tools.json';P.write(self.tools,tools)
-        self.receipt=self.root/'receipt.json';P.write(self.receipt,dict(source_sha=SOURCE,core_sha256=P.sha(self.core),entry_sha256=P.sha(self.viewer/'Contain.Viewer.exe'),toolchain=tools,regressions='passed'))
-        self.args=argparse.Namespace(viewer=self.viewer,core=self.core,fixtures=fixtures,rust_licenses=licenses,toolchain=self.tools,receipt=self.receipt,nuget=self.root/'nuget',output=self.root/'delivery',source=SOURCE)
+        self.receipt=self.root/'receipt.json';P.write(self.receipt,dict(source_sha=SOURCE,core_sha256=P.sha(self.core),workflow_cli_sha256=P.sha(self.workflow_cli),entry_sha256=P.sha(self.viewer/'Contain.Viewer.exe'),toolchain=tools,regressions='passed'))
+        self.args=argparse.Namespace(viewer=self.viewer,core=self.core,workflow_cli=self.workflow_cli,fixtures=fixtures,rust_licenses=licenses,toolchain=self.tools,receipt=self.receipt,nuget=self.root/'nuget',output=self.root/'delivery',source=SOURCE)
     def process(self,command,**kwargs):
         if command[:3]==['git','rev-parse','HEAD']:return SOURCE+'\n'
         if command[:3]==['git','status','--porcelain']:return b''
         if command==['dotnet','--version']:return P.MODERN.SDK+'\n'
+        if command[-1]=='--version' and 'contain-workflow' in Path(command[0]).name:return b'contain-workflow 0.1.0\n'
         if command[-1]=='--version':return b'contain 0.3.2-beta.10\n'
         cwd=Path(kwargs['cwd'])
         (cwd/'samples/viewer-demo.db-wal').write_bytes(b'')
@@ -56,6 +58,9 @@ class SourcePackageTests(unittest.TestCase):
         with zipfile.ZipFile(out/'contain-source-windows-x64.zip') as z:
             P.MODERN.verify_manifest(z)
             self.assertEqual(z.read('contain.exe'),self.core.read_bytes());self.assertEqual(z.read('Contain.Viewer.exe'),(self.viewer/'Contain.Viewer.exe').read_bytes())
+            self.assertEqual(z.read('contain-workflow.exe'),self.workflow_cli.read_bytes())
+            self.assertIn('workflow/select-workflow-toolchain.ps1',z.namelist())
+            self.assertIn('workflow/workflow-toolchain.ps1',z.namelist())
             self.assertNotIn('FINAL-ACCEPTANCE.json',z.namelist());self.assertNotIn('contain-test-installer.exe',z.namelist())
     def test_changed_core_after_receipt_rejected(self):
         self.core.write_bytes(b'MZ-wrong');self.assertRejected('receipt')

@@ -1,0 +1,159 @@
+<UserControl x:Class="Contain.Desktop.Views.EnvironmentCheckView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    xmlns:model="clr-namespace:Contain.Desktop.Model;assembly=Contain.Desktop.Model">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24,16,24,24">
+        <StackPanel MaxWidth="920" HorizontalAlignment="Stretch">
+            <TextBlock Text="检查项目环境" Style="{StaticResource PageTitle}" AutomationProperties.AutomationId="EnvironmentPageTitle" />
+            <TextBlock Text="选择项目文件夹并点击“开始检查”，查看这台电脑缺少哪些开发工具及下一步操作。" Style="{StaticResource MutedText}" Margin="0,0,0,20" AutomationProperties.AutomationId="EnvironmentPurposeText" />
+
+            <Border Style="{StaticResource Surface}">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="项目文件夹" Style="{StaticResource SectionTitle}" />
+                            <TextBlock Text="{Binding EnvironmentCheck.ProjectName}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" AutomationProperties.AutomationId="SelectedProjectName" />
+                        </StackPanel>
+                        <ui:Button Grid.Column="1" Content="选择文件夹" Margin="16,0,0,0" VerticalAlignment="Center" Click="OnPickFolder" AutomationProperties.AutomationId="PickProjectFolder">
+                            <ui:Button.Icon><ui:SymbolIcon Symbol="FolderOpen24" /></ui:Button.Icon>
+                        </ui:Button>
+                    </Grid>
+                    <ui:TextBox Margin="0,12,0,0" Text="{Binding EnvironmentCheck.FolderInput, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="点击右侧“选择文件夹”，或直接粘贴本地项目目录路径" AutomationProperties.AutomationId="ProjectPathInput" AutomationProperties.Name="项目文件夹路径" />
+                    <TextBlock Text="{Binding EnvironmentCheck.SelectionScopeNote}" Style="{StaticResource MutedText}" Margin="0,10,0,0" Visibility="{Binding EnvironmentCheck.SelectionScopeNote, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="ProjectScopeNote" />
+                </StackPanel>
+            </Border>
+
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                <ui:Button Content="开始检查" Appearance="Primary" Padding="24,12" Click="OnStartCheck" IsEnabled="{Binding EnvironmentCheck.CanStartCheck}" AutomationProperties.AutomationId="StartEnvironmentCheck">
+                    <ui:Button.Icon><ui:SymbolIcon Symbol="Play24" /></ui:Button.Icon>
+                </ui:Button>
+            </StackPanel>
+
+            <Border Style="{StaticResource Surface}" Visibility="{Binding EnvironmentCheck.IsChecking, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="CheckingProgressSurface">
+                <StackPanel>
+                    <ProgressBar IsIndeterminate="True" Height="4" Margin="0,0,0,12" />
+                    <TextBlock Text="{Binding EnvironmentCheck.CheckingBannerText}" AutomationProperties.AutomationId="CheckingProgressBanner" />
+                </StackPanel>
+            </Border>
+
+            <Border CornerRadius="10" Padding="20" Margin="0,0,0,16" BorderThickness="1" Visibility="{Binding EnvironmentCheck.HasOutcome, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="EnvironmentOutcomeSurface">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="White" />
+                        <Setter Property="BorderBrush" Value="{StaticResource HairlineBrush}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding EnvironmentCheck.Outcome}" Value="{x:Static model:EnvironmentOutcomeKind.Ready}">
+                                <Setter Property="Background" Value="#EAF5F1" />
+                                <Setter Property="BorderBrush" Value="#137D74" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding EnvironmentCheck.Outcome}" Value="{x:Static model:EnvironmentOutcomeKind.ActionRequired}">
+                                <Setter Property="Background" Value="#FFF8EB" />
+                                <Setter Property="BorderBrush" Value="#D99B26" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding EnvironmentCheck.Outcome}" Value="{x:Static model:EnvironmentOutcomeKind.InsufficientInfo}">
+                                <Setter Property="Background" Value="#EEF5FB" />
+                                <Setter Property="BorderBrush" Value="#4B7AA8" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding EnvironmentCheck.Outcome}" Value="{x:Static model:EnvironmentOutcomeKind.CheckerError}">
+                                <Setter Property="Background" Value="#FFF0ED" />
+                                <Setter Property="BorderBrush" Value="#B84A39" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel>
+                    <TextBlock Text="{Binding EnvironmentCheck.OutcomeBadge}" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" AutomationProperties.AutomationId="EnvironmentOutcomeBadge" />
+                    <TextBlock Text="{Binding EnvironmentCheck.Headline}" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,8" AutomationProperties.AutomationId="EnvironmentHeadline" />
+                    <TextBlock Text="{Binding EnvironmentCheck.OutcomeNote}" Style="{StaticResource MutedText}" AutomationProperties.AutomationId="EnvironmentOutcomeNote" />
+                    <TextBox Text="{Binding EnvironmentCheck.ErrorDetail, Mode=OneWay}" Style="{StaticResource SelectableText}" Foreground="#963D2E" Margin="0,12,0,0" Visibility="{Binding EnvironmentCheck.ErrorDetail, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="EnvironmentErrorDetail" AutomationProperties.Name="检查错误诊断" />
+                    <WrapPanel Margin="0,16,0,0">
+                        <ui:Button Content="重新检查" Margin="0,0,10,0" Click="OnStartCheck" IsEnabled="{Binding EnvironmentCheck.CanRecheck}" AutomationProperties.AutomationId="RecheckEnvironment">
+                            <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowClockwise24" /></ui:Button.Icon>
+                        </ui:Button>
+                        <ui:Button Content="{Binding EnvironmentCheck.DetailedReportButtonText}" Appearance="Transparent" Click="OnToggleReport" IsEnabled="{Binding EnvironmentCheck.CanToggleDetailedReport}" AutomationProperties.AutomationId="ToggleDetailedReport" />
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Surface}" Visibility="{Binding EnvironmentCheck.HasActionItems, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="EnvironmentActionSurface">
+                <StackPanel>
+                    <TextBlock Text="需要优先补齐的项目" Style="{StaticResource SectionTitle}" />
+                    <ItemsControl ItemsSource="{Binding EnvironmentCheck.ActionItems}" AutomationProperties.AutomationId="EnvironmentActionList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="#FAFDFC" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,8,0,0">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" FontSize="15" />
+                                            <TextBlock Grid.Column="1" Text="{Binding StatusBadge}" Foreground="#9A6400" FontWeight="SemiBold" FontSize="12" Margin="12,0,0,0" />
+                                        </Grid>
+                                        <TextBlock Text="{Binding SummaryLine}" Margin="0,6,0,0" />
+                                        <TextBox Text="{Binding RemedyLine, Mode=OneWay}" Style="{StaticResource SelectableText}" Foreground="{StaticResource MutedBrush}" Margin="0,6,0,0" Visibility="{Binding RemedyLine, Converter={StaticResource TextVisibility}}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Surface}" Visibility="{Binding EnvironmentCheck.HasPendingItems, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="EnvironmentPendingSurface">
+                <StackPanel>
+                    <TextBlock Text="待确认项（需人工确认或补充清单）" Style="{StaticResource SectionTitle}" />
+                    <ItemsControl ItemsSource="{Binding EnvironmentCheck.PendingItems}" AutomationProperties.AutomationId="EnvironmentPendingList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="#FAFDFC" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,8,0,0">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" />
+                                            <TextBlock Grid.Column="1" Text="{Binding StatusBadge}" Foreground="#2B5B84" FontWeight="SemiBold" FontSize="12" Margin="12,0,0,0" />
+                                        </Grid>
+                                        <TextBlock Text="{Binding SummaryLine}" Margin="0,6,0,0" />
+                                        <TextBox Text="{Binding RemedyLine, Mode=OneWay}" Style="{StaticResource SelectableText}" Foreground="{StaticResource MutedBrush}" Margin="0,6,0,0" Visibility="{Binding RemedyLine, Converter={StaticResource TextVisibility}}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <Expander Header="{Binding EnvironmentCheck.PassedHeader}" IsExpanded="{Binding EnvironmentCheck.PassedExpanded, Mode=TwoWay}" Margin="0,0,0,16" Visibility="{Binding EnvironmentCheck.HasPassedItems, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="PassedItemsExpander">
+                <Border Style="{StaticResource Surface}" Margin="0,10,0,0">
+                    <ItemsControl ItemsSource="{Binding EnvironmentCheck.PassedItems}" AutomationProperties.AutomationId="EnvironmentPassedList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{StaticResource HairlineBrush}" BorderThickness="0,0,0,1" Padding="0,10">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding SummaryLine}" Style="{StaticResource MutedText}" FontSize="13" Margin="0,4,0,0" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="{Binding StatusBadge}" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" FontSize="12" Margin="12,2,0,0" VerticalAlignment="Top" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Border>
+            </Expander>
+
+            <Border Style="{StaticResource Surface}" Visibility="{Binding EnvironmentCheck.ShowDetailedReport, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="DetailedReportSurface">
+                <StackPanel>
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <TextBlock Text="详细检查报告" Style="{StaticResource SectionTitle}" Margin="0" VerticalAlignment="Center" />
+                        <ui:Button Grid.Column="1" Content="复制报告" Appearance="Transparent" Click="OnCopyReport" AutomationProperties.AutomationId="CopyEnvironmentReport" />
+                    </Grid>
+                    <TextBox Text="{Binding EnvironmentCheck.DetailedReportText, Mode=OneWay}" Style="{StaticResource SelectableText}" MaxHeight="360" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" AutomationProperties.AutomationId="EnvironmentDetailedReport" AutomationProperties.Name="详细环境检查报告" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -38,7 +38,7 @@ if (!$selected) {
         "  Expand-Archive -LiteralPath `"$repoRoot\target\workflow\delivery-local\desktop-delivery\contain-source-windows-x64.zip`" -DestinationPath `"$repoRoot\target\local-desktop`"")
 }
 
-$requiredMembers = @('Contain.Viewer.exe', 'Contain.Viewer.dll', 'contain.exe', 'coreclr.dll', 'BUILD.json', 'samples\viewer-demo.db')
+$requiredMembers = @('Contain.Viewer.exe', 'Contain.Viewer.dll', 'contain.exe', 'contain-workflow.exe', 'workflow\select-workflow-toolchain.ps1', 'coreclr.dll', 'BUILD.json', 'samples\viewer-demo.db')
 $missing = @($requiredMembers | Where-Object { !(Test-Path -LiteralPath (Join-Path $selected.Path $_) -PathType Leaf) })
 if ($missing.Count -gt 0) {
     Write-Error ("Local development desktop directory '$($selected.Path)' is incomplete (missing: $($missing -join ', ')).`n" +
@@ -52,7 +52,7 @@ if ($build.protocol -ne 'contain-source-desktop-package-1' -or $build.reused_cor
 }
 
 $viewerExe = Join-Path $selected.Path 'Contain.Viewer.exe'
-Write-Host "[Contain Local Dev Entry] Existing WPF record viewer (contain-workflow CLI is separate and not yet wired into WPF)"
+Write-Host "[Contain Local Dev Entry] WPF desktop (project environment check + installation record viewer)"
 Write-Host "  Package : $($selected.Path) ($($selected.Source))"
 Write-Host "  Source  : $($build.source_sha)"
 Write-Host "  Sample  : $(Join-Path $selected.Path 'samples\viewer-demo.db') (SYNTHETIC; open read-only via sidebar external-library action)"

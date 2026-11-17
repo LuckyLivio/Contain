@@ -37,13 +37,14 @@ try {
     Run-Step 'fixtures' (Join-Path $env:CARGO_TARGET_DIR 'x86_64-pc-windows-msvc/release/viewer-fixtures.exe') @((Join-Path $out 'fixtures'))
     . (Join-Path $PSScriptRoot 'workflow-rust-notices.ps1')
     $noticeRoot=(New-Item -ItemType Directory -Path (Join-Path $out 'rust-notices')).FullName
-    Copy-WorkflowRustNotices 'contain-cli' $noticeRoot
+    Copy-WorkflowRustNotices @('contain-cli','contain-workflow') $noticeRoot
     $core=Join-Path $env:CARGO_TARGET_DIR 'x86_64-pc-windows-msvc/release/contain.exe'
+    $workflowCli=Join-Path $env:CARGO_TARGET_DIR 'x86_64-pc-windows-msvc/release/contain-workflow.exe'
     $entry=Join-Path $out 'wpf/Contain.Viewer.exe'
-    Write-Json (Join-Path $out 'build-receipt.json') @{source_sha=$source;core_sha256=(Get-FileHash $core -Algorithm SHA256).Hash.ToLowerInvariant();entry_sha256=(Get-FileHash $entry -Algorithm SHA256).Hash.ToLowerInvariant();toolchain=$toolchain;regressions='passed'}
+    Write-Json (Join-Path $out 'build-receipt.json') @{source_sha=$source;core_sha256=(Get-FileHash $core -Algorithm SHA256).Hash.ToLowerInvariant();workflow_cli_sha256=(Get-FileHash $workflowCli -Algorithm SHA256).Hash.ToLowerInvariant();entry_sha256=(Get-FileHash $entry -Algorithm SHA256).Hash.ToLowerInvariant();toolchain=$toolchain;regressions='passed'}
     $nuget=$env:NUGET_PACKAGES
     if (!$nuget) {$nuget=Join-Path $env:USERPROFILE '.nuget/packages'}
-    Run-Step 'desktop-freeze' 'python' @('scripts/package-source-desktop.py','--source',$source,'--viewer',(Join-Path $out 'wpf'),'--core',$core,'--fixtures',(Join-Path $out 'fixtures'),'--rust-licenses',(Join-Path $noticeRoot 'licenses'),'--nuget',$nuget,'--toolchain',(Join-Path $out 'toolchain.json'),'--receipt',(Join-Path $out 'build-receipt.json'),'--output',(Join-Path $out 'desktop-delivery'))
+    Run-Step 'desktop-freeze' 'python' @('scripts/package-source-desktop.py','--source',$source,'--viewer',(Join-Path $out 'wpf'),'--core',$core,'--workflow-cli',$workflowCli,'--fixtures',(Join-Path $out 'fixtures'),'--rust-licenses',(Join-Path $noticeRoot 'licenses'),'--nuget',$nuget,'--toolchain',(Join-Path $out 'toolchain.json'),'--receipt',(Join-Path $out 'build-receipt.json'),'--output',(Join-Path $out 'desktop-delivery'))
     Run-Step 'cli-freeze' 'powershell.exe' @('-NoLogo','-NoProfile','-NonInteractive','-File','scripts/build-workflow.ps1','-OutputDirectory',(Join-Path $out 'cli-delivery'))
     $desktopIdentity=Get-Content (Join-Path $out 'desktop-delivery/identity.json') -Raw | ConvertFrom-Json
     $cliIdentity=Get-Content (Join-Path $out 'cli-delivery/identity.json') -Raw | ConvertFrom-Json

@@ -19,7 +19,7 @@ LEGACY = load('package-viewer')
 require, sha, write = MODERN.require, MODERN.sha, MODERN.write
 
 def freeze(args):
-    inputs = [args.viewer, args.core, args.fixtures, args.rust_licenses, args.toolchain]
+    inputs = [args.viewer, args.core, args.workflow_cli, args.fixtures, args.rust_licenses, args.toolchain]
     out = args.output.resolve()
     require(not out.exists() and not args.output.is_symlink(), 'new output directory required')
     require(all(out != p.resolve() and out not in p.resolve().parents and p.resolve() not in out.parents for p in inputs), 'inputs/outputs overlap')
@@ -32,15 +32,19 @@ def freeze(args):
     # Project-owned receipt binds inputs to the clean checkout and isolated build directory.
     receipt=json.loads(args.receipt.read_text(encoding='utf-8-sig'))
     require(receipt['source_sha']==source and receipt['core_sha256']==sha(args.core)
+            and receipt.get('workflow_cli_sha256')==sha(args.workflow_cli)
             and receipt['entry_sha256']==sha(args.viewer/'Contain.Viewer.exe') and receipt['toolchain']==tools,'build receipt input mismatch')
     require(receipt.get('regressions')=='passed','source regressions not passed')
     frameworks=MODERN.runtime_contract(args.viewer)
     files=MODERN.tree_files(args.viewer)
     MODERN.member_policy(files, lambda name:files[name].read_bytes()[:16], published=True)
     core=LEGACY.safe_file(args.core)
-    require(core.read_bytes()[:2]==b'MZ' and files['Contain.Viewer.exe'].read_bytes()[:2]==b'MZ','Windows EXEs required')
+    workflow_cli=LEGACY.safe_file(args.workflow_cli)
+    require(core.read_bytes()[:2]==b'MZ' and workflow_cli.read_bytes()[:2]==b'MZ' and files['Contain.Viewer.exe'].read_bytes()[:2]==b'MZ','Windows EXEs required')
     version=subprocess.check_output([str(core),'--version'],cwd=REPO)
     require(version.decode().strip()=='contain 0.3.2-beta.10','core protocol version differs')
+    workflow_version=subprocess.check_output([str(workflow_cli),'--version'],cwd=REPO)
+    require(workflow_version.decode().strip()=='contain-workflow 0.1.0','workflow CLI version differs')
     LEGACY.validate_sample(core,args.fixtures)
     licenses=MODERN.tree_files(args.rust_licenses)
     require(licenses and all(Path(n).suffix.lower() in {'.txt','.html','.json','.md',''} or Path(n).name.upper().startswith(('LICENSE','COPYING','NOTICE','UNLICENSE')) for n in licenses),'unreviewed Rust notice member')
@@ -48,6 +52,10 @@ def freeze(args):
     package=out/'desktop'
     shutil.copytree(args.viewer,package)
     shutil.copyfile(core,package/'contain.exe')
+    shutil.copyfile(workflow_cli,package/'contain-workflow.exe')
+    (package/'workflow').mkdir()
+    for script_name in ['select-workflow-toolchain.ps1','workflow-toolchain.ps1']:
+        shutil.copyfile(LEGACY.safe_file(REPO/'scripts'/script_name),package/'workflow'/script_name)
     (package/'samples').mkdir()
     shutil.copyfile(args.fixtures/'viewer-demo.db',package/'samples/viewer-demo.db')
     (package/'samples/README.txt').write_text('SYNTHETIC production-store fixture; not an installation record.\n',encoding='utf-8')
@@ -56,11 +64,13 @@ def freeze(args):
     runtime_licenses=LEGACY.copy_runtime_licenses(frameworks,package,args.nuget)
     shutil.copytree(args.rust_licenses,package/'licenses/rust')
     for name in ['LICENSE','THIRD-PARTY-NOTICES.md']:shutil.copyfile(REPO/name,package/name)
-    (package/'START-HERE.txt').write_text('Contain source build · Windows x64\nExtract completely and run Contain.Viewer.exe.\nBUILD.json identifies this checkout, not the historically accepted core.\nNative acceptance is separate and not implied by building.\n',encoding='utf-8')
+    (package/'START-HERE.txt').write_text('Contain source build · Windows x64\nExtract completely and run Contain.Viewer.exe.\nIncludes bundled contain-workflow.exe and reviewed toolchain probes for project environment checks.\nBUILD.json identifies this checkout, not the historically accepted core.\nNative acceptance is separate and not implied by building.\n',encoding='utf-8')
     file_rows=[MODERN.identity(p,package) for p in sorted(package.rglob('*')) if p.is_file()]
     build=dict(schema_version=1,protocol='contain-source-desktop-package-1',source_sha=source,
                version=MODERN.VERSION,target='win-x64',core_source_sha=source,reused_core_binary=False,
-               core_version='0.3.2-beta.10',core_sha256=sha(core),entry_sha256=sha(package/'Contain.Viewer.exe'),
+               core_version='0.3.2-beta.10',core_sha256=sha(core),
+               workflow_cli_version='0.1.0',workflow_cli_sha256=sha(workflow_cli),
+               entry_sha256=sha(package/'Contain.Viewer.exe'),
                sdk=MODERN.SDK,runtime=MODERN.RUNTIME,self_contained=True,core_profile='release',
                crt_static_requested=True,toolchain=tools,regressions='passed',runtime_licenses=runtime_licenses,
                native_validation='not_run; separate receiver evidence required',files=file_rows)
@@ -84,15 +94,16 @@ def freeze(args):
     spec=dict(schema_version=1,target='windows-x64',sha256=sha(archive),entry='Contain.Viewer.exe',comparison_entry='contain.exe',
               required_files=required_files,launch=dict(args=[],timeout_ms=20000,expected_exit=None,window_title='Contain · '+MODERN.VERSION),
               tests=[dict(name='Core exact version',program='contain.exe',args=['--version'],expected_exit=0,timeout_ms=10000,stdout_sha256=hashlib.sha256(version).hexdigest()),
+                     dict(name='Bundled workflow CLI exact version',program='contain-workflow.exe',args=['--version'],expected_exit=0,timeout_ms=10000,stdout_sha256=hashlib.sha256(workflow_version).hexdigest()),
                      dict(name='Synthetic sample read-only list',program='contain.exe',args=query_args,expected_exit=0,timeout_ms=20000,stdout_sha256=hashlib.sha256(query).hexdigest())])
     write(out/'package-spec.json',spec)
-    write(out/'identity.json',dict(schema_version=1,source_sha=source,core_sha256=build['core_sha256'],entry_sha256=build['entry_sha256'],
+    write(out/'identity.json',dict(schema_version=1,source_sha=source,core_sha256=build['core_sha256'],workflow_cli_sha256=build['workflow_cli_sha256'],entry_sha256=build['entry_sha256'],
                                   zip_sha256=sha(archive),spec_sha256=sha(out/'package-spec.json'),toolchain=tools,native_acceptance='not_run'))
     return build
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    for name in ['viewer','core','fixtures','rust-licenses','toolchain','receipt','nuget','output']:p.add_argument('--'+name,type=Path,required=True)
+    for name in ['viewer','core','workflow-cli','fixtures','rust-licenses','toolchain','receipt','nuget','output']:p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--source',required=True)
     freeze(p.parse_args())
 if __name__=='__main__':main()

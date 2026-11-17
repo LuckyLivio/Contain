@@ -18,6 +18,7 @@
             <ui:NavigationView.MenuItems>
                 <controls:ActionNavigationItem x:Name="RecordsNavigation" Caption="我的记录" Symbol="DocumentMultiple24" Click="OnMyRecords" ActionId="MyRecords" IsActive="True" />
                 <controls:ActionNavigationItem x:Name="NewNavigation" Caption="新建记录" Symbol="DocumentAdd24" Click="OnNewRecord" ActionId="NewInstall" />
+                <controls:ActionNavigationItem x:Name="EnvironmentNavigation" Caption="检查项目环境" Symbol="DocumentSearch24" Click="OnEnvironmentCheck" ActionId="CheckProjectEnvironment" />
             </ui:NavigationView.MenuItems>
             <ui:NavigationView.FooterMenuItems>
                 <controls:ActionNavigationItem Caption="本次任务详情" Symbol="DocumentText24" Click="OnCurrentTask" ActionId="CurrentTask" Visibility="{Binding Install.HasTask, Converter={StaticResource BoolVisibility}}" />
