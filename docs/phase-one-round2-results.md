@@ -128,3 +128,41 @@ Windows 实测通过。
     `#32770` 文件选择器物理点击、合成键盘 `Space` 焦点投递及 `PrintWindow` 可见像素截图未完成。
   - 本机已安装开发工具，不能替代从未安装开发工具的快照 B 干净接收机验收；新 `contain-workflow`
     流程尚未接入 WPF 图形界面。
+
+## 桌面端“检查项目环境”页面与自带 CLI 候选包补充（`feat/desktop-environment-check`）
+
+在保留上轮 `143443807c634782bb64618daf3e2c344e5f94b1` 双原包不变的前提下，于代码修订
+`ed5b372e348c8ddbb03584e9eeb02dc966082640` 完成了 WPF 一级页面“检查项目环境”及自带
+`contain-workflow.exe` 的新桌面候选包组装与实包验证：
+
+- **功能与安全边界**：
+  - 选择文件夹仅只读识别 `contain.environment.json`、`Cargo.toml`、`rust-toolchain.toml`、
+    `global.json` 的存在情况，点击“开始检查”后才调用随包 `contain-workflow.exe`（通过
+    `AppContext.BaseDirectory` 定位）。
+  - `contain-workflow check` 新增结构化证据字段（`outcome`/`required`/`observed`/`remedy`）、
+    `--safe-probes` 首版只读探测白名单（超范围命令跳过并标为 `needs_confirmation`，不执行目标
+    项目目录中的未审查脚本）及 `--infer-if-missing` 推断模式，优先解析随包
+    `workflow/select-workflow-toolchain.ps1`。
+  - 页面直接消费 `report.json`，优先置顶展示下一步补齐建议与缺失/版本不匹配项，默认折叠已满足项，
+    明确区分“检查出缺项”“信息不足（含待确认项）”“检查程序或配置出错”与“环境已满足”四种结果，
+    并在取消选择或快速切换项目时拒绝过期结果覆盖当前项目。
+- **候选包冻结身份（`source_sha = ed5b372e348c8ddbb03584e9eeb02dc966082640`）**：
+  - 桌面候选包 `contain-source-windows-x64.zip`：`ce89f99c65b6add8360f26e16b9968bbf310502fc172b703e57c9c4e05db1ad6`
+    （`Contain.Viewer.exe`：`7e978a7ceb6f7712c9fc853f8482529ecf300ec25463dc76a31194edf75d3ed2`，
+    `contain.exe`：`83f97b61eb0c1809e89b6ebe69dd82c9a0782278158a422c40f630f8a3edb44f`，
+    随包 `contain-workflow.exe`：`67d7ac5bf00d84b3303dcba553373ef91faad238ebe9fab53568bf3c253c3c6b`，
+    `package-spec.json`：`9ee7775e5acb15ab3165dd9c3c2123e4fe9ecd008434a68eb2437af7c35062fa`）。
+  - 独立 CLI 包 `contain-workflow-windows-x64.zip`：`60a88880d93d9633eb80bf03e0a4062c75bf5fa9eef4ed962067d6fbf0771873`
+    （`contain-workflow.exe`：`01f9f0b83679165d05166c8a5fd09e6ff060f3a54b4b215f1852c4f04e966f26`，
+    `package-spec.json`：`fc1708644fdc9c5e7c126cba9dce37003a9a2c98deb54de31b4d10091edaa589`）。
+- **实包 `Contain.Viewer.exe` 验收记录**：
+  - 双包 `verify --run`（含带空格解压目录及随包 `contain-workflow.exe --version` 输出哈希核对）均退出 `0`。
+  - 从带空格外部工作目录启动解压后的 `Contain.Viewer.exe`：
+    1. 选择当前可信 Contain 检出：8 项检查全部通过，已满足项默认折叠且展开内容与独立 CLI 报告一致，详细报告可正常查看。
+    2. 选择隔离版本不匹配样例（要求 `dotnet 10.0.999`）：准确提示“需要补齐 1 项：项目要求 .NET SDK (dotnet) 10.0.999，当前检测到 10.0.403”与补齐步骤，“重新检查”结果一致，本机已有工具全程未改动。
+    3. 带空格异目录启动并快速切换至无清单 Rust 样例：随包 CLI 正常定位，页面标题、推断结果（`信息不足 · 含待确认项`）与详细报告严格绑定当前项目，未被前序慢查询覆盖；同进程切换至“我的记录”可正常打开合成样例会话并正常关闭（退出码 `0`）。
+  - 桌面模型回归 **40/40** 通过，`contain-workflow` **37/37** 通过。
+- **待验证与保留阻塞**：
+  - 当前机器无独立的干净无开发工具 Windows x64 交互环境，对上轮原包及本轮候选包的 `-Stage Package` 免工具快照 B 验收标为**待验证**。
+  - 非前台沙盒 Win32 桌面中 `PrintWindow` 返回未合成纯白表面，已丢弃无效图像，不在记录中充当真实截图。
+  - 仓库级 `cargo deny` 仍保留 `chrono 0.4.45` 未维护告警（`RUSTSEC-2026-0543`）作为合并阻塞记录。
