@@ -43,7 +43,7 @@ def freeze(args):
     require(version.decode().strip()=='contain 0.3.2-beta.10','core protocol version differs')
     LEGACY.validate_sample(core,args.fixtures)
     licenses=MODERN.tree_files(args.rust_licenses)
-    require(licenses and all(Path(n).suffix.lower() in {'.txt','.html','.json','.md',''} or Path(n).name.startswith(('LICENSE','COPYING','NOTICE')) for n in licenses),'unreviewed Rust notice member')
+    require(licenses and all(Path(n).suffix.lower() in {'.txt','.html','.json','.md',''} or Path(n).name.upper().startswith(('LICENSE','COPYING','NOTICE','UNLICENSE')) for n in licenses),'unreviewed Rust notice member')
     out.mkdir(parents=True)
     package=out/'desktop'
     shutil.copytree(args.viewer,package)

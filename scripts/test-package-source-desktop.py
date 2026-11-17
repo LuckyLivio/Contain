@@ -80,6 +80,17 @@ class SourcePackageTests(unittest.TestCase):
         with self.assertRaises(ValueError):P.freeze(self.args)
     def test_private_published_input_is_rejected(self):
         (self.viewer/'private.db').write_bytes(b'private');self.assertRejected()
+    def test_lowercase_rust_notice_allowed_and_binary_rejected(self):
+        nested=self.args.rust_licenses/'windows-sys-0.61.2';nested.mkdir()
+        (nested/'license-apache-2.0').write_text('Apache-2.0',encoding='utf-8')
+        build=self.freeze()
+        self.assertTrue(any(f['path']=='licenses/rust/windows-sys-0.61.2/license-apache-2.0' for f in build['files']))
+        self.args.output=self.root/'delivery-bad'
+        (nested/'helper.exe').write_bytes(b'MZ')
+        with patch.object(P.LEGACY,'validate_sample'),self.assertRaisesRegex(ValueError,'unreviewed Rust notice member'):
+            with patch.object(P.subprocess,'check_output',side_effect=self.process):
+                P.freeze(self.args)
+        self.assertFalse(self.args.output.exists())
     def test_manifest_detects_member_tampering(self):
         self.freeze();path=self.args.output/'contain-source-windows-x64.zip'
         with zipfile.ZipFile(path) as z:members={n:z.read(n) for n in z.namelist()}

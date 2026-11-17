@@ -78,3 +78,31 @@ function Enter-WorkflowToolchain {
     foreach ($key in $selection.environment.Keys) { [Environment]::SetEnvironmentVariable($key,$selection.environment[$key],'Process') }
     return $selection
 }
+function Format-WorkflowArgument([AllowEmptyString()][string]$Value) {
+    if ($Value.Length -gt 0 -and $Value -notmatch '[\s"]') { return $Value }
+    return '"' + ([regex]::Replace($Value, '(\\*)"', '$1$1\"') -replace '(\\+)$', '$1$1') + '"'
+}
+function Invoke-WorkflowStep([string]$LogPath, [string]$Program, [string[]]$Arguments) {
+    $resolved = if ([IO.Path]::IsPathRooted($Program) -and (Test-Path -LiteralPath $Program -PathType Leaf)) {
+        (Resolve-Path -LiteralPath $Program).Path
+    } else {
+        (Get-Command -Name $Program -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+    }
+    $start = New-Object Diagnostics.ProcessStartInfo
+    $start.FileName = $resolved
+    $start.Arguments = (@($Arguments | ForEach-Object { Format-WorkflowArgument $_ }) -join ' ')
+    $start.WorkingDirectory = (Get-Location).Path
+    $start.UseShellExecute = $false
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $start.StandardOutputEncoding = [Text.Encoding]::UTF8
+    $start.StandardErrorEncoding = [Text.Encoding]::UTF8
+    $process = [Diagnostics.Process]::Start($start)
+    $stdout = $process.StandardOutput.ReadToEndAsync()
+    $stderr = $process.StandardError.ReadToEndAsync()
+    $process.WaitForExit()
+    [Threading.Tasks.Task]::WaitAll(@($stdout, $stderr))
+    $separator = if ($stdout.Result -and $stderr.Result -and !$stdout.Result.EndsWith("`n")) { [Environment]::NewLine } else { '' }
+    [IO.File]::WriteAllText($LogPath, ($stdout.Result + $separator + $stderr.Result), (New-Object Text.UTF8Encoding $false))
+    return $process.ExitCode
+}

@@ -22,8 +22,7 @@ try {
     $env:CARGO_TARGET_DIR=Join-Path $out 'rust-build'
     $env:RUSTFLAGS='-C target-feature=+crt-static'
     function Run-Step([string]$Name,[string]$Program,[string[]]$Arguments) {
-        & $Program @Arguments *> (Join-Path $out ($Name+'.local.log'))
-        $code=$LASTEXITCODE
+        $code=Invoke-WorkflowStep (Join-Path $out ($Name+'.local.log')) $Program $Arguments
         Write-Json (Join-Path $out ($Name+'.json')) @{name=$Name;exit_code=$code;status=$(if($code -eq 0){'passed'}else{'failed'})}
         if ($code -ne 0) {throw "Build/check failed: $Name (exit $code); local log retained"}
     }
