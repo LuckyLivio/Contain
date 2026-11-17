@@ -829,3 +829,37 @@ fn bundled_selector_lookup_prefers_workflow_subdirectory() {
         Some(script)
     );
 }
+
+#[test]
+fn dotnet_global_json_rejection_falls_back_to_sdk_list_without_leaking_paths() {
+    let mut m = manifest();
+    m.tools = vec![Tool {
+        program: "dotnet".into(),
+        version: "10.0.404".into(),
+        version_args: vec!["--version".into()],
+        remedy: "Install .NET SDK 10.0.404".into(),
+    }];
+    let r = environment::check_with_policy(
+        &m,
+        "windows",
+        "x86_64",
+        true,
+        |program, args| match (program, args.first().map(String::as_str)) {
+            ("dotnet", Some("--version")) => anyhow::bail!("global.json SDK 10.0.404 not found"),
+            ("dotnet", Some("--list-sdks")) => Ok(
+                "9.0.308 [C:\\Users\\PrivateUser\\dotnet\\sdk]\n10.0.403 [D:\\SecretPath\\sdk]\n"
+                    .into(),
+            ),
+            _ => unreachable!(),
+        },
+        |_| true,
+    );
+    let dotnet = r.checks.iter().find(|c| c.name == "tool:dotnet").unwrap();
+    assert_eq!(dotnet.status, Status::Failed);
+    assert_eq!(dotnet.outcome.as_deref(), Some("version_mismatch"));
+    assert_eq!(dotnet.required.as_deref(), Some("10.0.404"));
+    assert_eq!(dotnet.observed.as_deref(), Some("9.0.308, 10.0.403"));
+    let text = serde_json::to_string(&r).unwrap();
+    assert!(!text.contains("PrivateUser"));
+    assert!(!text.contains("SecretPath"));
+}

@@ -27,7 +27,28 @@ pub fn is_supported_probe(program: &str, args: &[String]) -> bool {
     )
 }
 
-/// Extract only a bounded numeric-headed version token (never paths, identifiers, or secrets).
+/// Extract only bounded numeric-headed SDK version tokens from `dotnet --list-sdks` lines, omitting paths.
+pub fn extract_safe_sdk_list_versions(output: &str) -> Option<String> {
+    let mut versions = Vec::new();
+    for line in output.lines() {
+        let Some(first) = line.split_whitespace().next() else {
+            continue;
+        };
+        if let Some(v) = extract_safe_version_token(&["--version".into()], first)
+            && !versions.contains(&v)
+        {
+            versions.push(v);
+            if versions.len() >= 4 {
+                break;
+            }
+        }
+    }
+    if versions.is_empty() {
+        None
+    } else {
+        Some(versions.join(", "))
+    }
+}
 pub fn extract_safe_version_token(args: &[String], output: &str) -> Option<String> {
     if !matches!(
         args.iter()
@@ -252,12 +273,32 @@ pub fn check_with_policy(
                     "version_mismatch",
                     extract_safe_version_token(&t.version_args, &output),
                 ),
-                Err(_) => (
-                    Status::Failed,
-                    "tool unavailable or version probe failed",
-                    "unavailable",
-                    None,
-                ),
+                Err(_) => {
+                    let fallback_observed = if t.program == "dotnet"
+                        && t.version_args.iter().map(String::as_str).eq(["--version"])
+                    {
+                        probe("dotnet", &["--list-sdks".into()])
+                            .ok()
+                            .and_then(|list| extract_safe_sdk_list_versions(&list))
+                    } else {
+                        None
+                    };
+                    if let Some(installed) = fallback_observed {
+                        (
+                            Status::Failed,
+                            "version mismatch",
+                            "version_mismatch",
+                            Some(installed),
+                        )
+                    } else {
+                        (
+                            Status::Failed,
+                            "tool unavailable or version probe failed",
+                            "unavailable",
+                            None,
+                        )
+                    }
+                }
             };
         r.checks.push(
             Check::new(
