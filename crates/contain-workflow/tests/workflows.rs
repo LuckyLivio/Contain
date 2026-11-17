@@ -706,3 +706,126 @@ fn stdout_digest_is_validated_as_input() {
     m.build[0].stdout_sha256 = Some("not a hash".into());
     assert!(m.validate().is_err());
 }
+
+#[test]
+fn observed_version_extracted_for_mismatch_without_serializing_secrets() {
+    let mut m = manifest();
+    m.tools = vec![
+        Tool {
+            program: "dotnet".into(),
+            version: "10.0.999".into(),
+            version_args: vec!["--version".into()],
+            remedy: "Install .NET SDK 10.0.999".into(),
+        },
+        Tool {
+            program: "rustup".into(),
+            version: "x86_64-pc-windows-msvc".into(),
+            version_args: vec!["target".into(), "list".into(), "--installed".into()],
+            remedy: "rustup target add x86_64-pc-windows-msvc".into(),
+        },
+    ];
+    let secret = "SECRET_PATH_C:\\Users\\Private\\1.0";
+    let r = environment::check_with_policy(
+        &m,
+        "windows",
+        "x86_64",
+        true,
+        |program, _| match program {
+            "dotnet" => Ok(format!("10.0.403 {secret} EXTRA_TOKEN")),
+            "rustup" => Ok("aarch64-pc-windows-msvc".into()),
+            _ => unreachable!(),
+        },
+        |_| true,
+    );
+    let dotnet = r.checks.iter().find(|c| c.name == "tool:dotnet").unwrap();
+    assert_eq!(dotnet.status, Status::Failed);
+    assert_eq!(dotnet.outcome.as_deref(), Some("version_mismatch"));
+    assert_eq!(dotnet.required.as_deref(), Some("10.0.999"));
+    assert_eq!(dotnet.observed.as_deref(), Some("10.0.403"));
+    assert_eq!(dotnet.remedy.as_deref(), Some("Install .NET SDK 10.0.999"));
+    let rustup = r.checks.iter().find(|c| c.name == "tool:rustup").unwrap();
+    assert_eq!(rustup.status, Status::Failed);
+    assert_eq!(rustup.observed, None);
+    let serialized = serde_json::to_string(&r).unwrap();
+    assert!(!serialized.contains("SECRET_PATH"));
+    assert!(!serialized.contains("EXTRA_TOKEN"));
+}
+
+#[test]
+fn safe_probes_skip_unsupported_commands_and_mark_needs_confirmation() {
+    let mut m = manifest();
+    m.tools.push(Tool {
+        program: "cmd.exe".into(),
+        version: "1.0".into(),
+        version_args: vec!["/C".into(), "echo".into()],
+        remedy: "confirm manually".into(),
+    });
+    let mut executed = Vec::new();
+    let r = environment::check_with_policy(
+        &m,
+        "windows",
+        "x86_64",
+        true,
+        |program, _| {
+            executed.push(program.to_string());
+            Ok("rustc 1.100.0".into())
+        },
+        |_| true,
+    );
+    assert_eq!(executed, vec!["rustc".to_string()]);
+    let skipped = r.checks.iter().find(|c| c.name == "tool:cmd.exe").unwrap();
+    assert_eq!(skipped.status, Status::NeedsConfirmation);
+    assert_eq!(skipped.outcome.as_deref(), Some("unsupported_probe"));
+    assert!(!r.passed());
+}
+
+#[test]
+fn cli_infer_if_missing_checks_project_without_manifest_and_keeps_pending() {
+    use std::process::Command;
+    let t = Temp::new();
+    fs::write(
+        t.0.join("Cargo.toml"),
+        "[package]\nname='sample'\nversion='0.1.0'\nrust-version='1.88'\n",
+    )
+    .unwrap();
+    let report = t.0.join("report");
+    let result = Command::new(env!("CARGO_BIN_EXE_contain-workflow"))
+        .args([
+            "check",
+            "--project",
+            t.0.to_str().unwrap(),
+            "--safe-probes",
+            "--infer-if-missing",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(2));
+    let parsed: Report =
+        serde_json::from_slice(&fs::read(report.join("report.json")).unwrap()).unwrap();
+    assert_eq!(
+        parsed.manifest_source.as_deref(),
+        Some("inferred_from_project_files")
+    );
+    assert!(
+        parsed
+            .checks
+            .iter()
+            .any(|c| c.status == Status::NeedsConfirmation)
+    );
+}
+
+#[test]
+fn bundled_selector_lookup_prefers_workflow_subdirectory() {
+    let t = Temp::new();
+    assert!(contain_workflow::toolchain::bundled_selector_in(&t.0).is_none());
+    let workflow_dir = t.0.join("workflow");
+    fs::create_dir_all(&workflow_dir).unwrap();
+    let script = workflow_dir.join("select-workflow-toolchain.ps1");
+    fs::write(&script, "# reviewed selector").unwrap();
+    assert_eq!(
+        contain_workflow::toolchain::bundled_selector_in(&t.0),
+        Some(script)
+    );
+}

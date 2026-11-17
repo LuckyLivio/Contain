@@ -1,6 +1,9 @@
 use crate::{manifest::WindowsToolchain, runner};
 use serde::Deserialize;
-use std::{collections::BTreeMap, path::Path};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 #[derive(Deserialize)]
 pub struct Selection {
     pub msvc: String,
@@ -15,13 +18,52 @@ struct Reply {
     environment: Option<BTreeMap<String, String>>,
     reason: Option<String>,
 }
+pub fn bundled_selector_script() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    bundled_selector_in(dir)
+}
+pub fn bundled_selector_in(dir: &Path) -> Option<PathBuf> {
+    for relative in [
+        "workflow/select-workflow-toolchain.ps1",
+        "scripts/select-workflow-toolchain.ps1",
+    ] {
+        let candidate = dir.join(relative);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
 pub fn select(root: &Path, required: &WindowsToolchain) -> Result<Selection, String> {
+    select_with_policy(root, required, false)
+}
+pub fn select_with_policy(
+    root: &Path,
+    required: &WindowsToolchain,
+    safe_probes: bool,
+) -> Result<Selection, String> {
+    let (script, working_dir): (PathBuf, &Path) = if let Some(bundled) = bundled_selector_script() {
+        let parent = bundled.parent().unwrap_or(root).to_path_buf();
+        return run_selector(&bundled, &parent, required);
+    } else if safe_probes {
+        return Err("bundled_toolchain_selector_missing".into());
+    } else {
+        ("scripts/select-workflow-toolchain.ps1".into(), root)
+    };
+    run_selector(&script, working_dir, required)
+}
+fn run_selector(
+    script: &Path,
+    working_dir: &Path,
+    required: &WindowsToolchain,
+) -> Result<Selection, String> {
     let args = vec![
         "-NoLogo".into(),
         "-NoProfile".into(),
         "-NonInteractive".into(),
         "-File".into(),
-        "scripts/select-workflow-toolchain.ps1".into(),
+        script.to_string_lossy().into_owned(),
         "-Family".into(),
         required.msvc_family.clone(),
         "-Sdk".into(),
@@ -30,7 +72,7 @@ pub fn select(root: &Path, required: &WindowsToolchain) -> Result<Selection, Str
     let output = runner::probe_with_timeout(
         "powershell.exe",
         &args,
-        Some(root),
+        Some(working_dir),
         &BTreeMap::new(),
         std::time::Duration::from_secs(75),
     )

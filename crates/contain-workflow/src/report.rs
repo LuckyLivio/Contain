@@ -15,6 +15,14 @@ pub struct Check {
     pub name: String,
     pub status: Status,
     pub detail: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remedy: Option<String>,
 }
 impl Check {
     pub fn new(name: impl Into<String>, status: Status, detail: impl Into<String>) -> Self {
@@ -22,7 +30,24 @@ impl Check {
             name: name.into(),
             status,
             detail: detail.into(),
+            outcome: None,
+            required: None,
+            observed: None,
+            remedy: None,
         }
+    }
+    pub fn with_evidence(
+        mut self,
+        outcome: Option<String>,
+        required: Option<String>,
+        observed: Option<String>,
+        remedy: Option<String>,
+    ) -> Self {
+        self.outcome = outcome;
+        self.required = required;
+        self.observed = observed;
+        self.remedy = remedy;
+        self
     }
 }
 #[derive(Debug, Serialize, Deserialize)]
@@ -35,6 +60,8 @@ pub struct Report {
     pub os_version: Option<String>,
     #[serde(default)]
     pub architecture: Option<crate::architecture::Architecture>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifest_source: Option<String>,
     pub checks: Vec<Check>,
 }
 impl Report {
@@ -48,6 +75,7 @@ impl Report {
             process_arch: architecture.process.clone(),
             architecture: Some(architecture),
             os_version: windows_version(),
+            manifest_source: None,
             checks: vec![],
         }
     }

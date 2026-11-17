@@ -38,6 +38,10 @@ enum Command {
         manifest: Option<PathBuf>,
         #[arg(long)]
         report: PathBuf,
+        #[arg(long)]
+        safe_probes: bool,
+        #[arg(long)]
+        infer_if_missing: bool,
     },
     /// Execute reviewed manifest commands only after all requirements pass.
     Build {
@@ -125,12 +129,42 @@ fn run() -> Result<i32> {
             project,
             manifest,
             report,
+            safe_probes,
+            infer_if_missing,
         } => {
             fresh(&report)?;
-            let m = Manifest::read(
-                &manifest.unwrap_or_else(|| project.join("contain.environment.json")),
-            )?;
-            output(environment::check(&m, &project), report)
+            let (m, source) = if let Some(path) = manifest {
+                (Manifest::read(&path)?, "custom_manifest".to_string())
+            } else {
+                let default_path = project.join("contain.environment.json");
+                if default_path.is_file() {
+                    (
+                        Manifest::read(&default_path)?,
+                        "contain.environment.json".to_string(),
+                    )
+                } else if infer_if_missing {
+                    (
+                        manifest::infer(&project)?,
+                        "inferred_from_project_files".to_string(),
+                    )
+                } else {
+                    (
+                        Manifest::read(&default_path)?,
+                        "contain.environment.json".to_string(),
+                    )
+                }
+            };
+            output(
+                environment::check_with_options(
+                    &m,
+                    &project,
+                    environment::CheckOptions {
+                        safe_probes,
+                        manifest_source: Some(source),
+                    },
+                ),
+                report,
+            )
         }
         Command::Build {
             project,
