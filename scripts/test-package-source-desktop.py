@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -82,7 +83,9 @@ class SourcePackageTests(unittest.TestCase):
         (self.viewer/'private.db').write_bytes(b'private');self.assertRejected()
     def test_lowercase_rust_notice_allowed_and_binary_rejected(self):
         nested=self.args.rust_licenses/'windows-sys-0.61.2';nested.mkdir()
-        (nested/'license-apache-2.0').write_text('Apache-2.0',encoding='utf-8')
+        notice=nested/'license-apache-2.0'
+        notice.write_text('Apache-2.0',encoding='utf-8')
+        os.utime(notice,(123456789,123456789))
         build=self.freeze()
         self.assertTrue(any(f['path']=='licenses/rust/windows-sys-0.61.2/license-apache-2.0' for f in build['files']))
         self.args.output=self.root/'delivery-bad'

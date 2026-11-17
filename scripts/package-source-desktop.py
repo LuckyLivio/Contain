@@ -67,7 +67,7 @@ def freeze(args):
     write(package/'BUILD.json',build)
     write(package/'CONTENTS.json',dict(schema_version=1,source_sha=source,files=[MODERN.identity(p,package) for p in sorted(package.rglob('*')) if p.is_file()]))
     archive=out/'contain-source-windows-x64.zip'
-    with zipfile.ZipFile(archive,'x',compression=zipfile.ZIP_DEFLATED,compresslevel=6) as z:
+    with zipfile.ZipFile(archive,'x',compression=zipfile.ZIP_DEFLATED,compresslevel=6,strict_timestamps=False) as z:
         for p in sorted(package.rglob('*')):
             if p.is_file():z.write(p,p.relative_to(package).as_posix())
     with zipfile.ZipFile(archive) as z: MODERN.verify_manifest(z)
