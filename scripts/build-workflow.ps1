@@ -29,8 +29,7 @@ try {
     . (Join-Path $PSScriptRoot 'workflow-rust-notices.ps1')
     Copy-WorkflowRustNotices 'contain-workflow' $files
     $zip = Join-Path $out 'contain-workflow-windows-x64.zip'
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    [IO.Compression.ZipFile]::CreateFromDirectory($files,$zip)
+    Write-WorkflowZip $files $zip
     $sha = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
     $exeSha = (Get-FileHash -LiteralPath (Join-Path $files 'contain-workflow.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
     $versionProcess=New-Object Diagnostics.ProcessStartInfo

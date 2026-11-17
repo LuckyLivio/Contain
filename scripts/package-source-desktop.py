@@ -66,16 +66,23 @@ def freeze(args):
                native_validation='not_run; separate receiver evidence required',files=file_rows)
     write(package/'BUILD.json',build)
     write(package/'CONTENTS.json',dict(schema_version=1,source_sha=source,files=[MODERN.identity(p,package) for p in sorted(package.rglob('*')) if p.is_file()]))
+    required_files=sorted(MODERN.tree_files(package))
     archive=out/'contain-source-windows-x64.zip'
     with zipfile.ZipFile(archive,'x',compression=zipfile.ZIP_DEFLATED,compresslevel=6,strict_timestamps=False) as z:
         for p in sorted(package.rglob('*')):
             if p.is_file():z.write(p,p.relative_to(package).as_posix())
     with zipfile.ZipFile(archive) as z: MODERN.verify_manifest(z)
+    probe_dir=out/'query-probe'
+    (probe_dir/'samples').mkdir(parents=True)
+    shutil.copyfile(package/'samples/viewer-demo.db',probe_dir/'samples/viewer-demo.db')
     query_args=['--db','samples/viewer-demo.db','--read-only','list','--json']
-    # Pin the actual specified test output, rather than assuming exit 0 proves its contents.
-    query=subprocess.check_output([str((package/'contain.exe').resolve()),*query_args],cwd=package)
+    try:
+        # Pin the actual specified test output without leaving SQLite WAL/SHM sidecars in the staged package.
+        query=subprocess.check_output([str((package/'contain.exe').resolve()),*query_args],cwd=probe_dir)
+    finally:
+        shutil.rmtree(probe_dir,ignore_errors=True)
     spec=dict(schema_version=1,target='windows-x64',sha256=sha(archive),entry='Contain.Viewer.exe',comparison_entry='contain.exe',
-              required_files=sorted(MODERN.tree_files(package)),launch=dict(args=[],timeout_ms=20000,expected_exit=None,window_title='Contain · '+MODERN.VERSION),
+              required_files=required_files,launch=dict(args=[],timeout_ms=20000,expected_exit=None,window_title='Contain · '+MODERN.VERSION),
               tests=[dict(name='Core exact version',program='contain.exe',args=['--version'],expected_exit=0,timeout_ms=10000,stdout_sha256=hashlib.sha256(version).hexdigest()),
                      dict(name='Synthetic sample read-only list',program='contain.exe',args=query_args,expected_exit=0,timeout_ms=20000,stdout_sha256=hashlib.sha256(query).hexdigest())])
     write(out/'package-spec.json',spec)

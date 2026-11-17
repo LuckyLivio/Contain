@@ -34,6 +34,9 @@ class SourcePackageTests(unittest.TestCase):
         if command[:3]==['git','status','--porcelain']:return b''
         if command==['dotnet','--version']:return P.MODERN.SDK+'\n'
         if command[-1]=='--version':return b'contain 0.3.2-beta.10\n'
+        cwd=Path(kwargs['cwd'])
+        (cwd/'samples/viewer-demo.db-wal').write_bytes(b'')
+        (cwd/'samples/viewer-demo.db-shm').write_bytes(b'\0'*32)
         return b'{"synthetic":true}\n'
     def freeze(self):
         with patch.object(P.subprocess,'check_output',side_effect=self.process),patch.object(P.LEGACY,'validate_sample') as sample,patch.object(P.LEGACY,'copy_runtime_licenses',return_value=[]):
@@ -48,6 +51,8 @@ class SourcePackageTests(unittest.TestCase):
         self.assertEqual(identity['entry_sha256'],P.sha(self.viewer/'Contain.Viewer.exe'))
         self.assertEqual(identity['native_acceptance'],'not_run')
         self.assertEqual(spec['comparison_entry'],'contain.exe');self.assertTrue(all(t['stdout_sha256'] for t in spec['tests']))
+        self.assertFalse(any(f.endswith(('-wal','-shm')) for f in spec['required_files']))
+        self.assertFalse(any(p.name.endswith(('-wal','-shm')) for p in (out/'desktop/samples').iterdir()))
         with zipfile.ZipFile(out/'contain-source-windows-x64.zip') as z:
             P.MODERN.verify_manifest(z)
             self.assertEqual(z.read('contain.exe'),self.core.read_bytes());self.assertEqual(z.read('Contain.Viewer.exe'),(self.viewer/'Contain.Viewer.exe').read_bytes())

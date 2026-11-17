@@ -24,7 +24,14 @@ try {
     $failCode = Invoke-WorkflowStep $failLog 'powershell.exe' @('-NoProfile','-File',$probeScript,'second arg','7')
     $failText = [IO.File]::ReadAllText($failLog, [Text.Encoding]::UTF8)
     if ($failCode -ne 7 -or $failText -notlike '*progress on stderr*') { throw 'nonzero exit or stderr log lost' }
+    $zipInput = Join-Path $tempDir 'zip-input/licenses/example-1.0.0'
+    New-Item -ItemType Directory -Path $zipInput -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $zipInput 'LICENSE-MIT'), 'MIT', (New-Object Text.UTF8Encoding $false))
+    $zipOut = Join-Path $tempDir 'posix.zip'
+    Write-WorkflowZip (Join-Path $tempDir 'zip-input') $zipOut
+    $rawZip = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($zipOut))
+    if (!$rawZip.Contains('licenses/example-1.0.0/LICENSE-MIT') -or $rawZip.Contains('licenses\example-1.0.0')) { throw 'ZIP entry path separator was not normalized to POSIX slash' }
 } finally {
     Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
 }
-Write-Output 'Toolchain policy fixtures: 8 passed (synthetic; native stderr/exit/argument checks included)'
+Write-Output 'Toolchain policy fixtures: 9 passed (synthetic; native stderr/exit/argument/ZIP-slash checks included)'

@@ -106,3 +106,18 @@ function Invoke-WorkflowStep([string]$LogPath, [string]$Program, [string[]]$Argu
     [IO.File]::WriteAllText($LogPath, ($stdout.Result + $separator + $stderr.Result), (New-Object Text.UTF8Encoding $false))
     return $process.ExitCode
 }
+function Write-WorkflowZip([string]$SourceDirectory, [string]$ZipPath) {
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $fullSource = [IO.Path]::GetFullPath($SourceDirectory).TrimEnd('\', '/')
+    $prefixLength = $fullSource.Length + 1
+    $archive = [IO.Compression.ZipFile]::Open($ZipPath, [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($item in (Get-ChildItem -LiteralPath $fullSource -Recurse -File | Sort-Object FullName)) {
+            $entryName = $item.FullName.Substring($prefixLength).Replace('\', '/')
+            [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $item.FullName, $entryName, [IO.Compression.CompressionLevel]::Optimal)
+        }
+    } finally {
+        $archive.Dispose()
+    }
+}
