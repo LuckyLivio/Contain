@@ -2,7 +2,7 @@
 
 让 Windows 项目换一台电脑也能构建，让发出去的包在别人电脑上也能运行，并能核实具体哪些检查通过。
 
-本分支实施第一阶段重构：独立 Rust CLI `contain-workflow`，不依赖旧 ETW 采集链。源码恢复和交付验收是两条独立流程；WPF 接入排在 CLI 验证之后。
+本分支实施第一阶段重构：独立 Rust CLI `contain-workflow`，不依赖旧 ETW 采集链。源码恢复和交付验收是两条独立流程；桌面端从“检查项目环境”页面开始复用 `contain-workflow` 的结构化报告，构建执行与交付包验收仍通过独立 CLI 完成。
 
 ## 接手源码、恢复开发环境
 
@@ -25,13 +25,13 @@ cargo run -p contain-workflow --locked -- verify --zip .\contain.zip --spec .\pa
 
 本分支第二轮已补齐本次 Rust/WPF 产物的桌面 ZIP 组装、独立 CLI 打包和 A/B 交接脚本，并记录实际选中的 MSVC/SDK。架构改用 IsWow64Process2，ARM64 仿真和未知状态单独记录。[完整命令与产物位置](docs/phase-one.md) · [本轮结果与合并阻塞](docs/phase-one-round2-results.md)。
 
-当前只有 Linux 实测和合成夹具、Windows MSVC 编译检查；**尚未产出本次提交的完整 Windows ZIP，干净 A/B Windows 实测未完成**。新 CLI 独立依赖门通过，仓库级依赖门仍被旧核心 SQLite 公告阻塞，不能据此宣称可合并。上轮实际 Beta.1 包检查及 PR #22 门禁的[历史证据](docs/phase-one-results.md)保留。
+已在原生 Windows 11 x64 开发机使用锁定工具链（Rust `1.100.0`、.NET SDK `10.0.403`、Python `3.12.10`、MSVC `14.44.35207`、Windows SDK `10.0.26100.0`）产出本次源码的完整桌面 ZIP 与独立 CLI ZIP，并通过开发机本机 `verify --run`、静态 CRT 导入表检查及隔离合成样例流程；**但从未安装开发工具的干净 Windows x64 接收机（快照 B）独立验收仍待完成**，不能将开发机运行结果等同于免开发工具验收。新 CLI 独立依赖门通过；原仓库级 SQLite 安全公告（`RUSTSEC-2026-0459`）已升级至 `rusqlite 0.41.1` / SQLite `3.54.1` 修复，但最新 RustSec 库对旧核心依赖 `chrono 0.4.45` 报告未维护（`RUSTSEC-2026-0543`），未添加忽略项，仓库级 `cargo deny` 仍保留为合并阻塞。上轮实际 Beta.1 包检查及 PR #22 门禁的[历史证据](docs/phase-one-results.md)保留。
 
 ## 后续里程碑
 
 - **陌生软件隔离试用**：后续设计隔离执行、权限和试用证据；第一阶段不提供隔离保护。
 - **配置回退**：后续设计配置备份、差异和可验证恢复；第一阶段不修改系统配置或提供回滚。
-- **WPF 接入**：在独立 CLI 两条流程稳定后接入，不在本阶段替换旧界面。
+- **WPF 渐进接入**：桌面端先行接入只读“检查项目环境”页面并随桌面包附带本次构建的 `contain-workflow.exe`；项目构建执行与交付包验证界面排在后续阶段，不自动安装依赖或修改系统配置。
 
 ## 旧版安装记录工具与历史证据
 
