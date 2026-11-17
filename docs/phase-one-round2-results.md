@@ -166,3 +166,29 @@ Windows 实测通过。
   - 当前机器无独立的干净无开发工具 Windows x64 交互环境，对上轮原包及本轮候选包的 `-Stage Package` 免工具快照 B 验收标为**待验证**。
   - 非前台沙盒 Win32 桌面中 `PrintWindow` 返回未合成纯白表面，已丢弃无效图像，不在记录中充当真实截图。
   - 仓库级 `cargo deny` 仍保留 `chrono 0.4.45` 未维护告警（`RUSTSEC-2026-0543`）作为合并阻塞记录。
+
+## 桌面端“重新检查”已解决项反馈与真实 SDK 恢复验收补充（`feat/environment-recheck-diff`）
+
+在完整保留 `delivery-04` 与 `delivery-envcheck-01` 原包及开发机现有工具链的前提下，先用上轮候选包走通真实缺项与并行补装基线，再于代码修订 `81650b12fec9dc262f9cdaa56c751e9cd8c73c94` 交付同窗口重新检查恢复提示与 `.NET SDK` 指引改进：
+
+- **功能与探测改进**：
+  - 当目标项目目录存在禁用自动前滚的 `global.json` 导致 `dotnet --version` 非零退出时，`contain-workflow` 回退执行只读 `dotnet --list-sdks` 提取已安装 SDK 版本号，使报告准确输出 `version_mismatch` 与实际已装版本，而非误报“未检测到”。
+  - 同一窗口、同一项目且环境声明摘要（`environment_manifest` canonical JSON SHA-256 与声明要求）未变时，“重新检查”仅在新报告确认状态变为 `passed` 后展示“已解决：…”（如 `已解决：.NET SDK (dotnet) 10.0.404`），仍缺项继续置顶；切换项目或修改项目环境要求后自动开始新的比较，不会将降低版本要求标记为已解决。
+  - 重新检查过程中若检查程序或配置文件出错，页面保留上一次有效检查结果并同时标明上次有效结果时间与本次失败时间。
+  - 对受支持发行段的微软正式 `.NET SDK`（8.0 / 9.0 / 10.0），显示明确版本号与官方通道下载页（如 `https://dotnet.microsoft.com/download/dotnet/10.0`）及用户自主决定是否安装的说明；对项目清单或推断生成的说明显式标注来源；对 `10.0.999` 等测试占位版本保留版本不匹配提示，明确不向用户承诺可从官方渠道下载。
+- **候选包冻结身份（`source_sha = 81650b12fec9dc262f9cdaa56c751e9cd8c73c94`）**：
+  - 桌面候选包 `contain-source-windows-x64.zip`：`6c6c309ab3b96e95e1d8c64ef028048949f5704af84bcfe4c1a93c7e50afa927`
+    （`Contain.Viewer.exe`：`63bf75d587b9cace28bd37ceb5a5d4fc678b72123e02f00c367c6f4155269adf`，
+    `contain.exe`：`ae900f174cb20f235b4ccca9b8b6139c52e45d6b2a46552a9ebbd4f94a46d167`，
+    随包 `contain-workflow.exe`：`b899fe025d7d360600c28a115cf31de4f6bf4b77ba982e222b59473ee26aad4f`，
+    `package-spec.json`：`6c92fa5931989f2d644c3a6ca1195c47532fa75bfe706a3220347ad804b97c83`）。
+  - 独立 CLI 包 `contain-workflow-windows-x64.zip`：`d27d53cdb9a518fe75a64c4cab437d6ea3c57b86ac0f63d5665dbaf95a0f21ef`
+    （`contain-workflow.exe`：`5f4f214a02b14d0754e501684e0053c219a924d84baf5bfb988174130a499696`，
+    `package-spec.json`：`0a8b3833870fde042155936158dffbfc6f217eec0e0e3e49717cbc4ffcf1ee55`）。
+- **最终 ZIP 解压 `Contain.Viewer.exe` 实测结果（记录结论：恢复成功）**：
+  - 双包 `verify --run`（带空格工作目录）均退出 `0`；桌面模型回归 **44/44** 通过，`contain-workflow` **38/38** 通过。
+  - 在独立可回滚 Windows `.NET` 测试环境中（初始仅含 `.NET SDK 10.0.403`），使用固定要求微软已正式发布的 `.NET SDK 10.0.404` 的测试项目（清单 canonical JSON SHA-256 固定为 `606929f9ecdbf32c3ecfa3b7cae019829bf2a06d7980716dd74da98d91a0ad00`，全程未修改）：
+    1. 首次检查报告“需要补齐 1 项：项目要求 .NET SDK (dotnet) 10.0.404，当前检测到 10.0.403”，并显示 `.NET 10.0` 官方下载页与清单来源说明，保留首次完整报告。
+    2. 在该独立测试环境并行补装微软官方 `.NET SDK 10.0.404`，同一安装位置 `dotnet --list-sdks` 独立确认同时存在 `10.0.403` 与 `10.0.404`，开发机原有系统与工具链目录均未变动。
+    3. 在同一窗口点击“重新检查”，新报告确认通过（清单 SHA-256 前后一致），页面直接显示 `已解决：.NET SDK (dotnet) 10.0.404` 及前后版本对比摘要，保留复查完整报告，实测判定为**恢复成功**。
+  - 同包进一步核验：切换至 `10.0.999` 样例时清空上一项目恢复记录并明确提示不承诺官方可下载；构造配置文件解析失败后点击“重新检查”，页面完整保留上次有效结果并同时标明上次有效时间与本次失败时间。
