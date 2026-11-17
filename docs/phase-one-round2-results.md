@@ -93,3 +93,38 @@ Windows 实测通过。
 
 后续需要实际执行并审阅上述 Windows 收据，以及单独处理 SQLite 合并阻塞；无需再
 扩展 WPF 功能或增加试用/回退功能才能继续这些验收。
+
+## 开发机 Windows 原生首轮构建与本机运行补充（`fix/windows-first-run`）
+
+在原生 Windows 11 x64 开发机（`10.0.26300`，`IsWow64Process2` 确认 `native=x86_64`、
+`process=x86_64`、`emulated=false`，实际窗口 144 DPI）使用锁定工具链（Rust `1.100.0`、
+.NET SDK `10.0.403`、Python `3.12.10` x64、MSVC `14.44.35207`、Windows SDK `10.0.26100.0`）
+完成了产物验证修订 `143443807c634782bb64618daf3e2c344e5f94b1` 的构建、组包与本机运行验证：
+
+- **构建与打包修复**：修复 Windows PowerShell 5.1 原生进程 `stderr` 重定向提前终止
+  （`Invoke-WorkflowStep`）、Windows 依赖小写 `license-apache-2.0` 许可收集白名单、Cargo
+  注册表源码包早于 1980 年时间戳的 ZIP 写入夹紧、CLI ZIP 子目录正斜杠 `/` 归一化
+  （`Write-WorkflowZip`）以及合成样例只读输出探测产生 `-shm`/`-wal` 混入 `required_files`
+  的问题，并补充无硬编码私有路径的本地开发桌面启动入口 `scripts/start-local-desktop.ps1`/`.cmd`。
+- **冻结产物身份（`source_sha = 143443807c634782bb64618daf3e2c344e5f94b1`）**：
+  - `contain-source-windows-x64.zip`：`792a4ac01e47b160713d1b1601e7600f1bf23baec7868e6bf97e09799fecd4a0`
+    （`Contain.Viewer.exe`：`5c47e636bccca19886b88054e0d053aa7555fea5fbf1807f917c152533f9bf7f`，
+    `contain.exe`：`352676d6feabc40dee4642c15c9c97c799b064ba2c116a4186f9d7aae464af16`，
+    `package-spec.json`：`e343e79efadd950063026d300ba09ee7e9e9842974bd0bffd5ebd856b940215c`）。
+  - `contain-workflow-windows-x64.zip`：`f94afc577339122668c91c5e996bf0889b8ecc04a845bc89ff27a4d3b2ecbe08`
+    （`contain-workflow.exe`：`6703e86f1ffea35c34be8ea04936318610c3d9ca15764ae4c872e36c7323b5af`，
+    `package-spec.json`：`057e352be1ebd2ce558ccbafdd1f407a3e12e7be2e1f2207964583d5dd40f8c4`）。
+- **开发机本机验证**：独立解压的 `contain-workflow.exe verify --run` 对 CLI ZIP 与桌面 ZIP
+  （含带空格工作目录）均退出 `0`；PE 导入表核验 `contain-workflow.exe` 与 `contain.exe`
+  均无 `vcruntime140.dll` 动态依赖。隔离合成库 UIA 检查完成会话读取、事件浏览、关键词搜索、
+  依据读取、事件 ID 复制与带空格异目录冷重启（均退出 `0`，未触碰真实个人库），包内模型导出
+  本页与匹配 HTML 报告核验通过。工作区 `fmt`、`clippy -D warnings`、`nextest`（427 通过、
+  7 跳过）、`llvm-cov`（77.10% 行 / 77.73% 函数，`storage.rs` 97.41% 行）通过。
+- **保留边界与合并阻塞**：
+  - 仓库级 SQLite 公告 **RUSTSEC-2026-0459 已由 `rusqlite 0.41.1` / SQLite `3.54.1` 修复**；
+    但最新 RustSec 库对旧核心依赖 `chrono 0.4.45` 报告 `RUSTSEC-2026-0543`（unmaintained），
+    未添加忽略项，仓库级 `cargo deny` 仍失败（独立 `contain-workflow` 不依赖 `chrono`）。
+  - 当前会话位于非前台沙盒 Win32 桌面（`GetForegroundWindow=0`），依赖前台焦点的系统
+    `#32770` 文件选择器物理点击、合成键盘 `Space` 焦点投递及 `PrintWindow` 可见像素截图未完成。
+  - 本机已安装开发工具，不能替代从未安装开发工具的快照 B 干净接收机验收；新 `contain-workflow`
+    流程尚未接入 WPF 图形界面。
