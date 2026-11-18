@@ -61,12 +61,19 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
     private readonly HashSet<Task> pendingOperations = [];
 
     private FileSystemWatcher? manifestWatcher;
+    private FileSystemWatcher? onboardingWatcher;
     private bool disposed;
     private bool checking;
     private bool building;
     private bool packaging;
+    private bool applyingOnboarding;
     private string folderInput = "";
     private ProjectFolderInfo? currentProject;
+    private DotnetOnboardingPreviewData? onboardingPreview;
+    private bool onboardingDetailsExpanded;
+    private string onboardingDetailsText = "";
+    private string onboardingSavedNotice = "";
+    private string onboardingChangeNotice = "";
     private CheckSnapshot? previousSnapshot;
     private BuildManifestPreview? currentPreview;
     private string checkedManifestFileSha256 = "";
@@ -135,7 +142,8 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
     public bool IsChecking => checking;
     public bool IsBuilding => building;
     public bool IsPackaging => packaging;
-    public bool CanEditProjectSelection => !disposed && !building && !packaging;
+    public bool IsApplyingOnboarding => applyingOnboarding;
+    public bool CanEditProjectSelection => !disposed && !building && !packaging && !applyingOnboarding;
     public bool HasProject => currentProject is not null;
     public string ProjectName => currentProject?.ProjectName ?? "尚未选择项目文件夹";
     public string ProjectPath => currentProject?.ProjectPath ?? "";
@@ -145,18 +153,74 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         set => ApplyFolderInput(value ?? "");
     }
 
-    public string SelectionScopeNote => currentProject is null ? "" : currentProject.ManifestKind switch
-    {
-        ProjectManifestKind.EnvironmentManifest =>
-            "已识别 contain.environment.json。点击“开始检查”后只运行首版受支持的只读工具与 Windows 工具链探测；不会自动安装依赖或自动启动构建。",
-        ProjectManifestKind.DeclaredProjectFiles =>
-            $"未找到 contain.environment.json；检测到 {string.Join("、", currentProject.DetectedFiles)}。点击“开始检查”将复用 infer 提取已声明的精确工具版本，无法从现有文件可靠判断的 MSVC/SDK、环境变量与构建项将标为“待确认”。",
-        _ =>
-            "未找到 contain.environment.json，也未发现受支持的根目录声明文件（Cargo.toml、rust-toolchain.toml、global.json）。点击“开始检查”只能核验本机 Windows x64 平台，项目依赖将标为“待确认”。"
-    };
+    public string SelectionScopeNote => currentProject is null
+        ? ""
+        : IsOnboardingReadyToConfirm
+            ? $"未找到 contain.environment.json；已只读识别根目录 {onboardingPreview!.CsprojFile}（选择与预览期间未运行项目代码或 MSBuild，也未写入任何文件）。"
+            : IsOnboardingUnsupported
+                ? "未找到 contain.environment.json；已只读检查项目目录结构（未运行任何项目代码，也未写入任何文件）。"
+                : currentProject.ManifestKind switch
+                {
+                    ProjectManifestKind.EnvironmentManifest when !string.IsNullOrWhiteSpace(currentProject.ExistingInstallerAppId) =>
+                        $"已识别 contain.environment.json，并复用已有安装身份 contain.installer.json（{{{currentProject.ExistingInstallerAppId}}}）。点击“开始检查”后只运行首版受支持的只读探测，不会自动安装依赖或自动启动构建。",
+                    ProjectManifestKind.EnvironmentManifest =>
+                        "已识别 contain.environment.json。点击“开始检查”后只运行首版受支持的只读工具与 Windows 工具链探测；不会自动安装依赖或自动启动构建。",
+                    ProjectManifestKind.DeclaredProjectFiles =>
+                        $"未找到 contain.environment.json；检测到 {string.Join("、", currentProject.DetectedFiles)}。点击“开始检查”将复用 infer 提取已声明的精确工具版本，无法从现有文件可靠判断的 MSVC/SDK、环境变量与构建项将标为“待确认”。",
+                    _ =>
+                        "未找到 contain.environment.json，也未发现受支持的根目录声明文件（Cargo.toml、rust-toolchain.toml、global.json）。点击“开始检查”只能核验本机 Windows x64 平台，项目依赖将标为“待确认”。"
+                };
 
-    public bool CanStartCheck => !disposed && !checking && !building && !packaging && currentProject is not null;
-    public bool CanRecheck => !disposed && !checking && !building && !packaging && currentProject is not null && HasOutcome;
+    public bool IsOnboardingReadyToConfirm => onboardingPreview is { Status: "ready_to_confirm" };
+    public bool IsOnboardingUnsupported => onboardingPreview is { Status: "unsupported" };
+    public bool CanConfirmOnboarding =>
+        !disposed
+        && !checking
+        && !building
+        && !packaging
+        && !applyingOnboarding
+        && IsOnboardingReadyToConfirm;
+    public bool CanCancelOnboarding =>
+        !disposed
+        && !building
+        && !packaging
+        && !applyingOnboarding
+        && (IsOnboardingReadyToConfirm || IsOnboardingUnsupported);
+
+    public string OnboardingHeadline => onboardingPreview is { Status: "ready_to_confirm" } p
+        ? $"已识别 {p.AppName} · 控制台应用"
+        : "";
+    public string OnboardingSubtitle => onboardingPreview is { Status: "ready_to_confirm" }
+        ? "将生成可独立安装的 Windows x64 版本（自包含、多文件发布，接收者无需安装 .NET）"
+        : "";
+    public string OnboardingProvenanceSummary => BuildOnboardingProvenanceSummary();
+    public string OnboardingSaveTargetNote => onboardingPreview is { Status: "ready_to_confirm" } p && currentProject is not null
+        ? $"点击“使用此配置”后，将在项目目录保存可复用的 {Path.Combine(currentProject.ProjectPath, "contain.environment.json")}，发布产物输出到独立目录 {p.PublishDir}；全程不修改 {p.CsprojFile}，也不覆盖原有 bin/ 或 obj/ 输出。点击“取消”不写入任何文件。"
+        : "";
+    public bool HasOnboardingChangeNotice => onboardingChangeNotice.Length > 0 && IsOnboardingReadyToConfirm;
+    public string OnboardingChangeNotice => onboardingChangeNotice;
+    public bool OnboardingDetailsExpanded
+    {
+        get => onboardingDetailsExpanded;
+        set => SetProperty(ref onboardingDetailsExpanded, value);
+    }
+    public string OnboardingDetailsText => onboardingDetailsText;
+    public bool HasOnboardingSavedNotice => onboardingSavedNotice.Length > 0;
+    public string OnboardingSavedNotice => onboardingSavedNotice;
+    public string OnboardingUnsupportedTitle => onboardingPreview?.UnsupportedTitle ?? "";
+    public string OnboardingUnsupportedReason => onboardingPreview?.UnsupportedReason ?? "";
+    public string OnboardingUnsupportedNextStep => onboardingPreview?.ActionableNextStep ?? "";
+
+    public bool CanStartCheck =>
+        !disposed
+        && !checking
+        && !building
+        && !packaging
+        && !applyingOnboarding
+        && currentProject is not null
+        && !IsOnboardingReadyToConfirm
+        && !IsOnboardingUnsupported;
+    public bool CanRecheck => !disposed && !checking && !building && !packaging && !applyingOnboarding && currentProject is not null && HasOutcome;
     public bool HasOutcome => outcome != EnvironmentOutcomeKind.None;
     public EnvironmentOutcomeKind Outcome => outcome;
     public bool IsReady => outcome == EnvironmentOutcomeKind.Ready;
@@ -377,7 +441,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
     public bool SelectProject(string path)
     {
-        if (disposed || building || packaging) return false;
+        if (disposed || building || packaging || applyingOnboarding) return false;
         requests.Invalidate();
         checking = false;
         DisposeManifestWatcher();
@@ -388,9 +452,27 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
             var info = service.InspectProject(path);
             currentProject = info;
             folderInput = info.ProjectPath;
+
+            if (info.ManifestKind != ProjectManifestKind.EnvironmentManifest)
+            {
+                var onboarding = service.InspectDotnetOnboarding(info.ProjectPath);
+                if (onboarding is not null)
+                {
+                    ApplyOnboardingPreview(onboarding, info.ProjectPath);
+                    StartOnboardingDirectoryWatcher(info.ProjectPath);
+                    statusMessage = onboarding.Status == "ready_to_confirm"
+                        ? $"已只读识别控制台应用“{onboarding.AppName}”，请核对下方配置并点击“使用此配置”。"
+                        : onboarding.UnsupportedTitle ?? "当前文件夹暂不能自动生成单项目控制台发布配置。";
+                    NotifyAll();
+                    return true;
+                }
+            }
+
             ApplyManifestPreview(service.InspectBuildPreview(info.ProjectPath));
             StartManifestWatcher(info.ProjectPath);
-            statusMessage = $"已选择项目“{info.ProjectName}”，点击“开始检查”运行探测。";
+            statusMessage = !string.IsNullOrWhiteSpace(info.ExistingInstallerAppId)
+                ? $"已选择项目“{info.ProjectName}”（已复用现有配置与安装身份），点击“开始检查”运行探测。"
+                : $"已选择项目“{info.ProjectName}”，点击“开始检查”运行探测。";
             NotifyAll();
             return true;
         }
@@ -406,6 +488,192 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
             statusMessage = error.Message;
             NotifyAll();
             return false;
+        }
+    }
+
+    public void CancelOnboarding()
+    {
+        if (disposed || building || packaging || applyingOnboarding) return;
+        requests.Invalidate();
+        checking = false;
+        DisposeManifestWatcher();
+        currentProject = null;
+        folderInput = "";
+        ResetProjectSession();
+        statusMessage = "已取消配置预览，未向项目文件夹写入任何文件。";
+        NotifyAll();
+    }
+
+    public Task<bool> ConfirmOnboardingAsync() => Track(() => ConfirmOnboardingCoreAsync());
+
+    private async Task<bool> ConfirmOnboardingCoreAsync()
+    {
+        if (!CanConfirmOnboarding || currentProject is null || onboardingPreview is null)
+            return false;
+
+        var targetProject = currentProject;
+        var expectedSha = onboardingPreview.SourceFingerprintSha256;
+        var ticket = requests.Begin();
+        applyingOnboarding = true;
+        onboardingChangeNotice = "";
+        statusMessage = $"正在保存“{targetProject.ProjectName}”的发布配置文件…";
+        NotifyAll();
+
+        try
+        {
+            var applyOutcome = await service.ApplyDotnetOnboardingAsync(
+                targetProject.ProjectPath,
+                expectedSha,
+                ticket.Token).ConfigureAwait(true);
+
+            if (!IsStillCurrent(ticket, targetProject.ProjectPath))
+                return false;
+
+            applyingOnboarding = false;
+
+            switch (applyOutcome.Status)
+            {
+                case "applied":
+                {
+                    DisposeOnboardingWatcher();
+                    ClearOnboardingStateCore();
+                    var savedName = applyOutcome.SavedManifestFilename ?? "contain.environment.json";
+                    var savedFullPath = Path.Combine(targetProject.ProjectPath, savedName);
+                    var csprojName = applyOutcome.Inspection.CsprojFile ?? ".csproj";
+                    var refreshedInfo = service.InspectProject(targetProject.ProjectPath);
+                    currentProject = refreshedInfo;
+                    ApplyManifestPreview(service.InspectBuildPreview(refreshedInfo.ProjectPath));
+                    StartManifestWatcher(refreshedInfo.ProjectPath);
+                    onboardingSavedNotice = $"配置已保存至：{savedFullPath}（未修改 {csprojName}，也未覆盖原有 bin/ 或 obj/ 目录）。现在可直接点击“开始检查” → “开始构建” → “生成安装包”。";
+                    statusMessage = $"已保存 {savedName}，请点击“开始检查”继续。";
+                    NotifyAll();
+                    return true;
+                }
+                case "preserved_existing_manifest":
+                {
+                    DisposeOnboardingWatcher();
+                    ClearOnboardingStateCore();
+                    var existingFullPath = Path.Combine(targetProject.ProjectPath, "contain.environment.json");
+                    var refreshedInfo = service.InspectProject(targetProject.ProjectPath);
+                    currentProject = refreshedInfo;
+                    ApplyManifestPreview(service.InspectBuildPreview(refreshedInfo.ProjectPath));
+                    StartManifestWatcher(refreshedInfo.ProjectPath);
+                    onboardingSavedNotice = $"检测到项目目录中已存在 {existingFullPath}，已直接保留并使用该配置文件（未覆盖原文件）。现在可点击“开始检查”。";
+                    statusMessage = "检测到已有 contain.environment.json，已保留并加载现有配置。";
+                    NotifyAll();
+                    return true;
+                }
+                case "source_changed_refresh_required":
+                {
+                    ApplyOnboardingPreview(applyOutcome.Inspection, targetProject.ProjectPath);
+                    if (applyOutcome.Inspection.Status == "ready_to_confirm")
+                    {
+                        onboardingChangeNotice = "预览期间检测到项目文件已变更，尚未写入配置文件；已按最新项目文件刷新下方预览，请核对后再次点击“使用此配置”。";
+                        statusMessage = "项目文件已变更，已重新读取配置预览，请再次确认。";
+                    }
+                    else
+                    {
+                        statusMessage = applyOutcome.Inspection.UnsupportedTitle ?? "项目文件变更后暂不支持自动生成配置。";
+                    }
+                    NotifyAll();
+                    return false;
+                }
+                default:
+                {
+                    ApplyOnboardingPreview(applyOutcome.Inspection, targetProject.ProjectPath);
+                    statusMessage = applyOutcome.Inspection.UnsupportedTitle ?? "当前项目暂不能自动生成发布配置。";
+                    NotifyAll();
+                    return false;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (!requests.IsCurrent(ticket))
+        {
+            applyingOnboarding = false;
+            return false;
+        }
+        catch (EnvironmentCheckException error)
+        {
+            if (!IsStillCurrent(ticket, targetProject.ProjectPath))
+                return false;
+
+            applyingOnboarding = false;
+            outcome = EnvironmentOutcomeKind.CheckerError;
+            headline = "未能保存项目发布配置";
+            outcomeNote = error.Message;
+            errorDetail = error.Diagnostic;
+            statusMessage = error.Message;
+            NotifyAll();
+            return false;
+        }
+        catch (Exception error)
+        {
+            if (!IsStillCurrent(ticket, targetProject.ProjectPath))
+                return false;
+
+            applyingOnboarding = false;
+            outcome = EnvironmentOutcomeKind.CheckerError;
+            headline = "保存项目发布配置时发生异常";
+            outcomeNote = "调用配置写入程序时出现未预期错误。";
+            errorDetail = $"{error.GetType().Name}: {error.Message}";
+            statusMessage = "保存发布配置时发生异常。";
+            NotifyAll();
+            return false;
+        }
+    }
+
+    public void RefreshOnboardingPreviewFromDisk()
+    {
+        if (disposed || applyingOnboarding || currentProject is null || onboardingPreview is null)
+            return;
+
+        var projectDir = currentProject.ProjectPath;
+        var manifestPath = Path.Combine(projectDir, "contain.environment.json");
+        if (File.Exists(manifestPath))
+        {
+            DisposeOnboardingWatcher();
+            ClearOnboardingStateCore();
+            currentProject = service.InspectProject(projectDir);
+            ApplyManifestPreview(service.InspectBuildPreview(projectDir));
+            StartManifestWatcher(projectDir);
+            onboardingSavedNotice = $"检测到项目目录中新建了 {manifestPath}，已直接保留并使用该配置文件（未覆盖原文件）。";
+            statusMessage = "检测到新建的 contain.environment.json，已保留并加载现有配置。";
+            NotifyAll();
+            return;
+        }
+
+        try
+        {
+            var fresh = service.InspectDotnetOnboarding(projectDir);
+            if (fresh is null)
+            {
+                DisposeOnboardingWatcher();
+                ClearOnboardingStateCore();
+                currentProject = service.InspectProject(projectDir);
+                ApplyManifestPreview(service.InspectBuildPreview(projectDir));
+                NotifyAll();
+                return;
+            }
+
+            if (!string.Equals(fresh.Status, onboardingPreview.Status, StringComparison.Ordinal)
+                || !string.Equals(fresh.SourceFingerprintSha256, onboardingPreview.SourceFingerprintSha256, StringComparison.Ordinal))
+            {
+                ApplyOnboardingPreview(fresh, projectDir);
+                if (fresh.Status == "ready_to_confirm")
+                {
+                    onboardingChangeNotice = "检测到项目文件已更新，已重新读取只读预览（未写入任何文件）。";
+                    statusMessage = $"检测到“{currentProject.ProjectName}”项目文件已更新，已刷新配置预览。";
+                }
+                else
+                {
+                    statusMessage = fresh.UnsupportedTitle ?? "项目文件变更后暂不支持自动生成配置。";
+                }
+                NotifyAll();
+            }
+        }
+        catch (EnvironmentCheckException)
+        {
+            // Transient file write in progress; next file event or confirmation re-validates deterministically.
         }
     }
 
@@ -428,7 +696,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
     private void ApplyFolderInput(string rawValue)
     {
-        if (disposed || building || packaging || string.Equals(folderInput, rawValue, StringComparison.Ordinal)) return;
+        if (disposed || building || packaging || applyingOnboarding || string.Equals(folderInput, rawValue, StringComparison.Ordinal)) return;
         folderInput = rawValue;
         OnPropertyChanged(nameof(FolderInput));
 
@@ -1255,6 +1523,123 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         buildFullCommandsText = sb.ToString().TrimEnd();
     }
 
+    private void ApplyOnboardingPreview(DotnetOnboardingPreviewData preview, string projectPath)
+    {
+        onboardingPreview = preview;
+        onboardingDetailsExpanded = false;
+        onboardingChangeNotice = "";
+
+        if (preview.Status != "ready_to_confirm")
+        {
+            onboardingDetailsText = "";
+            return;
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"发布命令：{preview.PublishCommand}");
+        sb.AppendLine($"隔离发布输出目录：{preview.PublishDir}（位于 {projectPath} 下）");
+        sb.AppendLine($"启动与验证入口：{preview.EntryExecutable}");
+        sb.AppendLine($"配置文件保存位置：{Path.Combine(projectPath, "contain.environment.json")}");
+        sb.AppendLine();
+        sb.AppendLine("--- 识别依据（区分项目文件声明与建议配置） ---");
+        foreach (var row in preview.EvidenceFields)
+        {
+            sb.AppendLine($"- {row.Label}：{row.Value}  [来源：{row.Source}]");
+        }
+        if (!string.IsNullOrWhiteSpace(preview.ProposedManifestJson))
+        {
+            sb.AppendLine();
+            sb.AppendLine("--- 待写入的 contain.environment.json ---");
+            sb.AppendLine(preview.ProposedManifestJson);
+        }
+        onboardingDetailsText = sb.ToString().TrimEnd();
+    }
+
+    private string BuildOnboardingProvenanceSummary()
+    {
+        if (onboardingPreview is not { Status: "ready_to_confirm" } p)
+            return "";
+
+        var entryDesc = !string.IsNullOrWhiteSpace(p.CsprojFile)
+            && !string.IsNullOrWhiteSpace(p.AssemblyName)
+            && !string.Equals(p.CsprojFile, p.AssemblyName + ".csproj", StringComparison.OrdinalIgnoreCase)
+                ? $"启动入口 {p.EntryExecutable}（按 .csproj 声明的 AssemblyName={p.AssemblyName}，非项目文件名）"
+                : $"启动入口 {p.EntryExecutable}";
+
+        var hostSdkNote = p.HostDetectedCompatibleSdks.Count > 0
+            ? $"（本机已检测到兼容 SDK：{string.Join("、", p.HostDetectedCompatibleSdks)}）"
+            : "（本机当前尚未检测到兼容 SDK，将在下一步检查中提示补齐）";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"项目声明：{p.CsprojFile} · 目标框架 {p.TargetFramework} · {entryDesc}");
+        sb.Append($"环境与建议项：{p.SdkRequirementSummary}［来源：{p.SdkSource}］{hostSdkNote}；安装包版本 {p.AppVersion}［来源：{p.VersionSource}］");
+        if (p.HasExistingInstallerIdentity && !string.IsNullOrWhiteSpace(p.ExistingAppId))
+        {
+            sb.AppendLine();
+            sb.Append($"已有安装身份：检测到 contain.installer.json，生成安装包时将继续复用 AppId {{{p.ExistingAppId}}}");
+        }
+        return sb.ToString();
+    }
+
+    private void ClearOnboardingStateCore()
+    {
+        onboardingPreview = null;
+        onboardingDetailsExpanded = false;
+        onboardingDetailsText = "";
+        onboardingChangeNotice = "";
+    }
+
+    private void StartOnboardingDirectoryWatcher(string projectDir)
+    {
+        DisposeOnboardingWatcher();
+        try
+        {
+            var watcher = new FileSystemWatcher(projectDir, "*")
+            {
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime,
+                IncludeSubdirectories = false
+            };
+            void OnEvent(object sender, FileSystemEventArgs e)
+            {
+                if (e.Name is not null && e.Name.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
+                    return;
+                DispatchOnboardingRefresh(projectDir);
+            }
+            watcher.Changed += OnEvent;
+            watcher.Created += OnEvent;
+            watcher.Deleted += OnEvent;
+            watcher.Renamed += (_, e) => OnEvent(watcher, e);
+            watcher.EnableRaisingEvents = true;
+            onboardingWatcher = watcher;
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
+        {
+            onboardingWatcher = null;
+        }
+    }
+
+    private void DispatchOnboardingRefresh(string watchedDir)
+    {
+        if (disposed) return;
+        uiDispatch(() =>
+        {
+            if (disposed || currentProject is null || onboardingPreview is null) return;
+            if (!string.Equals(currentProject.ProjectPath, watchedDir, StringComparison.OrdinalIgnoreCase))
+                return;
+            RefreshOnboardingPreviewFromDisk();
+        });
+    }
+
+    private void DisposeOnboardingWatcher()
+    {
+        var w = Interlocked.Exchange(ref onboardingWatcher, null);
+        if (w is not null)
+        {
+            try { w.EnableRaisingEvents = false; } catch { }
+            w.Dispose();
+        }
+    }
+
     private void StartManifestWatcher(string projectDir)
     {
         try
@@ -1294,6 +1679,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
     private void DisposeManifestWatcher()
     {
+        DisposeOnboardingWatcher();
         var w = Interlocked.Exchange(ref manifestWatcher, null);
         if (w is not null)
         {
@@ -1406,6 +1792,19 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
         var trimmed = required.Trim();
         var parts = trimmed.Split('.');
+        if (parts.Length == 2
+            && parts.All(static p => p.Length > 0 && p.All(char.IsAsciiDigit))
+            && int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var majorBand)
+            && int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var minorBand)
+            && majorBand is 8 or 9 or 10
+            && minorBand == 0)
+        {
+            var url = $"https://dotnet.microsoft.com/download/dotnet/{majorBand}.0";
+            return (
+                true,
+                $"官方获取入口：前往微软 .NET {majorBand}.0 下载页 {url} 获取任意正式版 .NET {majorBand}.0 SDK（Windows x64，可与本机现有 SDK 并行安装；安装后可用 dotnet --list-sdks 核对，是否安装由你决定）。");
+        }
+
         if (parts.Length == 3
             && parts.All(static p => p.Length > 0 && p.All(char.IsAsciiDigit))
             && int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var major)
@@ -1616,6 +2015,8 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         installerMatchesCurrentBuild = false;
         lastOpenedInstallerDirectory = "";
         installerReceiptExpanded = false;
+        ClearOnboardingStateCore();
+        onboardingSavedNotice = "";
         ClearOutcomeCore();
         ClearBuildResultCore();
     }
@@ -1688,12 +2089,30 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsChecking));
         OnPropertyChanged(nameof(IsBuilding));
         OnPropertyChanged(nameof(IsPackaging));
+        OnPropertyChanged(nameof(IsApplyingOnboarding));
         OnPropertyChanged(nameof(CanEditProjectSelection));
         OnPropertyChanged(nameof(HasProject));
         OnPropertyChanged(nameof(ProjectName));
         OnPropertyChanged(nameof(ProjectPath));
         OnPropertyChanged(nameof(FolderInput));
         OnPropertyChanged(nameof(SelectionScopeNote));
+        OnPropertyChanged(nameof(IsOnboardingReadyToConfirm));
+        OnPropertyChanged(nameof(IsOnboardingUnsupported));
+        OnPropertyChanged(nameof(CanConfirmOnboarding));
+        OnPropertyChanged(nameof(CanCancelOnboarding));
+        OnPropertyChanged(nameof(OnboardingHeadline));
+        OnPropertyChanged(nameof(OnboardingSubtitle));
+        OnPropertyChanged(nameof(OnboardingProvenanceSummary));
+        OnPropertyChanged(nameof(OnboardingSaveTargetNote));
+        OnPropertyChanged(nameof(HasOnboardingChangeNotice));
+        OnPropertyChanged(nameof(OnboardingChangeNotice));
+        OnPropertyChanged(nameof(OnboardingDetailsExpanded));
+        OnPropertyChanged(nameof(OnboardingDetailsText));
+        OnPropertyChanged(nameof(HasOnboardingSavedNotice));
+        OnPropertyChanged(nameof(OnboardingSavedNotice));
+        OnPropertyChanged(nameof(OnboardingUnsupportedTitle));
+        OnPropertyChanged(nameof(OnboardingUnsupportedReason));
+        OnPropertyChanged(nameof(OnboardingUnsupportedNextStep));
         OnPropertyChanged(nameof(CanStartCheck));
         OnPropertyChanged(nameof(CanRecheck));
         OnPropertyChanged(nameof(HasOutcome));

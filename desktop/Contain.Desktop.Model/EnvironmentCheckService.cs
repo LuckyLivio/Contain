@@ -16,7 +16,8 @@ public sealed record ProjectFolderInfo(
     string ProjectName,
     string ProjectPath,
     ProjectManifestKind ManifestKind,
-    IReadOnlyList<string> DetectedFiles);
+    IReadOnlyList<string> DetectedFiles,
+    string? ExistingInstallerAppId = null);
 
 public sealed record WorkflowCheckItem(
     string Name,
@@ -60,6 +61,11 @@ public interface IEnvironmentCheckService
 {
     ProjectFolderInfo InspectProject(string projectPath);
     BuildManifestPreview InspectBuildPreview(string projectPath);
+    DotnetOnboardingPreviewData? InspectDotnetOnboarding(string projectPath);
+    Task<DotnetOnboardingApplyOutcome> ApplyDotnetOnboardingAsync(
+        string projectPath,
+        string expectedFingerprintSha256,
+        CancellationToken cancellationToken = default);
     Task<EnvironmentCheckExecution> CheckAsync(string projectPath, CancellationToken cancellationToken = default);
     Task<ProjectBuildExecution> BuildAsync(
         string projectPath,
@@ -104,6 +110,82 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
 
     public BuildManifestPreview InspectBuildPreview(string projectPath) => WorkflowManifestReader.ReadPreview(projectPath);
 
+    public DotnetOnboardingPreviewData? InspectDotnetOnboarding(string projectPath)
+    {
+        var full = NormalizeDirectoryPath(projectPath);
+        if (!HasDotnetOnboardingCandidate(full))
+            return null;
+
+        var tempFile = Path.Combine(Path.GetTempPath(), "Contain-OnboardInspect-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            var (_, _, stderr) = RunProcessAsync(
+                ["onboard-dotnet", "--project", full, "--output-json", tempFile],
+                TimeSpan.FromSeconds(15),
+                CancellationToken.None).GetAwaiter().GetResult();
+
+            if (!File.Exists(tempFile))
+            {
+                throw new EnvironmentCheckException(
+                    "onboarding_inspect_failed",
+                    "无法读取该 C# 项目的只读预览信息。",
+                    stderr.Trim());
+            }
+
+            var rawJson = File.ReadAllText(tempFile, StrictUtf8);
+            return DotnetOnboardingParser.ParseInspection(rawJson);
+        }
+        finally
+        {
+            try { if (File.Exists(tempFile)) File.Delete(tempFile); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    public async Task<DotnetOnboardingApplyOutcome> ApplyDotnetOnboardingAsync(
+        string projectPath,
+        string expectedFingerprintSha256,
+        CancellationToken cancellationToken = default)
+    {
+        var info = InspectProject(projectPath);
+        await EnsureVersionAsync(cancellationToken).ConfigureAwait(false);
+
+        var tempFile = Path.Combine(Path.GetTempPath(), "Contain-OnboardApply-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            var args = new List<string> { "onboard-dotnet", "--project", info.ProjectPath, "--apply" };
+            if (!string.IsNullOrWhiteSpace(expectedFingerprintSha256))
+            {
+                args.Add("--expected-fingerprint");
+                args.Add(expectedFingerprintSha256);
+            }
+            args.Add("--output-json");
+            args.Add(tempFile);
+
+            var (exitCode, _, stderr) = await RunProcessAsync(args, TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
+            if (!File.Exists(tempFile))
+            {
+                var detail = string.IsNullOrWhiteSpace(stderr)
+                    ? $"contain-workflow onboard-dotnet --apply 退出码 {exitCode}。"
+                    : stderr.Trim();
+                throw new EnvironmentCheckException(
+                    "onboarding_apply_failed",
+                    "无法保存项目发布配置文件 contain.environment.json。",
+                    detail);
+            }
+
+            var rawJson = await File.ReadAllTextAsync(tempFile, StrictUtf8, cancellationToken).ConfigureAwait(false);
+            return DotnetOnboardingParser.ParseApplyOutcome(rawJson);
+        }
+        finally
+        {
+            try { if (File.Exists(tempFile)) File.Delete(tempFile); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
     public static ProjectFolderInfo InspectProjectDirectory(string projectPath)
     {
         if (string.IsNullOrWhiteSpace(projectPath) || projectPath.Contains('\0'))
@@ -126,7 +208,86 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
                 ? ProjectManifestKind.DeclaredProjectFiles
                 : ProjectManifestKind.UnknownFormat;
 
-        return new ProjectFolderInfo(ExtractFolderName(full), full, kind, detected);
+        var existingAppId = TryReadExistingInstallerAppId(full);
+        return new ProjectFolderInfo(ExtractFolderName(full), full, kind, detected, existingAppId);
+    }
+
+    public static bool HasDotnetOnboardingCandidate(string normalizedProjectPath)
+    {
+        if (!Directory.Exists(normalizedProjectPath))
+            return false;
+        if (File.Exists(Path.Combine(normalizedProjectPath, "contain.environment.json")))
+            return false;
+
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(normalizedProjectPath, "*", SearchOption.TopDirectoryOnly))
+            {
+                var ext = Path.GetExtension(file);
+                if (ext.Equals(".csproj", StringComparison.OrdinalIgnoreCase)
+                    || ext.Equals(".fsproj", StringComparison.OrdinalIgnoreCase)
+                    || ext.Equals(".vbproj", StringComparison.OrdinalIgnoreCase)
+                    || ext.Equals(".sln", StringComparison.OrdinalIgnoreCase)
+                    || ext.Equals(".slnx", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            if (File.Exists(Path.Combine(normalizedProjectPath, "Cargo.toml"))
+                || File.Exists(Path.Combine(normalizedProjectPath, "rust-toolchain.toml")))
+            {
+                return false;
+            }
+
+            return HasChildCsprojBounded(normalizedProjectPath, depth: 0, maxDepth: 2);
+        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+    }
+
+    private static bool HasChildCsprojBounded(string dir, int depth, int maxDepth)
+    {
+        if (depth >= maxDepth)
+            return false;
+        foreach (var sub in Directory.EnumerateDirectories(dir))
+        {
+            var name = Path.GetFileName(sub);
+            if (name.Equals(".git", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("bin", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("obj", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("target", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("node_modules", StringComparison.OrdinalIgnoreCase)
+                || name.Equals(".vs", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            if (Directory.EnumerateFiles(sub, "*.csproj", SearchOption.TopDirectoryOnly).Any())
+                return true;
+            if (HasChildCsprojBounded(sub, depth + 1, maxDepth))
+                return true;
+        }
+        return false;
+    }
+
+    private static string? TryReadExistingInstallerAppId(string normalizedProjectPath)
+    {
+        var path = Path.Combine(normalizedProjectPath, "contain.installer.json");
+        if (!File.Exists(path))
+            return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(path, Encoding.UTF8));
+            if (doc.RootElement.TryGetProperty("app_id", out var idEl) && idEl.ValueKind == JsonValueKind.String)
+            {
+                var id = idEl.GetString()?.Trim();
+                if (!string.IsNullOrEmpty(id))
+                    return id;
+            }
+        }
+        catch (IOException) { }
+        catch (JsonException) { }
+        return null;
     }
 
     public async Task<EnvironmentCheckExecution> CheckAsync(string projectPath, CancellationToken cancellationToken = default)

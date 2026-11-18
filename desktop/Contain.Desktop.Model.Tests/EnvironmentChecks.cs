@@ -915,6 +915,202 @@ internal static class EnvironmentChecks
                 "switching to project B completely clears project A installer results");
         });
 
+        await Check("unconfigured C# console onboarding previews AssemblyName entry, cancel writes nothing, confirm writes reusable manifest and connects to check/build", async () =>
+        {
+            using var temp = new TempDir();
+            var projectDir = temp.Sub("HelloDeskFolder");
+            var csprojPath = Path.Combine(projectDir, "DeskStarter.Project.csproj");
+            File.WriteAllText(csprojPath, "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><AssemblyName>HelloDesk</AssemblyName></PropertyGroup></Project>");
+
+            var generatedManifestJson = """
+                {
+                  "schema_version": 1,
+                  "target": "windows-x64",
+                  "tools": [
+                    {
+                      "program": "dotnet",
+                      "version": "10.0",
+                      "version_args": ["--version"],
+                      "remedy": "Install .NET 10.0 SDK",
+                      "version_policy": "dotnet_major_or_newer"
+                    }
+                  ],
+                  "required_variables": [],
+                  "pending": [],
+                  "artifact_dir": "target/workflow/publish/win-x64",
+                  "artifacts": ["HelloDesk.exe"],
+                  "installer": {
+                    "app_name": "HelloDesk",
+                    "version": "0.1.0",
+                    "publish_dir": "target/workflow/publish/win-x64",
+                    "entry": "HelloDesk.exe",
+                    "publish_kind": "dotnet_self_contained_dir"
+                  },
+                  "build": [
+                    {
+                      "name": "Publish Windows x64 self-contained console app",
+                      "program": "dotnet",
+                      "args": ["publish", "DeskStarter.Project.csproj", "-c", "Release", "-r", "win-x64", "--self-contained", "true", "-p:PublishSingleFile=false", "-o", "target/workflow/publish/win-x64"],
+                      "expected_exit": 0,
+                      "timeout_ms": 600000
+                    }
+                  ],
+                  "verify": []
+                }
+                """;
+
+            var previewData = new DotnetOnboardingPreviewData(
+                "ready_to_confirm",
+                new string('a', 64),
+                false,
+                null,
+                "DeskStarter.Project.csproj",
+                "HelloDesk",
+                "HelloDesk",
+                "HelloDesk.exe",
+                "net10.0",
+                "0.1.0",
+                "未在 .csproj 声明版本，建议初始安装包版本 0.1.0",
+                ".NET SDK 10.0 或更高主版本",
+                "根据 TargetFramework=net10.0 推导（项目无 global.json）",
+                ["10.0.100", "10.0.403"],
+                "target/workflow/publish/win-x64",
+                "dotnet publish DeskStarter.Project.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o target/workflow/publish/win-x64",
+                [
+                    new OnboardingFieldRow("项目文件", "DeskStarter.Project.csproj", ".csproj 根目录声明"),
+                    new OnboardingFieldRow("启动入口", "HelloDesk.exe", ".csproj <AssemblyName>")
+                ],
+                generatedManifestJson,
+                null,
+                null,
+                null,
+                null);
+
+            var service = new ControlledEnvironmentService
+            {
+                OnboardingInspectFactory = dir => File.Exists(Path.Combine(dir, "contain.environment.json")) ? null : previewData,
+                OnboardingApplyFactory = (dir, expectedSha, _) =>
+                {
+                    Equal(new string('a', 64), expectedSha, "passes expected source fingerprint");
+                    File.WriteAllText(Path.Combine(dir, "contain.environment.json"), generatedManifestJson);
+                    return Task.FromResult(new DotnetOnboardingApplyOutcome("applied", true, "contain.environment.json", previewData));
+                }
+            };
+
+            using var vm = new EnvironmentCheckViewModel(service);
+
+            // 1) Select -> preview only, zero files written, Start Check disabled until confirmed
+            True(vm.SelectProject(projectDir), "select unconfigured C# project");
+            True(vm.IsOnboardingReadyToConfirm && !vm.IsOnboardingUnsupported, "ready to confirm card visible");
+            True(!vm.CanStartCheck && vm.CanConfirmOnboarding, "Start Check gated until onboarding confirmed");
+            Equal("已识别 HelloDesk · 控制台应用", vm.OnboardingHeadline, "concise onboarding headline");
+            True(vm.OnboardingProvenanceSummary.Contains("HelloDesk.exe", StringComparison.Ordinal)
+                && vm.OnboardingProvenanceSummary.Contains("AssemblyName=HelloDesk", StringComparison.Ordinal)
+                && vm.OnboardingProvenanceSummary.Contains("0.1.0", StringComparison.Ordinal),
+                "provenance distinguishes AssemblyName entry and suggested version");
+            True(vm.OnboardingDetailsText.Contains("target/workflow/publish/win-x64", StringComparison.Ordinal), "collapsible details include publish output dir");
+            True(!File.Exists(Path.Combine(projectDir, "contain.environment.json")), "preview writes zero files");
+
+            // 2) Cancel -> clears selection, leaves project directory identical
+            vm.CancelOnboarding();
+            True(!vm.HasProject && !vm.IsOnboardingReadyToConfirm, "cancel clears selection and card");
+            Equal(1, Directory.GetFiles(projectDir).Length, "cancel leaves only original .csproj");
+
+            // 3) Select again -> Confirm -> writes contain.environment.json and enables Check -> Build
+            True(vm.SelectProject(projectDir), "re-select unconfigured C# project");
+            True(await vm.ConfirmOnboardingAsync(), "explicit confirmation succeeds");
+            True(File.Exists(Path.Combine(projectDir, "contain.environment.json")), "contain.environment.json written after confirmation");
+            True(!vm.IsOnboardingReadyToConfirm && vm.CanStartCheck, "transitions directly to Start Check");
+            True(vm.HasOnboardingSavedNotice && vm.OnboardingSavedNotice.Contains("contain.environment.json", StringComparison.Ordinal),
+                "clearly states saved configuration location");
+
+            var parsedPreview = WorkflowManifestReader.ReadPreview(projectDir);
+            Equal(ManifestPreviewStatus.Valid, parsedPreview.Status, "WorkflowManifestReader validates version_policy manifest");
+            Equal("HelloDesk.exe", parsedPreview.Installer?.Entry, "installer entry uses AssemblyName.exe");
+
+            True(await vm.CheckAsync(), "check runs cleanly on newly confirmed manifest");
+            True(vm.CanShowStartBuild && vm.CanStartBuild, "Start Build enabled immediately after Ready check");
+
+            // 4) Reopening same project with contain.installer.json reuses both config and AppId without onboarding card
+            File.WriteAllText(Path.Combine(projectDir, "contain.installer.json"), "{\"schema_version\":1,\"app_id\":\"12345678-1234-4234-8234-123456789abc\"}");
+            True(vm.SelectProject(projectDir), "reopen configured project");
+            True(!vm.IsOnboardingReadyToConfirm && vm.CanStartCheck, "reuses existing contain.environment.json directly");
+            True(vm.SelectionScopeNote.Contains("12345678-1234-4234-8234-123456789abc", StringComparison.Ordinal),
+                "notes reused persistent installer identity");
+        });
+
+        await Check("onboarding handles mid-preview source changes, preserves external contain.environment.json, rejects unsupported folders, and guides 2-part .NET bands", async () =>
+        {
+            var bandGuidance = EnvironmentCheckViewModel.BuildDotNetSdkGuidance("10.0");
+            True(bandGuidance.IsSupportedReleaseBand
+                && bandGuidance.GuidanceLine.Contains("https://dotnet.microsoft.com/download/dotnet/10.0", StringComparison.Ordinal),
+                "2-part 10.0 major band points to official .NET 10.0 download page");
+
+            using var temp = new TempDir();
+            var changingDir = temp.Sub("ChangingConsole");
+            File.WriteAllText(Path.Combine(changingDir, "App.csproj"), "<Project />");
+
+            var initialPreview = new DotnetOnboardingPreviewData(
+                "ready_to_confirm", new string('1', 64), false, null, "App.csproj", "AppV1", "AppV1", "AppV1.exe",
+                "net10.0", "0.1.0", "建议 0.1.0", ".NET SDK 10.0+", "TargetFramework", ["10.0.100"],
+                "target/workflow/publish/win-x64", "dotnet publish ...", [], "{}", null, null, null, null);
+            var updatedPreview = initialPreview with
+            {
+                SourceFingerprintSha256 = new string('2', 64),
+                AppName = "AppV2",
+                AssemblyName = "AppV2",
+                EntryExecutable = "AppV2.exe"
+            };
+
+            var applyAttempt = 0;
+            var service = new ControlledEnvironmentService
+            {
+                OnboardingInspectFactory = _ => initialPreview,
+                OnboardingApplyFactory = (dir, _, _) =>
+                {
+                    applyAttempt++;
+                    if (applyAttempt == 1)
+                    {
+                        return Task.FromResult(new DotnetOnboardingApplyOutcome(
+                            "source_changed_refresh_required", false, null, updatedPreview));
+                    }
+                    WriteValidConsoleManifest(dir);
+                    return Task.FromResult(new DotnetOnboardingApplyOutcome(
+                        "preserved_existing_manifest", false, "contain.environment.json", updatedPreview));
+                }
+            };
+
+            using var vm = new EnvironmentCheckViewModel(service);
+            vm.SelectProject(changingDir);
+            Equal("已识别 AppV1 · 控制台应用", vm.OnboardingHeadline, "initial preview V1");
+
+            // Confirm when source changed -> refreshes preview to V2 without writing
+            True(!await vm.ConfirmOnboardingAsync(), "stale fingerprint requires re-confirmation");
+            True(vm.IsOnboardingReadyToConfirm && vm.HasOnboardingChangeNotice, "shows refresh notice and keeps onboarding open");
+            Equal("已识别 AppV2 · 控制台应用", vm.OnboardingHeadline, "headline refreshed to AppV2");
+            True(!File.Exists(Path.Combine(changingDir, "contain.environment.json")), "still zero manifest written");
+
+            // Confirm when external manifest appeared -> preserves existing manifest cleanly
+            True(await vm.ConfirmOnboardingAsync(), "preserved_existing_manifest transitions cleanly");
+            True(!vm.IsOnboardingReadyToConfirm && vm.CanStartCheck && vm.HasOnboardingSavedNotice, "existing manifest preserved and usable");
+
+            // Unsupported multi-project / class library folder -> clear reason + next step + zero files written
+            var multiDir = temp.Sub("MultiProjectSolution");
+            service.OnboardingInspectFactory = _ => new DotnetOnboardingPreviewData(
+                "unsupported", new string('3', 64), false, null, null, null, null, null, null, null, null, null, null, [],
+                null, null, [], null, "multi_project",
+                "检测到多个 .NET 项目文件，未自动猜测启动项目",
+                "当前文件夹包含 One.csproj、Two.csproj。",
+                "下一步：请重新点击“选择文件夹”，直接选中要发布的单个控制台应用所在的子目录。");
+
+            vm.SelectProject(multiDir);
+            True(vm.IsOnboardingUnsupported && !vm.IsOnboardingReadyToConfirm && !vm.CanStartCheck,
+                "unsupported project blocks Start Check and shows guidance");
+            True(vm.OnboardingUnsupportedNextStep.Contains("单个控制台应用", StringComparison.Ordinal),
+                "surfaces single actionable next step");
+            Equal(0, Directory.GetFiles(multiDir).Length, "unsupported selection writes zero files");
+        });
+
         return passed;
 
         async Task Check(string name, Func<Task> action)
@@ -996,6 +1192,9 @@ internal static class EnvironmentChecks
         public int CheckCalls { get; private set; }
         public int BuildCalls { get; private set; }
         public int InstallerCalls { get; private set; }
+        public Func<string, DotnetOnboardingPreviewData?> OnboardingInspectFactory { get; set; } = _ => null;
+        public Func<string, string, CancellationToken, Task<DotnetOnboardingApplyOutcome>> OnboardingApplyFactory { get; set; } =
+            (_, _, _) => throw new InvalidOperationException("Unexpected ApplyDotnetOnboardingAsync call in test");
         public Func<string, CancellationToken, Task<EnvironmentCheckExecution>> NextFactory { get; set; } =
             (_, _) => Task.FromResult(ReadyExecution());
         public Func<string, BuildManifestPreview, IProgress<BuildProgressUpdate>?, CancellationToken, Task<ProjectBuildExecution>> BuildFactory { get; set; } =
@@ -1008,6 +1207,15 @@ internal static class EnvironmentChecks
 
         public BuildManifestPreview InspectBuildPreview(string projectPath) =>
             WorkflowManifestReader.ReadPreview(projectPath);
+
+        public DotnetOnboardingPreviewData? InspectDotnetOnboarding(string projectPath) =>
+            OnboardingInspectFactory(WorkflowCliEnvironmentService.NormalizeDirectoryPath(projectPath));
+
+        public Task<DotnetOnboardingApplyOutcome> ApplyDotnetOnboardingAsync(
+            string projectPath,
+            string expectedFingerprintSha256,
+            CancellationToken cancellationToken = default) =>
+            OnboardingApplyFactory(WorkflowCliEnvironmentService.NormalizeDirectoryPath(projectPath), expectedFingerprintSha256, cancellationToken);
 
         public Task<EnvironmentCheckExecution> CheckAsync(string projectPath, CancellationToken cancellationToken = default)
         {

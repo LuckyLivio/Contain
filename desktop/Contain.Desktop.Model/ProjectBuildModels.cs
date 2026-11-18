@@ -175,6 +175,160 @@ public sealed record PublishReadinessHint(
     string SummaryText,
     string SuggestedCommandText);
 
+public sealed record OnboardingFieldRow(
+    string Label,
+    string Value,
+    string Source);
+
+public sealed record DotnetOnboardingPreviewData(
+    string Status,
+    string SourceFingerprintSha256,
+    bool HasExistingInstallerIdentity,
+    string? ExistingAppId,
+    string? CsprojFile,
+    string? AppName,
+    string? AssemblyName,
+    string? EntryExecutable,
+    string? TargetFramework,
+    string? AppVersion,
+    string? VersionSource,
+    string? SdkRequirementSummary,
+    string? SdkSource,
+    IReadOnlyList<string> HostDetectedCompatibleSdks,
+    string? PublishDir,
+    string? PublishCommand,
+    IReadOnlyList<OnboardingFieldRow> EvidenceFields,
+    string? ProposedManifestJson,
+    string? UnsupportedCode,
+    string? UnsupportedTitle,
+    string? UnsupportedReason,
+    string? ActionableNextStep);
+
+public sealed record DotnetOnboardingApplyOutcome(
+    string Status,
+    bool WroteFile,
+    string? SavedManifestFilename,
+    DotnetOnboardingPreviewData Inspection);
+
+public static class DotnetOnboardingParser
+{
+    public static DotnetOnboardingPreviewData ParseInspection(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return ParseInspectionElement(doc.RootElement);
+        }
+        catch (EnvironmentCheckException)
+        {
+            throw;
+        }
+        catch (JsonException ex)
+        {
+            throw new EnvironmentCheckException("onboarding_json", "项目识别结果 JSON 格式无效。", ex.Message, ex);
+        }
+    }
+
+    public static DotnetOnboardingApplyOutcome ParseApplyOutcome(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var schema = root.TryGetProperty("schema_version", out var sv) && sv.TryGetInt32(out var svVal) ? svVal : -1;
+            var protocol = OptStr(root, "protocol") ?? "";
+            if (schema != 1 || protocol != "contain-dotnet-onboarding-apply-1")
+                throw new EnvironmentCheckException("onboarding_contract", "项目配置写入结果协议版本不匹配。");
+
+            var status = OptStr(root, "status") ?? "";
+            var wrote = root.TryGetProperty("wrote_file", out var wf) && wf.ValueKind == JsonValueKind.True;
+            var savedFile = OptStr(root, "saved_manifest_filename");
+            if (!root.TryGetProperty("inspection", out var inspEl) || inspEl.ValueKind != JsonValueKind.Object)
+                throw new EnvironmentCheckException("onboarding_contract", "项目配置写入结果缺少 inspection 对象。");
+
+            return new DotnetOnboardingApplyOutcome(status, wrote, savedFile, ParseInspectionElement(inspEl));
+        }
+        catch (EnvironmentCheckException)
+        {
+            throw;
+        }
+        catch (JsonException ex)
+        {
+            throw new EnvironmentCheckException("onboarding_json", "项目配置写入结果 JSON 格式无效。", ex.Message, ex);
+        }
+    }
+
+    private static DotnetOnboardingPreviewData ParseInspectionElement(JsonElement root)
+    {
+        var schema = root.TryGetProperty("schema_version", out var sv) && sv.TryGetInt32(out var svVal) ? svVal : -1;
+        var protocol = OptStr(root, "protocol") ?? "";
+        if (schema != 1 || protocol != "contain-dotnet-onboarding-1")
+            throw new EnvironmentCheckException("onboarding_contract", "项目识别协议版本不匹配。");
+
+        var status = OptStr(root, "status") ?? "";
+        var fingerprint = OptStr(root, "source_fingerprint_sha256") ?? "";
+        var hasExistingId = root.TryGetProperty("has_existing_installer_identity", out var hi) && hi.ValueKind == JsonValueKind.True;
+
+        var sdks = new List<string>();
+        if (root.TryGetProperty("host_detected_compatible_sdks", out var sdkArr) && sdkArr.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var s in sdkArr.EnumerateArray())
+            {
+                if (s.ValueKind == JsonValueKind.String && s.GetString() is { Length: > 0 } str)
+                    sdks.Add(str);
+            }
+        }
+
+        var fields = new List<OnboardingFieldRow>();
+        if (root.TryGetProperty("evidence_fields", out var evArr) && evArr.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in evArr.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object) continue;
+                fields.Add(new OnboardingFieldRow(
+                    OptStr(item, "label") ?? "",
+                    OptStr(item, "value") ?? "",
+                    OptStr(item, "source") ?? ""));
+            }
+        }
+
+        string? proposedJson = null;
+        if (root.TryGetProperty("proposed_manifest", out var pm) && pm.ValueKind == JsonValueKind.Object)
+        {
+            proposedJson = JsonSerializer.Serialize(pm, new JsonSerializerOptions { WriteIndented = true });
+        }
+
+        return new DotnetOnboardingPreviewData(
+            status,
+            fingerprint,
+            hasExistingId,
+            OptStr(root, "existing_app_id"),
+            OptStr(root, "csproj_file"),
+            OptStr(root, "app_name"),
+            OptStr(root, "assembly_name"),
+            OptStr(root, "entry_executable"),
+            OptStr(root, "target_framework"),
+            OptStr(root, "app_version"),
+            OptStr(root, "version_source"),
+            OptStr(root, "sdk_requirement_summary"),
+            OptStr(root, "sdk_source"),
+            sdks,
+            OptStr(root, "publish_dir"),
+            OptStr(root, "publish_command"),
+            fields,
+            proposedJson,
+            OptStr(root, "unsupported_code"),
+            OptStr(root, "unsupported_title"),
+            OptStr(root, "unsupported_reason"),
+            OptStr(root, "actionable_next_step"));
+    }
+
+    private static string? OptStr(JsonElement el, string prop) =>
+        el.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String
+            ? v.GetString()
+            : null;
+}
+
 public static class ProjectPublishInspector
 {
     public static PublishReadinessHint Inspect(
@@ -276,7 +430,8 @@ public static class WorkflowManifestReader
         "program",
         "version",
         "version_args",
-        "remedy"
+        "remedy",
+        "version_policy"
     };
     private static readonly HashSet<string> AllowedStepFields = new(StringComparer.Ordinal)
     {
@@ -408,6 +563,22 @@ public static class WorkflowManifestReader
                     return BuildManifestPreview.Invalid(projectName, workingDirectory, $"工具“{prog}”的 version 格式无效。");
                 if (!TryStringList(tool, "version_args", required: true, out var vArgs))
                     return BuildManifestPreview.Invalid(projectName, workingDirectory, $"工具“{prog}”缺少有效的 version_args 数组。");
+                if (tool.TryGetProperty("version_policy", out var vpEl) && vpEl.ValueKind != JsonValueKind.Null)
+                {
+                    if (vpEl.ValueKind != JsonValueKind.String || vpEl.GetString() is not ("exact" or "dotnet_major_or_newer"))
+                        return BuildManifestPreview.Invalid(projectName, workingDirectory, $"工具“{prog}”包含不支持的 version_policy。");
+                    if (vpEl.GetString() == "dotnet_major_or_newer")
+                    {
+                        var validMajor = prog == "dotnet"
+                            && vArgs.Count == 1
+                            && vArgs[0] == "--version"
+                            && ver.EndsWith(".0", StringComparison.Ordinal)
+                            && int.TryParse(ver[..^2], NumberStyles.None, CultureInfo.InvariantCulture, out var maj)
+                            && maj is >= 6 and <= 99;
+                        if (!validMajor)
+                            return BuildManifestPreview.Invalid(projectName, workingDirectory, "dotnet_major_or_newer 仅支持 dotnet --version 与 <主版本>.0。");
+                    }
+                }
                 if (!IsSupportedSafeProbe(prog, vArgs))
                     hasUnsupportedProbe = true;
             }

@@ -25,6 +25,55 @@
                 </StackPanel>
             </Border>
 
+            <Border Background="#EEF7F5" BorderBrush="#137D74" BorderThickness="1" CornerRadius="10" Padding="20" Margin="0,0,0,16" Visibility="{Binding EnvironmentCheck.IsOnboardingReadyToConfirm, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="OnboardingPreviewSurface">
+                <StackPanel>
+                    <TextBlock Text="首次使用 · 请确认发布配置" Foreground="#0E5A53" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" AutomationProperties.AutomationId="OnboardingBadge" />
+                    <TextBlock Text="{Binding EnvironmentCheck.OnboardingHeadline}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,6" AutomationProperties.AutomationId="OnboardingHeadline" />
+                    <TextBlock Text="{Binding EnvironmentCheck.OnboardingSubtitle}" TextWrapping="Wrap" Margin="0,0,0,10" AutomationProperties.AutomationId="OnboardingSubtitle" />
+
+                    <Border Background="#FFF8EB" BorderBrush="#D99B26" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,10" Visibility="{Binding EnvironmentCheck.HasOnboardingChangeNotice, Converter={StaticResource BoolVisibility}}">
+                        <TextBlock Text="{Binding EnvironmentCheck.OnboardingChangeNotice}" Foreground="#7A5200" TextWrapping="Wrap" AutomationProperties.AutomationId="OnboardingChangeNoticeText" />
+                    </Border>
+
+                    <Border Background="White" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
+                        <TextBox Text="{Binding EnvironmentCheck.OnboardingProvenanceSummary, Mode=OneWay}" Style="{StaticResource SelectableText}" FontSize="13" AutomationProperties.AutomationId="OnboardingProvenanceText" AutomationProperties.Name="项目声明与建议配置来源" />
+                    </Border>
+
+                    <TextBlock Text="{Binding EnvironmentCheck.OnboardingSaveTargetNote}" Style="{StaticResource MutedText}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,14" AutomationProperties.AutomationId="OnboardingSaveNoteText" />
+
+                    <WrapPanel Margin="0,0,0,10">
+                        <ui:Button Content="使用此配置" Appearance="Primary" Padding="22,10" Margin="0,0,10,0" Click="OnConfirmOnboarding" IsEnabled="{Binding EnvironmentCheck.CanConfirmOnboarding}" AutomationProperties.AutomationId="ConfirmOnboardingButton">
+                            <ui:Button.Icon><ui:SymbolIcon Symbol="Checkmark24" /></ui:Button.Icon>
+                        </ui:Button>
+                        <ui:Button Content="取消" Padding="18,10" Click="OnCancelOnboarding" IsEnabled="{Binding EnvironmentCheck.CanCancelOnboarding}" AutomationProperties.AutomationId="CancelOnboardingButton" />
+                    </WrapPanel>
+
+                    <Expander Header="查看发布命令、输出目录与识别依据" IsExpanded="{Binding EnvironmentCheck.OnboardingDetailsExpanded, Mode=TwoWay}" Margin="0,2,0,0" AutomationProperties.AutomationId="OnboardingDetailsExpander">
+                        <Border Background="White" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,8,0,0">
+                            <TextBox Text="{Binding EnvironmentCheck.OnboardingDetailsText, Mode=OneWay}" Style="{StaticResource SelectableText}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" MaxHeight="240" AutomationProperties.AutomationId="OnboardingDetailsText" AutomationProperties.Name="发布命令、输出目录与识别依据" />
+                        </Border>
+                    </Expander>
+                </StackPanel>
+            </Border>
+
+            <Border Background="#FFF8EB" BorderBrush="#D99B26" BorderThickness="1" CornerRadius="10" Padding="20" Margin="0,0,0,16" Visibility="{Binding EnvironmentCheck.IsOnboardingUnsupported, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="OnboardingUnsupportedSurface">
+                <StackPanel>
+                    <TextBlock Text="暂不能自动生成配置 · 未向项目目录写入任何文件" Foreground="#7A5200" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" AutomationProperties.AutomationId="OnboardingUnsupportedBadge" />
+                    <TextBlock Text="{Binding EnvironmentCheck.OnboardingUnsupportedTitle}" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,6" AutomationProperties.AutomationId="OnboardingUnsupportedTitle" />
+                    <TextBlock Text="{Binding EnvironmentCheck.OnboardingUnsupportedReason}" TextWrapping="Wrap" Margin="0,0,0,10" AutomationProperties.AutomationId="OnboardingUnsupportedReason" />
+                    <Border Background="White" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,0,0,12">
+                        <TextBox Text="{Binding EnvironmentCheck.OnboardingUnsupportedNextStep, Mode=OneWay}" Style="{StaticResource SelectableText}" Foreground="#0E5A53" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" AutomationProperties.AutomationId="OnboardingUnsupportedNextStep" AutomationProperties.Name="可执行下一步建议" />
+                    </Border>
+                    <WrapPanel>
+                        <ui:Button Content="取消选择" Click="OnCancelOnboarding" IsEnabled="{Binding EnvironmentCheck.CanCancelOnboarding}" AutomationProperties.AutomationId="CancelUnsupportedOnboardingButton" />
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Background="#EAF5F1" BorderBrush="#137D74" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,0,0,14" Visibility="{Binding EnvironmentCheck.HasOnboardingSavedNotice, Converter={StaticResource BoolVisibility}}">
+                <TextBox Text="{Binding EnvironmentCheck.OnboardingSavedNotice, Mode=OneWay}" Style="{StaticResource SelectableText}" Foreground="#0E5A53" AutomationProperties.AutomationId="OnboardingSavedNoticeText" AutomationProperties.Name="配置保存说明" />
+            </Border>
+
             <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
                 <ui:Button Content="开始检查" Appearance="Primary" Padding="24,12" Click="OnStartCheck" IsEnabled="{Binding EnvironmentCheck.CanStartCheck}" AutomationProperties.AutomationId="StartEnvironmentCheck">
                     <ui:Button.Icon><ui:SymbolIcon Symbol="Play24" /></ui:Button.Icon>

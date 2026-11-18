@@ -216,6 +216,10 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 
     public Task RunEnvironmentCheckAsync() => RunUiAsync(() => EnvironmentCheck.CheckAsync());
 
+    public Task RunConfirmOnboardingAsync() => RunUiAsync(() => EnvironmentCheck.ConfirmOnboardingAsync());
+
+    public void CancelProjectOnboarding() => RunUiOperation(() => EnvironmentCheck.CancelOnboarding());
+
     public Task RunProjectBuildAsync() => RunUiAsync(() => EnvironmentCheck.StartBuildAsync());
 
     public void OpenProjectArtifactFolder() => RunUiOperation(() => { EnvironmentCheck.OpenArtifactFolder(); });
