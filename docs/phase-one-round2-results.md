@@ -301,3 +301,33 @@ Windows 实测通过。
 
 - **接收环境核查**：当前主机为在线 Windows 11 x64 开发机（系统自带 `.NET Framework 4.8.1` 单列，且已预装现代 `.NET` 运行时与 SDK、Visual Studio、Rust 及 Inno Setup 6.7.3），未启用或安装 Windows Sandbox、Hyper-V、VirtualBox、VMware、QEMU，亦无独立无工具 Windows x64 测试机可用。
 - **交接准备与结论边界**：新增可复用脚本 `scripts/inspect-receiver-environment.ps1`、`scripts/prepare-receiver-setup-handoff.ps1` 与 `scripts/test-receiver-setup-handoff.ps1`，在本地独立交接目录中完成两份原始 Setup 复制前后的 SHA-256 双重核验，生成 `SHA256SUMS.txt`、一页中文离线验收走查单（按先 `HelloContain` 后 `Contain`、单包拷入断网安装、验证启动／输出／合成记录事件依据、标准卸载并在关闭环境前导出回执的顺序编写）与交接清单。开发机已有 ZIP `verify --run` 收据单独保留；两份 Setup 的干净接收机离线安装、启动与卸载均如实记为**接收机待实测**。
+
+## 无预配置普通 C# 控制台项目一键接入与实包闭环验收补充（`feat/dotnet-project-onboarding`）
+
+在完整保留既有候选包、离线交接材料与 `HelloContain` 演示环境的前提下，于产品源码修订 `8f1acb4d13151a20963a395d67e414291d4406d2` 在现有“检查项目环境 → 选择文件夹”流程内实现了面向从未接入 Contain 的普通单项目 C# 控制台应用的一次确认配置引导，并用重新打包的桌面候选包完成端到端实测：
+
+- **只读识别、来源区分与安全边界**：
+  - 选中已有 `contain.environment.json` 的项目时直接沿用原配置（若存在 `contain.installer.json` 同时提示复用已有 `AppId`）；选中无清单目录时由随包 `contain-workflow.exe onboard-dotnet` 执行纯只读根目录 `.csproj` 解析（选择与预览期间绝不执行项目代码、MSBuild target 或 `dotnet restore`，绝不向项目目录写入任何文件）。
+  - 仅支持根目录单个、单目标框架（`<TargetFramework>net8.0`+）、SDK 风格（`Microsoft.NET.Sdk`）且明确声明 `<OutputType>Exe</OutputType>` 的 C# 控制台应用；当 `<AssemblyName>` 与 `.csproj` 文件名不同时，预期产物与安装包入口严格采用 `<AssemblyName>.exe`。
+  - `contain.environment.json` 新增可选 `tools[].version_policy = "dotnet_major_or_newer"`：无 `global.json` 的普通 `net10.0` 项目声明兼容主版本要求（`version: "10.0"`）而非伪造特定 SDK 补丁号，预览界面明确区分项目文件声明字段与建议配置项（兼容 SDK 范围、本机已检测兼容 SDK 列表、建议初始版本号 `0.1.0`），并默认折叠发布命令、独立隔离输出目录 `target/workflow/publish/win-x64` 与 `.csproj` 识别依据。
+  - 用户明确点击“使用此配置”后才原子写入可复用的 `contain.environment.json`，全程不修改用户 `.csproj`，也不覆盖原有 `bin/` 或 `obj/` 输出；点击“取消”时项目目录保持字节级原样；预览期间若项目文件变更则刷新只读预览并要求重新确认，若外部新建 `contain.environment.json` 则直接保留不覆盖。
+  - 对多项目目录（根目录或子目录多个 `.csproj`）、类库（`Library` 或未声明 `Exe`）、多目标框架（`<TargetFrameworks>`）、`WinExe`/WPF/WinForms、非 SDK 旧式项目或含 `$(...)`/`Condition`/`<Import>`/`Directory.Build.props` 动态属性的项目拒绝猜测，直接给出原因与单一可执行下一步建议。
+- **新版 Contain 候选包冻结身份（`source_sha = 8f1acb4d13151a20963a395d67e414291d4406d2`）**：
+  - 桌面候选包 `contain-source-windows-x64.zip`：`2a3a59fe1ce328efcb437a0b0871acc510f12099316d755cdb2a3be0d98dc117`
+    （`Contain.Viewer.exe`：`37a3c07a36cbefeb49cc51a24bbe0edf1791fd13122f6e030f43963403726239`，
+    `contain.exe`：`403ff4076a9a1de5d9845d50e97e2bfaf415412b2f60be3e69e0e151fca815c2`，
+    随包 `contain-workflow.exe`：`8a73fbec2ef860b3a92db1991450158af620b89c07b36d79561ca07dc2cadefc`，
+    `package-spec.json`：`832c23e3d3f112ca787d7374f306596d6a7a697a1b46690b3f464c2f7dee08f6`）。
+  - 独立 CLI 包 `contain-workflow-windows-x64.zip`：`c48ac85ca3a7f83c88384db41a753c3d848f7a3e0480d9ec27c374f0a042979f`
+    （`contain-workflow.exe`：`38f3f58aa5a5a7ff8bc7ce7f88d2ff7e1e62dc97eaf118e0a65b70bb00f51d6f`，
+    `package-spec.json`：`c7295d1e05ddaece933f6bc045673e7fb7a7eff096012863937a60940216ffc3`）。
+  - 新版安装候选包 `Contain-Setup-x64.exe`：`51,327,900` 字节，SHA-256 `1c5f9f96b6c67fedbf603387d6ff23fcbd896a12ed3ed6ab55884d76f31cb3d8`（未签名 `NotSigned`，Inno Setup `6.7.3`）。
+- **最终打包 `Contain.Viewer.exe` 实测验收记录**：
+  - 双包 `verify --run` 均退出 `0`；`contain-workflow` **46/46** 通过，桌面模型回归 **57/57** 通过。
+  - 新建初始不含任何 Contain 文件或 `global.json`、且项目文件名与程序集名不同的独立普通 C# 控制台演示项目（`DeskStarter.Project.csproj`，声明 `<AssemblyName>HelloDesk</AssemblyName>`、`<TargetFramework>net10.0</TargetFramework>`、`<OutputType>Exe</OutputType>`），运行本次打包产出的 `Contain.Viewer.exe` 完成全链路实测：
+    1. 首次选择目录显示 `已识别 HelloDesk · 控制台应用` 及 `HelloDesk.exe` 入口与可展开详情，点击“取消”后逐文件哈希核验确认项目目录零写入。
+    2. 再次选择该目录，依次点击“使用此配置” → “开始检查”（`环境已满足`） → “开始构建”（`构建通过`，原 `DeskStarter.Project.csproj` SHA-256 `5caa27a4f22fec9b3f82b199fe7c3c9f2b1501457d4ace54c85c7f5b1f76c481` 全程未变） → “生成安装包”，无需手写 JSON、输入命令或挑选 EXE 即产出 `HelloDesk-Setup-x64.exe`（`27,724,940` 字节，SHA-256 `569c5960fd899f9db595e4888378a18f90ec1913acc8780b2bb153eb6afcf706`，`NotSigned`）。
+    3. 将 `HelloDesk-Setup-x64.exe` 单独复制到独立目录完成安装，核对开始菜单快捷方式 `HelloDesk (433e293f).lnk` 指向安装目录下的 `HelloDesk.exe`，运行该入口实测标准输出为 `CONTAIN_PLAIN_CSHARP_ONBOARD_OK_V1`、退出码 `0`，随后通过 Windows 已登记卸载程序干净卸载。
+    4. 关闭并重新启动 `Contain.Viewer.exe` 再次选择该项目，确认直接复用已保存的 `contain.environment.json` 与 `contain.installer.json`（`{433e293f-98e3-4a26-8bb4-b06867d79191}`），且既有 `HelloContain` 回归检查正常通过。
+    5. 分别选择多项目目录（`Alpha.csproj` + `Beta.csproj`）与类库目录（`SharedCore.csproj`，`OutputType=Library`），确认界面展示明确原因与可执行下一步指引且未写入任何文件。
+  - **单列未完成项与保留阻塞**：无开发工具干净 Windows x64 接收机离线安装与运行验收继续单列为**接收机待实测**；仓库级 `cargo deny` 对旧核心依赖 `chrono 0.4.45` 的未维护告警（`RUSTSEC-2026-0543`）仍按既有规则保留跟踪。
