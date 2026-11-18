@@ -14,12 +14,13 @@ namespace Contain.Desktop;
 
 public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 {
-    private enum ActiveSection { Records, NewRecord, EnvironmentCheck }
+    private enum ActiveSection { Records, NewRecord, EnvironmentCheck, PackageCheck }
 
     private readonly MyRecordsView recordsView = new();
     private readonly NewRecordView newRecordView = new();
     private readonly RecordDetailsView detailsView = new();
     private readonly EnvironmentCheckView environmentView = new();
+    private readonly PackageCheckView packageView = new();
     private readonly DispatcherTimer timer;
     private ActiveSection activeSection = ActiveSection.Records;
     private string localError = "";
@@ -41,9 +42,11 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         EnvironmentCheck = new EnvironmentCheckViewModel(
             new WorkflowCliEnvironmentService(workflowExecutable),
             dispatcher: action => Dispatcher.BeginInvoke(action));
+        PackageCheck = new PackageCheckViewModel(new WorkflowCliPackageService(workflowExecutable));
         Records.PropertyChanged += OnModelChanged;
         Install.PropertyChanged += OnModelChanged;
         EnvironmentCheck.PropertyChanged += OnModelChanged;
+        PackageCheck.PropertyChanged += OnModelChanged;
         InitializeComponent();
         Controls.ActionNavigationItem.ConfigureNavigation(Navigation);
         DataContext = this;
@@ -59,9 +62,17 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     public RecordsViewModel Records { get; }
     public InstallViewModel Install { get; }
     public EnvironmentCheckViewModel EnvironmentCheck { get; }
+    public PackageCheckViewModel PackageCheck { get; }
     public string WindowTitle => "Contain · " + ProductVersion.Version;
-    public string ErrorMessage => localError.Length > 0 ? localError : activeSection == ActiveSection.EnvironmentCheck ? "" : Records.ErrorMessage;
-    public string StatusMessage => localStatus.Length > 0 ? localStatus : activeSection == ActiveSection.EnvironmentCheck ? EnvironmentCheck.StatusMessage : Records.StatusMessage;
+    public string ErrorMessage => localError.Length > 0 ? localError : activeSection is ActiveSection.EnvironmentCheck or ActiveSection.PackageCheck ? "" : Records.ErrorMessage;
+    public string StatusMessage => localStatus.Length > 0
+        ? localStatus
+        : activeSection switch
+        {
+            ActiveSection.EnvironmentCheck => EnvironmentCheck.StatusMessage,
+            ActiveSection.PackageCheck => PackageCheck.StatusMessage,
+            _ => Records.StatusMessage
+        };
     public event PropertyChangedEventHandler? PropertyChanged;
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -74,7 +85,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(Records.ErrorMessage) or nameof(Records.StatusMessage) or nameof(EnvironmentCheck.StatusMessage))
+        if (e.PropertyName is nameof(Records.ErrorMessage) or nameof(Records.StatusMessage) or nameof(EnvironmentCheck.StatusMessage) or nameof(PackageCheck.StatusMessage))
         {
             localError = "";
             localStatus = "";
@@ -91,6 +102,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         RecordsNavigation.IsActive = section == ActiveSection.Records;
         NewNavigation.IsActive = section == ActiveSection.NewRecord;
         EnvironmentNavigation.IsActive = section == ActiveSection.EnvironmentCheck;
+        PackageNavigation.IsActive = section == ActiveSection.PackageCheck;
         Changed(nameof(ErrorMessage));
         Changed(nameof(StatusMessage));
     }
@@ -118,6 +130,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     }
 
     public void ShowEnvironmentCheck() => SetPage(environmentView, ActiveSection.EnvironmentCheck);
+    public void ShowPackageCheck() => SetPage(packageView, ActiveSection.PackageCheck);
 
     public async Task RefreshRecordsAsync()
     {
@@ -155,6 +168,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 
     private void OnNewRecord(object sender, RoutedEventArgs e) => ShowNewRecord();
     private void OnEnvironmentCheck(object sender, RoutedEventArgs e) => ShowEnvironmentCheck();
+    private void OnPackageCheck(object sender, RoutedEventArgs e) => ShowPackageCheck();
     private void OnCurrentTask(object sender, RoutedEventArgs e)
     {
         SetPage(newRecordView, ActiveSection.NewRecord);
@@ -205,6 +219,39 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     public Task RunProjectBuildAsync() => RunUiAsync(() => EnvironmentCheck.StartBuildAsync());
 
     public void OpenProjectArtifactFolder() => RunUiOperation(() => { EnvironmentCheck.OpenArtifactFolder(); });
+
+    public async Task PickPackageZipAsync()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "选择要检查的 Windows 交付包 (.zip)",
+            Filter = "ZIP 压缩包|*.zip",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+        if (dialog.ShowDialog(this) == true)
+            await RunUiAsync(() => PackageCheck.SelectZipAsync(dialog.FileName));
+        else
+            PackageCheck.CancelSelection();
+    }
+
+    public async Task PickPackageSpecAsync()
+    {
+        if (!PackageCheck.CanPickSpec) return;
+        var dialog = new OpenFileDialog
+        {
+            Title = "选择随包提供的校验清单 (package-spec.json)",
+            Filter = "交付包校验清单|package-spec.json;*.json",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+        if (dialog.ShowDialog(this) == true)
+            await RunUiAsync(() => PackageCheck.SelectSpecAsync(dialog.FileName));
+        else
+            PackageCheck.CancelSelection();
+    }
+
+    public Task RecheckPackageAsync() => RunUiAsync(() => PackageCheck.RecheckAsync());
 
     private void RunUiOperation(Action operation)
     {
@@ -319,7 +366,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         Changed(nameof(StatusMessage));
         try
         {
-            await Task.WhenAll(Records.CloseAsync(), EnvironmentCheck.CloseAsync());
+            await Task.WhenAll(Records.CloseAsync(), EnvironmentCheck.CloseAsync(), PackageCheck.CloseAsync());
             // Empty-library cleanup can complete synchronously inside Closing.
             // Commit the second Close only after this cancelled event unwinds.
             _ = Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
@@ -342,8 +389,10 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         Records.PropertyChanged -= OnModelChanged;
         Install.PropertyChanged -= OnModelChanged;
         EnvironmentCheck.PropertyChanged -= OnModelChanged;
+        PackageCheck.PropertyChanged -= OnModelChanged;
         Records.Dispose();
         EnvironmentCheck.Dispose();
+        PackageCheck.Dispose();
     }
 
     private void OnSizeChanged(object sender, SizeChangedEventArgs e)
