@@ -331,3 +331,15 @@ Windows 实测通过。
     4. 关闭并重新启动 `Contain.Viewer.exe` 再次选择该项目，确认直接复用已保存的 `contain.environment.json` 与 `contain.installer.json`（`{433e293f-98e3-4a26-8bb4-b06867d79191}`），且既有 `HelloContain` 回归检查正常通过。
     5. 分别选择多项目目录（`Alpha.csproj` + `Beta.csproj`）与类库目录（`SharedCore.csproj`，`OutputType=Library`），确认界面展示明确原因与可执行下一步指引且未写入任何文件。
   - **单列未完成项与保留阻塞**：无开发工具干净 Windows x64 接收机离线安装与运行验收继续单列为**接收机待实测**；仓库级 `cargo deny` 对旧核心依赖 `chrono 0.4.45` 的未维护告警（`RUSTSEC-2026-0543`）仍按既有规则保留跟踪。
+
+## `v0.5.0-beta.1` 发布里程碑：依赖门清零、版本同步与安装候选全链路验收（`release/v0.5.0-beta.1`）
+
+在发布分支 `release/v0.5.0-beta.1`（[PR #23](https://github.com/LuckyLivio/Contain/pull/23)）完成仓库级依赖门修复、全链路版本号同步与最终冻结候选真机验收：
+
+- **消除 `RUSTSEC-2026-0543`（`chrono`）合并阻塞**：在 `crates/contain-core/src/windows/native.rs` 与 `benches/event_pipeline.rs` 中以零外部依赖的 `std::time::SystemTime` 及格里高利历 RFC 3339 转换替换 `chrono`（经 `0..=u64::MAX` 边界、闰年／世纪年、历史 Beta.1 `FILETIME` 与 0/3/6/9 位 `AutoSi` 小数精度逐项核验一致），清理 `Cargo.toml`、`Cargo.lock` 与 `fuzz/Cargo.lock` 中的 `chrono 0.4.45`，保留 `deny.toml` 原有严格规则不变；主工作区与两个 fuzz 工作区 `cargo deny --locked check`、`verify-read-only-cli.py`（33 份 JSON 含历史迁移记录）及 GitHub Actions `CI` / `Modern desktop` 全部通过。
+- **`0.5.0-beta.1` 候选冻结身份（`source_sha = 887f119796311f475792a9d3a56a8f95159cc123`）**：
+  - `Contain-Setup-x64.exe`（`51,335,691` 字节，`AppVersion = 0.5.0-beta.1`，`AppId = {8F4E2D91-5C3A-4B7E-9A16-2D8C4E7F1035}`，未签名 `NotSigned`）：`9c862fb8576b34ef6e2b5a85806c793695a1d9b8e16359b0b7cfd19ba08a6c6d`
+  - `contain-0.5.0-beta.1-windows-x64.zip`（桌面便携包）：`83d5f4b797c7cd93167050245251516662cc167b5b5aeaa90a9e1b5b764cd59d`（`Contain.Viewer.exe`：`8430afbafc45da943a8e2f0e6b8632706d6efaf1cd30d31e8fbaaf8fd349c242`，`contain-workflow.exe`：`b0738eec00114f8788e2aa2c6d595fa6f7c8c67cf2e4e2d36904b4df261917a7`，`contain.exe`：`2d98839d8c2e9798b1dcfa8701c69b2344fb9bf8a0aa1d97ceec202ca3e30ee5`，`desktop-package-spec.json`：`bff266eb22b5460032f3b2f963693d1b2f5a00ec88053b4d611e4dd158a8d3aa`）
+  - `contain-workflow-0.5.0-beta.1-windows-x64.zip`（独立 CLI 包）：`ef297d840acb538f635a54928e3ba7ae30db441cf43659b8f482eb89770d312f`（`contain-workflow.exe`：`205faab65858727250551a89b05f370f7680925c36c24768aa6bdde88997f5dc`，`cli-package-spec.json`：`176e28c69639cbe6311c8212d72bcecab21ff19d6147e2d083b6d1b7e0882964`）
+- **最终候选 `Contain-Setup-x64.exe` 真机安装验收**：从 `0.4.0-beta.1` 原位升级至 `0.5.0-beta.1` 后确认系统卸载项仅 **1 个**；从开始菜单快捷方式启动安装后的 `Contain · 0.5.0-beta.1`，确认隔离历史库 3 条旧记录在界面与 CLI 中正常读取；选择仅含 `.csproj` 与 `Program.cs` 的全新控制台项目 `HelloReleaseApp` 走完「使用此配置 → 开始检查 → 开始构建 → 生成安装包」，将产出的 `HelloRelease-Setup-x64.exe`（`4a33436ce17e309a156e6d9f12e9b91c53a5bfa228ad35d9697bd0ea4b329272`）单独复制到另一目录安装，从开始菜单目标运行实测输出 `CONTAIN_V050_BETA1_OK`、退出码 `0`，随后干净卸载。
+- **剩余发布阻塞**：当前主机无未安装开发工具的干净 Windows x64 快照／虚拟机环境（快照 A 空白源码机缺项恢复与快照 B 免开发工具接收机 `-Stage Package` 及离线 Setup 安装启动验收仍待独立环境实测），已生成绑定 `887f119796311f475792a9d3a56a8f95159cc123` 最终候选哈希的一步交接包，待干净 Windows x64 环境实测通过并完成评审后合并、打 `v0.5.0-beta.1` 标签并公开发布。
