@@ -17,6 +17,8 @@ def load(name):
 MODERN = load('package-modern-desktop')
 LEGACY = load('package-viewer')
 require, sha, write = MODERN.require, MODERN.sha, MODERN.write
+SOURCE_VERSION = '0.5.0-beta.1'
+WORKFLOW_CLI_VERSION = '0.5.0-beta.1'
 
 def freeze(args):
     inputs = [args.viewer, args.core, args.workflow_cli, args.fixtures, args.rust_licenses, args.toolchain]
@@ -44,7 +46,7 @@ def freeze(args):
     version=subprocess.check_output([str(core),'--version'],cwd=REPO)
     require(version.decode().strip()=='contain 0.3.2-beta.10','core protocol version differs')
     workflow_version=subprocess.check_output([str(workflow_cli),'--version'],cwd=REPO)
-    require(workflow_version.decode().strip()=='contain-workflow 0.1.0','workflow CLI version differs')
+    require(workflow_version.decode().strip()=='contain-workflow '+WORKFLOW_CLI_VERSION,'workflow CLI version differs')
     LEGACY.validate_sample(core,args.fixtures)
     licenses=MODERN.tree_files(args.rust_licenses)
     require(licenses and all(Path(n).suffix.lower() in {'.txt','.html','.json','.md',''} or Path(n).name.upper().startswith(('LICENSE','COPYING','NOTICE','UNLICENSE')) for n in licenses),'unreviewed Rust notice member')
@@ -64,12 +66,12 @@ def freeze(args):
     runtime_licenses=LEGACY.copy_runtime_licenses(frameworks,package,args.nuget)
     shutil.copytree(args.rust_licenses,package/'licenses/rust')
     for name in ['LICENSE','THIRD-PARTY-NOTICES.md']:shutil.copyfile(REPO/name,package/name)
-    (package/'START-HERE.txt').write_text('Contain source build · Windows x64\nExtract completely and run Contain.Viewer.exe.\nIncludes bundled contain-workflow.exe and reviewed toolchain probes for project environment checks.\nBUILD.json identifies this checkout, not the historically accepted core.\nNative acceptance is separate and not implied by building.\n',encoding='utf-8')
+    (package/'START-HERE.txt').write_text(f'Contain {SOURCE_VERSION} · Windows x64\nExtract completely and run Contain.Viewer.exe.\nIncludes bundled contain-workflow.exe and reviewed toolchain probes for project environment checks.\nBUILD.json identifies this checkout, not the historically accepted core.\nNative acceptance is separate and not implied by building.\n',encoding='utf-8')
     file_rows=[MODERN.identity(p,package) for p in sorted(package.rglob('*')) if p.is_file()]
     build=dict(schema_version=1,protocol='contain-source-desktop-package-1',source_sha=source,
-               version=MODERN.VERSION,target='win-x64',core_source_sha=source,reused_core_binary=False,
+               version=SOURCE_VERSION,target='win-x64',core_source_sha=source,reused_core_binary=False,
                core_version='0.3.2-beta.10',core_sha256=sha(core),
-               workflow_cli_version='0.1.0',workflow_cli_sha256=sha(workflow_cli),
+               workflow_cli_version=WORKFLOW_CLI_VERSION,workflow_cli_sha256=sha(workflow_cli),
                entry_sha256=sha(package/'Contain.Viewer.exe'),
                sdk=MODERN.SDK,runtime=MODERN.RUNTIME,self_contained=True,core_profile='release',
                crt_static_requested=True,toolchain=tools,regressions='passed',runtime_licenses=runtime_licenses,
@@ -92,7 +94,7 @@ def freeze(args):
     finally:
         shutil.rmtree(probe_dir,ignore_errors=True)
     spec=dict(schema_version=1,target='windows-x64',sha256=sha(archive),entry='Contain.Viewer.exe',comparison_entry='contain.exe',
-              required_files=required_files,launch=dict(args=[],timeout_ms=20000,expected_exit=None,window_title='Contain · '+MODERN.VERSION),
+              required_files=required_files,launch=dict(args=[],timeout_ms=20000,expected_exit=None,window_title='Contain · '+SOURCE_VERSION),
               tests=[dict(name='Core exact version',program='contain.exe',args=['--version'],expected_exit=0,timeout_ms=10000,stdout_sha256=hashlib.sha256(version).hexdigest()),
                      dict(name='Bundled workflow CLI exact version',program='contain-workflow.exe',args=['--version'],expected_exit=0,timeout_ms=10000,stdout_sha256=hashlib.sha256(workflow_version).hexdigest()),
                      dict(name='Synthetic sample read-only list',program='contain.exe',args=query_args,expected_exit=0,timeout_ms=20000,stdout_sha256=hashlib.sha256(query).hexdigest())])
