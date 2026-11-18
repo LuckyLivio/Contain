@@ -92,6 +92,8 @@ fn manifest() -> Manifest {
             timeout_ms: 200,
         }],
         verify: vec![],
+        artifact_dir: None,
+        artifacts: vec![],
         pending: vec![],
     }
 }
@@ -862,4 +864,242 @@ fn dotnet_global_json_rejection_falls_back_to_sdk_list_without_leaking_paths() {
     let text = serde_json::to_string(&r).unwrap();
     assert!(!text.contains("PrivateUser"));
     assert!(!text.contains("SecretPath"));
+}
+
+#[test]
+fn cli_build_safe_probes_blocks_unsupported_probe_before_executing_build_steps() {
+    use std::process::Command;
+    let t = Temp::new();
+    let marker = t.0.join("must-not-build.txt");
+    #[cfg(windows)]
+    let (probe_prog, probe_args, build_prog, build_args) = (
+        "cmd.exe",
+        vec!["/D", "/C", "echo 1.0"],
+        "cmd.exe",
+        vec!["/D", "/C", "echo built>must-not-build.txt"],
+    );
+    #[cfg(unix)]
+    let (probe_prog, probe_args, build_prog, build_args) = (
+        "sh",
+        vec!["-c", "printf 1.0"],
+        "sh",
+        vec!["-c", "printf built > must-not-build.txt"],
+    );
+    let m = Manifest {
+        schema_version: 1,
+        target: "windows-x64".into(),
+        windows_toolchain: None,
+        tools: vec![Tool {
+            program: probe_prog.into(),
+            version: "1.0".into(),
+            version_args: probe_args.into_iter().map(str::to_string).collect(),
+            remedy: "manual review".into(),
+        }],
+        required_variables: vec![],
+        build: vec![Step {
+            name: "guarded build".into(),
+            program: build_prog.into(),
+            args: build_args.into_iter().map(str::to_string).collect(),
+            expected_exit: 0,
+            stdout_sha256: None,
+            timeout_ms: 5000,
+        }],
+        verify: vec![],
+        artifact_dir: None,
+        artifacts: vec![],
+        pending: vec![],
+    };
+    let manifest_path = t.0.join("contain.environment.json");
+    fs::write(&manifest_path, serde_json::to_vec_pretty(&m).unwrap()).unwrap();
+    let report = t.0.join("report");
+    let out = Command::new(env!("CARGO_BIN_EXE_contain-workflow"))
+        .args([
+            "build",
+            "--project",
+            t.0.to_str().unwrap(),
+            "--safe-probes",
+            "--execute",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_ne!(out.status.code(), Some(0));
+    assert!(!marker.exists());
+    let parsed: Report =
+        serde_json::from_slice(&fs::read(report.join("report.json")).unwrap()).unwrap();
+    assert_eq!(
+        status(&parsed, &format!("tool:{probe_prog}")),
+        Status::NeedsConfirmation
+    );
+    assert_eq!(status(&parsed, "guarded build"), Status::NotRun);
+}
+
+#[test]
+fn cli_build_logs_progress_and_errors_locally_without_polluting_report_or_accepting_stale_artifacts()
+ {
+    use std::process::Command;
+    let t = Temp::new();
+    let ext_cwd = Temp::new();
+    let out_dir = t.0.join("artifacts").join("app");
+    fs::create_dir_all(&out_dir).unwrap();
+    // Plant a stale artifact before running a failing build!
+    fs::write(out_dir.join("stale.bin"), b"old-artifact-bytes").unwrap();
+
+    #[cfg(windows)]
+    let (fail_prog, fail_args, verify_prog, verify_args) = (
+        "powershell.exe",
+        vec![
+            "-NoProfile",
+            "-Command",
+            "[Console]::Error.WriteLine('LOCAL_COMPILER_ERR_CS1002_SENTINEL'); exit 1",
+        ],
+        "cmd.exe",
+        vec!["/D", "/C", "exit 0"],
+    );
+    #[cfg(unix)]
+    let (fail_prog, fail_args, verify_prog, verify_args) = (
+        "sh",
+        vec!["-c", "echo LOCAL_COMPILER_ERR_CS1002_SENTINEL >&2; exit 1"],
+        "sh",
+        vec!["-c", "exit 0"],
+    );
+
+    let mut m = Manifest {
+        schema_version: 1,
+        target: "windows-x64".into(),
+        windows_toolchain: None,
+        tools: vec![],
+        required_variables: vec![],
+        build: vec![Step {
+            name: "compile app".into(),
+            program: fail_prog.into(),
+            args: fail_args.into_iter().map(str::to_string).collect(),
+            expected_exit: 0,
+            stdout_sha256: None,
+            timeout_ms: 10000,
+        }],
+        verify: vec![Step {
+            name: "verify app".into(),
+            program: verify_prog.into(),
+            args: verify_args.into_iter().map(str::to_string).collect(),
+            expected_exit: 0,
+            stdout_sha256: None,
+            timeout_ms: 10000,
+        }],
+        artifact_dir: Some("artifacts/app".into()),
+        artifacts: vec!["stale.bin".into()],
+        pending: vec![],
+    };
+    let manifest_path = t.0.join("contain.environment.json");
+    fs::write(&manifest_path, serde_json::to_vec_pretty(&m).unwrap()).unwrap();
+
+    let report_fail = t.0.join("report-fail");
+    let logs_fail = t.0.join("logs-fail");
+    let res = Command::new(env!("CARGO_BIN_EXE_contain-workflow"))
+        .current_dir(&ext_cwd.0)
+        .args([
+            "build",
+            "--project",
+            t.0.to_str().unwrap(),
+            "--safe-probes",
+            "--execute",
+            "--log-dir",
+            logs_fail.to_str().unwrap(),
+            "--report",
+            report_fail.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(res.status.code(), Some(1));
+
+    let report_json = fs::read_to_string(report_fail.join("report.json")).unwrap();
+    assert!(!report_json.contains("LOCAL_COMPILER_ERR_CS1002_SENTINEL"));
+    let parsed_fail: Report = serde_json::from_str(&report_json).unwrap();
+    assert_eq!(status(&parsed_fail, "compile app"), Status::Failed);
+    assert_eq!(status(&parsed_fail, "verify app"), Status::NotRun);
+    assert_eq!(status(&parsed_fail, "build_artifacts"), Status::NotRun);
+
+    let stderr_log = fs::read_to_string(logs_fail.join("build-01.stderr.local.log")).unwrap();
+    assert!(stderr_log.contains("LOCAL_COMPILER_ERR_CS1002_SENTINEL"));
+    let progress_lines = fs::read_to_string(logs_fail.join("progress.jsonl")).unwrap();
+    assert!(progress_lines.contains("\"stage\":\"build\""));
+    assert!(logs_fail.join("steps.json").is_file());
+
+    // Now test succeeding build that produces a relative executable/script verified from external CWD
+    let fresh_proj = Temp::new();
+    #[cfg(windows)]
+    {
+        m.build = vec![Step {
+            name: "emit bat".into(),
+            program: "powershell.exe".into(),
+            args: vec![
+                "-NoProfile".into(),
+                "-Command".into(),
+                "New-Item -ItemType Directory -Force 'artifacts/app' | Out-Null; [IO.File]::WriteAllText((Join-Path $PWD 'artifacts/app/hello.cmd'), \"@echo off`r`necho HELLO_OK`r`n\", (New-Object Text.UTF8Encoding $false))".into(),
+            ],
+            expected_exit: 0,
+            stdout_sha256: None,
+            timeout_ms: 10000,
+        }];
+        m.verify = vec![Step {
+            name: "run relative bat".into(),
+            program: "artifacts/app/hello.cmd".into(),
+            args: vec![],
+            expected_exit: 0,
+            stdout_sha256: Some(sha256(b"HELLO_OK\r\n")),
+            timeout_ms: 10000,
+        }];
+        m.artifacts = vec!["hello.cmd".into()];
+    }
+    #[cfg(unix)]
+    {
+        m.build = vec![Step {
+            name: "emit script".into(),
+            program: "sh".into(),
+            args: vec![
+                "-c".into(),
+                "mkdir -p artifacts/app && printf '#!/bin/sh\nprintf HELLO_OK' > artifacts/app/hello.sh && chmod +x artifacts/app/hello.sh".into(),
+            ],
+            expected_exit: 0,
+            stdout_sha256: None,
+            timeout_ms: 10000,
+        }];
+        m.verify = vec![Step {
+            name: "run relative script".into(),
+            program: "artifacts/app/hello.sh".into(),
+            args: vec![],
+            expected_exit: 0,
+            stdout_sha256: Some(sha256(b"HELLO_OK")),
+            timeout_ms: 10000,
+        }];
+        m.artifacts = vec!["hello.sh".into()];
+    }
+    fs::write(
+        fresh_proj.0.join("contain.environment.json"),
+        serde_json::to_vec_pretty(&m).unwrap(),
+    )
+    .unwrap();
+    let report_ok = fresh_proj.0.join("report-ok");
+    let logs_ok = fresh_proj.0.join("logs-ok");
+    let res_ok = Command::new(env!("CARGO_BIN_EXE_contain-workflow"))
+        .current_dir(&ext_cwd.0)
+        .args([
+            "build",
+            "--project",
+            fresh_proj.0.to_str().unwrap(),
+            "--safe-probes",
+            "--execute",
+            "--log-dir",
+            logs_ok.to_str().unwrap(),
+            "--report",
+            report_ok.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(res_ok.status.code(), Some(0));
+    let parsed_ok: Report =
+        serde_json::from_slice(&fs::read(report_ok.join("report.json")).unwrap()).unwrap();
+    assert!(parsed_ok.passed());
+    assert_eq!(status(&parsed_ok, "build_artifacts"), Status::Passed);
 }

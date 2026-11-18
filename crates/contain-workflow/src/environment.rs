@@ -11,6 +11,25 @@ pub struct CheckOptions {
     pub manifest_source: Option<String>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct BuildOptions {
+    pub safe_probes: bool,
+    pub delivery_dir: Option<std::path::PathBuf>,
+    pub log_dir: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ProgressEvent {
+    pub stage: String,
+    pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase_total: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step_name: Option<String>,
+}
+
 pub fn is_supported_probe(program: &str, args: &[String]) -> bool {
     let arg_strs: Vec<&str> = args.iter().map(String::as_str).collect();
     matches!(
@@ -379,8 +398,63 @@ pub fn build(m: &Manifest, root: &Path, execute: bool) -> Report {
     build_to(m, root, execute, None)
 }
 pub fn build_to(m: &Manifest, root: &Path, execute: bool, delivery: Option<&Path>) -> Report {
-    let (report, mut environment) = prepare(m, root, CheckOptions::default());
-    if let Some(path) = delivery {
+    build_with_options(
+        m,
+        root,
+        execute,
+        BuildOptions {
+            safe_probes: false,
+            delivery_dir: delivery.map(Path::to_path_buf),
+            log_dir: None,
+        },
+    )
+}
+pub fn build_with_options(
+    m: &Manifest,
+    root: &Path,
+    execute: bool,
+    options: BuildOptions,
+) -> Report {
+    if let Some(log_dir) = &options.log_dir {
+        if let Some(parent) = log_dir.parent().filter(|p| !p.as_os_str().is_empty()) {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::create_dir(log_dir);
+        append_progress(
+            Some(log_dir.as_path()),
+            &ProgressEvent {
+                stage: "environment_check".into(),
+                state: "running".into(),
+                step_index: None,
+                phase_total: None,
+                step_name: None,
+            },
+        );
+    }
+    let check_options = CheckOptions {
+        safe_probes: options.safe_probes,
+        manifest_source: if options.safe_probes {
+            Some("contain.environment.json".into())
+        } else {
+            None
+        },
+    };
+    let (report, mut environment) = prepare(m, root, check_options);
+    append_progress(
+        options.log_dir.as_deref(),
+        &ProgressEvent {
+            stage: "environment_check".into(),
+            state: if report.passed() {
+                "passed".into()
+            } else {
+                "failed".into()
+            },
+            step_index: None,
+            phase_total: None,
+            step_name: None,
+        },
+    );
+    if let Some(path) = options.delivery_dir.as_deref() {
         environment.insert(
             "CONTAIN_DELIVERY_DIR".into(),
             std::path::absolute(path)
@@ -389,7 +463,15 @@ pub fn build_to(m: &Manifest, root: &Path, execute: bool, delivery: Option<&Path
                 .into(),
         );
     }
-    execute_build_in(m, root, execute, report, &environment)
+    execute_build_with_logs(
+        m,
+        root,
+        execute,
+        report,
+        &environment,
+        options.delivery_dir.as_deref(),
+        options.log_dir.as_deref(),
+    )
 }
 /// Separated from probing so gate transitions can exercise real child processes in fixtures.
 pub fn execute_build(m: &Manifest, root: &Path, execute: bool, r: Report) -> Report {
@@ -399,19 +481,75 @@ fn execute_build_in(
     m: &Manifest,
     root: &Path,
     execute: bool,
+    r: Report,
+    environment: &std::collections::BTreeMap<String, String>,
+) -> Report {
+    execute_build_with_logs(m, root, execute, r, environment, None, None)
+}
+fn execute_build_with_logs(
+    m: &Manifest,
+    root: &Path,
+    execute: bool,
     mut r: Report,
     environment: &std::collections::BTreeMap<String, String>,
+    delivery: Option<&Path>,
+    log_dir: Option<&Path>,
 ) -> Report {
     let ready = r.passed();
     let mut building = execute && ready;
-    for s in &m.build {
+    let mut step_records = Vec::new();
+    for (idx, s) in m.build.iter().enumerate() {
         let check = if building {
-            runner::execute_in(s, root, environment)
+            append_progress(
+                log_dir,
+                &ProgressEvent {
+                    stage: "build".into(),
+                    state: "running".into(),
+                    step_index: Some(idx + 1),
+                    phase_total: Some(m.build.len()),
+                    step_name: Some(s.name.clone()),
+                },
+            );
+            let (c, record) = runner::execute_logged(s, root, environment, "build", idx, log_dir);
+            append_progress(
+                log_dir,
+                &ProgressEvent {
+                    stage: "build".into(),
+                    state: if c.status == Status::Passed {
+                        "passed".into()
+                    } else {
+                        "failed".into()
+                    },
+                    step_index: Some(idx + 1),
+                    phase_total: Some(m.build.len()),
+                    step_name: Some(s.name.clone()),
+                },
+            );
+            step_records.push(record);
+            c
         } else {
+            step_records.push(runner::StepLogRecord {
+                phase: "build".into(),
+                index: idx,
+                name: s.name.clone(),
+                status: Status::NotRun,
+                expected_exit: s.expected_exit,
+                observed_exit: None,
+                timed_out: false,
+                launch_error: None,
+                stdout_file: None,
+                stderr_file: None,
+            });
             Check::new(
                 &s.name,
                 Status::NotRun,
                 "build requires --execute, passing requirements and successful preceding build steps",
+            )
+            .with_evidence(
+                Some("step_not_run".into()),
+                Some(format!("exit {}", s.expected_exit)),
+                None,
+                None,
             )
         };
         building &= check.status == Status::Passed;
@@ -419,18 +557,187 @@ fn execute_build_in(
     }
     let built = execute && ready && r.passed();
     let mut verified = built;
-    for s in &m.verify {
+    for (idx, s) in m.verify.iter().enumerate() {
         let c = if verified {
-            runner::execute_in(s, root, environment)
+            append_progress(
+                log_dir,
+                &ProgressEvent {
+                    stage: "verify".into(),
+                    state: "running".into(),
+                    step_index: Some(idx + 1),
+                    phase_total: Some(m.verify.len()),
+                    step_name: Some(s.name.clone()),
+                },
+            );
+            let (check, record) =
+                runner::execute_logged(s, root, environment, "verify", idx, log_dir);
+            append_progress(
+                log_dir,
+                &ProgressEvent {
+                    stage: "verify".into(),
+                    state: if check.status == Status::Passed {
+                        "passed".into()
+                    } else {
+                        "failed".into()
+                    },
+                    step_index: Some(idx + 1),
+                    phase_total: Some(m.verify.len()),
+                    step_name: Some(s.name.clone()),
+                },
+            );
+            step_records.push(record);
+            check
         } else {
+            step_records.push(runner::StepLogRecord {
+                phase: "verify".into(),
+                index: idx,
+                name: s.name.clone(),
+                status: Status::NotRun,
+                expected_exit: s.expected_exit,
+                observed_exit: None,
+                timed_out: false,
+                launch_error: None,
+                stdout_file: None,
+                stderr_file: None,
+            });
             Check::new(
                 &s.name,
                 Status::NotRun,
                 "requires successful build and preceding verification",
             )
+            .with_evidence(
+                Some("step_not_run".into()),
+                Some(format!("exit {}", s.expected_exit)),
+                None,
+                None,
+            )
         };
         verified &= c.status == Status::Passed;
         r.checks.push(c);
     }
+    if m.artifact_dir.is_some() || !m.artifacts.is_empty() {
+        let artifact_check = if verified {
+            verify_declared_artifacts(m, root, delivery)
+        } else {
+            Check::new(
+                "build_artifacts",
+                Status::NotRun,
+                "requires --execute, passing environment checks, build steps, and verification",
+            )
+            .with_evidence(
+                Some("step_not_run".into()),
+                m.artifact_dir.clone(),
+                None,
+                None,
+            )
+        };
+        r.checks.push(artifact_check);
+    }
+    if let Some(dir) = log_dir {
+        if let Ok(bytes) = serde_json::to_vec_pretty(&step_records) {
+            let _ = std::fs::write(dir.join("steps.json"), bytes);
+        }
+        append_progress(
+            Some(dir),
+            &ProgressEvent {
+                stage: "completed".into(),
+                state: if r.passed() {
+                    "passed".into()
+                } else {
+                    "failed".into()
+                },
+                step_index: None,
+                phase_total: None,
+                step_name: None,
+            },
+        );
+    }
     r
+}
+fn verify_declared_artifacts(m: &Manifest, root: &Path, delivery: Option<&Path>) -> Check {
+    let base_dir = match (&m.artifact_dir, delivery.filter(|p| p.is_dir())) {
+        (Some(rel), Some(d)) if d.join(rel).is_dir() => d.join(rel),
+        (Some(rel), _) => root.join(rel),
+        (None, Some(d)) => d.to_path_buf(),
+        (None, None) => root.to_path_buf(),
+    };
+    if m.artifact_dir.is_some() && (!base_dir.is_dir() || !contains_regular_file(&base_dir)) {
+        return Check::new(
+            "build_artifacts",
+            Status::Failed,
+            "declared artifact directory missing or contains no files",
+        )
+        .with_evidence(
+            Some("artifacts_missing".into()),
+            m.artifact_dir.clone(),
+            None,
+            None,
+        );
+    }
+    for rel in &m.artifacts {
+        let target = base_dir.join(rel);
+        let non_empty_file = target
+            .metadata()
+            .map(|meta| meta.is_file() && meta.len() > 0)
+            .unwrap_or(false);
+        if !non_empty_file {
+            return Check::new(
+                "build_artifacts",
+                Status::Failed,
+                format!("declared artifact missing or empty: {rel}"),
+            )
+            .with_evidence(
+                Some("artifacts_missing".into()),
+                Some(rel.clone()),
+                None,
+                None,
+            );
+        }
+    }
+    let count = m.artifacts.len().max(1);
+    Check::new(
+        "build_artifacts",
+        Status::Passed,
+        format!("verified {count} declared artifact requirement(s)"),
+    )
+    .with_evidence(
+        Some("artifacts_verified".into()),
+        m.artifact_dir.clone(),
+        Some(format!("{count} verified")),
+        None,
+    )
+}
+fn contains_regular_file(dir: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else {
+            continue;
+        };
+        if ft.is_file() {
+            return true;
+        }
+        if ft.is_dir() && contains_regular_file(&entry.path()) {
+            return true;
+        }
+    }
+    false
+}
+fn append_progress(log_dir: Option<&Path>, event: &ProgressEvent) {
+    use std::io::Write;
+    let Some(dir) = log_dir else {
+        return;
+    };
+    let Ok(mut line) = serde_json::to_vec(event) else {
+        return;
+    };
+    line.push(b'\n');
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("progress.jsonl"))
+    {
+        let _ = f.write_all(&line);
+    }
 }

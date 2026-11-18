@@ -54,7 +54,11 @@ enum Command {
         #[arg(long)]
         execute: bool,
         #[arg(long)]
+        safe_probes: bool,
+        #[arg(long)]
         delivery_dir: Option<PathBuf>,
+        #[arg(long)]
+        log_dir: Option<PathBuf>,
     },
     /// Static ZIP inspection; --run explicitly executes the trusted package on Windows.
     Verify {
@@ -171,14 +175,28 @@ fn run() -> Result<i32> {
             manifest,
             report,
             execute,
+            safe_probes,
             delivery_dir,
+            log_dir,
         } => {
             fresh(&report)?;
+            if let Some(dir) = &log_dir {
+                fresh(dir)?;
+            }
             let m = Manifest::read(
                 &manifest.unwrap_or_else(|| project.join("contain.environment.json")),
             )?;
             output(
-                environment::build_to(&m, &project, execute, delivery_dir.as_deref()),
+                environment::build_with_options(
+                    &m,
+                    &project,
+                    execute,
+                    environment::BuildOptions {
+                        safe_probes,
+                        delivery_dir,
+                        log_dir,
+                    },
+                ),
                 report,
             )
         }

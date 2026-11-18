@@ -28,6 +28,10 @@ pub struct Manifest {
     pub required_variables: Vec<String>,
     pub build: Vec<Step>,
     pub verify: Vec<Step>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub artifacts: Vec<String>,
     #[serde(default)]
     pub pending: Vec<String>,
 }
@@ -83,6 +87,18 @@ impl Manifest {
         for s in self.build.iter().chain(&self.verify) {
             validate_step(s)?;
         }
+        if let Some(dir) = &self.artifact_dir {
+            ensure!(
+                crate::artifact::safe_name(dir),
+                "artifact_dir must be a safe relative path"
+            );
+        }
+        for item in &self.artifacts {
+            ensure!(
+                crate::artifact::safe_name(item),
+                "artifacts must contain safe relative paths"
+            );
+        }
         Ok(())
     }
 }
@@ -109,7 +125,7 @@ fn valid_variable(s: &str) -> bool {
 /// Intentionally bounded discovery: only root Cargo.toml, rust-toolchain.toml and global.json.
 /// A draft cannot execute until every unknown has been explicitly resolved.
 pub fn infer(root: &Path) -> Result<Manifest> {
-    let mut m = Manifest { schema_version:1, target:"windows-x64".into(), windows_toolchain:None, tools:vec![], required_variables:vec![], build:vec![], verify:vec![],
+    let mut m = Manifest { schema_version:1, target:"windows-x64".into(), windows_toolchain:None, tools:vec![], required_variables:vec![], build:vec![], verify:vec![], artifact_dir:None, artifacts:vec![],
         pending:vec!["Confirm Windows x64 target, native SDK/MSVC prerequisites and required variable names; these cannot be inferred from supported files".into()] };
     let cargo = root.join("Cargo.toml");
     if cargo.exists() {
