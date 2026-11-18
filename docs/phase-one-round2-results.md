@@ -294,3 +294,10 @@ Windows 实测通过。
     2. **常见踩坑与防旧包（B）**：同一项目先运行普通依赖运行时的 `dotnet build`，页面保留“构建通过”并即时展示针对 `HelloContain.csproj` 的自包含发布命令，点击“生成安装包”拒绝打包且不冲掉绿色构建结果；按指引修正清单后在同一窗口重新检查、构建并成功产出 `HelloContain-Setup-x64.exe`；随后注入编译错误使构建失败并保留磁盘旧 `HelloContain.exe`，界面隐藏并禁止“生成安装包”，旧产物不会被包装为本次成功交付。
     3. **持久身份与同名项目隔离（C）**：同一项目重复打包及跨目录迁移均保持 `contain.installer.json` 的 `AppId` 与安装路径稳定；两个同为 `HelloContain` 的独立项目生成互不相同的 `AppId`、安装目录与开始菜单快捷方式，同机同时安装互不覆盖，卸载其一后另一项目保持完整并正常输出 `CONTAIN_DEMO_BUILD_OK_V1`。
   - **待验证环境与保留门禁**：当前仅具备已装开发工具的 Windows 11 x64 开发机，生成的 `HelloContain-Setup-x64.exe` 与新版 `Contain` 在无开发工具干净 Windows x64 机器上的离线首次启动标为**待验证**；仓库级 `cargo deny`（`RUSTSEC-2026-0543` `chrono 0.4.45`）继续按既有规则跟踪。
+
+## 干净 Windows x64 接收机离线安装交接与状态（`feat/receiver-setup-acceptance`）
+
+针对产品源码 `05d96546b7bb3f97540e26f1614e9c063fd40212` 已产出的两份未签名安装候选包（`HelloContain-Setup-x64.exe`：`b1d7a299ba1b7fcaf58c1993764843ea7a4bfef6c42b01b15321a844965e2c16`；`Contain-Setup-x64.exe`：`ce561df3547da80464f83470c065dafcefb02d21c038f96a3e51f1eae124a018`），在不改动开发机工具链与宿主安全策略的前提下完成只读接收环境核查与离线交接准备：
+
+- **接收环境核查**：当前主机为在线 Windows 11 x64 开发机（系统自带 `.NET Framework 4.8.1` 单列，且已预装现代 `.NET` 运行时与 SDK、Visual Studio、Rust 及 Inno Setup 6.7.3），未启用或安装 Windows Sandbox、Hyper-V、VirtualBox、VMware、QEMU，亦无独立无工具 Windows x64 测试机可用。
+- **交接准备与结论边界**：新增可复用脚本 `scripts/inspect-receiver-environment.ps1`、`scripts/prepare-receiver-setup-handoff.ps1` 与 `scripts/test-receiver-setup-handoff.ps1`，在本地独立交接目录中完成两份原始 Setup 复制前后的 SHA-256 双重核验，生成 `SHA256SUMS.txt`、一页中文离线验收走查单（按先 `HelloContain` 后 `Contain`、单包拷入断网安装、验证启动／输出／合成记录事件依据、标准卸载并在关闭环境前导出回执的顺序编写）与交接清单。开发机已有 ZIP `verify --run` 收据单独保留；两份 Setup 的干净接收机离线安装、启动与卸载均如实记为**接收机待实测**。
