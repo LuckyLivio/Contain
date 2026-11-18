@@ -23,6 +23,17 @@ cargo run -p contain-workflow --locked -- build --project . --execute --delivery
 cargo run -p contain-workflow --locked -- verify --zip .\contain.zip --spec .\package-spec.json --report target/workflow/package-01
 ```
 
+## Windows 安装候选包与便携压缩包分工
+
+本分支同时提供参数化安装器构建入口 `scripts/build-windows-installer.ps1`（基于 Inno Setup 6），两类交付形态职责明确：
+
+- **单文件安装候选包（`Contain-Setup-x64.exe`）**：面向普通桌面接收者。基于已冻结校验的 `contain-source-windows-x64.zip` 原样组包，默认以当前用户最低权限安装到 `%LOCALAPPDATA%\Programs\Contain`（终端用户无需联网安装 Rust、Python、Visual Studio 或 .NET SDK），自动创建开始菜单入口（桌面快捷方式可选且默认关闭），支持在 Windows“已安装的应用”中标准卸载。安装器仅管理程序目录、快捷方式与卸载登记，不改动已有便携版目录，卸载或升级时完整保留 `%LOCALAPPDATA%\Contain` 个人记录库及程序目录外的数据库与导出报告。当前候选包未配置代码签名证书（`NotSigned`）。
+- **便携桌面包（`contain-source-windows-x64.zip`）与独立 CLI 包（`contain-workflow-windows-x64.zip`）**：面向免安装解压即用、基于 `package-spec.json` 的静态／运行态交付契约校验与快照 A/B 交接验收；其中桌面 ZIP 同时作为构建 `Contain-Setup-x64.exe` 的受控载荷输入。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows-installer.ps1 -Zip <path-to>\contain-source-windows-x64.zip -Spec <path-to>\package-spec.json -OutputDirectory <new-output-dir>
+```
+
 本分支第二轮已补齐本次 Rust/WPF 产物的桌面 ZIP 组装、独立 CLI 打包和 A/B 交接脚本，并记录实际选中的 MSVC/SDK。架构改用 IsWow64Process2，ARM64 仿真和未知状态单独记录。[完整命令与产物位置](docs/phase-one.md) · [本轮结果与合并阻塞](docs/phase-one-round2-results.md)。
 
 已在原生 Windows 11 x64 开发机使用锁定工具链（Rust `1.100.0`、.NET SDK `10.0.403`、Python `3.12.10`、MSVC `14.44.35207`、Windows SDK `10.0.26100.0`）产出本次源码的完整桌面 ZIP 与独立 CLI ZIP，并通过开发机本机 `verify --run`、静态 CRT 导入表检查及隔离合成样例流程；**但从未安装开发工具的干净 Windows x64 接收机（快照 B）独立验收仍待完成**，不能将开发机运行结果等同于免开发工具验收。新 CLI 独立依赖门通过；原仓库级 SQLite 安全公告（`RUSTSEC-2026-0459`）已升级至 `rusqlite 0.41.1` / SQLite `3.54.1` 修复，但最新 RustSec 库对旧核心依赖 `chrono 0.4.45` 报告未维护（`RUSTSEC-2026-0543`），未添加忽略项，仓库级 `cargo deny` 仍保留为合并阻塞。上轮实际 Beta.1 包检查及 PR #22 门禁的[历史证据](docs/phase-one-results.md)保留。

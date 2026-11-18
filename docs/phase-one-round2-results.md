@@ -242,3 +242,28 @@ Windows 实测通过。
     3. 选择单独放入带空格目录的正确 ZIP：界面提示缺少 `package-spec.json` 并说明其用途，手动指定原配清单后立即完成核对并显示“文件校验通过”与“启动未测试”。
     4. 同窗口切换回“检查项目环境”执行 `.NET` 控制台样例构建回归，显示“构建通过”。
   - 当前机器为已安装开发工具的开发机，未具备独立的从未安装开发工具 Windows x64 接收机环境，干净快照 B 接收机实测仍单列为**待验证**。
+
+## Windows 单文件安装候选包与四场景实测补充（`feat/windows-installer`）
+
+在保留上轮 `73ed7d02ac76b8a3f9131cfecac565c7649d2579` 冻结桌面包（SHA-256 `2a1292cd266b9f34d82f8c36866cdbbe09ee0bc20a61913477f6c0d77d18eeda`）及全部历史候选包不变的前提下，新增参数化 Inno Setup 安装器构建脚本与中文向导定义，产出可直接双击分发的 `Contain-Setup-x64.exe` 安装候选包：
+
+- **构建脚本与安装体验边界**：
+  - `scripts/build-windows-installer.ps1` 接收 `-Zip`、可选 `-Spec`/`-Identity`/`-ExpectedZipSha256` 与全新 `-OutputDirectory`（仓库内无硬编码本机路径），先复算输入 ZIP 与校验资料 SHA-256，解压至全新临时目录逐文件核对 `CONTENTS.json`（724 个产品文件）并调用随包 `contain-workflow.exe verify` 做静态核验，再调用本机官方 Inno Setup `6.7.3`（`JRSoftware.InnoSetup`）输出 `Contain-Setup-x64.exe`、`.sha256`、`installer-receipt.json` 与 `installer-summary.md`。输入缺失或哈希不一致时指出具体差异并原样保留原文件。
+  - `installer/contain.iss` 与 `installer/ChineseSimplified.isl` 固定 `AppId` 为 `{8F4E2D91-5C3A-4B7E-9A16-2D8C4E7F1035}`，默认采用 `PrivilegesRequired=lowest` 安装至当前用户 `%LOCALAPPDATA%\Programs\Contain`（终端用户无需联网安装 Rust、Python、Visual Studio 或 .NET SDK），自动创建开始菜单快捷方式，桌面快捷方式默认不勾选，安装完成页提供“启动 Contain”选项。
+  - 运行期保护：关闭强制自动杀进程（`CloseApplications=no`），安装、覆盖更新或卸载前若检测到 `Contain` 窗口或可执行文件正在运行，提示用户等待正在保存的记录完成后正常关闭程序再继续，静默模式下直接拒绝覆盖并保留运行中进程。
+  - 数据边界：安装器仅管理程序目录、快捷方式与卸载注册表项；不改动已有便携版解压目录，不递归删除 `%LOCALAPPDATA%\Contain`，也不触碰程序目录外的数据库与导出报告。
+- **安装候选包冻结身份**：
+  - 安装候选包 `Contain-Setup-x64.exe`：大小 `51,192,226` 字节（约 `48.82 MiB`），SHA-256 `bb9cc0fd4edc7c7054c23e105c6e2418c81c1b2c88b28e7fc99f2999c0303c1b`。
+  - 版本标识：`AppVersion = 0.4.0-beta.1`（PE `VersionInfo = 0.4.0.1`），载荷源码修订 `73ed7d02ac76b8a3f9131cfecac565c7649d2579`（来自冻结桌面包 `2a1292cd266b9f34d82f8c36866cdbbe09ee0bc20a61913477f6c0d77d18eeda`），编译器 Inno Setup `6.7.3`。
+  - 代码签名状态：**未签名（`NotSigned`）**，未配置代码签名证书，Windows SmartScreen 或系统安全提示按未签名候选包预期表现。
+- **最终 `Contain-Setup-x64.exe` 实测验收记录（隔离合成记录库，未触碰真实个人库）**：
+  1. **首次安装**：将 `Contain-Setup-x64.exe` 单独复制到独立目录执行安装，确认默认不生成桌面快捷方式、生成开始菜单快捷方式及唯一卸载登记；程序打开状态下再次静默运行安装器返回非零退出码并保留运行中窗口；从开始菜单入口启动 `Contain`，进入“检查交付包”核验已知良好样例包，准确显示“文件校验通过”与“启动未测试”。
+  2. **安装内容逐项比对**：将 `%LOCALAPPDATA%\Programs\Contain` 内全部产品文件与冻结桌面 ZIP 按相对路径和 SHA-256 逐一比对，**724 / 724 项产品文件完全一致**（完整保留随包 CLI、WPF 运行库、`workflow/`、`samples/`、`licenses/`、`LICENSE` 与 `THIRD-PARTY-NOTICES.md` 结构）；安装器自身生成的卸载文件单列为 `unins000.exe` 与 `unins000.dat`。
+  3. **旧便携 ZIP 用户、跨版本升级演练与同版重装（分别记录）**：
+     - 在上轮前冻结便携包（源码 `e523101d27a233494a7d76c6f211accbff282725`，尚无“检查交付包”入口）打开隔离合成会话 `synthetic-finished` 与确定性事件 `synthetic-finished-event-0`；
+     - **跨版本升级演练**（注：因历史未公开发布旧 Setup EXE，使用上述冻结旧版桌面包在本地生成的仅测试用 `0.4.0-beta.0-rehearsal` 安装包演练升级到当前候选包 `0.4.0-beta.1`）：原位升级后 Windows“已安装的应用”中仅保留 **1 个** `Contain` 条目（版本更新为 `0.4.0-beta.1`），新“检查交付包”入口正常出现，“我的记录”重新打开同一会话 `synthetic-finished` 与同一事件 `synthetic-finished-event-0`，事件路径与完整依据文本逐字一致，原有便携版解压目录文件未受任何改动；
+     - **同版本重装**：在 `0.4.0-beta.1` 已安装状态下再次运行 `Contain-Setup-x64.exe` 覆盖重装，应用列表中仍仅保留 **1 个** `Contain` 条目。
+  4. **卸载与重装**：调用系统已安装应用登记的卸载程序（`unins000.exe`）完成卸载，确认 `%LOCALAPPDATA%\Programs\Contain`、开始菜单快捷方式及应用列表条目全部清除；隔离个人记录库 `contain.db` 与预先保存在程序目录外的 HTML 导出报告 SHA-256 均保持原样未变；重新安装 `Contain-Setup-x64.exe` 并从开始菜单启动后，仍可直接打开同一合成会话 `synthetic-finished` 与同一事件 `synthetic-finished-event-0` 且解释一致。验收结束后已执行最终卸载清场。
+- **保留待验证项与合并阻塞**：
+  - **干净机首次启动：待验证**（当前测试机为已装有开发工具链的原生 Windows 11 x64 开发机，不能替代从未安装开发工具的干净 Windows x64 机器首次双击安装与启动验收）。
+  - 仓库级 `cargo deny` 对旧核心依赖 `chrono 0.4.45` 的未维护告警（`RUSTSEC-2026-0543`）仍按既有规则单独保留为合并阻塞，未添加忽略项。
