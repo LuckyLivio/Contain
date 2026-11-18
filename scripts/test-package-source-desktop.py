@@ -51,7 +51,7 @@ class SourcePackageTests(unittest.TestCase):
         self.assertEqual(build['source_sha'],SOURCE);self.assertEqual(build['core_source_sha'],SOURCE)
         self.assertEqual(build['version'],'0.5.0-beta.1');self.assertEqual(build['workflow_cli_version'],'0.5.0-beta.1')
         self.assertFalse(build['reused_core_binary']);self.assertEqual(build['core_sha256'],P.sha(self.core))
-        spec=json.loads((out/'package-spec.json').read_text());identity=json.loads((out/'identity.json').read_text())
+        spec=json.loads((out/'package-spec.json').read_text(encoding='utf-8'));identity=json.loads((out/'identity.json').read_text(encoding='utf-8'))
         self.assertEqual(spec['launch']['window_title'],'Contain · 0.5.0-beta.1')
         self.assertEqual(spec['sha256'],P.sha(out/'contain-source-windows-x64.zip'))
         self.assertEqual(identity['spec_sha256'],P.sha(out/'package-spec.json'))
@@ -71,7 +71,7 @@ class SourcePackageTests(unittest.TestCase):
         self.core.write_bytes(b'MZ-wrong');self.assertRejected('receipt')
     def test_receipt_requires_same_source_and_passing_regressions(self):
         for field,value in [('source_sha','b'*40),('regressions','not_run'),('entry_sha256','0'*64)]:
-            receipt=json.loads(self.receipt.read_text());original=receipt.copy();receipt[field]=value;P.write(self.receipt,receipt)
+            receipt=json.loads(self.receipt.read_text(encoding='utf-8'));original=receipt.copy();receipt[field]=value;P.write(self.receipt,receipt)
             self.assertRejected();P.write(self.receipt,original)
     def assertRejected(self,reason=None):
         with patch.object(P.subprocess,'check_output',side_effect=self.process),self.assertRaisesRegex(ValueError,reason or '.'):
@@ -79,7 +79,7 @@ class SourcePackageTests(unittest.TestCase):
         self.assertFalse(self.args.output.exists())
     def test_installed_but_wrong_selected_toolchain_rejected(self):
         for field,value in [('msvc','14.45.1'),('sdk','10.0.22621.0'),('status','failed')]:
-            tools=json.loads(self.tools.read_text());original=tools.copy();tools[field]=value;P.write(self.tools,tools);self.assertRejected('toolchain');P.write(self.tools,original)
+            tools=json.loads(self.tools.read_text(encoding='utf-8'));original=tools.copy();tools[field]=value;P.write(self.tools,tools);self.assertRejected('toolchain');P.write(self.tools,original)
     def test_dirty_or_wrong_head_rejected(self):
         for mode in ['dirty','head']:
             def process(command,**kwargs):
