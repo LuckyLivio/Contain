@@ -267,3 +267,30 @@ Windows 实测通过。
 - **保留待验证项与合并阻塞**：
   - **干净机首次启动：待验证**（当前测试机为已装有开发工具链的原生 Windows 11 x64 开发机，不能替代从未安装开发工具的干净 Windows x64 机器首次双击安装与启动验收）。
   - 仓库级 `cargo deny` 对旧核心依赖 `chrono 0.4.45` 的未维护告警（`RUSTSEC-2026-0543`）仍按既有规则单独保留为合并阻塞，未添加忽略项。
+
+## 桌面端一键为用户 `.NET` 项目“生成安装包”与实包验收补充（`feat/project-installer`）
+
+在完整保留 `delivery-installer-01`、`delivery-package-01` 及原始演示样例不变的前提下，于代码修订 `05d96546b7bb3f97540e26f1614e9c063fd40212` 在现有“检查项目环境”构建结果区实现了面向 Windows x64 `.NET` 自包含多文件发布的一键“生成安装包”功能，并重新冻结新版 Contain 候选包完成全链路验收：
+
+- **功能、安全与身份边界**：
+  - `contain.environment.json`（`schema 1`）新增可选向后兼容 `installer` 字段（`app_id`、`app_name`、`version`、`publisher`、`publish_dir`、`entry`、`publish_kind`）；`contain-workflow build --execute` 在全部环境、构建、验证与产物检查通过后写出 `build-attestation.json`，精确锁定本次清单摘要与已验证发布子目录内全部文件的 SHA-256。
+  - 新增 `contain-workflow package-installer` 与构建结果区“生成安装包”按钮（不新增一级导航或打包向导）：仅在清单未变且发布子目录文件与本次通过构建的 `build-attestation.json` 完全一致时在干净临时暂存目录组包，拒绝打入项目根目录配置、数据库或构建日志，并在构建失败（即使磁盘残留旧 EXE）或产物被改动时禁止打包。
+  - 对普通依赖运行时的 `dotnet build` 结果保留绿色“构建通过”，同时按当前项目 `.csproj` 主动给出 `dotnet publish ... -c Release -r win-x64 --self-contained true` 指引；对入口歧义、缺少明确版本号或制作者电脑缺少 Inno Setup 6（明确说明接收者无需安装）给出最短补齐步骤；后续打包失败时保留同项目上一次已生成的可用安装包，切换项目时清空旧项目结果。
+  - 项目持久安装身份保存在项目根目录 `contain.installer.json`（同一项目换目录、重编或升级沿用同一 UUID；两个同名独立项目拥有各自的 `AppId`、默认安装子目录 `%LOCALAPPDATA%\Programs\<名称>-<short_id>`、开始菜单快捷方式与卸载登记；严禁占用 Contain 自身 `AppId`/目录，也不默认写入 `LuckyLivio` 发布者）；显示名、文件名、安装路径与 `.iss` 模板参数分别独立校验与转义，支持中文与带空格目录。
+- **新版 Contain 候选包冻结身份（`source_sha = 05d96546b7bb3f97540e26f1614e9c063fd40212`）**：
+  - 桌面候选包 `contain-source-windows-x64.zip`：`182b48b21745874d80c5eb213d2d1190b976c45daa453bf68cf90c6eb29d38aa`
+    （`Contain.Viewer.exe`：`260e25717217f4d4f218850d63d1c84dd30925bd5b4175eb288b333fbb2968f2`，
+    `contain.exe`：`e8ef0a926ff7acb7a7e5fe2acccbb872df516afb59f9eaf2245c221a301fa580`，
+    随包 `contain-workflow.exe`：`67803bf5bf5ae66d59a43faf6f3b3267a6b099ad8e7a1becdc802fb105c49b80`，
+    `package-spec.json`：`d9df87d9b6184a526c308159bec7661733a8e6b73575bfe9f60c1603af138709`）。
+  - 独立 CLI 包 `contain-workflow-windows-x64.zip`：`ab41b7748a187c4eb3d501022d6582f82c0d6274fe6696237848cc7bc6303845`
+    （`contain-workflow.exe`：`3677deefe6193510d6289c719f2d001736f61cca70ff68dcee79af608086491f`，
+    `package-spec.json`：`ac4c1b4a590ca9d5df55bdc108f414ac2021146e4e42812c423a997a0efb71e4`）。
+  - 新版安装候选包 `Contain-Setup-x64.exe`：`51,283,068` 字节，SHA-256 `ce561df3547da80464f83470c065dafcefb02d21c038f96a3e51f1eae124a018`（未签名 `NotSigned`，Inno Setup `6.7.3`）。
+- **最终桌面包 `Contain.Viewer.exe` 实测结果（结论：开发机实包通过，干净机待验证）**：
+  - 双包 `verify --run` 均退出 `0`；`contain-workflow` **43/43** 通过，桌面模型回归 **55/55** 通过，导航控件回归 **12/12** 通过。
+  - 运行最终桌面候选包中的 `Contain.Viewer.exe` 完成三项完整交付验收：
+    1. **正常流程（A）**：选择已配置 `win-x64` 自包含发布的 `HelloContain` 演示项目 → 检查环境通过 → 构建并验证输出摘要通过 → 点击“生成安装包”产出 `HelloContain-Setup-x64.exe`（`27,727,949` 字节，SHA-256 `b1d7a299ba1b7fcaf58c1993764843ea7a4bfef6c42b01b15321a844965e2c16`，`NotSigned`）；将其单独复制到带中文与空格的独立目录执行安装（同时验证默认用户目录及自定义中文带空格安装目录），独立核实开始菜单快捷方式指向安装目录内的 `HelloContain.exe`，启动并实测标准输出为 `CONTAIN_DEMO_BUILD_OK_V1`；调用系统已登记卸载项完成卸载后确认 `Contain` 自身仍正常启动。
+    2. **常见踩坑与防旧包（B）**：同一项目先运行普通依赖运行时的 `dotnet build`，页面保留“构建通过”并即时展示针对 `HelloContain.csproj` 的自包含发布命令，点击“生成安装包”拒绝打包且不冲掉绿色构建结果；按指引修正清单后在同一窗口重新检查、构建并成功产出 `HelloContain-Setup-x64.exe`；随后注入编译错误使构建失败并保留磁盘旧 `HelloContain.exe`，界面隐藏并禁止“生成安装包”，旧产物不会被包装为本次成功交付。
+    3. **持久身份与同名项目隔离（C）**：同一项目重复打包及跨目录迁移均保持 `contain.installer.json` 的 `AppId` 与安装路径稳定；两个同为 `HelloContain` 的独立项目生成互不相同的 `AppId`、安装目录与开始菜单快捷方式，同机同时安装互不覆盖，卸载其一后另一项目保持完整并正常输出 `CONTAIN_DEMO_BUILD_OK_V1`。
+  - **待验证环境与保留门禁**：当前仅具备已装开发工具的 Windows 11 x64 开发机，生成的 `HelloContain-Setup-x64.exe` 与新版 `Contain` 在无开发工具干净 Windows x64 机器上的离线首次启动标为**待验证**；仓库级 `cargo deny`（`RUSTSEC-2026-0543` `chrono 0.4.45`）继续按既有规则跟踪。
