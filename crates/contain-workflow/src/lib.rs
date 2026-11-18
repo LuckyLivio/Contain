@@ -1,5 +1,6 @@
 pub mod architecture;
 pub mod artifact;
+pub mod dotnet_onboarding;
 pub mod environment;
 pub mod manifest;
 pub mod package;

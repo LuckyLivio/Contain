@@ -9,6 +9,8 @@ pub struct Tool {
     pub version: String,
     pub version_args: Vec<String>,
     pub remedy: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version_policy: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -103,6 +105,25 @@ impl Manifest {
                     .all(|c| c.is_ascii_alphanumeric() || "._-+".contains(c)),
                 "version must be a literal token"
             );
+            if let Some(policy) = &t.version_policy {
+                match policy.as_str() {
+                    "exact" => {}
+                    "dotnet_major_or_newer" => {
+                        let valid_major = t
+                            .version
+                            .strip_suffix(".0")
+                            .and_then(|m| m.parse::<u32>().ok())
+                            .is_some_and(|m| (6..=99).contains(&m));
+                        ensure!(
+                            t.program == "dotnet"
+                                && t.version_args.iter().map(String::as_str).eq(["--version"])
+                                && valid_major,
+                            "dotnet_major_or_newer requires program=dotnet, version_args=[\"--version\"], and version=<major>.0"
+                        );
+                    }
+                    _ => anyhow::bail!("unsupported tool version_policy"),
+                }
+            }
         }
         for s in self.build.iter().chain(&self.verify) {
             validate_step(s)?;
@@ -243,6 +264,7 @@ pub fn infer(root: &Path) -> Result<Manifest> {
                     remedy: format!(
                         "rustup toolchain install {channel}; select this toolchain in the project"
                     ),
+                    version_policy: None,
                 });
             } else {
                 m.pending.push(format!("rust-toolchain.toml channel {channel} is not an exact version; choose and verify a pin"));
@@ -271,6 +293,7 @@ pub fn infer(root: &Path) -> Result<Manifest> {
                 version: v.into(),
                 version_args: vec!["--version".into()],
                 remedy: format!("Install .NET SDK {v} from https://dotnet.microsoft.com/download"),
+                version_policy: None,
             });
             m.pending.push("Confirm .NET project path, runtime/Windows Desktop versions, restore and publish commands; global.json only declares the SDK".into());
         } else {

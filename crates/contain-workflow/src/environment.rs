@@ -278,14 +278,44 @@ pub fn check_with_policy(
             );
             continue;
         }
+        let is_dotnet_major_policy = t.version_policy.as_deref() == Some("dotnet_major_or_newer");
         let (status, outcome_label, outcome_code, observed) =
             match probe(&t.program, &t.version_args) {
-                Ok(output) if output.split_whitespace().any(|s| s == t.version) => (
-                    Status::Passed,
-                    "version matched",
-                    "version_matched",
-                    Some(t.version.clone()),
-                ),
+                Ok(output)
+                    if !is_dotnet_major_policy
+                        && output.split_whitespace().any(|s| s == t.version) =>
+                {
+                    (
+                        Status::Passed,
+                        "version matched",
+                        "version_matched",
+                        Some(t.version.clone()),
+                    )
+                }
+                Ok(output) if is_dotnet_major_policy => {
+                    let obs = extract_safe_version_token(&t.version_args, &output);
+                    let req_m = t
+                        .version
+                        .split('.')
+                        .next()
+                        .and_then(|s| s.parse::<u32>().ok());
+                    let obs_m = obs
+                        .as_deref()
+                        .and_then(|tok| tok.split('.').next())
+                        .and_then(|s| s.parse::<u32>().ok());
+                    if let (Some(rm), Some(om)) = (req_m, obs_m)
+                        && om >= rm
+                    {
+                        (
+                            Status::Passed,
+                            "compatible SDK version matched",
+                            "version_matched",
+                            obs,
+                        )
+                    } else {
+                        (Status::Failed, "version mismatch", "version_mismatch", obs)
+                    }
+                }
                 Ok(output) => (
                     Status::Failed,
                     "version mismatch",

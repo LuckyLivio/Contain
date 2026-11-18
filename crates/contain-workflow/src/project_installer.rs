@@ -229,11 +229,27 @@ pub fn discover_csproj_metadata(project_root: &Path) -> CsprojMetadata {
     meta
 }
 
+fn strip_xml_comments_simple(xml: &str) -> String {
+    let mut out = String::with_capacity(xml.len());
+    let mut rest = xml.trim_start_matches('\u{feff}');
+    while let Some(idx) = rest.find("<!--") {
+        out.push_str(&rest[..idx]);
+        if let Some(end) = rest[idx + 4..].find("-->") {
+            rest = &rest[idx + 4 + end + 3..];
+        } else {
+            return String::new();
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 fn extract_simple_xml_tag(xml: &str, tag: &str) -> Option<String> {
+    let cleaned = strip_xml_comments_simple(xml);
     let open = format!("<{tag}>");
     let close = format!("</{tag}>");
     let mut matches = Vec::new();
-    let mut rest = xml;
+    let mut rest = cleaned.as_str();
     while let Some(start) = rest.find(&open) {
         let after_open = &rest[start + open.len()..];
         let end = after_open.find(&close)?;

@@ -81,6 +81,7 @@ fn manifest() -> Manifest {
             version: "1.100.0".into(),
             version_args: vec!["--version".into()],
             remedy: "install pinned Rust".into(),
+            version_policy: None,
         }],
         required_variables: vec!["REQUIRED_TOKEN".into()],
         build: vec![Step {
@@ -719,12 +720,14 @@ fn observed_version_extracted_for_mismatch_without_serializing_secrets() {
             version: "10.0.999".into(),
             version_args: vec!["--version".into()],
             remedy: "Install .NET SDK 10.0.999".into(),
+            version_policy: None,
         },
         Tool {
             program: "rustup".into(),
             version: "x86_64-pc-windows-msvc".into(),
             version_args: vec!["target".into(), "list".into(), "--installed".into()],
             remedy: "rustup target add x86_64-pc-windows-msvc".into(),
+            version_policy: None,
         },
     ];
     let secret = "SECRET_PATH_C:\\Users\\Private\\1.0";
@@ -762,6 +765,7 @@ fn safe_probes_skip_unsupported_commands_and_mark_needs_confirmation() {
         version: "1.0".into(),
         version_args: vec!["/C".into(), "echo".into()],
         remedy: "confirm manually".into(),
+        version_policy: None,
     });
     let mut executed = Vec::new();
     let r = environment::check_with_policy(
@@ -841,6 +845,7 @@ fn dotnet_global_json_rejection_falls_back_to_sdk_list_without_leaking_paths() {
         version: "10.0.404".into(),
         version_args: vec!["--version".into()],
         remedy: "Install .NET SDK 10.0.404".into(),
+        version_policy: None,
     }];
     let r = environment::check_with_policy(
         &m,
@@ -895,6 +900,7 @@ fn cli_build_safe_probes_blocks_unsupported_probe_before_executing_build_steps()
             version: "1.0".into(),
             version_args: probe_args.into_iter().map(str::to_string).collect(),
             remedy: "manual review".into(),
+            version_policy: None,
         }],
         required_variables: vec![],
         build: vec![Step {
@@ -1452,4 +1458,229 @@ fn project_installer_validates_publish_mode_entry_version_freshness_and_compiles
         assert!(out_real.join("SampleApp-Setup-x64.exe").is_file());
         assert!(!out_tampered.exists());
     }
+}
+
+#[test]
+fn dotnet_major_or_newer_policy_accepts_compatible_sdk_and_rejects_older_major() {
+    let mut m = manifest();
+    m.required_variables.clear();
+    m.tools = vec![Tool {
+        program: "dotnet".into(),
+        version: "10.0".into(),
+        version_args: vec!["--version".into()],
+        remedy: "Install .NET SDK 10.0 x64".into(),
+        version_policy: Some("dotnet_major_or_newer".into()),
+    }];
+    m.validate().unwrap();
+
+    for ok_sdk in ["10.0.100", "10.0.403", "11.0.100"] {
+        let r = environment::check_with_policy(
+            &m,
+            "windows",
+            "x86_64",
+            true,
+            |_, _| Ok(format!("{ok_sdk}\n")),
+            |_| true,
+        );
+        assert!(r.passed(), "{ok_sdk} should satisfy net10.0");
+        let chk = r.checks.iter().find(|c| c.name == "tool:dotnet").unwrap();
+        assert_eq!(chk.observed.as_deref(), Some(ok_sdk));
+    }
+
+    let r_old = environment::check_with_policy(
+        &m,
+        "windows",
+        "x86_64",
+        true,
+        |_, _| Ok("9.0.308\n".into()),
+        |_| true,
+    );
+    let chk_old = r_old
+        .checks
+        .iter()
+        .find(|c| c.name == "tool:dotnet")
+        .unwrap();
+    assert_eq!(chk_old.status, Status::Failed);
+    assert_eq!(chk_old.outcome.as_deref(), Some("version_mismatch"));
+    assert_eq!(chk_old.observed.as_deref(), Some("9.0.308"));
+}
+
+#[test]
+fn dotnet_onboarding_reads_custom_assembly_name_without_writing_and_guards_apply() {
+    use contain_workflow::dotnet_onboarding::{apply_onboarding, inspect_project};
+
+    let t = Temp::new();
+    let proj = t.0.join("PlainGreetingFolder");
+    fs::create_dir_all(&proj).unwrap();
+    let csproj_path = proj.join("StarterProjectFile.csproj");
+    let initial_csproj = "\u{feff}<Project Sdk=\"Microsoft.NET.Sdk\">\n\
+  <!-- <AssemblyName>CommentedOutWrongName</AssemblyName> -->\n\
+  <PropertyGroup>\n\
+    <OutputType>Exe</OutputType>\n\
+    <TargetFramework>net10.0</TargetFramework>\n\
+    <AssemblyName>HelloDesk</AssemblyName>\n\
+  </PropertyGroup>\n\
+</Project>\n";
+    fs::write(&csproj_path, initial_csproj).unwrap();
+
+    // 1. Read-only inspection writes zero files and uses actual AssemblyName (HelloDesk.exe)
+    let insp = inspect_project(&proj).unwrap();
+    assert_eq!(insp.status, "ready_to_confirm");
+    assert!(!proj.join("contain.environment.json").exists());
+    assert_eq!(
+        insp.csproj_file.as_deref(),
+        Some("StarterProjectFile.csproj")
+    );
+    assert_eq!(insp.assembly_name.as_deref(), Some("HelloDesk"));
+    assert_eq!(insp.entry_executable.as_deref(), Some("HelloDesk.exe"));
+    assert_eq!(insp.app_name.as_deref(), Some("HelloDesk"));
+    assert_eq!(insp.target_framework.as_deref(), Some("net10.0"));
+    assert_eq!(insp.app_version.as_deref(), Some("0.1.0"));
+    assert_eq!(insp.version_source.as_deref(), Some("suggested_default"));
+    assert_eq!(insp.sdk_source.as_deref(), Some("target_framework_major"));
+    assert_eq!(
+        insp.publish_dir.as_deref(),
+        Some("target/workflow/publish/win-x64")
+    );
+    let proposed = insp.proposed_manifest.as_ref().unwrap();
+    assert_eq!(
+        proposed.tools[0].version_policy.as_deref(),
+        Some("dotnet_major_or_newer")
+    );
+    assert_eq!(proposed.tools[0].version, "10.0");
+    assert_eq!(
+        proposed.installer.as_ref().unwrap().entry.as_deref(),
+        Some("HelloDesk.exe")
+    );
+
+    // 2. If .csproj changes during preview, apply_onboarding refuses to write stale config and returns refreshed inspection
+    let updated_csproj = initial_csproj.replace(
+        "<AssemblyName>HelloDesk</AssemblyName>",
+        "<AssemblyName>HelloDesk</AssemblyName>\n    <Version>1.4.0</Version>",
+    );
+    fs::write(&csproj_path, &updated_csproj).unwrap();
+    let stale_apply = apply_onboarding(&proj, Some(&insp.source_fingerprint_sha256)).unwrap();
+    assert_eq!(stale_apply.status, "source_changed_refresh_required");
+    assert!(!stale_apply.wrote_file);
+    assert!(!proj.join("contain.environment.json").exists());
+    assert_eq!(stale_apply.inspection.app_version.as_deref(), Some("1.4.0"));
+    assert_eq!(
+        stale_apply.inspection.version_source.as_deref(),
+        Some("csproj_declared")
+    );
+
+    // 3. If contain.environment.json was just created externally, apply_onboarding preserves it untouched
+    let custom_bytes = b"{\"custom\":\"preserved\"}\n";
+    fs::write(proj.join("contain.environment.json"), custom_bytes).unwrap();
+    let preserved = apply_onboarding(
+        &proj,
+        Some(&stale_apply.inspection.source_fingerprint_sha256),
+    )
+    .unwrap();
+    assert_eq!(preserved.status, "preserved_existing_manifest");
+    assert!(!preserved.wrote_file);
+    assert_eq!(
+        fs::read(proj.join("contain.environment.json")).unwrap(),
+        custom_bytes
+    );
+
+    // 4. Clean confirmation writes valid contain.environment.json and leaves .csproj untouched
+    fs::remove_file(proj.join("contain.environment.json")).unwrap();
+    let applied = apply_onboarding(
+        &proj,
+        Some(&stale_apply.inspection.source_fingerprint_sha256),
+    )
+    .unwrap();
+    assert_eq!(applied.status, "applied");
+    assert!(applied.wrote_file);
+    assert!(proj.join("contain.environment.json").is_file());
+    assert_eq!(fs::read_to_string(&csproj_path).unwrap(), updated_csproj);
+    let written = Manifest::read(&proj.join("contain.environment.json")).unwrap();
+    assert_eq!(written.installer.unwrap().version.as_deref(), Some("1.4.0"));
+}
+
+#[test]
+fn dotnet_onboarding_rejects_multi_project_library_multi_tfm_and_dynamic_entry() {
+    use contain_workflow::dotnet_onboarding::inspect_project;
+
+    // 1. Multiple .csproj in root
+    let t_multi = Temp::new();
+    fs::write(
+        t_multi.0.join("One.csproj"),
+        "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>",
+    )
+    .unwrap();
+    fs::write(
+        t_multi.0.join("Two.csproj"),
+        "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>",
+    )
+    .unwrap();
+    let r_multi = inspect_project(&t_multi.0).unwrap();
+    assert_eq!(r_multi.status, "unsupported");
+    assert_eq!(
+        r_multi.unsupported_code.as_deref(),
+        Some("multiple_csproj_in_root")
+    );
+    assert!(!t_multi.0.join("contain.environment.json").exists());
+
+    // 2. Solution folder with multiple child .csproj
+    let t_sln = Temp::new();
+    fs::create_dir_all(t_sln.0.join("src").join("AppA")).unwrap();
+    fs::create_dir_all(t_sln.0.join("src").join("LibB")).unwrap();
+    fs::write(
+        t_sln.0.join("src").join("AppA").join("AppA.csproj"),
+        "<Project />",
+    )
+    .unwrap();
+    fs::write(
+        t_sln.0.join("src").join("LibB").join("LibB.csproj"),
+        "<Project />",
+    )
+    .unwrap();
+    let r_sln = inspect_project(&t_sln.0).unwrap();
+    assert_eq!(
+        r_sln.unsupported_code.as_deref(),
+        Some("multiple_child_projects")
+    );
+
+    // 3. Class library (implicit missing OutputType and explicit OutputType=Library)
+    let t_lib = Temp::new();
+    fs::write(
+        t_lib.0.join("CoreLib.csproj"),
+        "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>",
+    )
+    .unwrap();
+    let r_lib = inspect_project(&t_lib.0).unwrap();
+    assert_eq!(
+        r_lib.unsupported_code.as_deref(),
+        Some("class_library_project")
+    );
+    assert!(!t_lib.0.join("contain.environment.json").exists());
+
+    // 4. Multi-target framework (<TargetFrameworks>)
+    let t_mtfm = Temp::new();
+    fs::write(
+        t_mtfm.0.join("Multi.csproj"),
+        "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType><TargetFrameworks>net8.0;net10.0</TargetFrameworks></PropertyGroup></Project>",
+    )
+    .unwrap();
+    let r_mtfm = inspect_project(&t_mtfm.0).unwrap();
+    assert_eq!(
+        r_mtfm.unsupported_code.as_deref(),
+        Some("multi_target_framework")
+    );
+
+    // 5. Dynamic $(...) MSBuild property on AssemblyName
+    let t_dyn = Temp::new();
+    fs::write(
+        t_dyn.0.join("Dyn.csproj"),
+        "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><AssemblyName>$(CustomPrefix).Cli</AssemblyName></PropertyGroup></Project>",
+    )
+    .unwrap();
+    let r_dyn = inspect_project(&t_dyn.0).unwrap();
+    assert_eq!(
+        r_dyn.unsupported_code.as_deref(),
+        Some("dynamic_assembly_name")
+    );
+    assert!(!t_dyn.0.join("contain.environment.json").exists());
 }

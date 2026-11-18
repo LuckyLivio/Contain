@@ -1,7 +1,7 @@
 use anyhow::{Result, ensure};
 use clap::{Parser, Subcommand};
 use contain_workflow::{
-    environment,
+    dotnet_onboarding, environment,
     manifest::{self, Manifest},
     package::{self, PackageSpec},
     project_installer,
@@ -101,6 +101,17 @@ enum Command {
         iscc: Option<PathBuf>,
         #[arg(long)]
         report: PathBuf,
+    },
+    /// Read-only C# console project inspection, or write contain.environment.json upon explicit confirmation.
+    OnboardDotnet {
+        #[arg(long)]
+        project: PathBuf,
+        #[arg(long)]
+        apply: bool,
+        #[arg(long)]
+        expected_fingerprint: Option<String>,
+        #[arg(long)]
+        output_json: Option<PathBuf>,
     },
 }
 fn output(report: Report, path: PathBuf) -> Result<i32> {
@@ -284,6 +295,40 @@ fn run() -> Result<i32> {
                     2
                 },
             )
+        }
+        Command::OnboardDotnet {
+            project,
+            apply,
+            expected_fingerprint,
+            output_json,
+        } => {
+            if apply {
+                let res =
+                    dotnet_onboarding::apply_onboarding(&project, expected_fingerprint.as_deref())?;
+                let bytes = serde_json::to_vec_pretty(&res)?;
+                if let Some(out_path) = output_json {
+                    fs::write(out_path, &bytes)?;
+                } else {
+                    println!("{}", String::from_utf8_lossy(&bytes));
+                }
+                Ok(match res.status.as_str() {
+                    "applied" | "preserved_existing_manifest" => 0,
+                    "source_changed_refresh_required" => 2,
+                    _ => 1,
+                })
+            } else {
+                let res = dotnet_onboarding::inspect_project(&project)?;
+                let bytes = serde_json::to_vec_pretty(&res)?;
+                if let Some(out_path) = output_json {
+                    fs::write(out_path, &bytes)?;
+                } else {
+                    println!("{}", String::from_utf8_lossy(&bytes));
+                }
+                Ok(match res.status.as_str() {
+                    "ready_to_confirm" | "existing_manifest" => 0,
+                    _ => 2,
+                })
+            }
         }
     }
 }
