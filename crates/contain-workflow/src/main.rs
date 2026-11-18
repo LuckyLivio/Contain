@@ -4,6 +4,7 @@ use contain_workflow::{
     environment,
     manifest::{self, Manifest},
     package::{self, PackageSpec},
+    project_installer,
     report::{Report, Status},
 };
 use std::{fs, io::Write, path::PathBuf};
@@ -83,6 +84,21 @@ enum Command {
         candidate: PathBuf,
         #[arg(long)]
         entry: String,
+        #[arg(long)]
+        report: PathBuf,
+    },
+    /// Package a fresh verified Windows x64 self-contained .NET publish output into <App>-Setup-x64.exe.
+    PackageInstaller {
+        #[arg(long)]
+        project: PathBuf,
+        #[arg(long)]
+        manifest: Option<PathBuf>,
+        #[arg(long)]
+        attestation: PathBuf,
+        #[arg(long)]
+        output_dir: PathBuf,
+        #[arg(long)]
+        iscc: Option<PathBuf>,
         #[arg(long)]
         report: PathBuf,
     },
@@ -183,22 +199,31 @@ fn run() -> Result<i32> {
             if let Some(dir) = &log_dir {
                 fresh(dir)?;
             }
-            let m = Manifest::read(
-                &manifest.unwrap_or_else(|| project.join("contain.environment.json")),
-            )?;
-            output(
-                environment::build_with_options(
+            let manifest_path =
+                manifest.unwrap_or_else(|| project.join("contain.environment.json"));
+            let m = Manifest::read(&manifest_path)?;
+            let build_report = environment::build_with_options(
+                &m,
+                &project,
+                execute,
+                environment::BuildOptions {
+                    safe_probes,
+                    delivery_dir: delivery_dir.clone(),
+                    log_dir,
+                },
+            );
+            let build_passed = execute && build_report.passed();
+            let code = output(build_report, report.clone())?;
+            if build_passed {
+                project_installer::write_build_attestation(
                     &m,
+                    &manifest_path,
                     &project,
-                    execute,
-                    environment::BuildOptions {
-                        safe_probes,
-                        delivery_dir,
-                        log_dir,
-                    },
-                ),
-                report,
-            )
+                    delivery_dir.as_deref(),
+                    &report,
+                )?;
+            }
+            Ok(code)
         }
         Command::Verify {
             zip,
@@ -227,6 +252,38 @@ fn run() -> Result<i32> {
                 "invalid entry"
             );
             output(package::compare(&baseline, &candidate, &entry), report)
+        }
+        Command::PackageInstaller {
+            project,
+            manifest,
+            attestation,
+            output_dir,
+            iscc,
+            report,
+        } => {
+            fresh(&report)?;
+            let (inst_report, _) = project_installer::package_installer(
+                &project,
+                manifest.as_deref(),
+                &attestation,
+                &output_dir,
+                iscc.as_deref(),
+                &report,
+            )?;
+            println!("Report written: report.json / report.md");
+            Ok(
+                if inst_report
+                    .checks
+                    .iter()
+                    .any(|c| c.status == Status::Failed)
+                {
+                    1
+                } else if inst_report.passed() {
+                    0
+                } else {
+                    2
+                },
+            )
         }
     }
 }

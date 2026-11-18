@@ -94,6 +94,7 @@ fn manifest() -> Manifest {
         verify: vec![],
         artifact_dir: None,
         artifacts: vec![],
+        installer: None,
         pending: vec![],
     }
 }
@@ -907,6 +908,7 @@ fn cli_build_safe_probes_blocks_unsupported_probe_before_executing_build_steps()
         verify: vec![],
         artifact_dir: None,
         artifacts: vec![],
+        installer: None,
         pending: vec![],
     };
     let manifest_path = t.0.join("contain.environment.json");
@@ -989,6 +991,7 @@ fn cli_build_logs_progress_and_errors_locally_without_polluting_report_or_accept
         }],
         artifact_dir: Some("artifacts/app".into()),
         artifacts: vec!["stale.bin".into()],
+        installer: None,
         pending: vec![],
     };
     let manifest_path = t.0.join("contain.environment.json");
@@ -1102,4 +1105,351 @@ fn cli_build_logs_progress_and_errors_locally_without_polluting_report_or_accept
         serde_json::from_slice(&fs::read(report_ok.join("report.json")).unwrap()).unwrap();
     assert!(parsed_ok.passed());
     assert_eq!(status(&parsed_ok, "build_artifacts"), Status::Passed);
+    assert!(!report_fail.join("build-attestation.json").exists());
+    assert!(report_ok.join("build-attestation.json").is_file());
+}
+
+#[test]
+fn project_installer_identity_persists_across_move_and_isolates_same_name_projects() {
+    use contain_workflow::project_installer::{
+        CONTAIN_OWN_APP_ID, derive_and_validate_install_paths, derive_and_validate_setup_file_stem,
+        inspect_existing_identity, normalize_valid_app_id, render_project_iss,
+        resolve_or_persist_identity,
+    };
+
+    assert!(normalize_valid_app_id(CONTAIN_OWN_APP_ID).is_err());
+    assert!(normalize_valid_app_id(&format!("{{{}}}", CONTAIN_OWN_APP_ID.to_uppercase())).is_err());
+    assert!(normalize_valid_app_id("00000000-0000-0000-0000-000000000000").is_err());
+
+    let root = Temp::new();
+    let proj_a = root.0.join("WorkspaceA").join("HelloContain");
+    let proj_b = root.0.join("WorkspaceB").join("HelloContain");
+    fs::create_dir_all(&proj_a).unwrap();
+    fs::create_dir_all(&proj_b).unwrap();
+
+    let (id_a1, src_a1) = resolve_or_persist_identity(&proj_a, None).unwrap();
+    assert_eq!(src_a1, "generated_and_persisted");
+    assert_ne!(id_a1, CONTAIN_OWN_APP_ID);
+    let (id_a2, src_a2) = resolve_or_persist_identity(&proj_a, None).unwrap();
+    assert_eq!(id_a1, id_a2);
+    assert_eq!(src_a2, "contain.installer.json");
+
+    // Simulate moving Project A to a directory with spaces and Chinese characters
+    let moved_a = root.0.join("移动 项目 目录").join("HelloContain");
+    fs::create_dir_all(&moved_a).unwrap();
+    fs::copy(
+        proj_a.join("contain.installer.json"),
+        moved_a.join("contain.installer.json"),
+    )
+    .unwrap();
+    let (id_moved, _) = resolve_or_persist_identity(&moved_a, None).unwrap();
+    assert_eq!(id_moved, id_a1);
+
+    // Independent Project B with the exact same name gets an independent AppId, install dir, and shortcut
+    let (id_b, _) = resolve_or_persist_identity(&proj_b, None).unwrap();
+    assert_ne!(id_a1, id_b);
+
+    let stem_a = derive_and_validate_setup_file_stem("HelloContain", "HelloContain").unwrap();
+    let stem_b = derive_and_validate_setup_file_stem("HelloContain", "HelloContain").unwrap();
+    assert_eq!(stem_a, "HelloContain");
+    assert_eq!(stem_b, "HelloContain");
+
+    let (dir_a, lnk_a) =
+        derive_and_validate_install_paths("HelloContain", &stem_a, &id_a1[..8]).unwrap();
+    let (dir_b, lnk_b) =
+        derive_and_validate_install_paths("HelloContain", &stem_b, &id_b[..8]).unwrap();
+    assert_ne!(dir_a, dir_b);
+    assert_ne!(lnk_a, lnk_b);
+    assert_ne!(dir_a.to_ascii_lowercase(), "contain");
+
+    // Conflicting manifest app_id vs persisted contain.installer.json must fail cleanly
+    let conflict = inspect_existing_identity(&proj_a, Some(&id_b));
+    assert!(matches!(conflict, Err(("conflicting_app_id", _))));
+
+    // Default publisher must NEVER inject LuckyLivio or Contain repository URLs
+    let iss = render_project_iss(
+        &id_a1,
+        &id_a1[..8],
+        "HelloContain",
+        "0.1.0",
+        "0.1.0.0",
+        None,
+        &dir_a,
+        &lnk_a,
+        "HelloContain.exe",
+        Path::new("C:\\stage\\payload"),
+        Path::new("C:\\stage\\out"),
+        "HelloContain-Setup-x64",
+    )
+    .unwrap();
+    assert!(iss.contains(&format!("AppId={{{{{id_a1}}}")));
+    assert!(!iss.contains("LuckyLivio"));
+    assert!(!iss.contains(CONTAIN_OWN_APP_ID));
+    assert!(
+        !iss.to_ascii_lowercase()
+            .contains("8f4e2d91-5c3a-4b7e-9a16-2d8c4e7f1035")
+    );
+}
+
+#[test]
+fn project_installer_separates_display_name_filename_and_template_escaping() {
+    use contain_workflow::project_installer::{
+        convert_to_four_part_version, derive_and_validate_install_paths,
+        derive_and_validate_setup_file_stem, render_project_iss, validate_display_name,
+    };
+
+    assert!(validate_display_name("Bad\nName").is_err());
+    let display = validate_display_name("我的工具: {Beta} \"Pro\" & 助手").unwrap();
+    let stem = derive_and_validate_setup_file_stem(&display, "MyHelper").unwrap();
+    assert!(!stem.contains([':', '"', '<', '>', '|', '?', '*', '/', '\\']));
+    let (dir_leaf, shortcut) =
+        derive_and_validate_install_paths(&display, &stem, "a1b2c3d4").unwrap();
+    assert!(!dir_leaf.contains([':', '"']));
+    assert!(!shortcut.contains([':', '"']));
+    assert_eq!(
+        convert_to_four_part_version("1.2.3-beta.4").unwrap(),
+        "1.2.3.4"
+    );
+
+    let iss = render_project_iss(
+        "a1b2c3d4-1111-4222-8333-444455556666",
+        "a1b2c3d4",
+        &display,
+        "1.2.3-beta.4",
+        "1.2.3.4",
+        Some("开发团队 {Team}"),
+        &dir_leaf,
+        &shortcut,
+        "sub/MyHelper.exe",
+        Path::new("C:\\测试 目录\\payload"),
+        Path::new("C:\\测试 目录\\out"),
+        &format!("{stem}-Setup-x64"),
+    )
+    .unwrap();
+    assert!(iss.contains("{{Beta}"));
+    assert!(iss.contains("AppPublisher=开发团队 {{Team}"));
+    assert!(iss.contains("&&"));
+}
+
+#[cfg(windows)]
+#[test]
+fn project_installer_validates_publish_mode_entry_version_freshness_and_compiles_setup() {
+    use contain_workflow::manifest::InstallerSpec;
+    use contain_workflow::project_installer;
+    use std::process::Command;
+
+    let t = Temp::new();
+    let proj = t.0.join("SampleApp");
+    let pub_dir = proj.join("artifacts").join("publish");
+    fs::create_dir_all(&pub_dir).unwrap();
+    fs::write(
+        proj.join("SampleApp.csproj"),
+        "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>",
+    )
+    .unwrap();
+
+    // Start with framework-dependent runtimeconfig (no includedFrameworks, no coreclr.dll) and no version
+    fs::write(pub_dir.join("SampleApp.exe"), pe()).unwrap();
+    fs::write(pub_dir.join("SampleApp.dll"), b"managed-il").unwrap();
+    fs::write(
+        pub_dir.join("SampleApp.deps.json"),
+        r#"{"runtimeTarget":{"name":".NETCoreApp,Version=v10.0"}}"#,
+    )
+    .unwrap();
+    fs::write(
+        pub_dir.join("SampleApp.runtimeconfig.json"),
+        r#"{"runtimeOptions":{"tfm":"net10.0","framework":{"name":"Microsoft.NETCore.App","version":"10.0.0"}}}"#,
+    )
+    .unwrap();
+
+    let mut m = Manifest {
+        schema_version: 1,
+        target: "windows-x64".into(),
+        windows_toolchain: None,
+        tools: vec![],
+        required_variables: vec![],
+        build: vec![Step {
+            name: "noop".into(),
+            program: "cmd.exe".into(),
+            args: vec!["/D".into(), "/C".into(), "exit 0".into()],
+            expected_exit: 0,
+            stdout_sha256: None,
+            timeout_ms: 5000,
+        }],
+        verify: vec![],
+        artifact_dir: Some("artifacts/publish".into()),
+        artifacts: vec!["SampleApp.exe".into()],
+        installer: None,
+        pending: vec![],
+    };
+    let manifest_path = proj.join("contain.environment.json");
+    fs::write(&manifest_path, serde_json::to_vec_pretty(&m).unwrap()).unwrap();
+
+    let build_rep_1 = t.0.join("build-rep-1");
+    project_installer::write_build_attestation(&m, &manifest_path, &proj, None, &{
+        fs::create_dir_all(&build_rep_1).unwrap();
+        build_rep_1.clone()
+    })
+    .unwrap();
+    let att_1 = build_rep_1.join("build-attestation.json");
+
+    // 1) Framework-dependent + missing version both reported cleanly; output_dir not created
+    let out_fd = t.0.join("out-fd");
+    let rep_fd = t.0.join("rep-fd");
+    let (r_fd, rec_fd) =
+        project_installer::package_installer(&proj, None, &att_1, &out_fd, None, &rep_fd).unwrap();
+    assert!(rec_fd.is_none());
+    assert!(!out_fd.exists());
+    let pub_chk = r_fd
+        .checks
+        .iter()
+        .find(|c| c.name == "dotnet_self_contained_publish")
+        .unwrap();
+    assert_eq!(
+        pub_chk.outcome.as_deref(),
+        Some("framework_dependent_output")
+    );
+    assert!(
+        pub_chk.remedy.as_deref().unwrap().contains(
+            "dotnet publish SampleApp.csproj -c Release -r win-x64 --self-contained true"
+        )
+    );
+    let ver_chk = r_fd
+        .checks
+        .iter()
+        .find(|c| c.name == "installer_version")
+        .unwrap();
+    assert_eq!(ver_chk.outcome.as_deref(), Some("missing_version"));
+
+    // 2) Upgrade output to full self-contained x64 multi-file publish (+ createdump.exe ignored, extra exe triggers ambiguous_entry)
+    fs::write(pub_dir.join("createdump.exe"), pe()).unwrap();
+    fs::write(pub_dir.join("SecondTool.exe"), pe()).unwrap();
+    fs::write(pub_dir.join("coreclr.dll"), pe()).unwrap();
+    fs::write(pub_dir.join("hostfxr.dll"), b"hostfxr").unwrap();
+    fs::write(pub_dir.join("hostpolicy.dll"), b"hostpolicy").unwrap();
+    fs::write(
+        pub_dir.join("SampleApp.deps.json"),
+        r#"{"runtimeTarget":{"name":".NETCoreApp,Version=v10.0/win-x64"}}"#,
+    )
+    .unwrap();
+    fs::write(
+        pub_dir.join("SampleApp.runtimeconfig.json"),
+        r#"{"runtimeOptions":{"tfm":"net10.0","includedFrameworks":[{"name":"Microsoft.NETCore.App","version":"10.0.0"}]}}"#,
+    )
+    .unwrap();
+
+    m.installer = Some(InstallerSpec {
+        version: Some("0.2.0".into()),
+        ..Default::default()
+    });
+    fs::write(&manifest_path, serde_json::to_vec_pretty(&m).unwrap()).unwrap();
+    let build_rep_2 = t.0.join("build-rep-2");
+    fs::create_dir_all(&build_rep_2).unwrap();
+    project_installer::write_build_attestation(&m, &manifest_path, &proj, None, &build_rep_2)
+        .unwrap();
+    let (r_amb, _) = project_installer::package_installer(
+        &proj,
+        None,
+        &build_rep_2.join("build-attestation.json"),
+        &t.0.join("out-amb"),
+        None,
+        &t.0.join("rep-amb"),
+    )
+    .unwrap();
+    assert_eq!(
+        r_amb
+            .checks
+            .iter()
+            .find(|c| c.name == "installer_entry")
+            .unwrap()
+            .outcome
+            .as_deref(),
+        Some("ambiguous_entry")
+    );
+
+    // 3) Explicitly set entry = SampleApp.exe (createdump.exe & SecondTool.exe disambiguated), test missing ISCC first
+    fs::remove_file(pub_dir.join("SecondTool.exe")).unwrap();
+    m.installer = Some(InstallerSpec {
+        app_name: Some("SampleApp".into()),
+        version: Some("0.2.0".into()),
+        entry: Some("SampleApp.exe".into()),
+        publish_dir: Some("artifacts/publish".into()),
+        publish_kind: Some("dotnet-self-contained-win-x64".into()),
+        ..Default::default()
+    });
+    fs::write(&manifest_path, serde_json::to_vec_pretty(&m).unwrap()).unwrap();
+    let build_rep_3 = t.0.join("build-rep-3");
+    fs::create_dir_all(&build_rep_3).unwrap();
+    project_installer::write_build_attestation(&m, &manifest_path, &proj, None, &build_rep_3)
+        .unwrap();
+    let att_3 = build_rep_3.join("build-attestation.json");
+
+    let absent_iscc = t.0.join("no-such-iscc.exe");
+    let (r_noiscc, _) = project_installer::package_installer(
+        &proj,
+        None,
+        &att_3,
+        &t.0.join("out-noiscc"),
+        Some(&absent_iscc),
+        &t.0.join("rep-noiscc"),
+    )
+    .unwrap();
+    let iscc_chk = r_noiscc
+        .checks
+        .iter()
+        .find(|c| c.name == "inno_setup_compiler")
+        .unwrap();
+    assert_eq!(iscc_chk.outcome.as_deref(), Some("inno_setup_missing"));
+    assert!(iscc_chk.remedy.as_deref().unwrap().contains("无需安装"));
+
+    // 4) If real ISCC.exe is installed on this Windows dev machine, compile real SampleApp-Setup-x64.exe via CLI!
+    if project_installer::resolve_iscc_executable(None).is_some() {
+        let out_real = t.0.join("out-real");
+        let rep_real = t.0.join("rep-real");
+        let cli_res = Command::new(env!("CARGO_BIN_EXE_contain-workflow"))
+            .args([
+                "package-installer",
+                "--project",
+                proj.to_str().unwrap(),
+                "--attestation",
+                att_3.to_str().unwrap(),
+                "--output-dir",
+                out_real.to_str().unwrap(),
+                "--report",
+                rep_real.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(cli_res.status.code(), Some(0));
+        assert!(out_real.join("SampleApp-Setup-x64.exe").is_file());
+        assert!(out_real.join("SampleApp-Setup-x64.sha256").is_file());
+        assert!(out_real.join("installer-receipt.json").is_file());
+        assert!(proj.join("contain.installer.json").is_file());
+
+        // Tamper with SampleApp.dll after build -> must reject stale/modified artifacts while preserving out_real!
+        fs::write(pub_dir.join("SampleApp.dll"), b"tampered-bytes").unwrap();
+        let out_tampered = t.0.join("out-tampered");
+        let rep_tampered = t.0.join("rep-tampered");
+        let (r_tamp, _) = project_installer::package_installer(
+            &proj,
+            None,
+            &att_3,
+            &out_tampered,
+            None,
+            &rep_tampered,
+        )
+        .unwrap();
+        assert_eq!(
+            r_tamp
+                .checks
+                .iter()
+                .find(|c| c.name == "verified_output_binding")
+                .unwrap()
+                .outcome
+                .as_deref(),
+            Some("artifacts_modified_or_stale")
+        );
+        assert!(out_real.join("SampleApp-Setup-x64.exe").is_file());
+        assert!(!out_tampered.exists());
+    }
 }

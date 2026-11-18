@@ -16,6 +16,24 @@ pub struct WindowsToolchain {
     pub msvc_family: String,
     pub sdk_version: String,
 }
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct InstallerSpec {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publisher: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publish_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publish_kind: Option<String>,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
@@ -32,6 +50,8 @@ pub struct Manifest {
     pub artifact_dir: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub artifacts: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installer: Option<InstallerSpec>,
     #[serde(default)]
     pub pending: Vec<String>,
 }
@@ -99,6 +119,66 @@ impl Manifest {
                 "artifacts must contain safe relative paths"
             );
         }
+        if let Some(inst) = &self.installer {
+            if let Some(dir) = &inst.publish_dir {
+                ensure!(
+                    crate::artifact::safe_name(dir),
+                    "installer.publish_dir must be a safe relative subdirectory"
+                );
+            }
+            if let Some(entry) = &inst.entry {
+                ensure!(
+                    crate::artifact::safe_name(entry)
+                        && entry.len() > 4
+                        && entry.to_ascii_lowercase().ends_with(".exe"),
+                    "installer.entry must be a safe relative .exe path"
+                );
+            }
+            if let Some(ver) = &inst.version {
+                ensure!(
+                    !ver.is_empty()
+                        && ver.len() <= 64
+                        && ver
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || "._-+".contains(c)),
+                    "installer.version must be a literal version token"
+                );
+            }
+            if let Some(name) = &inst.app_name {
+                ensure!(
+                    !name.trim().is_empty()
+                        && name.chars().count() <= 80
+                        && !name.chars().any(char::is_control),
+                    "installer.app_name must be non-empty without control characters"
+                );
+            }
+            if let Some(publisher) = &inst.publisher {
+                ensure!(
+                    !publisher.trim().is_empty()
+                        && publisher.chars().count() <= 120
+                        && !publisher.chars().any(char::is_control),
+                    "installer.publisher must be non-empty without control characters"
+                );
+            }
+            if let Some(kind) = &inst.publish_kind {
+                ensure!(
+                    !kind.is_empty()
+                        && kind.len() <= 64
+                        && kind
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c)),
+                    "installer.publish_kind must be a valid identifier"
+                );
+            }
+            if let Some(app_id) = &inst.app_id {
+                ensure!(
+                    !app_id.trim().is_empty()
+                        && app_id.len() <= 64
+                        && !app_id.chars().any(char::is_control),
+                    "installer.app_id must be non-empty without control characters"
+                );
+            }
+        }
         Ok(())
     }
 }
@@ -125,7 +205,7 @@ fn valid_variable(s: &str) -> bool {
 /// Intentionally bounded discovery: only root Cargo.toml, rust-toolchain.toml and global.json.
 /// A draft cannot execute until every unknown has been explicitly resolved.
 pub fn infer(root: &Path) -> Result<Manifest> {
-    let mut m = Manifest { schema_version:1, target:"windows-x64".into(), windows_toolchain:None, tools:vec![], required_variables:vec![], build:vec![], verify:vec![], artifact_dir:None, artifacts:vec![],
+    let mut m = Manifest { schema_version:1, target:"windows-x64".into(), windows_toolchain:None, tools:vec![], required_variables:vec![], build:vec![], verify:vec![], artifact_dir:None, artifacts:vec![], installer:None,
         pending:vec!["Confirm Windows x64 target, native SDK/MSVC prerequisites and required variable names; these cannot be inferred from supported files".into()] };
     let cargo = root.join("Cargo.toml");
     if cargo.exists() {
