@@ -220,6 +220,10 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 
     public void OpenProjectArtifactFolder() => RunUiOperation(() => { EnvironmentCheck.OpenArtifactFolder(); });
 
+    public Task RunGenerateProjectInstallerAsync() => RunUiAsync(() => EnvironmentCheck.GenerateInstallerAsync());
+
+    public void OpenProjectInstallerFolder() => RunUiOperation(() => { EnvironmentCheck.OpenInstallerFolder(); });
+
     public async Task PickPackageZipAsync()
     {
         var dialog = new OpenFileDialog

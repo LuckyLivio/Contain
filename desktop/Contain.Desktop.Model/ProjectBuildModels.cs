@@ -28,6 +28,15 @@ public sealed record ManifestStepPreview(
     public string DisplayHeader => $"{StepNumber}. [{PhaseBadge}] {Name}";
 }
 
+public sealed record InstallerManifestPreview(
+    string? AppId,
+    string? AppName,
+    string? Version,
+    string? Publisher,
+    string? PublishDir,
+    string? Entry,
+    string? PublishKind);
+
 public sealed record BuildManifestPreview(
     ManifestPreviewStatus Status,
     string ProjectName,
@@ -40,7 +49,8 @@ public sealed record BuildManifestPreview(
     string? ArtifactDir,
     IReadOnlyList<string> Artifacts,
     IReadOnlyList<string> PendingItems,
-    bool HasUnsupportedSafeProbes)
+    bool HasUnsupportedSafeProbes,
+    InstallerManifestPreview? Installer = null)
 {
     public static BuildManifestPreview Missing(string projectName, string workingDirectory) =>
         new(
@@ -122,7 +132,116 @@ public sealed record ProjectBuildExecution(
     string ReportJson,
     IReadOnlyList<BuildStepExecutionResult> StepResults,
     string CombinedLogText,
-    string? ConfirmedArtifactDirectory);
+    string? ConfirmedArtifactDirectory,
+    string? BuildAttestationJson = null);
+
+public sealed record ProjectInstallerReceiptData(
+    string ProjectName,
+    string DisplayName,
+    string AppId,
+    string ShortId,
+    string IdentitySource,
+    string AppVersion,
+    string VersionInfoVersion,
+    string? Publisher,
+    string PublishKind,
+    string PublishRelDir,
+    string Entry,
+    string EntrySha256,
+    string ManifestSha256,
+    string AttestationSha256,
+    int PayloadFileCount,
+    string DefaultInstallDir,
+    string StartMenuShortcut,
+    string InstallerFile,
+    long InstallerBytes,
+    string InstallerSha256,
+    string AuthenticodeStatus,
+    bool Signed,
+    string InnoSetupVersion,
+    string InstallerFullPath,
+    string InstallerDirectory,
+    string SummaryMarkdown);
+
+public sealed record ProjectInstallerExecution(
+    int ExitCode,
+    WorkflowReportData Report,
+    string ReportMarkdown,
+    string ReportJson,
+    ProjectInstallerReceiptData? Receipt);
+
+public sealed record PublishReadinessHint(
+    bool NeedsSelfContainedPublish,
+    string SummaryText,
+    string SuggestedCommandText);
+
+public static class ProjectPublishInspector
+{
+    public static PublishReadinessHint Inspect(
+        string projectRoot,
+        BuildManifestPreview preview,
+        string? confirmedArtifactDir)
+    {
+        var csprojName = FindSingleCsprojName(projectRoot) ?? ".";
+        var suggestedOut = preview.Installer?.PublishDir
+            ?? preview.ArtifactDir
+            ?? "artifacts/publish";
+        var suggestedCmd = $"dotnet publish {csprojName} -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o {suggestedOut}";
+
+        if (string.IsNullOrWhiteSpace(confirmedArtifactDir) || !Directory.Exists(confirmedArtifactDir))
+            return new PublishReadinessHint(false, "", "");
+
+        try
+        {
+            var runtimeConfigs = Directory.GetFiles(confirmedArtifactDir, "*.runtimeconfig.json", SearchOption.AllDirectories);
+            if (runtimeConfigs.Length == 0)
+                return new PublishReadinessHint(false, "", "");
+
+            foreach (var rcPath in runtimeConfigs)
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(rcPath, Encoding.UTF8));
+                var hasIncluded = doc.RootElement.TryGetProperty("runtimeOptions", out var ro)
+                    && ro.TryGetProperty("includedFrameworks", out var inc)
+                    && inc.ValueKind == JsonValueKind.Array
+                    && inc.GetArrayLength() > 0;
+                var dir = Path.GetDirectoryName(rcPath) ?? confirmedArtifactDir;
+                var hasCoreClr = File.Exists(Path.Combine(dir, "coreclr.dll"));
+
+                if (!hasIncluded || !hasCoreClr)
+                {
+                    return new PublishReadinessHint(
+                        true,
+                        "当前普通编译与验证已通过，但生成的 EXE 依赖本机 .NET 运行时，发给未安装对应 .NET 运行时的用户可能无法直接运行。若要生成单文件 Windows 安装包，请将构建步骤改为 win-x64 自包含多文件发布（并在 contain.environment.json 的 installer 中声明版本号与入口）后再次构建：",
+                        suggestedCmd);
+                }
+            }
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        catch (JsonException) { }
+
+        return new PublishReadinessHint(false, "", "");
+    }
+
+    public static string? FindSingleCsprojName(string projectRoot)
+    {
+        try
+        {
+            if (!Directory.Exists(projectRoot))
+                return null;
+            var files = Directory.GetFiles(projectRoot, "*.csproj", SearchOption.TopDirectoryOnly);
+            return files.Length == 1 ? Path.GetFileName(files[0]) : null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+}
 
 public static class WorkflowManifestReader
 {
@@ -139,7 +258,18 @@ public static class WorkflowManifestReader
         "verify",
         "artifact_dir",
         "artifacts",
+        "installer",
         "pending"
+    };
+    private static readonly HashSet<string> AllowedInstallerFields = new(StringComparer.Ordinal)
+    {
+        "app_id",
+        "app_name",
+        "version",
+        "publisher",
+        "publish_dir",
+        "entry",
+        "publish_kind"
     };
     private static readonly HashSet<string> AllowedToolFields = new(StringComparer.Ordinal)
     {
@@ -307,6 +437,9 @@ public static class WorkflowManifestReader
             if (!TryStringList(root, "pending", required: false, out var pending))
                 return BuildManifestPreview.Invalid(projectName, workingDirectory, "pending 必须是字符串数组。");
 
+            if (!TryParseInstaller(root, out var installerPreview, out var instErr))
+                return BuildManifestPreview.Invalid(projectName, workingDirectory, instErr);
+
             var allSteps = new List<ManifestStepPreview>(buildSteps.Count + verifySteps.Count);
             allSteps.AddRange(buildSteps);
             allSteps.AddRange(verifySteps);
@@ -323,7 +456,8 @@ public static class WorkflowManifestReader
                 artifactDir,
                 artifacts,
                 pending,
-                hasUnsupportedProbe);
+                hasUnsupportedProbe,
+                installerPreview);
         }
         catch (JsonException ex)
         {
@@ -503,6 +637,95 @@ public static class WorkflowManifestReader
                 return false;
             items.Add(s);
         }
+        return true;
+    }
+
+    private static bool TryParseInstaller(
+        JsonElement root,
+        out InstallerManifestPreview? installer,
+        out string error)
+    {
+        installer = null;
+        error = "";
+        if (!root.TryGetProperty("installer", out var instEl) || instEl.ValueKind == JsonValueKind.Null)
+            return true;
+        if (instEl.ValueKind != JsonValueKind.Object)
+        {
+            error = "installer 必须是对象。";
+            return false;
+        }
+        foreach (var p in instEl.EnumerateObject())
+        {
+            if (!AllowedInstallerFields.Contains(p.Name))
+            {
+                error = $"installer 包含未知字段“{p.Name}”。";
+                return false;
+            }
+        }
+
+        if (!TryOptionalStringField(instEl, "app_id", out var appId, out error)
+            || !TryOptionalStringField(instEl, "app_name", out var appName, out error)
+            || !TryOptionalStringField(instEl, "version", out var version, out error)
+            || !TryOptionalStringField(instEl, "publisher", out var publisher, out error)
+            || !TryOptionalStringField(instEl, "publish_dir", out var publishDir, out error)
+            || !TryOptionalStringField(instEl, "entry", out var entry, out error)
+            || !TryOptionalStringField(instEl, "publish_kind", out var publishKind, out error))
+        {
+            return false;
+        }
+
+        if (publishDir is not null && !IsSafeRelativePath(publishDir))
+        {
+            error = "installer.publish_dir 必须是安全的项目内相对路径。";
+            return false;
+        }
+        if (entry is not null && (!IsSafeRelativePath(entry) || entry.Length <= 4 || !entry.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)))
+        {
+            error = "installer.entry 必须是安全的相对 .exe 文件路径。";
+            return false;
+        }
+        if (version is not null && (version.Length is 0 or > 64 || !version.All(static c => char.IsAsciiLetterOrDigit(c) || "._-+".Contains(c, StringComparison.Ordinal))))
+        {
+            error = "installer.version 必须是非空字面量版本号。";
+            return false;
+        }
+        if (appName is not null && (string.IsNullOrWhiteSpace(appName) || appName.Length > 80 || appName.Any(char.IsControl)))
+        {
+            error = "installer.app_name 必须为 1..80 个非控制字符。";
+            return false;
+        }
+        if (publisher is not null && (string.IsNullOrWhiteSpace(publisher) || publisher.Length > 120 || publisher.Any(char.IsControl)))
+        {
+            error = "installer.publisher 必须为 1..120 个非控制字符。";
+            return false;
+        }
+        if (publishKind is not null && (publishKind.Length is 0 or > 64 || !publishKind.All(static c => char.IsAsciiLetterOrDigit(c) || "-_.".Contains(c, StringComparison.Ordinal))))
+        {
+            error = "installer.publish_kind 格式无效。";
+            return false;
+        }
+        if (appId is not null && (string.IsNullOrWhiteSpace(appId) || appId.Length > 64 || appId.Any(char.IsControl)))
+        {
+            error = "installer.app_id 格式无效。";
+            return false;
+        }
+
+        installer = new InstallerManifestPreview(appId, appName, version, publisher, publishDir, entry, publishKind);
+        return true;
+    }
+
+    private static bool TryOptionalStringField(JsonElement obj, string name, out string? value, out string error)
+    {
+        value = null;
+        error = "";
+        if (!obj.TryGetProperty(name, out var prop) || prop.ValueKind == JsonValueKind.Null)
+            return true;
+        if (prop.ValueKind != JsonValueKind.String || prop.GetString() is not { } s)
+        {
+            error = $"installer.{name} 必须是字符串。";
+            return false;
+        }
+        value = s;
         return true;
     }
 

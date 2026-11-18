@@ -662,6 +662,259 @@ internal static class EnvironmentChecks
             True(!vm.CanOpenArtifactFolder, "hides open button once directory no longer exists");
         });
 
+        await Check("framework-dependent build keeps green Build Succeeded, shows immediate dotnet publish guidance, and parses optional installer manifest", async () =>
+        {
+            using var temp = new TempDir();
+            var project = temp.Sub("fd-hello");
+            File.WriteAllText(Path.Combine(project, "HelloContain.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+            WriteValidConsoleManifest(project);
+
+            var artifactDir = Path.Combine(project, "artifacts", "app");
+            Directory.CreateDirectory(artifactDir);
+            File.WriteAllText(Path.Combine(artifactDir, "Hello.exe"), "pe-stub");
+            File.WriteAllText(
+                Path.Combine(artifactDir, "Hello.runtimeconfig.json"),
+                """{"runtimeOptions":{"tfm":"net10.0","framework":{"name":"Microsoft.NETCore.App","version":"10.0.0"}}}""");
+
+            var validWithInstaller = WorkflowManifestReader.ParsePreviewJson(
+                "fd-hello",
+                project,
+                """
+                {
+                  "schema_version": 1,
+                  "target": "windows-x64",
+                  "tools": [],
+                  "required_variables": [],
+                  "build": [],
+                  "verify": [],
+                  "artifact_dir": "artifacts/publish",
+                  "installer": {
+                    "app_name": "HelloContain",
+                    "version": "0.1.0",
+                    "entry": "HelloContain.exe",
+                    "publish_dir": "artifacts/publish",
+                    "publish_kind": "dotnet-self-contained-win-x64"
+                  }
+                }
+                """,
+                "sha");
+            Equal(ManifestPreviewStatus.Valid, validWithInstaller.Status, "optional installer block valid");
+            Equal("0.1.0", validWithInstaller.Installer?.Version, "installer version parsed");
+
+            var badEntry = WorkflowManifestReader.ParsePreviewJson(
+                "fd-hello",
+                project,
+                """{"schema_version":1,"target":"windows-x64","tools":[],"required_variables":[],"build":[],"verify":[],"installer":{"entry":"run.cmd"}}""",
+                "sha");
+            Equal(ManifestPreviewStatus.Invalid, badEntry.Status, "non-exe installer entry rejected");
+
+            var service = new ControlledEnvironmentService
+            {
+                BuildFactory = (_, _, _, _) => Task.FromResult(new ProjectBuildExecution(
+                    0,
+                    new WorkflowReportData(1, "source", "windows", "x86_64", "x86_64", null, "contain.environment.json",
+                    [
+                        new WorkflowCheckItem("platform", "passed", "ok"),
+                        new WorkflowCheckItem("Compile console app", "passed", "exit 0"),
+                        new WorkflowCheckItem("Verify console output", "passed", "exit 0"),
+                        new WorkflowCheckItem("build_artifacts", "passed", "verified")
+                    ]),
+                    "# ok",
+                    "{}",
+                    [],
+                    "log",
+                    artifactDir,
+                    "{\"schema_version\":1}")),
+                InstallerFactory = (_, _, _) => Task.FromResult(new ProjectInstallerExecution(
+                    1,
+                    new WorkflowReportData(1, "project_installer", "windows", "x86_64", "x86_64", null, "contain.environment.json",
+                    [
+                        new WorkflowCheckItem(
+                            "dotnet_self_contained_publish",
+                            "failed",
+                            "当前构建通过，但产物是依赖本机 .NET 运行时的普通编译结果。",
+                            "framework_dependent_output",
+                            "dotnet-self-contained-win-x64",
+                            null,
+                            "dotnet publish HelloContain.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o artifacts/app"),
+                        new WorkflowCheckItem(
+                            "installer_version",
+                            "failed",
+                            "项目未明确声明应用版本号。",
+                            "missing_version",
+                            "explicit version",
+                            null,
+                            "请在 installer.version 中声明版本号。")
+                    ]),
+                    "# failed",
+                    "{}",
+                    null))
+            };
+
+            using var vm = new EnvironmentCheckViewModel(service);
+            vm.SelectProject(project);
+            await vm.CheckAsync();
+            True(await vm.StartBuildAsync(), "framework-dependent build passes");
+            Equal(BuildOutcomeKind.Succeeded, vm.BuildOutcome, "BuildOutcome is Succeeded");
+            True(vm.ShowGenerateInstallerButton && vm.CanGenerateInstaller, "Generate Installer button shown next to Open Artifact Folder");
+            True(vm.HasPublishReadinessHint, "immediate self-contained publish hint shown right after dotnet build");
+            True(vm.PublishReadinessHintCommand.Contains("dotnet publish HelloContain.csproj -c Release -r win-x64 --self-contained true", StringComparison.Ordinal),
+                "proactive hint names current .csproj and self-contained flags");
+
+            True(!await vm.GenerateInstallerAsync(), "packaging framework-dependent output returns false");
+            Equal(BuildOutcomeKind.Succeeded, vm.BuildOutcome, "BuildOutcome remains Succeeded ('构建通过') after packaging guidance");
+            True(vm.HasInstallerFailure, "actionable packaging guidance banner visible");
+            True(vm.InstallerFailureTitle.Contains("依赖本机 .NET 运行时", StringComparison.Ordinal), "clear framework-dependent title");
+            True(vm.InstallerFailureRemedy.Contains("dotnet publish HelloContain.csproj", StringComparison.Ordinal)
+                && vm.InstallerFailureRemedy.Contains("installer.version", StringComparison.Ordinal),
+                "surfaces both self-contained publish command and version remedy");
+        });
+
+        await Check("installer generation highlights Setup EXE, preserves last valid installer on subsequent failure, blocks stale EXE on failed build, and isolates across project switch", async () =>
+        {
+            using var temp = new TempDir();
+            var projectA = temp.Sub("app-a");
+            var projectB = temp.Sub("app-b");
+            WriteValidConsoleManifest(projectA);
+            WriteValidConsoleManifest(projectB);
+
+            var pubDirA = Path.Combine(projectA, "artifacts", "app");
+            Directory.CreateDirectory(pubDirA);
+            File.WriteAllText(Path.Combine(pubDirA, "Hello.exe"), "self-contained-x64");
+
+            var outInstallerDir = temp.Sub("installer-out-1");
+            var fakeSetupPath = Path.Combine(outInstallerDir, "HelloContain-Setup-x64.exe");
+            File.WriteAllText(fakeSetupPath, "MZ-fake-setup");
+
+            var pkgCall = 0;
+            var buildCall = 0;
+            var service = new ControlledEnvironmentService
+            {
+                BuildFactory = (_, _, _, _) =>
+                {
+                    buildCall++;
+                    if (buildCall == 2)
+                    {
+                        // Second build FAILS even though Hello.exe is still sitting on disk!
+                        return Task.FromResult(new ProjectBuildExecution(
+                            1,
+                            new WorkflowReportData(1, "source", "windows", "x86_64", "x86_64", null, "contain.environment.json",
+                            [new WorkflowCheckItem("Compile console app", "failed", "exit 1")]),
+                            "# fail",
+                            "{}",
+                            [new BuildStepExecutionResult("build", 0, "Compile console app", "failed", 0, 1, false, null, "error CS0103", "")],
+                            "fail log",
+                            null,
+                            null));
+                    }
+                    return Task.FromResult(new ProjectBuildExecution(
+                        0,
+                        new WorkflowReportData(1, "source", "windows", "x86_64", "x86_64", null, "contain.environment.json",
+                        [new WorkflowCheckItem("platform", "passed", "ok")]),
+                        "# ok",
+                        "{}",
+                        [],
+                        "ok log",
+                        pubDirA,
+                        "{\"schema_version\":1}"));
+                },
+                InstallerFactory = (_, _, _) =>
+                {
+                    pkgCall++;
+                    if (pkgCall == 1)
+                    {
+                        return Task.FromResult(new ProjectInstallerExecution(
+                            0,
+                            new WorkflowReportData(1, "project_installer", "windows", "x86_64", "x86_64", null, "contain.environment.json",
+                            [new WorkflowCheckItem("installer_compile", "passed", "compiled")]),
+                            "# ok",
+                            "{}",
+                            new ProjectInstallerReceiptData(
+                                "app-a",
+                                "HelloContain",
+                                "a1b2c3d4-1111-4222-8333-444455556666",
+                                "a1b2c3d4",
+                                "generated_and_persisted",
+                                "0.1.0",
+                                "0.1.0.0",
+                                null,
+                                "dotnet-self-contained-win-x64",
+                                "artifacts/app",
+                                "HelloContain.exe",
+                                new string('a', 64),
+                                new string('b', 64),
+                                new string('c', 64),
+                                215,
+                                "%LOCALAPPDATA%\\Programs\\HelloContain-a1b2c3d4",
+                                "HelloContain (a1b2c3d4).lnk",
+                                "HelloContain-Setup-x64.exe",
+                                123456,
+                                new string('d', 64),
+                                "NotSigned",
+                                false,
+                                "6.7.3",
+                                fakeSetupPath,
+                                outInstallerDir,
+                                "# Receipt summary")));
+                    }
+                    return Task.FromResult(new ProjectInstallerExecution(
+                        1,
+                        new WorkflowReportData(1, "project_installer", "windows", "x86_64", "x86_64", null, "contain.environment.json",
+                        [
+                            new WorkflowCheckItem(
+                                "inno_setup_compiler",
+                                "failed",
+                                "ISCC.exe not found",
+                                "inno_setup_missing",
+                                "Inno Setup 6",
+                                null,
+                                "winget install --exact --id JRSoftware.InnoSetup --scope user（接收者无需安装）")
+                        ]),
+                        "# fail",
+                        "{}",
+                        null));
+                }
+            };
+
+            string? openedFolder = null;
+            using var vm = new EnvironmentCheckViewModel(service, artifactFolderOpener: dir => openedFolder = dir);
+            vm.SelectProject(projectA);
+            await vm.CheckAsync();
+            True(await vm.StartBuildAsync(), "build #1 succeeds");
+
+            // 1) First installer generation succeeds
+            True(await vm.GenerateInstallerAsync(), "installer #1 succeeds");
+            True(vm.HasValidInstaller && !vm.HasInstallerFailure, "valid installer shown without error");
+            Equal("HelloContain-Setup-x64.exe", vm.GeneratedInstallerFileName, "prominent installer filename");
+            True(vm.GeneratedInstallerSummaryLine.Contains("未签名 (NotSigned)", StringComparison.Ordinal), "unsigned status noted");
+            True(vm.OpenInstallerFolder(), "opens installer directory");
+            Equal(outInstallerDir, openedFolder, "opened exact installer directory");
+
+            // 2) Second installer generation fails -> preserves last valid installer AND surfaces failure clearly!
+            True(!await vm.GenerateInstallerAsync(), "installer #2 fails");
+            True(vm.HasInstallerFailure, "current failure banner visible");
+            True(vm.InstallerFailureTitle.Contains("接收者无需安装", StringComparison.Ordinal), "explains receiver does not need Inno Setup");
+            True(vm.HasValidInstaller, "previous valid installer preserved on screen");
+            True(vm.GeneratedInstallerBadge.StartsWith("上次已生成的可用安装包", StringComparison.Ordinal), "preserved installer clearly labeled");
+            Equal("HelloContain-Setup-x64.exe", vm.GeneratedInstallerFileName, "previous valid filename still accessible");
+
+            // 3) Failed build #2 with stale Hello.exe on disk MUST NOT allow packaging or claim valid installer for failed build
+            True(!await vm.StartBuildAsync(), "build #2 fails");
+            Equal(BuildOutcomeKind.Failed, vm.BuildOutcome, "build #2 marked Failed");
+            True(!vm.ShowGenerateInstallerButton && !vm.CanGenerateInstaller && !vm.HasValidInstaller,
+                "failed build hides Generate Installer and never packages stale EXE");
+            True(File.Exists(fakeSetupPath), "previous installer file on disk remains untouched");
+
+            // 4) Build #3 succeeds + re-surfaces preserved installer if packaging fails, then switching to project B clears everything
+            True(await vm.StartBuildAsync(), "build #3 succeeds");
+            True(!await vm.GenerateInstallerAsync(), "packaging fails again");
+            True(vm.HasValidInstaller, "previous valid installer for project A still preserved");
+
+            vm.SelectProject(projectB);
+            True(!vm.HasValidInstaller && !vm.HasInstallerFailure && string.IsNullOrEmpty(vm.GeneratedInstallerFileName),
+                "switching to project B completely clears project A installer results");
+        });
+
         return passed;
 
         async Task Check(string name, Func<Task> action)
@@ -742,10 +995,13 @@ internal static class EnvironmentChecks
     {
         public int CheckCalls { get; private set; }
         public int BuildCalls { get; private set; }
+        public int InstallerCalls { get; private set; }
         public Func<string, CancellationToken, Task<EnvironmentCheckExecution>> NextFactory { get; set; } =
             (_, _) => Task.FromResult(ReadyExecution());
         public Func<string, BuildManifestPreview, IProgress<BuildProgressUpdate>?, CancellationToken, Task<ProjectBuildExecution>> BuildFactory { get; set; } =
             (_, _, _, _) => Task.FromResult(new ProjectBuildExecution(0, ReadyExecution().Report, "", "{}", [], "", null));
+        public Func<string, string, CancellationToken, Task<ProjectInstallerExecution>> InstallerFactory { get; set; } =
+            (_, _, _) => Task.FromResult(new ProjectInstallerExecution(1, new WorkflowReportData(1, "project_installer", "windows", "x86_64", "x86_64", null, "contain.environment.json", []), "", "{}", null));
 
         public ProjectFolderInfo InspectProject(string projectPath) =>
             WorkflowCliEnvironmentService.InspectProjectDirectory(projectPath);
@@ -767,6 +1023,15 @@ internal static class EnvironmentChecks
         {
             BuildCalls++;
             return BuildFactory(WorkflowCliEnvironmentService.NormalizeDirectoryPath(projectPath), expectedPreview, progress, cancellationToken);
+        }
+
+        public Task<ProjectInstallerExecution> PackageInstallerAsync(
+            string projectPath,
+            string buildAttestationJson,
+            CancellationToken cancellationToken = default)
+        {
+            InstallerCalls++;
+            return InstallerFactory(WorkflowCliEnvironmentService.NormalizeDirectoryPath(projectPath), buildAttestationJson, cancellationToken);
         }
     }
 

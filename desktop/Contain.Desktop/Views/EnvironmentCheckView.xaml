@@ -6,7 +6,7 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24,16,24,24">
         <StackPanel MaxWidth="920" HorizontalAlignment="Stretch">
             <TextBlock Text="检查项目环境" Style="{StaticResource PageTitle}" AutomationProperties.AutomationId="EnvironmentPageTitle" />
-            <TextBlock Text="选择项目文件夹并点击“开始检查”，查看环境就绪状态、预览构建步骤并生成实际产物。" Style="{StaticResource MutedText}" Margin="0,0,0,20" AutomationProperties.AutomationId="EnvironmentPurposeText" />
+            <TextBlock Text="选择项目文件夹并点击“开始检查”，查看环境就绪状态、执行构建验证并生成可分发的 Windows 安装包。" Style="{StaticResource MutedText}" Margin="0,0,0,20" AutomationProperties.AutomationId="EnvironmentPurposeText" />
 
             <Border Style="{StaticResource Surface}">
                 <StackPanel>
@@ -262,11 +262,63 @@
                             </ItemsControl>
 
                             <WrapPanel Margin="0,12,0,0">
-                                <ui:Button Content="打开产物文件夹" Appearance="Primary" Margin="0,0,10,0" Click="OnOpenArtifactFolder" Visibility="{Binding EnvironmentCheck.CanOpenArtifactFolder, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="OpenArtifactFolderButton">
+                                <ui:Button Content="打开产物文件夹" Margin="0,0,10,0" Click="OnOpenArtifactFolder" Visibility="{Binding EnvironmentCheck.CanOpenArtifactFolder, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="OpenArtifactFolderButton">
                                     <ui:Button.Icon><ui:SymbolIcon Symbol="FolderOpen24" /></ui:Button.Icon>
+                                </ui:Button>
+                                <ui:Button Content="生成安装包" Appearance="Primary" Margin="0,0,10,0" Click="OnGenerateInstaller" IsEnabled="{Binding EnvironmentCheck.CanGenerateInstaller}" Visibility="{Binding EnvironmentCheck.ShowGenerateInstallerButton, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="GenerateInstallerButton">
+                                    <ui:Button.Icon><ui:SymbolIcon Symbol="DocumentAdd24" /></ui:Button.Icon>
                                 </ui:Button>
                                 <ui:Button Content="{Binding EnvironmentCheck.BuildLogButtonText}" Appearance="Transparent" Click="OnToggleBuildLog" IsEnabled="{Binding EnvironmentCheck.CanToggleBuildLog}" AutomationProperties.AutomationId="ToggleBuildLogButton" />
                             </WrapPanel>
+
+                            <Border Background="White" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,12,0,0" Visibility="{Binding EnvironmentCheck.IsPackaging, Converter={StaticResource BoolVisibility}}">
+                                <StackPanel>
+                                    <ProgressBar IsIndeterminate="True" Height="4" Margin="0,0,0,10" />
+                                    <TextBlock Text="{Binding EnvironmentCheck.PackagingProgressText}" TextWrapping="Wrap" AutomationProperties.AutomationId="InstallerPackagingBanner" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="#FFF8EB" BorderBrush="#D99B26" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,12,0,0" Visibility="{Binding EnvironmentCheck.HasPublishReadinessHint, Converter={StaticResource BoolVisibility}}">
+                                <StackPanel>
+                                    <TextBlock Text="下一步：发布为可独立分发的自包含应用" Foreground="#7A5200" FontWeight="SemiBold" Margin="0,0,0,4" AutomationProperties.AutomationId="PublishReadinessHintBadge" />
+                                    <TextBlock Text="{Binding EnvironmentCheck.PublishReadinessHintSummary}" TextWrapping="Wrap" AutomationProperties.AutomationId="PublishReadinessHintText" />
+                                    <TextBox Text="{Binding EnvironmentCheck.PublishReadinessHintCommand, Mode=OneWay}" Style="{StaticResource SelectableText}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" Margin="0,8,0,0" Visibility="{Binding EnvironmentCheck.PublishReadinessHintCommand, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="PublishReadinessCommandText" AutomationProperties.Name="建议自包含发布命令" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="#FFF0ED" BorderBrush="#B84A39" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,12,0,0" Visibility="{Binding EnvironmentCheck.HasInstallerFailure, Converter={StaticResource BoolVisibility}}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding EnvironmentCheck.InstallerFailureTitle}" Foreground="#8F2D1E" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="InstallerFailureTitle" />
+                                    <TextBlock Text="{Binding EnvironmentCheck.InstallerFailureSummary}" Foreground="#8F2D1E" TextWrapping="Wrap" Margin="0,6,0,0" AutomationProperties.AutomationId="InstallerFailureSummary" />
+                                    <TextBox Text="{Binding EnvironmentCheck.InstallerFailureRemedy, Mode=OneWay}" Style="{StaticResource SelectableText}" Foreground="#0E5A53" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" Margin="0,8,0,0" Visibility="{Binding EnvironmentCheck.InstallerFailureRemedy, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="InstallerFailureRemedy" AutomationProperties.Name="安装包补齐指引" />
+                                    <TextBox Text="{Binding EnvironmentCheck.InstallerFailureDetail, Mode=OneWay}" Style="{StaticResource SelectableText}" Foreground="#963D2E" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" Margin="0,6,0,0" Visibility="{Binding EnvironmentCheck.InstallerFailureDetail, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="InstallerFailureDetail" AutomationProperties.Name="安装包错误诊断" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="White" BorderBrush="#137D74" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,12,0,0" Visibility="{Binding EnvironmentCheck.HasValidInstaller, Converter={StaticResource BoolVisibility}}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding EnvironmentCheck.GeneratedInstallerBadge}" Foreground="#0E5A53" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" AutomationProperties.AutomationId="GeneratedInstallerBadge" />
+                                    <TextBlock Text="{Binding EnvironmentCheck.GeneratedInstallerFileName}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="GeneratedInstallerFileName" />
+                                    <TextBox Text="{Binding EnvironmentCheck.GeneratedInstallerFullPath, Mode=OneWay}" Style="{StaticResource SelectableText}" Foreground="{StaticResource MutedBrush}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" Margin="0,4,0,0" AutomationProperties.AutomationId="GeneratedInstallerPathText" AutomationProperties.Name="安装包完整路径" />
+                                    <TextBlock Text="{Binding EnvironmentCheck.GeneratedInstallerSummaryLine}" TextWrapping="Wrap" Margin="0,8,0,0" AutomationProperties.AutomationId="GeneratedInstallerSummary" />
+                                    <TextBox Text="{Binding EnvironmentCheck.GeneratedInstallerIdentityLine, Mode=OneWay}" Style="{StaticResource SelectableText}" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,4,0,0" AutomationProperties.AutomationId="GeneratedInstallerIdentity" AutomationProperties.Name="安装包身份与校验摘要" />
+
+                                    <WrapPanel Margin="0,12,0,0">
+                                        <ui:Button Content="打开所在文件夹" Appearance="Primary" Margin="0,0,10,0" Click="OnOpenInstallerFolder" IsEnabled="{Binding EnvironmentCheck.CanOpenInstallerFolder}" AutomationProperties.AutomationId="OpenInstallerFolderButton">
+                                            <ui:Button.Icon><ui:SymbolIcon Symbol="FolderOpen24" /></ui:Button.Icon>
+                                        </ui:Button>
+                                        <ui:Button Content="复制安装包路径" Appearance="Transparent" Click="OnCopyInstallerPath" AutomationProperties.AutomationId="CopyInstallerPathButton">
+                                            <ui:Button.Icon><ui:SymbolIcon Symbol="Copy24" /></ui:Button.Icon>
+                                        </ui:Button>
+                                    </WrapPanel>
+
+                                    <Expander Header="查看安装包收据详情" IsExpanded="{Binding EnvironmentCheck.InstallerReceiptExpanded, Mode=TwoWay}" Margin="0,10,0,0" AutomationProperties.AutomationId="InstallerReceiptExpander">
+                                        <Border Background="#F7FAF9" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,8,0,0">
+                                            <TextBox Text="{Binding EnvironmentCheck.GeneratedInstallerReceiptText, Mode=OneWay}" Style="{StaticResource SelectableText}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" MaxHeight="240" AutomationProperties.AutomationId="InstallerReceiptText" AutomationProperties.Name="安装包收据详情" />
+                                        </Border>
+                                    </Expander>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
                     </Border>
 

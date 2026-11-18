@@ -64,6 +64,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
     private bool disposed;
     private bool checking;
     private bool building;
+    private bool packaging;
     private string folderInput = "";
     private ProjectFolderInfo? currentProject;
     private CheckSnapshot? previousSnapshot;
@@ -96,6 +97,20 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
     private bool showBuildLog;
     private string confirmedArtifactDirectory = "";
     private string lastOpenedArtifactDirectory = "";
+    private string? verifiedBuildAttestationJson;
+    private string verifiedBuildManifestSha256 = "";
+    private string publishReadinessHintSummary = "";
+    private string publishReadinessHintCommand = "";
+
+    private ProjectInstallerReceiptData? lastValidInstaller;
+    private DateTimeOffset? lastValidInstallerAt;
+    private bool installerMatchesCurrentBuild;
+    private string lastOpenedInstallerDirectory = "";
+    private bool installerReceiptExpanded;
+    private string installerFailureTitle = "";
+    private string installerFailureSummary = "";
+    private string installerFailureRemedy = "";
+    private string installerFailureDetail = "";
     private string statusMessage = "";
 
     public EnvironmentCheckViewModel(
@@ -119,7 +134,8 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
     public bool IsChecking => checking;
     public bool IsBuilding => building;
-    public bool CanEditProjectSelection => !disposed && !building;
+    public bool IsPackaging => packaging;
+    public bool CanEditProjectSelection => !disposed && !building && !packaging;
     public bool HasProject => currentProject is not null;
     public string ProjectName => currentProject?.ProjectName ?? "尚未选择项目文件夹";
     public string ProjectPath => currentProject?.ProjectPath ?? "";
@@ -139,8 +155,8 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
             "未找到 contain.environment.json，也未发现受支持的根目录声明文件（Cargo.toml、rust-toolchain.toml、global.json）。点击“开始检查”只能核验本机 Windows x64 平台，项目依赖将标为“待确认”。"
     };
 
-    public bool CanStartCheck => !disposed && !checking && !building && currentProject is not null;
-    public bool CanRecheck => !disposed && !checking && !building && currentProject is not null && HasOutcome;
+    public bool CanStartCheck => !disposed && !checking && !building && !packaging && currentProject is not null;
+    public bool CanRecheck => !disposed && !checking && !building && !packaging && currentProject is not null && HasOutcome;
     public bool HasOutcome => outcome != EnvironmentOutcomeKind.None;
     public EnvironmentOutcomeKind Outcome => outcome;
     public bool IsReady => outcome == EnvironmentOutcomeKind.Ready;
@@ -213,7 +229,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         && !string.IsNullOrEmpty(checkedManifestFileSha256)
         && string.Equals(currentPreview.RawFileSha256, checkedManifestFileSha256, StringComparison.Ordinal);
 
-    public bool CanStartBuild => !disposed && !checking && !building && CanShowStartBuild;
+    public bool CanStartBuild => !disposed && !checking && !building && !packaging && CanShowStartBuild;
     public string StartBuildButtonText => buildOutcome == BuildOutcomeKind.None ? "开始构建" : "再次构建";
 
     public bool HasBuildPrerequisiteBlocker => ShowProjectBuildSection && !CanShowStartBuild;
@@ -271,10 +287,72 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
     public bool CanOpenArtifactFolder =>
         !disposed
         && !building
+        && !packaging
         && buildOutcome == BuildOutcomeKind.Succeeded
         && confirmedArtifactDirectory.Length > 0
         && Directory.Exists(confirmedArtifactDirectory);
     public string LastOpenedArtifactDirectory => lastOpenedArtifactDirectory;
+
+    // --- Project Installer Packaging Surface Properties ---
+    public bool ShowGenerateInstallerButton => buildOutcome == BuildOutcomeKind.Succeeded;
+    public bool CanGenerateInstaller =>
+        !disposed
+        && !checking
+        && !building
+        && !packaging
+        && buildOutcome == BuildOutcomeKind.Succeeded;
+    public string PackagingProgressText => currentProject is null
+        ? "正在生成 Windows 安装包…"
+        : $"正在验证自包含发布产物并为“{currentProject.ProjectName}”生成 Windows 安装包…";
+
+    public bool HasPublishReadinessHint =>
+        buildOutcome == BuildOutcomeKind.Succeeded
+        && publishReadinessHintSummary.Length > 0
+        && !HasInstallerFailure;
+    public string PublishReadinessHintSummary => publishReadinessHintSummary;
+    public string PublishReadinessHintCommand => publishReadinessHintCommand;
+
+    public bool HasValidInstaller =>
+        buildOutcome == BuildOutcomeKind.Succeeded
+        && lastValidInstaller is not null
+        && (installerMatchesCurrentBuild || HasInstallerFailure)
+        && File.Exists(lastValidInstaller.InstallerFullPath);
+    public string GeneratedInstallerBadge => (!installerMatchesCurrentBuild || HasInstallerFailure) && lastValidInstaller is not null
+        ? $"上次已生成的可用安装包（{FormatTimestamp(lastValidInstallerAt ?? clock())}）"
+        : lastValidInstallerAt is { } ts
+            ? $"安装包已生成 · {FormatTimestamp(ts)}"
+            : "安装包已生成";
+    public string GeneratedInstallerFileName => lastValidInstaller?.InstallerFile ?? "";
+    public string GeneratedInstallerFullPath => lastValidInstaller?.InstallerFullPath ?? "";
+    public string GeneratedInstallerDirectory => lastValidInstaller?.InstallerDirectory ?? "";
+    public string GeneratedInstallerSummaryLine => lastValidInstaller is null
+        ? ""
+        : $"版本 {lastValidInstaller.AppVersion} · 启动入口 {lastValidInstaller.Entry} · 产物来源 {lastValidInstaller.PublishRelDir}（共 {lastValidInstaller.PayloadFileCount} 个文件） · 签名状态 {(lastValidInstaller.Signed ? $"已签名 ({lastValidInstaller.AuthenticodeStatus})" : $"未签名 ({lastValidInstaller.AuthenticodeStatus})")}";
+    public string GeneratedInstallerIdentityLine => lastValidInstaller is null
+        ? ""
+        : $"安装身份 {{{lastValidInstaller.AppId}}} · 默认目录 {lastValidInstaller.DefaultInstallDir} · SHA-256 {lastValidInstaller.InstallerSha256}";
+    public string GeneratedInstallerReceiptText => lastValidInstaller is null
+        ? ""
+        : !string.IsNullOrWhiteSpace(lastValidInstaller.SummaryMarkdown)
+            ? lastValidInstaller.SummaryMarkdown.TrimEnd()
+            : $"{GeneratedInstallerSummaryLine}\n{GeneratedInstallerIdentityLine}";
+    public bool InstallerReceiptExpanded
+    {
+        get => installerReceiptExpanded;
+        set => SetProperty(ref installerReceiptExpanded, value);
+    }
+    public bool CanOpenInstallerFolder =>
+        !disposed
+        && !building
+        && !packaging
+        && HasValidInstaller;
+    public string LastOpenedInstallerDirectory => lastOpenedInstallerDirectory;
+
+    public bool HasInstallerFailure => installerFailureTitle.Length > 0;
+    public string InstallerFailureTitle => installerFailureTitle;
+    public string InstallerFailureSummary => installerFailureSummary;
+    public string InstallerFailureRemedy => installerFailureRemedy;
+    public string InstallerFailureDetail => installerFailureDetail;
 
     public bool CanToggleBuildLog => HasBuildOutcome && buildLogText.Length > 0;
     public bool ShowBuildLog
@@ -299,7 +377,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
     public bool SelectProject(string path)
     {
-        if (disposed || building) return false;
+        if (disposed || building || packaging) return false;
         requests.Invalidate();
         checking = false;
         DisposeManifestWatcher();
@@ -350,7 +428,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
     private void ApplyFolderInput(string rawValue)
     {
-        if (disposed || building || string.Equals(folderInput, rawValue, StringComparison.Ordinal)) return;
+        if (disposed || building || packaging || string.Equals(folderInput, rawValue, StringComparison.Ordinal)) return;
         folderInput = rawValue;
         OnPropertyChanged(nameof(FolderInput));
 
@@ -386,7 +464,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
     private async Task<bool> CheckCoreAsync()
     {
-        if (disposed || building || currentProject is null) return false;
+        if (disposed || building || packaging || currentProject is null) return false;
         var targetProject = currentProject;
         var previewBeforeCheck = service.InspectBuildPreview(targetProject.ProjectPath);
         var hasValidPriorForProject = previousSnapshot is not null
@@ -448,7 +526,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
     private async Task<bool> StartBuildCoreAsync()
     {
-        if (disposed || checking || building || currentProject is null || !CanShowStartBuild || currentPreview is null)
+        if (disposed || checking || building || packaging || currentProject is null || !CanShowStartBuild || currentPreview is null)
             return false;
 
         var targetProject = currentProject;
@@ -542,7 +620,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
     public bool OpenArtifactFolder()
     {
-        if (disposed || building || buildOutcome != BuildOutcomeKind.Succeeded || string.IsNullOrWhiteSpace(confirmedArtifactDirectory))
+        if (disposed || building || packaging || buildOutcome != BuildOutcomeKind.Succeeded || string.IsNullOrWhiteSpace(confirmedArtifactDirectory))
             return false;
 
         if (!Directory.Exists(confirmedArtifactDirectory))
@@ -558,6 +636,133 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         lastOpenedArtifactDirectory = confirmedArtifactDirectory;
         statusMessage = $"已打开产物文件夹：{confirmedArtifactDirectory}";
         OnPropertyChanged(nameof(LastOpenedArtifactDirectory));
+        OnPropertyChanged(nameof(StatusMessage));
+        return true;
+    }
+
+    public Task<bool> GenerateInstallerAsync() => Track(() => GenerateInstallerCoreAsync());
+
+    private async Task<bool> GenerateInstallerCoreAsync()
+    {
+        if (!CanGenerateInstaller || currentProject is null)
+            return false;
+
+        var targetProject = currentProject;
+        if (lastValidInstaller is not null && !File.Exists(lastValidInstaller.InstallerFullPath))
+        {
+            lastValidInstaller = null;
+            lastValidInstallerAt = null;
+        }
+
+        var latestPreview = service.InspectBuildPreview(targetProject.ProjectPath);
+        if (latestPreview.Status != ManifestPreviewStatus.Valid
+            || !string.Equals(latestPreview.RawFileSha256, verifiedBuildManifestSha256, StringComparison.Ordinal))
+        {
+            ApplyManifestPreview(latestPreview);
+            ApplyInstallerFailureBanner(
+                "项目构建清单已变更，请先重新检查并构建",
+                "检测到 contain.environment.json 在上次成功构建后已修改，不能将旧产物按新清单直接打包。",
+                "请先点击上方“重新检查”，再点击“再次构建”验证最新发布产物后生成安装包。",
+                "");
+            statusMessage = $"“{targetProject.ProjectName}”清单已变更，请重新检查并构建后再生成安装包。";
+            NotifyAll();
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(verifiedBuildAttestationJson))
+        {
+            ApplyInstallerFailureBanner(
+                "缺少本次构建的已核实发布产物记录",
+                "未能确认当前项目的独立发布输出目录与文件摘要，无法直接生成安装包。",
+                "请在 contain.environment.json 中配置独立的发布输出子目录（如 artifact_dir: \"artifacts/publish\"）与自包含发布命令，点击“再次构建”后重试。",
+                "");
+            statusMessage = $"“{targetProject.ProjectName}”缺少已核实的发布产物记录。";
+            NotifyAll();
+            return false;
+        }
+
+        var attestationSnapshot = verifiedBuildAttestationJson;
+        var ticket = requests.Begin();
+        packaging = true;
+        ClearInstallerFailureCore();
+        statusMessage = PackagingProgressText;
+        NotifyAll();
+
+        try
+        {
+            var execution = await service.PackageInstallerAsync(
+                targetProject.ProjectPath,
+                attestationSnapshot,
+                ticket.Token).ConfigureAwait(true);
+
+            if (!IsStillCurrent(ticket, targetProject.ProjectPath))
+                return false;
+
+            packaging = false;
+            var succeeded = ApplyInstallerExecution(targetProject, execution);
+            NotifyAll();
+            return succeeded;
+        }
+        catch (OperationCanceledException) when (!requests.IsCurrent(ticket))
+        {
+            packaging = false;
+            return false;
+        }
+        catch (EnvironmentCheckException error)
+        {
+            if (!IsStillCurrent(ticket, targetProject.ProjectPath))
+                return false;
+
+            packaging = false;
+            ApplyInstallerFailureBanner(
+                $"生成安装包未能完成（失败时间：{FormatTimestamp(clock())}）",
+                error.Message,
+                "请核对项目清单语法与随包 contain-workflow.exe 完整性后重试。",
+                error.Diagnostic);
+            statusMessage = $"“{targetProject.ProjectName}”生成安装包未完成：{error.Message}";
+            NotifyAll();
+            return false;
+        }
+        catch (Exception error)
+        {
+            if (!IsStillCurrent(ticket, targetProject.ProjectPath))
+                return false;
+
+            packaging = false;
+            ApplyInstallerFailureBanner(
+                $"生成安装包发生异常（失败时间：{FormatTimestamp(clock())}）",
+                "调用随包打包程序过程中发生未预期错误。",
+                "请检查输出目录访问权限与磁盘空间后重试。",
+                $"{error.GetType().Name}: {error.Message}");
+            statusMessage = $"“{targetProject.ProjectName}”生成安装包发生异常。";
+            NotifyAll();
+            return false;
+        }
+    }
+
+    public bool OpenInstallerFolder()
+    {
+        if (disposed || building || packaging || lastValidInstaller is null)
+            return false;
+
+        if (!File.Exists(lastValidInstaller.InstallerFullPath) || !Directory.Exists(lastValidInstaller.InstallerDirectory))
+        {
+            lastValidInstaller = null;
+            lastValidInstallerAt = null;
+            ApplyInstallerFailureBanner(
+                "原安装包文件已不存在",
+                "此前生成的安装包文件或所在文件夹已被移动或删除。",
+                "可再次点击“生成安装包”输出新的安装包文件。",
+                "");
+            statusMessage = "原安装包文件已不存在，请重新点击“生成安装包”。";
+            NotifyAll();
+            return false;
+        }
+
+        artifactFolderOpener(lastValidInstaller.InstallerDirectory);
+        lastOpenedInstallerDirectory = lastValidInstaller.InstallerDirectory;
+        statusMessage = $"已打开安装包所在文件夹：{lastValidInstaller.InstallerDirectory}";
+        OnPropertyChanged(nameof(LastOpenedInstallerDirectory));
         OnPropertyChanged(nameof(StatusMessage));
         return true;
     }
@@ -804,12 +1009,20 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
                 && Directory.Exists(execution.ConfirmedArtifactDirectory)
                     ? execution.ConfirmedArtifactDirectory
                     : "";
+            verifiedBuildAttestationJson = execution.BuildAttestationJson;
+            verifiedBuildManifestSha256 = preview.RawFileSha256;
+
+            var readinessHint = ProjectPublishInspector.Inspect(project.ProjectPath, preview, confirmedArtifactDirectory);
+            publishReadinessHintSummary = readinessHint.NeedsSelfContainedPublish ? readinessHint.SummaryText : "";
+            publishReadinessHintCommand = readinessHint.NeedsSelfContainedPublish ? readinessHint.SuggestedCommandText : "";
 
             if (confirmedArtifactDirectory.Length > 0)
             {
                 buildHeadline = $"构建成功：“{project.ProjectName}”已完成全部构建与验证步骤";
                 buildNote = $"已确认本次构建产物位于：{confirmedArtifactDirectory}";
-                statusMessage = $"“{project.ProjectName}”构建成功，可点击“打开产物文件夹”查看生成结果。";
+                statusMessage = readinessHint.NeedsSelfContainedPublish
+                    ? $"“{project.ProjectName}”构建通过；当前为依赖运行时的编译产物，可按下方指引改为 win-x64 自包含发布后生成安装包。"
+                    : $"“{project.ProjectName}”构建成功，可打开产物文件夹或点击“生成安装包”。";
             }
             else
             {
@@ -1310,6 +1523,85 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         return sb.ToString().TrimEnd();
     }
 
+    private bool ApplyInstallerExecution(ProjectFolderInfo project, ProjectInstallerExecution execution)
+    {
+        var now = clock();
+        var allPassed = execution.ExitCode == 0
+            && execution.Receipt is not null
+            && execution.Report.Checks.All(static c => c.Status == "passed");
+
+        if (allPassed && execution.Receipt is { } receipt)
+        {
+            lastValidInstaller = receipt;
+            lastValidInstallerAt = now;
+            installerMatchesCurrentBuild = true;
+            installerReceiptExpanded = false;
+            publishReadinessHintSummary = "";
+            publishReadinessHintCommand = "";
+            ClearInstallerFailureCore();
+            statusMessage = $"已为“{project.ProjectName}”生成安装包：{receipt.InstallerFile}";
+            return true;
+        }
+
+        var failedChecks = execution.Report.Checks.Where(static c => c.Status == "failed").ToList();
+        var primary = failedChecks.FirstOrDefault();
+        var baseTitle = primary?.Outcome switch
+        {
+            "framework_dependent_output" => "尚不能打包：当前构建产物依赖本机 .NET 运行时",
+            "missing_publish_dir" or "not_dotnet_publish_output" or "single_file_or_unsupported_stack" or "unsupported_publish_kind" or "wrong_publish_rid" or "missing_self_contained_runtime" or "incomplete_dotnet_publish" =>
+                "尚不能打包：请使用受支持的 Windows x64 .NET 自包含多文件发布",
+            "ambiguous_entry" => "尚不能打包：启动入口有歧义",
+            "missing_entry" or "invalid_entry_pe" => "尚不能打包：缺少有效的 Windows x64 启动入口",
+            "missing_version" or "conflicting_version" or "invalid_version" => "尚不能打包：缺少或需要修正应用版本号",
+            "inno_setup_missing" => "尚不能打包：本机缺少 Inno Setup 6 打包工具（接收者无需安装）",
+            "artifacts_modified_or_stale" or "manifest_changed_since_build" => "无法使用过期或被改动的产物打包，请先重新构建",
+            "forbidden_payload_member" => "发布目录包含不应随包分发的文件",
+            "forbidden_contain_identity" or "conflicting_app_id" or "invalid_app_id" or "invalid_identity_file" => "项目安装身份（AppId）配置有误或冲突",
+            "iscc_compile_failed" => "Inno Setup 编译安装包失败",
+            _ => "未能生成 Windows 安装包"
+        };
+
+        var titleWithTime = $"{baseTitle}（{FormatTimestamp(now)}）";
+        var details = failedChecks.Select(static c => c.Detail).Where(static s => !string.IsNullOrWhiteSpace(s)).ToList();
+        var remedies = failedChecks
+            .Select(static c => c.Remedy)
+            .Where(static s => !string.IsNullOrWhiteSpace(s))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        var summary = details.Count > 0
+            ? string.Join(Environment.NewLine, details)
+            : "未能通过安装包生成前检查。";
+        if (lastValidInstaller is not null && File.Exists(lastValidInstaller.InstallerFullPath))
+        {
+            summary += Environment.NewLine + "本次生成未完成；下方继续保留上次已生成的可用安装包。";
+        }
+
+        var remedyText = remedies.Count > 0
+            ? string.Join(Environment.NewLine + Environment.NewLine, remedies!)
+            : "请按提示补齐配置并重新构建后再点击“生成安装包”。";
+
+        ApplyInstallerFailureBanner(titleWithTime, summary, remedyText, "");
+        statusMessage = $"“{project.ProjectName}”{baseTitle}。";
+        return false;
+    }
+
+    private void ApplyInstallerFailureBanner(string title, string summary, string remedy, string detail)
+    {
+        installerFailureTitle = title;
+        installerFailureSummary = summary;
+        installerFailureRemedy = remedy;
+        installerFailureDetail = detail;
+    }
+
+    private void ClearInstallerFailureCore()
+    {
+        installerFailureTitle = "";
+        installerFailureSummary = "";
+        installerFailureRemedy = "";
+        installerFailureDetail = "";
+    }
+
     private void ResetProjectSession()
     {
         previousSnapshot = null;
@@ -1319,6 +1611,11 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         BuildPreviewSteps.Clear();
         buildFullCommandsText = "";
         buildCommandsExpanded = false;
+        lastValidInstaller = null;
+        lastValidInstallerAt = null;
+        installerMatchesCurrentBuild = false;
+        lastOpenedInstallerDirectory = "";
+        installerReceiptExpanded = false;
         ClearOutcomeCore();
         ClearBuildResultCore();
     }
@@ -1342,6 +1639,13 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         buildLogText = "";
         showBuildLog = false;
         confirmedArtifactDirectory = "";
+        verifiedBuildAttestationJson = null;
+        verifiedBuildManifestSha256 = "";
+        publishReadinessHintSummary = "";
+        publishReadinessHintCommand = "";
+        installerMatchesCurrentBuild = false;
+        installerReceiptExpanded = false;
+        ClearInstallerFailureCore();
     }
 
     private void ClearOutcomeCore()
@@ -1383,6 +1687,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
     {
         OnPropertyChanged(nameof(IsChecking));
         OnPropertyChanged(nameof(IsBuilding));
+        OnPropertyChanged(nameof(IsPackaging));
         OnPropertyChanged(nameof(CanEditProjectSelection));
         OnPropertyChanged(nameof(HasProject));
         OnPropertyChanged(nameof(ProjectName));
@@ -1446,6 +1751,28 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ConfirmedArtifactDirectory));
         OnPropertyChanged(nameof(CanOpenArtifactFolder));
         OnPropertyChanged(nameof(LastOpenedArtifactDirectory));
+        OnPropertyChanged(nameof(ShowGenerateInstallerButton));
+        OnPropertyChanged(nameof(CanGenerateInstaller));
+        OnPropertyChanged(nameof(PackagingProgressText));
+        OnPropertyChanged(nameof(HasPublishReadinessHint));
+        OnPropertyChanged(nameof(PublishReadinessHintSummary));
+        OnPropertyChanged(nameof(PublishReadinessHintCommand));
+        OnPropertyChanged(nameof(HasValidInstaller));
+        OnPropertyChanged(nameof(GeneratedInstallerBadge));
+        OnPropertyChanged(nameof(GeneratedInstallerFileName));
+        OnPropertyChanged(nameof(GeneratedInstallerFullPath));
+        OnPropertyChanged(nameof(GeneratedInstallerDirectory));
+        OnPropertyChanged(nameof(GeneratedInstallerSummaryLine));
+        OnPropertyChanged(nameof(GeneratedInstallerIdentityLine));
+        OnPropertyChanged(nameof(GeneratedInstallerReceiptText));
+        OnPropertyChanged(nameof(InstallerReceiptExpanded));
+        OnPropertyChanged(nameof(CanOpenInstallerFolder));
+        OnPropertyChanged(nameof(LastOpenedInstallerDirectory));
+        OnPropertyChanged(nameof(HasInstallerFailure));
+        OnPropertyChanged(nameof(InstallerFailureTitle));
+        OnPropertyChanged(nameof(InstallerFailureSummary));
+        OnPropertyChanged(nameof(InstallerFailureRemedy));
+        OnPropertyChanged(nameof(InstallerFailureDetail));
         OnPropertyChanged(nameof(CanToggleBuildLog));
         OnPropertyChanged(nameof(ShowBuildLog));
         OnPropertyChanged(nameof(BuildLogButtonText));

@@ -66,6 +66,10 @@ public interface IEnvironmentCheckService
         BuildManifestPreview expectedPreview,
         IProgress<BuildProgressUpdate>? progress = null,
         CancellationToken cancellationToken = default);
+    Task<ProjectInstallerExecution> PackageInstallerAsync(
+        string projectPath,
+        string buildAttestationJson,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -260,6 +264,10 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
             var confirmedArtifactDir = allPassed
                 ? ResolveConfirmedArtifactDirectory(info.ProjectPath, freshPreview, deliveryDir)
                 : null;
+            var attestationPath = Path.Combine(reportDir, "build-attestation.json");
+            var attestationJson = allPassed && File.Exists(attestationPath)
+                ? await File.ReadAllTextAsync(attestationPath, StrictUtf8, cancellationToken).ConfigureAwait(false)
+                : null;
             var combinedLog = BuildCombinedLog(info, freshPreview, exitCode, stepResults, rawMd);
 
             return new ProjectBuildExecution(
@@ -269,7 +277,8 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
                 rawJson,
                 stepResults,
                 combinedLog,
-                confirmedArtifactDir);
+                confirmedArtifactDir,
+                attestationJson);
         }
         finally
         {
@@ -279,19 +288,168 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
         }
     }
 
+    public async Task<ProjectInstallerExecution> PackageInstallerAsync(
+        string projectPath,
+        string buildAttestationJson,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(buildAttestationJson))
+        {
+            throw new EnvironmentCheckException(
+                "missing_build_attestation",
+                "缺少本次成功构建的产物核验记录，请先点击“开始构建”完成构建与验证后再生成安装包。");
+        }
+
+        var info = InspectProject(projectPath);
+        await EnsureVersionAsync(cancellationToken).ConfigureAwait(false);
+
+        var runStamp = DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture)
+            + "-" + Guid.NewGuid().ToString("N")[..8];
+        var outputDir = Path.Combine(info.ProjectPath, "target", "workflow", "installers", "installer-" + runStamp);
+        var tempRoot = Path.Combine(Path.GetTempPath(), "Contain-ProjPkg-" + Guid.NewGuid().ToString("N"));
+        var attestationFile = Path.Combine(tempRoot, "build-attestation.json");
+        var reportDir = Path.Combine(tempRoot, "report");
+        Directory.CreateDirectory(tempRoot);
+
+        var pkgTimeout = commandTimeout > TimeSpan.FromMinutes(5)
+            ? commandTimeout
+            : TimeSpan.FromMinutes(5);
+
+        try
+        {
+            await File.WriteAllTextAsync(attestationFile, buildAttestationJson, StrictUtf8, cancellationToken).ConfigureAwait(false);
+
+            var (exitCode, _, stderr) = await RunProcessAsync(
+                [
+                    "package-installer",
+                    "--project", info.ProjectPath,
+                    "--attestation", attestationFile,
+                    "--output-dir", outputDir,
+                    "--report", reportDir
+                ],
+                pkgTimeout,
+                cancellationToken).ConfigureAwait(false);
+
+            var jsonPath = Path.Combine(reportDir, "report.json");
+            var mdPath = Path.Combine(reportDir, "report.md");
+            if (!File.Exists(jsonPath))
+            {
+                var detail = string.IsNullOrWhiteSpace(stderr)
+                    ? $"contain-workflow package-installer 退出码 {exitCode}，未生成结构化报告。"
+                    : stderr.Trim();
+                throw new EnvironmentCheckException(
+                    "installer_report_not_generated",
+                    "无法执行安装包打包检查（可能项目清单已被改动或语法无效）。",
+                    detail);
+            }
+
+            var rawJson = await File.ReadAllTextAsync(jsonPath, StrictUtf8, cancellationToken).ConfigureAwait(false);
+            var rawMd = File.Exists(mdPath)
+                ? await File.ReadAllTextAsync(mdPath, StrictUtf8, cancellationToken).ConfigureAwait(false)
+                : "";
+            var parsed = ParseReport(rawJson, expectedWorkflow: "project_installer");
+
+            ProjectInstallerReceiptData? receipt = null;
+            var receiptPath = Path.Combine(reportDir, "installer-receipt.json");
+            if (exitCode == 0 && File.Exists(receiptPath))
+            {
+                var rawReceipt = await File.ReadAllTextAsync(receiptPath, StrictUtf8, cancellationToken).ConfigureAwait(false);
+                var summaryPath = Path.Combine(outputDir, "installer-summary.md");
+                var summaryMd = File.Exists(summaryPath)
+                    ? await File.ReadAllTextAsync(summaryPath, StrictUtf8, cancellationToken).ConfigureAwait(false)
+                    : "";
+                receipt = ParseInstallerReceipt(rawReceipt, outputDir, summaryMd);
+            }
+
+            return new ProjectInstallerExecution(exitCode, parsed, rawMd, rawJson, receipt);
+        }
+        finally
+        {
+            try { if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, recursive: true); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    public static ProjectInstallerReceiptData ParseInstallerReceipt(
+        string json,
+        string outputDirectory,
+        string summaryMarkdown)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var schema = root.TryGetProperty("schema_version", out var sv) && sv.TryGetInt32(out var svVal) ? svVal : -1;
+            var protocol = OptionalString(root, "protocol") ?? "";
+            if (schema != 1 || protocol != "contain-project-installer-receipt-1")
+                throw new EnvironmentCheckException("installer_receipt_contract", "安装包收据协议版本不匹配。");
+
+            var installerFile = OptionalString(root, "installer_file") ?? "";
+            if (string.IsNullOrWhiteSpace(installerFile) || installerFile.Contains('/') || installerFile.Contains('\\'))
+                throw new EnvironmentCheckException("installer_receipt_contract", "安装包收据中的文件名无效。");
+
+            var fullDir = NormalizeDirectoryPath(outputDirectory);
+            var fullExePath = Path.Combine(fullDir, installerFile);
+            if (!File.Exists(fullExePath))
+                throw new EnvironmentCheckException("installer_file_missing", $"未在输出目录找到生成的安装包：{installerFile}");
+
+            var bytes = root.TryGetProperty("installer_bytes", out var bEl) && bEl.TryGetInt64(out var bVal) ? bVal : 0L;
+            var payloadCount = root.TryGetProperty("payload_file_count", out var pEl) && pEl.TryGetInt32(out var pVal) ? pVal : 0;
+            var signed = root.TryGetProperty("signed", out var sEl) && sEl.ValueKind == JsonValueKind.True;
+
+            return new ProjectInstallerReceiptData(
+                OptionalString(root, "project_name") ?? "",
+                OptionalString(root, "display_name") ?? "",
+                OptionalString(root, "app_id") ?? "",
+                OptionalString(root, "short_id") ?? "",
+                OptionalString(root, "identity_source") ?? "",
+                OptionalString(root, "app_version") ?? "",
+                OptionalString(root, "version_info_version") ?? "",
+                OptionalString(root, "publisher"),
+                OptionalString(root, "publish_kind") ?? "",
+                OptionalString(root, "publish_rel_dir") ?? "",
+                OptionalString(root, "entry") ?? "",
+                OptionalString(root, "entry_sha256") ?? "",
+                OptionalString(root, "manifest_sha256") ?? "",
+                OptionalString(root, "attestation_sha256") ?? "",
+                payloadCount,
+                OptionalString(root, "default_install_dir") ?? "",
+                OptionalString(root, "start_menu_shortcut") ?? "",
+                installerFile,
+                bytes,
+                OptionalString(root, "installer_sha256") ?? "",
+                OptionalString(root, "authenticode_status") ?? "NotSigned",
+                signed,
+                OptionalString(root, "inno_setup_version") ?? "",
+                fullExePath,
+                fullDir,
+                summaryMarkdown);
+        }
+        catch (EnvironmentCheckException)
+        {
+            throw;
+        }
+        catch (JsonException error)
+        {
+            throw new EnvironmentCheckException("installer_receipt_json", "安装包收据 JSON 格式无效。", error.Message, error);
+        }
+    }
+
     public static string? ResolveConfirmedArtifactDirectory(
         string projectRoot,
         BuildManifestPreview preview,
         string? deliveryDir)
     {
         var normalizedRoot = NormalizeDirectoryPath(projectRoot);
+        var declaredDir = preview.ArtifactDir ?? preview.Installer?.PublishDir;
 
         if (!string.IsNullOrWhiteSpace(deliveryDir) && Directory.Exists(deliveryDir))
         {
             var fullDelivery = NormalizeDirectoryPath(deliveryDir);
-            if (!string.IsNullOrWhiteSpace(preview.ArtifactDir))
+            if (!string.IsNullOrWhiteSpace(declaredDir))
             {
-                var nested = NormalizeDirectoryPath(Path.Combine(fullDelivery, preview.ArtifactDir.Replace('/', Path.DirectorySeparatorChar)));
+                var nested = NormalizeDirectoryPath(Path.Combine(fullDelivery, declaredDir.Replace('/', Path.DirectorySeparatorChar)));
                 if (IsPathWithin(fullDelivery, nested)
                     && Directory.Exists(nested)
                     && ContainsNonEmptyFile(nested)
@@ -306,9 +464,9 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(preview.ArtifactDir))
+        if (!string.IsNullOrWhiteSpace(declaredDir))
         {
-            var candidate = NormalizeDirectoryPath(Path.Combine(normalizedRoot, preview.ArtifactDir.Replace('/', Path.DirectorySeparatorChar)));
+            var candidate = NormalizeDirectoryPath(Path.Combine(normalizedRoot, declaredDir.Replace('/', Path.DirectorySeparatorChar)));
             if (IsPathWithin(normalizedRoot, candidate)
                 && Directory.Exists(candidate)
                 && ContainsNonEmptyFile(candidate)
@@ -561,7 +719,7 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
         }
     }
 
-    public static WorkflowReportData ParseReport(string json)
+    public static WorkflowReportData ParseReport(string json, string expectedWorkflow = "source")
     {
         try
         {
@@ -572,8 +730,8 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
 
             var schema = root.TryGetProperty("schema_version", out var sv) && sv.TryGetInt32(out var svValue) ? svValue : -1;
             var workflow = root.TryGetProperty("workflow", out var wf) && wf.ValueKind == JsonValueKind.String ? wf.GetString() ?? "" : "";
-            if (schema != 1 || workflow != "source")
-                throw new EnvironmentCheckException("report_contract", "CLI 报告版本或类型不匹配（要求 schema 1 / source）。");
+            if (schema != 1 || !string.Equals(workflow, expectedWorkflow, StringComparison.Ordinal))
+                throw new EnvironmentCheckException("report_contract", $"CLI 报告版本或类型不匹配（要求 schema 1 / {expectedWorkflow}）。");
 
             var hostOs = OptionalString(root, "host_os") ?? "";
             var hostArch = OptionalString(root, "host_arch") ?? "";
