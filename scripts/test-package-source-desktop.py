@@ -21,7 +21,10 @@ class SourcePackageTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name)
         self.viewer=self.root/'wpf';self.viewer.mkdir()
-        for n,b in FIX.published_members().items():(self.viewer/n).write_bytes(b)
+        for n,b in FIX.published_members().items():
+            if n=='Contain.Viewer.deps.json':
+                b=b.decode('utf-8').replace(P.MODERN.VERSION,P.SOURCE_VERSION).encode('utf-8')
+            (self.viewer/n).write_bytes(b)
         (self.viewer/'Contain.Viewer.exe').write_bytes(b'MZ-current-entry')
         self.core=self.root/'contain.exe';self.core.write_bytes(b'MZ-current-core-not-the-Beta10-core')
         self.workflow_cli=self.root/'contain-workflow.exe';self.workflow_cli.write_bytes(b'MZ-current-workflow-cli')

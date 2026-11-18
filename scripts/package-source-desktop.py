@@ -37,7 +37,7 @@ def freeze(args):
             and receipt.get('workflow_cli_sha256')==sha(args.workflow_cli)
             and receipt['entry_sha256']==sha(args.viewer/'Contain.Viewer.exe') and receipt['toolchain']==tools,'build receipt input mismatch')
     require(receipt.get('regressions')=='passed','source regressions not passed')
-    frameworks=MODERN.runtime_contract(args.viewer)
+    frameworks=MODERN.runtime_contract(args.viewer,expected_version=SOURCE_VERSION)
     files=MODERN.tree_files(args.viewer)
     MODERN.member_policy(files, lambda name:files[name].read_bytes()[:16], published=True)
     core=LEGACY.safe_file(args.core)

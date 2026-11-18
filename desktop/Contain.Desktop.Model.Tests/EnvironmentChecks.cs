@@ -265,11 +265,12 @@ internal static class EnvironmentChecks
             var project = temp.Sub("preserve-on-error");
             File.WriteAllText(Path.Combine(project, "contain.environment.json"), "{}");
 
+            var localOffset = TimeZoneInfo.Local.GetUtcOffset(new DateTime(2026, 11, 18, 9, 0, 0, DateTimeKind.Unspecified));
             var timestamps = new Queue<DateTimeOffset>(
             [
-                new DateTimeOffset(2026, 11, 18, 9, 0, 0, TimeSpan.FromHours(8)),
-                new DateTimeOffset(2026, 11, 18, 9, 5, 30, TimeSpan.FromHours(8)),
-                new DateTimeOffset(2026, 11, 18, 9, 8, 45, TimeSpan.FromHours(8))
+                new DateTimeOffset(2026, 11, 18, 9, 0, 0, localOffset),
+                new DateTimeOffset(2026, 11, 18, 9, 5, 30, localOffset),
+                new DateTimeOffset(2026, 11, 18, 9, 8, 45, localOffset)
             ]);
 
             var attempt = 0;
