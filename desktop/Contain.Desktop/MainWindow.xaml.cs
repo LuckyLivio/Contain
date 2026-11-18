@@ -38,7 +38,9 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
             personalRecords.DatabasePath, () => personalRecords.IsMissing);
         Install = new InstallViewModel(new InstallService(new InstallClient(executable), personalRecords),
             action => Dispatcher.BeginInvoke(action), OpenCapturedSessionAsync);
-        EnvironmentCheck = new EnvironmentCheckViewModel(new WorkflowCliEnvironmentService(workflowExecutable));
+        EnvironmentCheck = new EnvironmentCheckViewModel(
+            new WorkflowCliEnvironmentService(workflowExecutable),
+            dispatcher: action => Dispatcher.BeginInvoke(action));
         Records.PropertyChanged += OnModelChanged;
         Install.PropertyChanged += OnModelChanged;
         EnvironmentCheck.PropertyChanged += OnModelChanged;
@@ -192,12 +194,27 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 
     public void PickProjectFolder()
     {
+        if (!EnvironmentCheck.CanEditProjectSelection) return;
         var dialog = new OpenFolderDialog { Title = "选择要检查的本地项目文件夹", Multiselect = false };
         if (dialog.ShowDialog(this) == true) EnvironmentCheck.SelectProject(dialog.FolderName);
         else EnvironmentCheck.CancelSelection();
     }
 
     public Task RunEnvironmentCheckAsync() => RunUiAsync(() => EnvironmentCheck.CheckAsync());
+
+    public Task RunProjectBuildAsync() => RunUiAsync(() => EnvironmentCheck.StartBuildAsync());
+
+    public void OpenProjectArtifactFolder() => RunUiOperation(() => { EnvironmentCheck.OpenArtifactFolder(); });
+
+    private void RunUiOperation(Action operation)
+    {
+        localError = "";
+        localStatus = "";
+        Changed(nameof(ErrorMessage));
+        Changed(nameof(StatusMessage));
+        try { operation(); }
+        catch (Exception error) { ReportUiError(error); }
+    }
 
     public void PickSaveDatabase()
     {

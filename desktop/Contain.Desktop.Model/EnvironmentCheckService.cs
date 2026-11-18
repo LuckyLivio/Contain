@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
@@ -58,16 +59,23 @@ public sealed class EnvironmentCheckException : Exception
 public interface IEnvironmentCheckService
 {
     ProjectFolderInfo InspectProject(string projectPath);
+    BuildManifestPreview InspectBuildPreview(string projectPath);
     Task<EnvironmentCheckExecution> CheckAsync(string projectPath, CancellationToken cancellationToken = default);
+    Task<ProjectBuildExecution> BuildAsync(
+        string projectPath,
+        BuildManifestPreview expectedPreview,
+        IProgress<BuildProgressUpdate>? progress = null,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
-/// Invokes the packaged contain-workflow.exe binary with --safe-probes and --infer-if-missing,
-/// reading only structured report.json output rather than parsing console text.
+/// Invokes the packaged contain-workflow.exe binary with --safe-probes,
+/// reading only structured report.json and local step log metadata rather than parsing console text.
 /// </summary>
 public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
 {
     private const int MaxStreamBytes = 4 * 1024 * 1024;
+    private const int MaxStepLogDisplayBytes = 256 * 1024;
     private const string ExpectedVersionPrefix = "contain-workflow ";
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private static readonly string[] SupportedDeclarationFiles =
@@ -89,6 +97,8 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
     }
 
     public ProjectFolderInfo InspectProject(string projectPath) => InspectProjectDirectory(projectPath);
+
+    public BuildManifestPreview InspectBuildPreview(string projectPath) => WorkflowManifestReader.ReadPreview(projectPath);
 
     public static ProjectFolderInfo InspectProjectDirectory(string projectPath)
     {
@@ -127,6 +137,7 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
         {
             var (exitCode, _, stderr) = await RunProcessAsync(
                 ["check", "--project", info.ProjectPath, "--safe-probes", "--infer-if-missing", "--report", reportDir],
+                commandTimeout,
                 cancellationToken).ConfigureAwait(false);
 
             var jsonPath = Path.Combine(reportDir, "report.json");
@@ -154,6 +165,399 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
             try { if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, recursive: true); }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    public async Task<ProjectBuildExecution> BuildAsync(
+        string projectPath,
+        BuildManifestPreview expectedPreview,
+        IProgress<BuildProgressUpdate>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(expectedPreview);
+        var info = InspectProject(projectPath);
+        var freshPreview = InspectBuildPreview(info.ProjectPath);
+        if (freshPreview.Status != ManifestPreviewStatus.Valid
+            || !string.Equals(freshPreview.RawFileSha256, expectedPreview.RawFileSha256, StringComparison.Ordinal))
+        {
+            throw new EnvironmentCheckException(
+                "manifest_changed",
+                "项目构建清单在启动前已发生变化，请刷新预览并重新检查后再开始构建。");
+        }
+
+        await EnsureVersionAsync(cancellationToken).ConfigureAwait(false);
+
+        var runStamp = DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture)
+            + "-" + Guid.NewGuid().ToString("N")[..8];
+        var deliveryDir = Path.Combine(info.ProjectPath, "target", "workflow", "deliveries", "build-" + runStamp);
+        var tempRoot = Path.Combine(Path.GetTempPath(), "Contain-EnvBuild-" + Guid.NewGuid().ToString("N"));
+        var reportDir = Path.Combine(tempRoot, "report");
+        var logDir = Path.Combine(tempRoot, "logs");
+        Directory.CreateDirectory(tempRoot);
+
+        var totalStepTimeoutMs = 0UL;
+        foreach (var step in freshPreview.AllSteps)
+            totalStepTimeoutMs += step.TimeoutMs;
+        var buildTimeout = TimeSpan.FromMilliseconds(Math.Min(7_200_000UL, totalStepTimeoutMs + 120_000UL));
+        if (buildTimeout < commandTimeout)
+            buildTimeout = commandTimeout;
+
+        try
+        {
+            using var pollCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var progressPath = Path.Combine(logDir, "progress.jsonl");
+            var pollTask = progress is null
+                ? Task.CompletedTask
+                : PollProgressAsync(progressPath, progress, pollCts.Token);
+
+            int exitCode;
+            string stderr;
+            try
+            {
+                (exitCode, _, stderr) = await RunProcessAsync(
+                    [
+                        "build",
+                        "--project", info.ProjectPath,
+                        "--safe-probes",
+                        "--execute",
+                        "--delivery-dir", deliveryDir,
+                        "--log-dir", logDir,
+                        "--report", reportDir
+                    ],
+                    buildTimeout,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                await pollCts.CancelAsync().ConfigureAwait(false);
+                try { await pollTask.ConfigureAwait(false); }
+                catch (OperationCanceledException) { }
+            }
+
+            if (progress is not null)
+                FlushRemainingProgress(progressPath, progress);
+
+            var jsonPath = Path.Combine(reportDir, "report.json");
+            var mdPath = Path.Combine(reportDir, "report.md");
+            if (!File.Exists(jsonPath))
+            {
+                var detail = string.IsNullOrWhiteSpace(stderr)
+                    ? $"contain-workflow build 退出码 {exitCode}，未生成结构化报告。"
+                    : stderr.Trim();
+                throw new EnvironmentCheckException(
+                    "build_report_not_generated",
+                    "构建程序未能生成结构化报告，请检查项目清单或桌面包完整性。",
+                    detail);
+            }
+
+            var rawJson = await File.ReadAllTextAsync(jsonPath, StrictUtf8, cancellationToken).ConfigureAwait(false);
+            var rawMd = File.Exists(mdPath)
+                ? await File.ReadAllTextAsync(mdPath, StrictUtf8, cancellationToken).ConfigureAwait(false)
+                : "";
+            var parsed = ParseReport(rawJson);
+            var stepResults = ReadStepResults(logDir);
+            var allPassed = exitCode == 0 && parsed.Checks.All(static c => c.Status == "passed");
+            var confirmedArtifactDir = allPassed
+                ? ResolveConfirmedArtifactDirectory(info.ProjectPath, freshPreview, deliveryDir)
+                : null;
+            var combinedLog = BuildCombinedLog(info, freshPreview, exitCode, stepResults, rawMd);
+
+            return new ProjectBuildExecution(
+                exitCode,
+                parsed,
+                rawMd,
+                rawJson,
+                stepResults,
+                combinedLog,
+                confirmedArtifactDir);
+        }
+        finally
+        {
+            try { if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, recursive: true); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    public static string? ResolveConfirmedArtifactDirectory(
+        string projectRoot,
+        BuildManifestPreview preview,
+        string? deliveryDir)
+    {
+        var normalizedRoot = NormalizeDirectoryPath(projectRoot);
+
+        if (!string.IsNullOrWhiteSpace(deliveryDir) && Directory.Exists(deliveryDir))
+        {
+            var fullDelivery = NormalizeDirectoryPath(deliveryDir);
+            if (!string.IsNullOrWhiteSpace(preview.ArtifactDir))
+            {
+                var nested = NormalizeDirectoryPath(Path.Combine(fullDelivery, preview.ArtifactDir.Replace('/', Path.DirectorySeparatorChar)));
+                if (IsPathWithin(fullDelivery, nested)
+                    && Directory.Exists(nested)
+                    && ContainsNonEmptyFile(nested)
+                    && AllDeclaredArtifactsExist(nested, preview.Artifacts))
+                {
+                    return nested;
+                }
+            }
+            else if (ContainsNonEmptyFile(fullDelivery) && AllDeclaredArtifactsExist(fullDelivery, preview.Artifacts))
+            {
+                return fullDelivery;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(preview.ArtifactDir))
+        {
+            var candidate = NormalizeDirectoryPath(Path.Combine(normalizedRoot, preview.ArtifactDir.Replace('/', Path.DirectorySeparatorChar)));
+            if (IsPathWithin(normalizedRoot, candidate)
+                && Directory.Exists(candidate)
+                && ContainsNonEmptyFile(candidate)
+                && AllDeclaredArtifactsExist(candidate, preview.Artifacts))
+            {
+                return candidate;
+            }
+            return null;
+        }
+
+        if (preview.Artifacts.Count > 0)
+        {
+            if (!AllDeclaredArtifactsExist(normalizedRoot, preview.Artifacts))
+                return null;
+
+            var firstPath = Path.GetFullPath(Path.Combine(normalizedRoot, preview.Artifacts[0].Replace('/', Path.DirectorySeparatorChar)));
+            var dir = Path.GetDirectoryName(firstPath);
+            if (!string.IsNullOrWhiteSpace(dir) && IsPathWithin(normalizedRoot, dir) && Directory.Exists(dir))
+                return NormalizeDirectoryPath(dir);
+        }
+
+        return null;
+    }
+
+    private static bool AllDeclaredArtifactsExist(string baseDirectory, IReadOnlyList<string> artifacts)
+    {
+        foreach (var rel in artifacts)
+        {
+            var target = Path.GetFullPath(Path.Combine(baseDirectory, rel.Replace('/', Path.DirectorySeparatorChar)));
+            if (!IsPathWithin(baseDirectory, target))
+                return false;
+            var fi = new FileInfo(target);
+            if (!fi.Exists || fi.Length <= 0)
+                return false;
+        }
+        return true;
+    }
+
+    private static bool ContainsNonEmptyFile(string directory)
+    {
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+            {
+                if (new FileInfo(file).Length > 0)
+                    return true;
+            }
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        return false;
+    }
+
+    private static bool IsPathWithin(string rootDir, string candidatePath)
+    {
+        var normalizedRoot = NormalizeDirectoryPath(rootDir);
+        var normalizedCandidate = NormalizeDirectoryPath(candidatePath);
+        if (string.Equals(normalizedRoot, normalizedCandidate, StringComparison.OrdinalIgnoreCase))
+            return true;
+        var prefix = normalizedRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? normalizedRoot
+            : normalizedRoot + Path.DirectorySeparatorChar;
+        return normalizedCandidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static List<BuildStepExecutionResult> ReadStepResults(string logDir)
+    {
+        var stepsPath = Path.Combine(logDir, "steps.json");
+        var list = new List<BuildStepExecutionResult>();
+        if (!File.Exists(stepsPath))
+            return list;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(stepsPath, Encoding.UTF8));
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                return list;
+
+            foreach (var item in doc.RootElement.EnumerateArray())
+            {
+                var phase = OptionalString(item, "phase") ?? "build";
+                var index = item.TryGetProperty("index", out var idxEl) && idxEl.TryGetInt32(out var idx) ? idx : 0;
+                var name = OptionalString(item, "name") ?? "";
+                var status = OptionalString(item, "status") ?? "not_run";
+                var expectedExit = item.TryGetProperty("expected_exit", out var expEl) && expEl.TryGetInt32(out var exp) ? exp : 0;
+                int? observedExit = item.TryGetProperty("observed_exit", out var obsEl) && obsEl.ValueKind == JsonValueKind.Number && obsEl.TryGetInt32(out var obs)
+                    ? obs
+                    : null;
+                var timedOut = item.TryGetProperty("timed_out", out var toEl) && toEl.ValueKind == JsonValueKind.True;
+                var launchErr = OptionalString(item, "launch_error");
+                var stdoutFile = OptionalString(item, "stdout_file");
+                var stderrFile = OptionalString(item, "stderr_file");
+
+                var stdoutText = ReadBoundedLogFile(logDir, stdoutFile);
+                var stderrText = ReadBoundedLogFile(logDir, stderrFile);
+                list.Add(new BuildStepExecutionResult(
+                    phase,
+                    index,
+                    name,
+                    status,
+                    expectedExit,
+                    observedExit,
+                    timedOut,
+                    launchErr,
+                    stdoutText,
+                    stderrText));
+            }
+        }
+        catch (IOException) { }
+        catch (JsonException) { }
+        return list;
+    }
+
+    private static string ReadBoundedLogFile(string logDir, string? relativeName)
+    {
+        if (string.IsNullOrWhiteSpace(relativeName) || relativeName.Contains('/') || relativeName.Contains('\\'))
+            return "";
+        var path = Path.Combine(logDir, relativeName);
+        if (!File.Exists(path))
+            return "";
+        try
+        {
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            var toRead = (int)Math.Min(fs.Length, MaxStepLogDisplayBytes);
+            var buf = new byte[toRead];
+            var read = fs.Read(buf, 0, toRead);
+            var text = Encoding.UTF8.GetString(buf, 0, read);
+            if (fs.Length > MaxStepLogDisplayBytes)
+                text += "\n…（日志超过显示上限，已截断）";
+            return text.TrimEnd();
+        }
+        catch (IOException)
+        {
+            return "";
+        }
+    }
+
+    private static string BuildCombinedLog(
+        ProjectFolderInfo project,
+        BuildManifestPreview preview,
+        int exitCode,
+        IReadOnlyList<BuildStepExecutionResult> stepResults,
+        string reportMarkdown)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"项目名称：{project.ProjectName}");
+        sb.AppendLine($"工作目录：{project.ProjectPath}");
+        sb.AppendLine($"清单 SHA-256：{preview.RawFileSha256}");
+        sb.AppendLine($"contain-workflow 退出码：{exitCode}");
+        sb.AppendLine();
+
+        foreach (var step in stepResults)
+        {
+            var phaseName = step.Phase == "verify" ? "验证步骤" : "构建步骤";
+            var statusLabel = step.Status switch
+            {
+                "passed" => "通过",
+                "failed" => "失败",
+                _ => "未执行"
+            };
+            sb.AppendLine($"=== [{phaseName} {step.Index + 1}] {step.Name} — {statusLabel} ===");
+            if (step.Status != "not_run")
+            {
+                var exitInfo = step.TimedOut
+                    ? "执行超时"
+                    : step.LaunchError is not null
+                        ? $"无法启动：{step.LaunchError}"
+                        : $"预期退出码 {step.ExpectedExit}，实际退出码 {(step.ObservedExit?.ToString(CultureInfo.InvariantCulture) ?? "无")}";
+                sb.AppendLine(exitInfo);
+            }
+            if (!string.IsNullOrWhiteSpace(step.StderrText))
+            {
+                sb.AppendLine("--- 标准错误 (stderr) ---");
+                sb.AppendLine(step.StderrText);
+            }
+            if (!string.IsNullOrWhiteSpace(step.StdoutText))
+            {
+                sb.AppendLine("--- 标准输出 (stdout) ---");
+                sb.AppendLine(step.StdoutText);
+            }
+            sb.AppendLine();
+        }
+
+        if (!string.IsNullOrWhiteSpace(reportMarkdown))
+        {
+            sb.AppendLine("--- contain-workflow 结构化报告摘要 ---");
+            sb.AppendLine(reportMarkdown.TrimEnd());
+        }
+        return sb.ToString().TrimEnd();
+    }
+
+    private static async Task PollProgressAsync(
+        string progressPath,
+        IProgress<BuildProgressUpdate> progress,
+        CancellationToken token)
+    {
+        long position = 0;
+        while (!token.IsCancellationRequested)
+        {
+            position = ReadNewProgressLines(progressPath, position, progress);
+            await Task.Delay(120, token).ConfigureAwait(false);
+        }
+    }
+
+    private static void FlushRemainingProgress(string progressPath, IProgress<BuildProgressUpdate> progress) =>
+        _ = ReadNewProgressLines(progressPath, 0, progress);
+
+    private static long ReadNewProgressLines(
+        string progressPath,
+        long offset,
+        IProgress<BuildProgressUpdate> progress)
+    {
+        if (!File.Exists(progressPath))
+            return offset;
+        try
+        {
+            using var fs = new FileStream(progressPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            if (fs.Length <= offset)
+                return offset;
+            fs.Seek(offset, SeekOrigin.Begin);
+            using var reader = new StreamReader(fs, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+            var text = reader.ReadToEnd();
+            var lastNewline = text.LastIndexOf('\n');
+            if (lastNewline < 0)
+                return offset;
+
+            var completeChunk = text[..(lastNewline + 1)];
+            foreach (var rawLine in completeChunk.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(rawLine);
+                    var root = doc.RootElement;
+                    var stage = OptionalString(root, "stage");
+                    var state = OptionalString(root, "state");
+                    if (string.IsNullOrWhiteSpace(stage) || string.IsNullOrWhiteSpace(state))
+                        continue;
+                    int? stepIdx = root.TryGetProperty("step_index", out var si) && si.TryGetInt32(out var siVal) ? siVal : null;
+                    int? phaseTotal = root.TryGetProperty("phase_total", out var pt) && pt.TryGetInt32(out var ptVal) ? ptVal : null;
+                    var stepName = OptionalString(root, "step_name");
+                    progress.Report(new BuildProgressUpdate(stage, state, stepIdx, phaseTotal, stepName));
+                }
+                catch (JsonException) { }
+            }
+            return offset + Encoding.UTF8.GetByteCount(completeChunk);
+        }
+        catch (IOException)
+        {
+            return offset;
         }
     }
 
@@ -217,7 +621,7 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
         try
         {
             if (versionChecked) return;
-            var (code, stdout, stderr) = await RunProcessAsync(["--version"], cancellationToken).ConfigureAwait(false);
+            var (code, stdout, stderr) = await RunProcessAsync(["--version"], commandTimeout, cancellationToken).ConfigureAwait(false);
             var trimmed = stdout.Trim();
             if (code != 0 || !trimmed.StartsWith(ExpectedVersionPrefix, StringComparison.Ordinal))
                 throw new EnvironmentCheckException(
@@ -234,6 +638,7 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
 
     private async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(
         IReadOnlyList<string> arguments,
+        TimeSpan timeout,
         CancellationToken cancellationToken)
     {
         if (!File.Exists(ExecutablePath))
@@ -259,7 +664,7 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
             process.StartInfo.ArgumentList.Add(arg);
 
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(commandTimeout);
+        deadline.CancelAfter(timeout);
         try
         {
             if (!process.Start())
@@ -274,7 +679,7 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             Kill(process);
-            throw new EnvironmentCheckException("cli_timeout", "环境检查超时，已停止本次探测进程。");
+            throw new EnvironmentCheckException("cli_timeout", "操作超时，已停止随包 contain-workflow 进程。");
         }
         catch (OperationCanceledException)
         {
@@ -305,7 +710,7 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
                 if (read == 0)
                     return StrictUtf8.GetString(output.GetBuffer(), 0, checked((int)output.Length));
                 if (output.Length + read > MaxStreamBytes)
-                    throw new EnvironmentCheckException("output_limit", "环境检查输出超过安全上限。");
+                    throw new EnvironmentCheckException("output_limit", "子进程输出超过安全上限。");
                 output.Write(buffer, 0, read);
             }
         }

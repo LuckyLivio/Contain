@@ -6,7 +6,7 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24,16,24,24">
         <StackPanel MaxWidth="920" HorizontalAlignment="Stretch">
             <TextBlock Text="检查项目环境" Style="{StaticResource PageTitle}" AutomationProperties.AutomationId="EnvironmentPageTitle" />
-            <TextBlock Text="选择项目文件夹并点击“开始检查”，查看这台电脑缺少哪些开发工具及下一步操作。" Style="{StaticResource MutedText}" Margin="0,0,0,20" AutomationProperties.AutomationId="EnvironmentPurposeText" />
+            <TextBlock Text="选择项目文件夹并点击“开始检查”，查看环境就绪状态、预览构建步骤并生成实际产物。" Style="{StaticResource MutedText}" Margin="0,0,0,20" AutomationProperties.AutomationId="EnvironmentPurposeText" />
 
             <Border Style="{StaticResource Surface}">
                 <StackPanel>
@@ -16,11 +16,11 @@
                             <TextBlock Text="项目文件夹" Style="{StaticResource SectionTitle}" />
                             <TextBlock Text="{Binding EnvironmentCheck.ProjectName}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" AutomationProperties.AutomationId="SelectedProjectName" />
                         </StackPanel>
-                        <ui:Button Grid.Column="1" Content="选择文件夹" Margin="16,0,0,0" VerticalAlignment="Center" Click="OnPickFolder" AutomationProperties.AutomationId="PickProjectFolder">
+                        <ui:Button Grid.Column="1" Content="选择文件夹" Margin="16,0,0,0" VerticalAlignment="Center" Click="OnPickFolder" IsEnabled="{Binding EnvironmentCheck.CanEditProjectSelection}" AutomationProperties.AutomationId="PickProjectFolder">
                             <ui:Button.Icon><ui:SymbolIcon Symbol="FolderOpen24" /></ui:Button.Icon>
                         </ui:Button>
                     </Grid>
-                    <ui:TextBox Margin="0,12,0,0" Text="{Binding EnvironmentCheck.FolderInput, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="点击右侧“选择文件夹”，或直接粘贴本地项目目录路径" AutomationProperties.AutomationId="ProjectPathInput" AutomationProperties.Name="项目文件夹路径" />
+                    <ui:TextBox Margin="0,12,0,0" Text="{Binding EnvironmentCheck.FolderInput, UpdateSourceTrigger=PropertyChanged}" IsReadOnly="{Binding EnvironmentCheck.IsBuilding}" PlaceholderText="点击右侧“选择文件夹”，或直接粘贴本地项目目录路径" AutomationProperties.AutomationId="ProjectPathInput" AutomationProperties.Name="项目文件夹路径" />
                     <TextBlock Text="{Binding EnvironmentCheck.SelectionScopeNote}" Style="{StaticResource MutedText}" Margin="0,10,0,0" Visibility="{Binding EnvironmentCheck.SelectionScopeNote, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="ProjectScopeNote" />
                 </StackPanel>
             </Border>
@@ -157,6 +157,129 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Surface}" Visibility="{Binding EnvironmentCheck.ShowProjectBuildSection, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="ProjectBuildSurface">
+                <StackPanel>
+                    <TextBlock Text="构建项目" Style="{StaticResource SectionTitle}" AutomationProperties.AutomationId="BuildSectionTitle" />
+
+                    <Border Background="#F8FAFB" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,6,0,0" Visibility="{Binding EnvironmentCheck.HasBuildPrerequisiteBlocker, Converter={StaticResource BoolVisibility}}">
+                        <TextBlock Text="{Binding EnvironmentCheck.BuildPrerequisiteMessage}" Foreground="#5A4618" TextWrapping="Wrap" AutomationProperties.AutomationId="BuildPrerequisiteNote" />
+                    </Border>
+
+                    <StackPanel Visibility="{Binding EnvironmentCheck.ShowBuildStepsPreview, Converter={StaticResource BoolVisibility}}" Margin="0,8,0,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock>
+                                    <Run Text="项目：" Foreground="{StaticResource MutedBrush}" />
+                                    <Run Text="{Binding EnvironmentCheck.BuildPreviewProjectName, Mode=OneWay}" FontWeight="SemiBold" />
+                                </TextBlock>
+                                <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="BuildPreviewWorkingDir">
+                                    <Run Text="工作目录：" Foreground="{StaticResource MutedBrush}" />
+                                    <Run Text="{Binding EnvironmentCheck.BuildPreviewWorkingDirectory, Mode=OneWay}" />
+                                </TextBlock>
+                                <TextBlock Text="{Binding EnvironmentCheck.BuildPreviewStepsSummary}" Style="{StaticResource MutedText}" Margin="0,4,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="BuildPreviewStepsSummary" />
+                                <TextBlock Text="{Binding EnvironmentCheck.BuildPreviewArtifactHint}" Style="{StaticResource MutedText}" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap" Visibility="{Binding EnvironmentCheck.BuildPreviewArtifactHint, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="BuildPreviewArtifactHint" />
+                            </StackPanel>
+                            <ui:Button Grid.Column="1" Content="{Binding EnvironmentCheck.StartBuildButtonText}" Appearance="Primary" Padding="22,10" Margin="16,0,0,0" VerticalAlignment="Top" Click="OnStartBuild" IsEnabled="{Binding EnvironmentCheck.CanStartBuild}" Visibility="{Binding EnvironmentCheck.CanShowStartBuild, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="StartProjectBuild">
+                                <ui:Button.Icon><ui:SymbolIcon Symbol="Play24" /></ui:Button.Icon>
+                            </ui:Button>
+                        </Grid>
+
+                        <ItemsControl ItemsSource="{Binding EnvironmentCheck.BuildPreviewSteps}" Margin="0,10,0,0" AutomationProperties.AutomationId="BuildPreviewStepsList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#FAFDFC" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,6">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding DisplayHeader}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="1" Text="{Binding ExpectationText}" Style="{StaticResource MutedText}" FontSize="12" Margin="12,0,0,0" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <Expander Header="查看完整命令" IsExpanded="{Binding EnvironmentCheck.BuildCommandsExpanded, Mode=TwoWay}" Margin="0,4,0,0" AutomationProperties.AutomationId="BuildCommandsExpander">
+                            <Border Background="#F7FAF9" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,8,0,0">
+                                <TextBox Text="{Binding EnvironmentCheck.BuildFullCommandsText, Mode=OneWay}" Style="{StaticResource SelectableText}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" MaxHeight="220" AutomationProperties.AutomationId="BuildFullCommandsText" AutomationProperties.Name="完整构建与验证命令" />
+                            </Border>
+                        </Expander>
+                    </StackPanel>
+
+                    <Border Background="#F7FAF9" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,12,0,0" Visibility="{Binding EnvironmentCheck.IsBuilding, Converter={StaticResource BoolVisibility}}">
+                        <StackPanel>
+                            <ProgressBar IsIndeterminate="True" Height="4" Margin="0,0,0,10" />
+                            <TextBlock Text="{Binding EnvironmentCheck.BuildProgressText}" TextWrapping="Wrap" AutomationProperties.AutomationId="BuildProgressBanner" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border CornerRadius="8" Padding="16" Margin="0,12,0,0" BorderThickness="1" Visibility="{Binding EnvironmentCheck.HasBuildOutcome, Converter={StaticResource BoolVisibility}}">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="White" />
+                                <Setter Property="BorderBrush" Value="{StaticResource HairlineBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding EnvironmentCheck.BuildOutcome}" Value="{x:Static model:BuildOutcomeKind.Succeeded}">
+                                        <Setter Property="Background" Value="#EAF5F1" />
+                                        <Setter Property="BorderBrush" Value="#137D74" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding EnvironmentCheck.BuildOutcome}" Value="{x:Static model:BuildOutcomeKind.Failed}">
+                                        <Setter Property="Background" Value="#FFF0ED" />
+                                        <Setter Property="BorderBrush" Value="#B84A39" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel>
+                            <Grid Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding EnvironmentCheck.BuildOutcomeBadge}" FontSize="12" FontWeight="SemiBold" AutomationProperties.AutomationId="BuildOutcomeBadge" />
+                                <TextBlock Grid.Column="1" Text="{Binding EnvironmentCheck.BuildCheckedTimeText}" Style="{StaticResource MutedText}" FontSize="12" Margin="12,0,0,0" AutomationProperties.AutomationId="BuildOutcomeTime" />
+                            </Grid>
+                            <TextBlock Text="{Binding EnvironmentCheck.BuildHeadline}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,6" AutomationProperties.AutomationId="BuildHeadlineText" />
+                            <TextBlock Text="{Binding EnvironmentCheck.BuildNote}" Style="{StaticResource MutedText}" TextWrapping="Wrap" AutomationProperties.AutomationId="BuildNoteText" />
+
+                            <TextBox Text="{Binding EnvironmentCheck.BuildFailureErrorSummary, Mode=OneWay}" Style="{StaticResource SelectableText}" Foreground="#8F2D1E" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" MaxHeight="180" Margin="0,10,0,0" Visibility="{Binding EnvironmentCheck.BuildFailureErrorSummary, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="BuildFailureErrorText" AutomationProperties.Name="构建失败具体错误" />
+
+                            <ItemsControl ItemsSource="{Binding EnvironmentCheck.BuildStepRows}" Margin="0,10,0,0" Visibility="{Binding EnvironmentCheck.HasBuildStepRows, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="BuildStepResultsList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="White" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,6">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                    <TextBlock Text="{Binding SummaryLine}" Style="{StaticResource MutedText}" FontSize="12" TextWrapping="Wrap" Margin="0,3,0,0" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1" Text="{Binding StatusBadge}" FontWeight="SemiBold" FontSize="12" Margin="12,0,0,0" VerticalAlignment="Top" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <WrapPanel Margin="0,12,0,0">
+                                <ui:Button Content="打开产物文件夹" Appearance="Primary" Margin="0,0,10,0" Click="OnOpenArtifactFolder" Visibility="{Binding EnvironmentCheck.CanOpenArtifactFolder, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="OpenArtifactFolderButton">
+                                    <ui:Button.Icon><ui:SymbolIcon Symbol="FolderOpen24" /></ui:Button.Icon>
+                                </ui:Button>
+                                <ui:Button Content="{Binding EnvironmentCheck.BuildLogButtonText}" Appearance="Transparent" Click="OnToggleBuildLog" IsEnabled="{Binding EnvironmentCheck.CanToggleBuildLog}" AutomationProperties.AutomationId="ToggleBuildLogButton" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="#F7FAF9" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,10,0,0" Visibility="{Binding EnvironmentCheck.ShowBuildLog, Converter={StaticResource BoolVisibility}}">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="构建日志" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                <ui:Button Grid.Column="1" Content="复制构建日志" Appearance="Transparent" Click="OnCopyBuildLog" AutomationProperties.AutomationId="CopyBuildLogButton" />
+                            </Grid>
+                            <TextBox Text="{Binding EnvironmentCheck.BuildLogText, Mode=OneWay}" Style="{StaticResource SelectableText}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" MaxHeight="320" AutomationProperties.AutomationId="BuildLogText" AutomationProperties.Name="构建详细日志" />
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </Border>
 

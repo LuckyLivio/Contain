@@ -450,6 +450,218 @@ internal static class EnvironmentChecks
             return Task.CompletedTask;
         });
 
+        await Check("direct manifest reader builds preview without CLI call and rejects invalid schemas or unsafe paths", () =>
+        {
+            using var temp = new TempDir();
+            var project = temp.Sub("console-preview");
+            WriteValidConsoleManifest(project);
+
+            var service = new ControlledEnvironmentService();
+            using var vm = new EnvironmentCheckViewModel(service);
+            vm.SelectProject(project);
+            Equal(0, service.CheckCalls, "selection never calls check");
+            Equal(0, service.BuildCalls, "preview never calls build");
+            Equal(2, vm.BuildPreviewSteps.Count, "1 build + 1 verify step parsed in-process");
+            True(!vm.BuildCommandsExpanded, "full commands collapsed by default");
+            True(vm.BuildFullCommandsText.Contains("dotnet build Hello.csproj -c Release -o artifacts/app", StringComparison.Ordinal)
+                && vm.BuildFullCommandsText.Contains("artifacts/app/Hello.exe --verify", StringComparison.Ordinal),
+                "expandable full command text generated directly from manifest");
+
+            var badUnknown = WorkflowManifestReader.ParsePreviewJson("p", project, """{"schema_version":1,"target":"windows-x64","tools":[],"required_variables":[],"build":[],"verify":[],"extra":1}""", "abc");
+            Equal(ManifestPreviewStatus.Invalid, badUnknown.Status, "unknown field rejected");
+
+            var badArtifact = WorkflowManifestReader.ParsePreviewJson("p", project, """{"schema_version":1,"target":"windows-x64","tools":[],"required_variables":[],"build":[],"verify":[],"artifact_dir":"../outside"}""", "abc");
+            Equal(ManifestPreviewStatus.Invalid, badArtifact.Status, "unsafe relative artifact_dir rejected");
+            return Task.CompletedTask;
+        });
+
+        await Check("start build appears only when ready with explicit manifest and blocks preserved green result after failed recheck", async () =>
+        {
+            using var temp = new TempDir();
+            var explicitProj = temp.Sub("explicit-proj");
+            WriteValidConsoleManifest(explicitProj);
+
+            var inferredProj = temp.Sub("inferred-proj");
+            File.WriteAllText(Path.Combine(inferredProj, "Cargo.toml"), "[package]\nname='x'\n");
+
+            var call = 0;
+            var service = new ControlledEnvironmentService
+            {
+                NextFactory = (path, _) =>
+                {
+                    if (path == inferredProj)
+                    {
+                        return Task.FromResult(new EnvironmentCheckExecution(
+                            2,
+                            new WorkflowReportData(1, "source", "windows", "x86_64", "x86_64", null, "inferred_from_project_files",
+                            [new WorkflowCheckItem("requirement", "needs_confirmation", "confirm MSVC")]),
+                            "", "{}"));
+                    }
+
+                    call++;
+                    return call switch
+                    {
+                        1 => Task.FromResult(ReadyExecution()),
+                        _ => Task.FromException<EnvironmentCheckExecution>(
+                            new EnvironmentCheckException("cli_timeout", "检查超时"))
+                    };
+                }
+            };
+
+            using var vm = new EnvironmentCheckViewModel(service);
+            vm.SelectProject(inferredProj);
+            await vm.CheckAsync();
+            True(!vm.CanShowStartBuild && vm.HasBuildPrerequisiteBlocker, "inferred-only manifest cannot start build");
+            True(vm.BuildPrerequisiteMessage.Contains("contain.environment.json", StringComparison.Ordinal), "explains explicit manifest needed");
+
+            vm.SelectProject(explicitProj);
+            True(await vm.CheckAsync(), "first check passes");
+            True(vm.CanShowStartBuild && vm.CanStartBuild, "explicit ready project exposes Start Build");
+            Equal("explicit-proj", vm.BuildPreviewProjectName, "preview project name shown");
+            Equal(explicitProj, vm.BuildPreviewWorkingDirectory, "preview working directory shown");
+
+            // Now fail recheck while preserving green Ready result -> Start Build MUST be blocked ("上次保留的绿色结果仅供查看")!
+            True(!await vm.CheckAsync(), "recheck fails");
+            Equal(EnvironmentOutcomeKind.Ready, vm.Outcome, "green Ready outcome preserved for viewing");
+            True(vm.HasRecheckFailure, "recheck failure flagged");
+            True(!vm.CanShowStartBuild && !vm.CanStartBuild, "preserved green result after failed recheck must not allow build");
+            True(vm.BuildPrerequisiteMessage.Contains("仅供查看", StringComparison.Ordinal), "explains preserved green result is view-only");
+        });
+
+        await Check("manifest edit refreshes preview and blocks build on click until rechecked", async () =>
+        {
+            using var temp = new TempDir();
+            var project = temp.Sub("consistency-proj");
+            WriteValidConsoleManifest(project, buildName: "Compile v1");
+
+            var service = new ControlledEnvironmentService();
+            using var vm = new EnvironmentCheckViewModel(service);
+            vm.SelectProject(project);
+            True(await vm.CheckAsync(), "environment check passes on v1");
+            True(vm.CanStartBuild, "ready to build v1");
+
+            // Simulate user editing contain.environment.json right before clicking Start Build (even before watcher fires)
+            WriteValidConsoleManifest(project, buildName: "Compile v2");
+            True(!await vm.StartBuildAsync(), "click-time consistency check refuses changed manifest");
+            Equal(0, service.BuildCalls, "contain-workflow build was never spawned");
+            True(vm.IsManifestChangedSinceCheck && !vm.CanShowStartBuild, "marked changed since check");
+            True(vm.BuildPreviewSteps[0].Name == "Compile v2", "preview refreshed to v2");
+            True(vm.BuildPrerequisiteMessage.Contains("重新检查", StringComparison.Ordinal), "prompts recheck");
+
+            // Recheck on v2 restores build eligibility
+            True(await vm.CheckAsync(), "recheck on v2 passes");
+            True(vm.CanShowStartBuild && vm.CanStartBuild, "ready to build v2 after recheck");
+        });
+
+        await Check("build prevents re-entrancy, streams real stage progress, fails cleanly despite stale artifacts, and opens confirmed artifact folder on success", async () =>
+        {
+            using var temp = new TempDir();
+            var project = temp.Sub("build-lifecycle");
+            WriteValidConsoleManifest(project);
+
+            // Plant a stale artifact directory BEFORE the failing build!
+            var artifactDir = Path.Combine(project, "artifacts", "app");
+            Directory.CreateDirectory(artifactDir);
+            var artifactExe = Path.Combine(artifactDir, "Hello.exe");
+            File.WriteAllText(artifactExe, "stale-old-binary");
+
+            var progressSeen = new List<string>();
+            var buildGate = new TaskCompletionSource<ProjectBuildExecution>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var buildAttempt = 0;
+
+            var service = new ControlledEnvironmentService
+            {
+                BuildFactory = (_, _, progress, _) =>
+                {
+                    buildAttempt++;
+                    if (buildAttempt == 1)
+                    {
+                        progress?.Report(new BuildProgressUpdate("build", "running", 1, 1, "Compile console app"));
+                        return buildGate.Task;
+                    }
+
+                    progress?.Report(new BuildProgressUpdate("build", "running", 1, 1, "Compile console app"));
+                    progress?.Report(new BuildProgressUpdate("verify", "running", 1, 1, "Verify console output"));
+                    return Task.FromResult(new ProjectBuildExecution(
+                        0,
+                        new WorkflowReportData(1, "source", "windows", "x86_64", "x86_64", null, "contain.environment.json",
+                        [
+                            new WorkflowCheckItem("platform", "passed", "ok"),
+                            new WorkflowCheckItem("Compile console app", "passed", "exit 0"),
+                            new WorkflowCheckItem("Verify console output", "passed", "exit 0"),
+                            new WorkflowCheckItem("build_artifacts", "passed", "verified")
+                        ]),
+                        "# build passed",
+                        "{}",
+                        [
+                            new BuildStepExecutionResult("build", 0, "Compile console app", "passed", 0, 0, false, null, "Build succeeded.", ""),
+                            new BuildStepExecutionResult("verify", 0, "Verify console output", "passed", 0, 0, false, null, "HELLO_CONTAIN", "")
+                        ],
+                        "=== full log ===",
+                        artifactDir));
+                }
+            };
+
+            string? openedDir = null;
+            using var vm = new EnvironmentCheckViewModel(
+                service,
+                artifactFolderOpener: dir => openedDir = dir);
+            vm.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(EnvironmentCheckViewModel.BuildProgressText) && vm.BuildProgressText.Length > 0)
+                    progressSeen.Add(vm.BuildProgressText);
+            };
+
+            vm.SelectProject(project);
+            await vm.CheckAsync();
+
+            // Start Build #1 (in-flight) -> duplicate StartBuildAsync must be blocked
+            var firstBuildTask = vm.StartBuildAsync();
+            True(vm.IsBuilding && !vm.CanStartBuild && !vm.CanStartCheck && !vm.CanRecheck, "duplicate launch and recheck blocked while building");
+            True(!await vm.StartBuildAsync(), "concurrent StartBuildAsync rejected");
+            Equal(1, service.BuildCalls, "only one build started");
+
+            // Complete Build #1 as a compile error while stale Hello.exe still sits on disk!
+            buildGate.SetResult(new ProjectBuildExecution(
+                1,
+                new WorkflowReportData(1, "source", "windows", "x86_64", "x86_64", null, "contain.environment.json",
+                [
+                    new WorkflowCheckItem("platform", "passed", "ok"),
+                    new WorkflowCheckItem("Compile console app", "failed", "expected exit 0, observed Some(1)"),
+                    new WorkflowCheckItem("Verify console output", "not_run", "requires successful build"),
+                    new WorkflowCheckItem("build_artifacts", "not_run", "requires successful build")
+                ]),
+                "# build failed",
+                "{}",
+                [
+                    new BuildStepExecutionResult("build", 0, "Compile console app", "failed", 0, 1, false, null, "Program.cs(5,12): error CS1002: ; expected", ""),
+                    new BuildStepExecutionResult("verify", 0, "Verify console output", "not_run", 0, null, false, null, "", "")
+                ],
+                "=== failed log ===",
+                null));
+
+            True(!await firstBuildTask, "failed build returns false");
+            Equal(BuildOutcomeKind.Failed, vm.BuildOutcome, "marked Failed despite stale Hello.exe on disk");
+            True(!vm.CanOpenArtifactFolder && !vm.OpenArtifactFolder(), "artifact folder button hidden and blocked on failed build");
+            True(vm.BuildHeadline.Contains("Compile console app", StringComparison.Ordinal), "identifies failed step");
+            True(vm.BuildFailureErrorSummary.Contains("error CS1002", StringComparison.Ordinal), "surfaces concrete compiler error");
+            Equal("失败", vm.BuildStepRows[0].StatusBadge, "build step badge failed");
+            Equal("未执行", vm.BuildStepRows[1].StatusBadge, "subsequent verify step marked unrun");
+            True(vm.CanToggleBuildLog, "build log available on failure");
+
+            // Now rebuild in the SAME ViewModel after fixing source -> succeeds and opens confirmed artifact folder!
+            True(await vm.StartBuildAsync(), "second build succeeds");
+            Equal(BuildOutcomeKind.Succeeded, vm.BuildOutcome, "succeeded on retry");
+            True(vm.CanOpenArtifactFolder, "confirmed artifact folder available");
+            True(vm.OpenArtifactFolder(), "opens artifact folder");
+            Equal(artifactDir, openedDir, "opened exact confirmed artifact directory");
+
+            // If artifact directory is deleted afterwards, clicking OpenArtifactFolder refuses cleanly
+            Directory.Delete(artifactDir, recursive: true);
+            True(!vm.OpenArtifactFolder(), "refuses opening deleted artifact directory");
+            True(!vm.CanOpenArtifactFolder, "hides open button once directory no longer exists");
+        });
+
         return passed;
 
         async Task Check(string name, Func<Task> action)
@@ -485,19 +697,76 @@ internal static class EnvironmentChecks
         throw new InvalidOperationException("Expected exception " + typeof(TException).Name);
     }
 
+    private static void WriteValidConsoleManifest(string projectDir, string buildName = "Compile console app")
+    {
+        var json = $$"""
+            {
+              "schema_version": 1,
+              "target": "windows-x64",
+              "tools": [
+                {
+                  "program": "dotnet",
+                  "version": "10.0.404",
+                  "version_args": ["--version"],
+                  "remedy": "Install .NET SDK 10.0.404"
+                }
+              ],
+              "required_variables": [],
+              "pending": [],
+              "artifact_dir": "artifacts/app",
+              "artifacts": ["Hello.exe"],
+              "build": [
+                {
+                  "name": "{{buildName}}",
+                  "program": "dotnet",
+                  "args": ["build", "Hello.csproj", "-c", "Release", "-o", "artifacts/app"],
+                  "expected_exit": 0,
+                  "timeout_ms": 120000
+                }
+              ],
+              "verify": [
+                {
+                  "name": "Verify console output",
+                  "program": "artifacts/app/Hello.exe",
+                  "args": ["--verify"],
+                  "expected_exit": 0,
+                  "timeout_ms": 30000
+                }
+              ]
+            }
+            """;
+        File.WriteAllText(Path.Combine(projectDir, "contain.environment.json"), json);
+    }
+
     private sealed class ControlledEnvironmentService : IEnvironmentCheckService
     {
         public int CheckCalls { get; private set; }
+        public int BuildCalls { get; private set; }
         public Func<string, CancellationToken, Task<EnvironmentCheckExecution>> NextFactory { get; set; } =
             (_, _) => Task.FromResult(ReadyExecution());
+        public Func<string, BuildManifestPreview, IProgress<BuildProgressUpdate>?, CancellationToken, Task<ProjectBuildExecution>> BuildFactory { get; set; } =
+            (_, _, _, _) => Task.FromResult(new ProjectBuildExecution(0, ReadyExecution().Report, "", "{}", [], "", null));
 
         public ProjectFolderInfo InspectProject(string projectPath) =>
             WorkflowCliEnvironmentService.InspectProjectDirectory(projectPath);
+
+        public BuildManifestPreview InspectBuildPreview(string projectPath) =>
+            WorkflowManifestReader.ReadPreview(projectPath);
 
         public Task<EnvironmentCheckExecution> CheckAsync(string projectPath, CancellationToken cancellationToken = default)
         {
             CheckCalls++;
             return NextFactory(WorkflowCliEnvironmentService.NormalizeDirectoryPath(projectPath), cancellationToken);
+        }
+
+        public Task<ProjectBuildExecution> BuildAsync(
+            string projectPath,
+            BuildManifestPreview expectedPreview,
+            IProgress<BuildProgressUpdate>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            BuildCalls++;
+            return BuildFactory(WorkflowCliEnvironmentService.NormalizeDirectoryPath(projectPath), expectedPreview, progress, cancellationToken);
         }
     }
 

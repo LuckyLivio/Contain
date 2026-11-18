@@ -11,4 +11,8 @@ public partial class EnvironmentCheckView : UserControl
     private async void OnStartCheck(object sender, RoutedEventArgs e) => await Shell.RunEnvironmentCheckAsync();
     private void OnToggleReport(object sender, RoutedEventArgs e) => Shell.EnvironmentCheck.ToggleDetailedReport();
     private void OnCopyReport(object sender, RoutedEventArgs e) => Shell.CopyText(Shell.EnvironmentCheck.DetailedReportText);
+    private async void OnStartBuild(object sender, RoutedEventArgs e) => await Shell.RunProjectBuildAsync();
+    private void OnOpenArtifactFolder(object sender, RoutedEventArgs e) => Shell.OpenProjectArtifactFolder();
+    private void OnToggleBuildLog(object sender, RoutedEventArgs e) => Shell.EnvironmentCheck.ToggleBuildLog();
+    private void OnCopyBuildLog(object sender, RoutedEventArgs e) => Shell.CopyText(Shell.EnvironmentCheck.BuildLogText);
 }

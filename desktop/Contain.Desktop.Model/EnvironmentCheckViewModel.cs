@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -14,6 +15,13 @@ public enum EnvironmentOutcomeKind
     CheckerError
 }
 
+public enum BuildOutcomeKind
+{
+    None,
+    Succeeded,
+    Failed
+}
+
 public sealed record EnvironmentItemRow(
     string RawName,
     string DisplayTitle,
@@ -23,9 +31,16 @@ public sealed record EnvironmentItemRow(
     string RawDetail,
     string OfficialGuidanceLine = "");
 
+public sealed record BuildStepResultRow(
+    string Phase,
+    string DisplayTitle,
+    string Status,
+    string StatusBadge,
+    string SummaryLine);
+
 /// <summary>
-/// Drives the "检查项目环境" page. Folder selection only reads declaration file presence;
-/// structured CLI checks run only on explicit user action and reject superseded project results.
+/// Drives the "检查项目环境" page from folder selection and read-only environment checks
+/// through in-process manifest preview, guarded build execution, and confirmed artifact access.
 /// </summary>
 public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 {
@@ -39,15 +54,23 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
     private readonly IEnvironmentCheckService service;
     private readonly Func<DateTimeOffset> clock;
+    private readonly Action<Action> uiDispatch;
+    private readonly Action<string> artifactFolderOpener;
     private readonly LatestRequest requests = new();
     private readonly object operationsGate = new();
     private readonly HashSet<Task> pendingOperations = [];
 
+    private FileSystemWatcher? manifestWatcher;
     private bool disposed;
     private bool checking;
+    private bool building;
     private string folderInput = "";
     private ProjectFolderInfo? currentProject;
     private CheckSnapshot? previousSnapshot;
+    private BuildManifestPreview? currentPreview;
+    private string checkedManifestFileSha256 = "";
+    private string checkedManifestSource = "";
+
     private EnvironmentOutcomeKind outcome = EnvironmentOutcomeKind.None;
     private string headline = "";
     private string outcomeNote = "";
@@ -60,20 +83,43 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
     private string detailedReportText = "";
     private bool showDetailedReport;
     private bool passedExpanded;
+
+    private bool buildCommandsExpanded;
+    private string buildFullCommandsText = "";
+    private string buildProgressText = "";
+    private BuildOutcomeKind buildOutcome = BuildOutcomeKind.None;
+    private string buildHeadline = "";
+    private string buildNote = "";
+    private string buildCheckedTimeText = "";
+    private string buildFailureErrorSummary = "";
+    private string buildLogText = "";
+    private bool showBuildLog;
+    private string confirmedArtifactDirectory = "";
+    private string lastOpenedArtifactDirectory = "";
     private string statusMessage = "";
 
-    public EnvironmentCheckViewModel(IEnvironmentCheckService service, Func<DateTimeOffset>? clock = null)
+    public EnvironmentCheckViewModel(
+        IEnvironmentCheckService service,
+        Func<DateTimeOffset>? clock = null,
+        Action<Action>? dispatcher = null,
+        Action<string>? artifactFolderOpener = null)
     {
         this.service = service ?? throw new ArgumentNullException(nameof(service));
         this.clock = clock ?? (() => DateTimeOffset.Now);
+        uiDispatch = dispatcher ?? (static action => action());
+        this.artifactFolderOpener = artifactFolderOpener ?? OpenExplorerDirectory;
     }
 
     public ObservableCollection<EnvironmentItemRow> ActionItems { get; } = [];
     public ObservableCollection<EnvironmentItemRow> ResolvedItems { get; } = [];
     public ObservableCollection<EnvironmentItemRow> PendingItems { get; } = [];
     public ObservableCollection<EnvironmentItemRow> PassedItems { get; } = [];
+    public ObservableCollection<ManifestStepPreview> BuildPreviewSteps { get; } = [];
+    public ObservableCollection<BuildStepResultRow> BuildStepRows { get; } = [];
 
     public bool IsChecking => checking;
+    public bool IsBuilding => building;
+    public bool CanEditProjectSelection => !disposed && !building;
     public bool HasProject => currentProject is not null;
     public string ProjectName => currentProject?.ProjectName ?? "尚未选择项目文件夹";
     public string ProjectPath => currentProject?.ProjectPath ?? "";
@@ -86,15 +132,15 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
     public string SelectionScopeNote => currentProject is null ? "" : currentProject.ManifestKind switch
     {
         ProjectManifestKind.EnvironmentManifest =>
-            "已识别 contain.environment.json。点击“开始检查”后只运行首版受支持的只读工具与 Windows 工具链探测；不会自动安装依赖、修改系统配置或执行构建。",
+            "已识别 contain.environment.json。点击“开始检查”后只运行首版受支持的只读工具与 Windows 工具链探测；不会自动安装依赖或自动启动构建。",
         ProjectManifestKind.DeclaredProjectFiles =>
             $"未找到 contain.environment.json；检测到 {string.Join("、", currentProject.DetectedFiles)}。点击“开始检查”将复用 infer 提取已声明的精确工具版本，无法从现有文件可靠判断的 MSVC/SDK、环境变量与构建项将标为“待确认”。",
         _ =>
             "未找到 contain.environment.json，也未发现受支持的根目录声明文件（Cargo.toml、rust-toolchain.toml、global.json）。点击“开始检查”只能核验本机 Windows x64 平台，项目依赖将标为“待确认”。"
     };
 
-    public bool CanStartCheck => !disposed && !checking && currentProject is not null;
-    public bool CanRecheck => !disposed && !checking && currentProject is not null && HasOutcome;
+    public bool CanStartCheck => !disposed && !checking && !building && currentProject is not null;
+    public bool CanRecheck => !disposed && !checking && !building && currentProject is not null && HasOutcome;
     public bool HasOutcome => outcome != EnvironmentOutcomeKind.None;
     public EnvironmentOutcomeKind Outcome => outcome;
     public bool IsReady => outcome == EnvironmentOutcomeKind.Ready;
@@ -144,6 +190,105 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
     }
     public string DetailedReportButtonText => showDetailedReport ? "收起详细报告" : "查看详细报告";
     public string DetailedReportText => detailedReportText;
+
+    // --- Project Build Surface Properties ---
+    public bool ShowProjectBuildSection => HasOutcome && currentProject is not null;
+
+    public bool IsManifestChangedSinceCheck =>
+        HasOutcome
+        && !string.IsNullOrEmpty(checkedManifestFileSha256)
+        && (currentPreview is null
+            || currentPreview.Status != ManifestPreviewStatus.Valid
+            || !string.Equals(currentPreview.RawFileSha256, checkedManifestFileSha256, StringComparison.Ordinal));
+
+    public bool CanShowStartBuild =>
+        HasOutcome
+        && outcome == EnvironmentOutcomeKind.Ready
+        && !HasRecheckFailure
+        && string.Equals(checkedManifestSource, "contain.environment.json", StringComparison.Ordinal)
+        && currentPreview is { Status: ManifestPreviewStatus.Valid }
+        && currentPreview.PendingItems.Count == 0
+        && !currentPreview.HasUnsupportedSafeProbes
+        && currentPreview.BuildSteps.Count > 0
+        && !string.IsNullOrEmpty(checkedManifestFileSha256)
+        && string.Equals(currentPreview.RawFileSha256, checkedManifestFileSha256, StringComparison.Ordinal);
+
+    public bool CanStartBuild => !disposed && !checking && !building && CanShowStartBuild;
+    public string StartBuildButtonText => buildOutcome == BuildOutcomeKind.None ? "开始构建" : "再次构建";
+
+    public bool HasBuildPrerequisiteBlocker => ShowProjectBuildSection && !CanShowStartBuild;
+    public string BuildPrerequisiteMessage => ComputeBuildPrerequisiteMessage();
+
+    public bool ShowBuildStepsPreview =>
+        ShowProjectBuildSection
+        && currentPreview is { Status: ManifestPreviewStatus.Valid }
+        && currentPreview.AllSteps.Count > 0
+        && (CanShowStartBuild || IsManifestChangedSinceCheck);
+
+    public string BuildPreviewProjectName => currentPreview?.ProjectName ?? ProjectName;
+    public string BuildPreviewWorkingDirectory => currentPreview?.WorkingDirectory ?? ProjectPath;
+    public string BuildPreviewStepsSummary => currentPreview is not { Status: ManifestPreviewStatus.Valid }
+        ? ""
+        : currentPreview.VerifySteps.Count > 0
+            ? $"共 {currentPreview.AllSteps.Count} 步（{currentPreview.BuildSteps.Count} 项构建步骤，{currentPreview.VerifySteps.Count} 项构建后验证步骤）"
+            : $"共 {currentPreview.BuildSteps.Count} 项构建步骤（未声明额外验证步骤）";
+
+    public string BuildPreviewArtifactHint => currentPreview is not { Status: ManifestPreviewStatus.Valid }
+        ? ""
+        : !string.IsNullOrWhiteSpace(currentPreview.ArtifactDir) && currentPreview.Artifacts.Count > 0
+            ? $"声明产物目录：{currentPreview.ArtifactDir}（预期产物：{string.Join("、", currentPreview.Artifacts)}）"
+            : !string.IsNullOrWhiteSpace(currentPreview.ArtifactDir)
+                ? $"声明产物目录：{currentPreview.ArtifactDir}"
+                : currentPreview.Artifacts.Count > 0
+                    ? $"声明预期产物：{string.Join("、", currentPreview.Artifacts)}"
+                    : "";
+
+    public bool BuildCommandsExpanded
+    {
+        get => buildCommandsExpanded;
+        set => SetProperty(ref buildCommandsExpanded, value);
+    }
+    public string BuildFullCommandsText => buildFullCommandsText;
+
+    public string BuildProgressText => buildProgressText;
+    public bool HasBuildOutcome => buildOutcome != BuildOutcomeKind.None;
+    public BuildOutcomeKind BuildOutcome => buildOutcome;
+    public bool IsBuildSucceeded => buildOutcome == BuildOutcomeKind.Succeeded;
+    public bool IsBuildFailed => buildOutcome == BuildOutcomeKind.Failed;
+    public string BuildOutcomeBadge => buildOutcome switch
+    {
+        BuildOutcomeKind.Succeeded => "构建通过",
+        BuildOutcomeKind.Failed => "构建未通过",
+        _ => ""
+    };
+    public string BuildHeadline => buildHeadline;
+    public string BuildNote => buildNote;
+    public string BuildCheckedTimeText => buildCheckedTimeText;
+    public string BuildFailureErrorSummary => buildFailureErrorSummary;
+    public bool HasBuildStepRows => BuildStepRows.Count > 0;
+
+    public string ConfirmedArtifactDirectory => confirmedArtifactDirectory;
+    public bool CanOpenArtifactFolder =>
+        !disposed
+        && !building
+        && buildOutcome == BuildOutcomeKind.Succeeded
+        && confirmedArtifactDirectory.Length > 0
+        && Directory.Exists(confirmedArtifactDirectory);
+    public string LastOpenedArtifactDirectory => lastOpenedArtifactDirectory;
+
+    public bool CanToggleBuildLog => HasBuildOutcome && buildLogText.Length > 0;
+    public bool ShowBuildLog
+    {
+        get => showBuildLog;
+        set
+        {
+            if (SetProperty(ref showBuildLog, value))
+                OnPropertyChanged(nameof(BuildLogButtonText));
+        }
+    }
+    public string BuildLogButtonText => showBuildLog ? "收起构建日志" : "查看构建日志";
+    public string BuildLogText => buildLogText;
+
     public string StatusMessage => statusMessage;
     public string CheckingBannerText => currentProject is null
         ? "正在检查项目环境…"
@@ -154,9 +299,10 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
     public bool SelectProject(string path)
     {
-        if (disposed) return false;
+        if (disposed || building) return false;
         requests.Invalidate();
         checking = false;
+        DisposeManifestWatcher();
         ResetProjectSession();
 
         try
@@ -164,6 +310,8 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
             var info = service.InspectProject(path);
             currentProject = info;
             folderInput = info.ProjectPath;
+            ApplyManifestPreview(service.InspectBuildPreview(info.ProjectPath));
+            StartManifestWatcher(info.ProjectPath);
             statusMessage = $"已选择项目“{info.ProjectName}”，点击“开始检查”运行探测。";
             NotifyAll();
             return true;
@@ -183,9 +331,26 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         }
     }
 
+    public void RefreshBuildPreview()
+    {
+        if (disposed || currentProject is null) return;
+        var previousSha = currentPreview?.RawFileSha256 ?? "";
+        var previousStatus = currentPreview?.Status;
+        var fresh = service.InspectBuildPreview(currentProject.ProjectPath);
+        ApplyManifestPreview(fresh);
+        if (previousStatus != fresh.Status || !string.Equals(previousSha, fresh.RawFileSha256, StringComparison.Ordinal))
+        {
+            if (!building && HasOutcome && IsManifestChangedSinceCheck)
+            {
+                statusMessage = $"检测到“{currentProject.ProjectName}”的 contain.environment.json 已变更，已刷新构建步骤预览。";
+            }
+            NotifyAll();
+        }
+    }
+
     private void ApplyFolderInput(string rawValue)
     {
-        if (disposed || string.Equals(folderInput, rawValue, StringComparison.Ordinal)) return;
+        if (disposed || building || string.Equals(folderInput, rawValue, StringComparison.Ordinal)) return;
         folderInput = rawValue;
         OnPropertyChanged(nameof(FolderInput));
 
@@ -194,6 +359,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         {
             requests.Invalidate();
             checking = false;
+            DisposeManifestWatcher();
             currentProject = null;
             ResetProjectSession();
             statusMessage = "";
@@ -209,6 +375,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
         requests.Invalidate();
         checking = false;
+        DisposeManifestWatcher();
         currentProject = null;
         ResetProjectSession();
         statusMessage = "输入的文件夹路径尚不存在；可继续输入完整路径或点击“选择文件夹”。";
@@ -219,13 +386,15 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
     private async Task<bool> CheckCoreAsync()
     {
-        if (disposed || currentProject is null) return false;
+        if (disposed || building || currentProject is null) return false;
         var targetProject = currentProject;
+        var previewBeforeCheck = service.InspectBuildPreview(targetProject.ProjectPath);
         var hasValidPriorForProject = previousSnapshot is not null
             && string.Equals(previousSnapshot.ProjectPath, targetProject.ProjectPath, StringComparison.OrdinalIgnoreCase);
 
         var ticket = requests.Begin();
         checking = true;
+        ClearBuildResultCore();
         if (hasValidPriorForProject)
         {
             ClearRecheckFailureBanner();
@@ -245,7 +414,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
                 return false;
 
             checking = false;
-            ApplyReport(targetProject, execution);
+            ApplyReport(targetProject, execution, previewBeforeCheck);
             NotifyAll();
             return true;
         }
@@ -275,14 +444,139 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         }
     }
 
+    public Task<bool> StartBuildAsync() => Track(() => StartBuildCoreAsync());
+
+    private async Task<bool> StartBuildCoreAsync()
+    {
+        if (disposed || checking || building || currentProject is null || !CanShowStartBuild || currentPreview is null)
+            return false;
+
+        var targetProject = currentProject;
+        var previewSnapshot = currentPreview;
+
+        // Re-verify project and manifest consistency immediately upon explicit user click before spawning CLI.
+        var latestInfo = service.InspectProject(targetProject.ProjectPath);
+        var latestPreview = service.InspectBuildPreview(latestInfo.ProjectPath);
+        if (!string.Equals(latestInfo.ProjectPath, targetProject.ProjectPath, StringComparison.OrdinalIgnoreCase)
+            || latestPreview.Status != ManifestPreviewStatus.Valid
+            || !string.Equals(latestPreview.RawFileSha256, previewSnapshot.RawFileSha256, StringComparison.Ordinal)
+            || !string.Equals(latestPreview.RawFileSha256, checkedManifestFileSha256, StringComparison.Ordinal))
+        {
+            ApplyManifestPreview(latestPreview);
+            ClearBuildResultCore();
+            statusMessage = "项目构建清单已发生变化，已刷新步骤预览；请先点击“重新检查”确认后再开始构建。";
+            NotifyAll();
+            return false;
+        }
+
+        var ticket = requests.Begin();
+        building = true;
+        ClearBuildResultCore();
+        buildProgressText = $"正在启动随包 contain-workflow 构建“{targetProject.ProjectName}”…";
+        statusMessage = buildProgressText;
+        NotifyAll();
+
+        var progressReporter = new Progress<BuildProgressUpdate>(update =>
+        {
+            if (disposed || !building || !IsStillCurrent(ticket, targetProject.ProjectPath))
+                return;
+            buildProgressText = update.FormatDisplayText(targetProject.ProjectName);
+            statusMessage = buildProgressText;
+            OnPropertyChanged(nameof(BuildProgressText));
+            OnPropertyChanged(nameof(StatusMessage));
+        });
+
+        try
+        {
+            var execution = await service.BuildAsync(
+                targetProject.ProjectPath,
+                latestPreview,
+                progressReporter,
+                ticket.Token).ConfigureAwait(true);
+
+            if (!IsStillCurrent(ticket, targetProject.ProjectPath))
+                return false;
+
+            building = false;
+            buildProgressText = "";
+            var succeeded = ApplyBuildExecution(targetProject, latestPreview, execution);
+            NotifyAll();
+            return succeeded;
+        }
+        catch (OperationCanceledException) when (!requests.IsCurrent(ticket))
+        {
+            building = false;
+            buildProgressText = "";
+            return false;
+        }
+        catch (EnvironmentCheckException error)
+        {
+            if (!IsStillCurrent(ticket, targetProject.ProjectPath))
+                return false;
+
+            building = false;
+            buildProgressText = "";
+            if (error.Code == "manifest_changed")
+            {
+                ApplyManifestPreview(service.InspectBuildPreview(targetProject.ProjectPath));
+                statusMessage = error.Message;
+                NotifyAll();
+                return false;
+            }
+            ApplyBuildCheckerFailure(targetProject, error.Message, error.Diagnostic);
+            NotifyAll();
+            return false;
+        }
+        catch (Exception error)
+        {
+            if (!IsStillCurrent(ticket, targetProject.ProjectPath))
+                return false;
+
+            building = false;
+            buildProgressText = "";
+            ApplyBuildCheckerFailure(targetProject, "构建执行过程中发生异常。", $"{error.GetType().Name}: {error.Message}");
+            NotifyAll();
+            return false;
+        }
+    }
+
+    public bool OpenArtifactFolder()
+    {
+        if (disposed || building || buildOutcome != BuildOutcomeKind.Succeeded || string.IsNullOrWhiteSpace(confirmedArtifactDirectory))
+            return false;
+
+        if (!Directory.Exists(confirmedArtifactDirectory))
+        {
+            confirmedArtifactDirectory = "";
+            buildNote = "原构建产物文件夹已不存在（可能已被移动或删除），请再次构建以生成新产物。";
+            statusMessage = buildNote;
+            NotifyAll();
+            return false;
+        }
+
+        artifactFolderOpener(confirmedArtifactDirectory);
+        lastOpenedArtifactDirectory = confirmedArtifactDirectory;
+        statusMessage = $"已打开产物文件夹：{confirmedArtifactDirectory}";
+        OnPropertyChanged(nameof(LastOpenedArtifactDirectory));
+        OnPropertyChanged(nameof(StatusMessage));
+        return true;
+    }
+
     public void ToggleDetailedReport()
     {
         if (!CanToggleDetailedReport) return;
         ShowDetailedReport = !ShowDetailedReport;
     }
 
+    public void ToggleBuildLog()
+    {
+        if (!CanToggleBuildLog) return;
+        ShowBuildLog = !ShowBuildLog;
+    }
+
     public async Task CloseAsync()
     {
+        DisposeManifestWatcher();
         requests.Dispose();
         disposed = true;
         Task[] snapshot;
@@ -294,6 +588,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         disposed = true;
+        DisposeManifestWatcher();
         requests.Dispose();
     }
 
@@ -302,7 +597,10 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         && currentProject is not null
         && string.Equals(currentProject.ProjectPath, expectedProjectPath, StringComparison.OrdinalIgnoreCase);
 
-    private void ApplyReport(ProjectFolderInfo project, EnvironmentCheckExecution execution)
+    private void ApplyReport(
+        ProjectFolderInfo project,
+        EnvironmentCheckExecution execution,
+        BuildManifestPreview previewBeforeCheck)
     {
         var checkedAt = clock();
         var report = execution.Report;
@@ -315,6 +613,22 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         errorDetail = "";
         comparisonNote = "";
         ClearRecheckFailureBanner();
+
+        var freshPreview = service.InspectBuildPreview(project.ProjectPath);
+        ApplyManifestPreview(freshPreview);
+
+        checkedManifestSource = report.ManifestSource ?? (freshPreview.Status == ManifestPreviewStatus.Valid ? "contain.environment.json" : "");
+        if (string.Equals(checkedManifestSource, "contain.environment.json", StringComparison.Ordinal)
+            && previewBeforeCheck.Status == ManifestPreviewStatus.Valid
+            && freshPreview.Status == ManifestPreviewStatus.Valid
+            && string.Equals(previewBeforeCheck.RawFileSha256, freshPreview.RawFileSha256, StringComparison.Ordinal))
+        {
+            checkedManifestFileSha256 = freshPreview.RawFileSha256;
+        }
+        else
+        {
+            checkedManifestFileSha256 = "";
+        }
 
         var canCompareWithPrevious = false;
         if (previousSnapshot is not null
@@ -419,7 +733,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
             else
             {
                 headline = $"环境已满足：“{project.ProjectName}”声明的 {PassedItems.Count} 项检查全部通过";
-                outcomeNote = "本机已具备该项目清单声明的平台、工具版本与 Windows 编译工具链。可展开下方列表或查看详细报告核对每项结果。";
+                outcomeNote = "本机已具备该项目清单声明的平台、工具版本与 Windows 编译工具链。可在下方查看构建步骤并开始构建。";
                 statusMessage = $"已完成“{project.ProjectName}”环境检查：全部 {PassedItems.Count} 项满足。";
             }
         }
@@ -428,6 +742,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
     private void ApplyCheckerError(ProjectFolderInfo project, string message, string diagnostic)
     {
         var failedAt = clock();
+        ApplyManifestPreview(service.InspectBuildPreview(project.ProjectPath));
         if (previousSnapshot is not null
             && string.Equals(previousSnapshot.ProjectPath, project.ProjectPath, StringComparison.OrdinalIgnoreCase))
         {
@@ -462,6 +777,326 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         }
         detailedReportText = sb.ToString().TrimEnd();
         statusMessage = $"“{project.ProjectName}”环境检查程序出错。";
+    }
+
+    private bool ApplyBuildExecution(
+        ProjectFolderInfo project,
+        BuildManifestPreview preview,
+        ProjectBuildExecution execution)
+    {
+        var finishedAt = clock();
+        buildCheckedTimeText = $"构建时间：{FormatTimestamp(finishedAt)}";
+        buildLogText = string.IsNullOrWhiteSpace(execution.CombinedLogText)
+            ? execution.ReportMarkdown
+            : execution.CombinedLogText;
+        showBuildLog = false;
+
+        PopulateBuildStepRows(preview, execution);
+
+        var allPassed = execution.ExitCode == 0
+            && execution.Report.Checks.All(static c => c.Status == "passed");
+
+        if (allPassed)
+        {
+            buildOutcome = BuildOutcomeKind.Succeeded;
+            buildFailureErrorSummary = "";
+            confirmedArtifactDirectory = !string.IsNullOrWhiteSpace(execution.ConfirmedArtifactDirectory)
+                && Directory.Exists(execution.ConfirmedArtifactDirectory)
+                    ? execution.ConfirmedArtifactDirectory
+                    : "";
+
+            if (confirmedArtifactDirectory.Length > 0)
+            {
+                buildHeadline = $"构建成功：“{project.ProjectName}”已完成全部构建与验证步骤";
+                buildNote = $"已确认本次构建产物位于：{confirmedArtifactDirectory}";
+                statusMessage = $"“{project.ProjectName}”构建成功，可点击“打开产物文件夹”查看生成结果。";
+            }
+            else
+            {
+                buildHeadline = $"构建与验证已完成：“{project.ProjectName}”全部步骤执行通过";
+                buildNote = "全部命令均已通过，但未能确认独立产物输出目录（不展示“打开产物文件夹”入口）。";
+                statusMessage = $"“{project.ProjectName}”构建命令已执行通过。";
+            }
+            return true;
+        }
+
+        buildOutcome = BuildOutcomeKind.Failed;
+        confirmedArtifactDirectory = "";
+
+        var failedStep = execution.StepResults.FirstOrDefault(static s => s.Status == "failed");
+        var unrunVerifyCount = BuildStepRows.Count(static r => r.Phase == "verify" && r.Status == "not_run");
+        var unrunBuildCount = BuildStepRows.Count(static r => r.Phase == "build" && r.Status == "not_run");
+
+        if (failedStep is not null)
+        {
+            var phaseTitle = failedStep.Phase == "verify" ? "验证步骤" : "构建步骤";
+            buildHeadline = $"{phaseTitle}失败：{phaseTitle} {failedStep.Index + 1}“{failedStep.Name}”未通过";
+            buildFailureErrorSummary = ExtractStepErrorSummary(failedStep);
+
+            var skippedParts = new List<string>();
+            if (unrunBuildCount > 0) skippedParts.Add($"{unrunBuildCount} 项后续构建步骤未执行");
+            if (unrunVerifyCount > 0) skippedParts.Add($"{unrunVerifyCount} 项后续验证步骤未执行");
+            var skippedText = skippedParts.Count > 0 ? string.Join("，", skippedParts) + "。" : "";
+            buildNote = $"{skippedText}旧产物不会计为本次成功。修正问题后可直接在本页点击“再次构建”。";
+        }
+        else
+        {
+            var failedCheck = execution.Report.Checks.FirstOrDefault(static c => c.Status != "passed");
+            if (failedCheck?.Name == "build_artifacts")
+            {
+                buildHeadline = "构建未通过：命令已退出，但未找到清单声明的预期产物";
+                buildFailureErrorSummary = failedCheck.Detail;
+                buildNote = "未确认到本次构建生成的有效产物文件，请查看构建日志核对输出路径。";
+            }
+            else if (failedCheck is not null)
+            {
+                buildHeadline = $"构建未启动：构建前重新核验环境未通过（{FriendlyCheckTitle(failedCheck.Name)}）";
+                buildFailureErrorSummary = failedCheck.Detail;
+                buildNote = "由于构建前安全探测未全部通过，所有构建与验证步骤均未执行。请先点击上方“重新检查”。";
+            }
+            else
+            {
+                buildHeadline = $"构建未通过（退出码 {execution.ExitCode}）";
+                buildFailureErrorSummary = "请点击“查看构建日志”了解详细错误信息。";
+                buildNote = "修复问题后可在本页重新尝试构建。";
+            }
+        }
+
+        statusMessage = $"“{project.ProjectName}”{buildHeadline}。";
+        return false;
+    }
+
+    private void ApplyBuildCheckerFailure(ProjectFolderInfo project, string message, string diagnostic)
+    {
+        var failedAt = clock();
+        buildOutcome = BuildOutcomeKind.Failed;
+        confirmedArtifactDirectory = "";
+        buildCheckedTimeText = $"失败时间：{FormatTimestamp(failedAt)}";
+        buildHeadline = "构建未能完成：无法执行随包构建程序";
+        buildNote = message;
+        buildFailureErrorSummary = diagnostic;
+        buildLogText = string.IsNullOrWhiteSpace(diagnostic) ? message : $"{message}\n\n{diagnostic}";
+        showBuildLog = false;
+        statusMessage = $"“{project.ProjectName}”构建启动失败。";
+    }
+
+    private void PopulateBuildStepRows(BuildManifestPreview preview, ProjectBuildExecution execution)
+    {
+        BuildStepRows.Clear();
+        if (execution.StepResults.Count > 0)
+        {
+            foreach (var sr in execution.StepResults)
+            {
+                var phaseLabel = sr.Phase == "verify" ? "验证步骤" : "构建步骤";
+                var title = $"{phaseLabel} {sr.Index + 1}：{sr.Name}";
+                var (badge, summary) = sr.Status switch
+                {
+                    "passed" => ("通过", $"已通过（退出码 {sr.ObservedExit ?? sr.ExpectedExit}）"),
+                    "failed" when sr.TimedOut => ("失败", "执行超时，已终止子进程"),
+                    "failed" when !string.IsNullOrWhiteSpace(sr.LaunchError) => ("失败", $"无法启动程序：{sr.LaunchError}"),
+                    "failed" => ("失败", $"退出码或输出校验不匹配（预期退出码 {sr.ExpectedExit}，实际 {(sr.ObservedExit?.ToString(CultureInfo.InvariantCulture) ?? "无")}）"),
+                    _ => ("未执行", sr.Phase == "verify" ? "未执行（因前置构建或环境步骤未通过而跳过）" : "未执行（因前置步骤未通过而跳过）")
+                };
+                BuildStepRows.Add(new BuildStepResultRow(sr.Phase, title, sr.Status, badge, summary));
+            }
+            return;
+        }
+
+        // Fallback to matching step checks from structured report.json if steps.json was absent (e.g. unit test mocks).
+        foreach (var step in preview.AllSteps)
+        {
+            var check = execution.Report.Checks.FirstOrDefault(c => string.Equals(c.Name, step.Name, StringComparison.Ordinal));
+            var status = check?.Status ?? "not_run";
+            var phaseLabel = step.PhaseKey == "verify" ? "验证步骤" : "构建步骤";
+            var idxInPhase = step.PhaseKey == "verify"
+                ? step.StepNumber - preview.BuildSteps.Count
+                : step.StepNumber;
+            var badge = status switch
+            {
+                "passed" => "通过",
+                "failed" => "失败",
+                _ => "未执行"
+            };
+            var summary = status switch
+            {
+                "passed" => "已通过",
+                "failed" => check?.Detail ?? "步骤执行失败",
+                _ => "未执行（前置条件或构建步骤未通过）"
+            };
+            BuildStepRows.Add(new BuildStepResultRow(step.PhaseKey, $"{phaseLabel} {idxInPhase}：{step.Name}", status, badge, summary));
+        }
+    }
+
+    private static string ExtractStepErrorSummary(BuildStepExecutionResult failedStep)
+    {
+        if (failedStep.TimedOut)
+            return $"步骤“{failedStep.Name}”超过声明的超时时间上限，进程已被终止。";
+        if (!string.IsNullOrWhiteSpace(failedStep.LaunchError))
+            return $"无法启动步骤程序：{failedStep.LaunchError}";
+
+        var combined = new List<string>();
+        AppendLines(combined, failedStep.StderrText);
+        AppendLines(combined, failedStep.StdoutText);
+
+        var prioritized = combined
+            .Where(static line =>
+                line.Contains(": error ", StringComparison.OrdinalIgnoreCase)
+                || line.Contains("error CS", StringComparison.OrdinalIgnoreCase)
+                || line.Contains("error MSB", StringComparison.OrdinalIgnoreCase)
+                || line.StartsWith("error", StringComparison.OrdinalIgnoreCase)
+                || line.Contains("fatal:", StringComparison.OrdinalIgnoreCase)
+                || line.Contains("Exception", StringComparison.Ordinal))
+            .Take(12)
+            .ToList();
+
+        var chosen = prioritized.Count > 0
+            ? prioritized
+            : combined.TakeLast(12).ToList();
+
+        var exitHeader = $"预期退出码 {failedStep.ExpectedExit}，实际退出码 {(failedStep.ObservedExit?.ToString(CultureInfo.InvariantCulture) ?? "无")}。";
+        return chosen.Count == 0
+            ? exitHeader
+            : exitHeader + Environment.NewLine + string.Join(Environment.NewLine, chosen);
+
+        static void AppendLines(List<string> target, string source)
+        {
+            if (string.IsNullOrWhiteSpace(source)) return;
+            foreach (var line in source.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (line.Length > 0)
+                    target.Add(line);
+            }
+        }
+    }
+
+    private string ComputeBuildPrerequisiteMessage()
+    {
+        if (!ShowProjectBuildSection)
+            return "";
+
+        if (HasRecheckFailure)
+        {
+            return outcome == EnvironmentOutcomeKind.Ready
+                ? "上方保留的“环境已满足”结果仅供查看：最近一次重新检查未能完成，请先修复复查错误并点击“重新检查”确认通过后再开始构建。"
+                : "最近一次重新检查未能完成（上方历史结果仅供查看）：请先解决复查错误并补齐所需依赖后再开始构建。";
+        }
+
+        if (outcome == EnvironmentOutcomeKind.CheckerError)
+            return "当前暂不能开始构建：环境检查未完成，请先修复项目配置文件或检查器错误并点击“重新检查”。";
+
+        if (outcome == EnvironmentOutcomeKind.ActionRequired)
+            return $"当前暂不能开始构建：请先按上方指引补齐 {ActionItems.Count} 项缺失或版本不匹配的依赖，并点击“重新检查”确认环境就绪。";
+
+        if (string.Equals(checkedManifestSource, "inferred_from_project_files", StringComparison.Ordinal)
+            || currentPreview is null or { Status: ManifestPreviewStatus.Missing })
+        {
+            return "当前暂不能开始构建：该项目仅有自动推断结果，缺少明确的 contain.environment.json 构建清单；请先补充已审阅的构建步骤并重新检查。";
+        }
+
+        if (currentPreview.Status == ManifestPreviewStatus.Invalid)
+            return $"当前暂不能开始构建：contain.environment.json 校验未通过（{currentPreview.ValidationError}），请修正后点击“重新检查”。";
+
+        if (IsManifestChangedSinceCheck)
+            return "当前暂不能开始构建：检测到 contain.environment.json 在上次检查后已修改（下方预览已刷新），请先点击上方“重新检查”确认新清单环境就绪。";
+
+        if (outcome == EnvironmentOutcomeKind.InsufficientInfo
+            || currentPreview.PendingItems.Count > 0
+            || currentPreview.HasUnsupportedSafeProbes)
+        {
+            return "当前暂不能开始构建：项目清单仍含待确认项或超范围安全探测命令，请先确认并消除待确认项后重新检查。";
+        }
+
+        if (currentPreview.BuildSteps.Count == 0)
+            return "当前暂不能开始构建：contain.environment.json 未声明任何构建步骤（build 为空）。";
+
+        return "当前暂不能开始构建：请先点击“重新检查”确认环境与构建清单一致。";
+    }
+
+    private void ApplyManifestPreview(BuildManifestPreview preview)
+    {
+        currentPreview = preview;
+        BuildPreviewSteps.Clear();
+        buildCommandsExpanded = false;
+
+        if (preview.Status != ManifestPreviewStatus.Valid || preview.AllSteps.Count == 0)
+        {
+            buildFullCommandsText = "";
+            return;
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"工作目录：{preview.WorkingDirectory}");
+        if (!string.IsNullOrWhiteSpace(preview.ArtifactDir))
+            sb.AppendLine($"声明产物目录：{preview.ArtifactDir}");
+        if (preview.Artifacts.Count > 0)
+            sb.AppendLine($"预期产物文件：{string.Join("、", preview.Artifacts)}");
+        sb.AppendLine();
+
+        foreach (var step in preview.AllSteps)
+        {
+            BuildPreviewSteps.Add(step);
+            sb.AppendLine($"[{step.StepNumber}] {step.PhaseBadge}：{step.Name}");
+            sb.AppendLine($"    命令：{step.CommandLineText}");
+            sb.AppendLine($"    校验：{step.ExpectationText}");
+        }
+        buildFullCommandsText = sb.ToString().TrimEnd();
+    }
+
+    private void StartManifestWatcher(string projectDir)
+    {
+        try
+        {
+            var watcher = new FileSystemWatcher(projectDir, "contain.environment.json")
+            {
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime
+            };
+            FileSystemEventHandler onChanged = (_, _) => DispatchPreviewRefresh(projectDir);
+            RenamedEventHandler onRenamed = (_, _) => DispatchPreviewRefresh(projectDir);
+            watcher.Changed += onChanged;
+            watcher.Created += onCreatedHandler;
+            watcher.Deleted += onChanged;
+            watcher.Renamed += onRenamed;
+            watcher.EnableRaisingEvents = true;
+            manifestWatcher = watcher;
+
+            void onCreatedHandler(object sender, FileSystemEventArgs e) => DispatchPreviewRefresh(projectDir);
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
+        {
+            manifestWatcher = null;
+        }
+    }
+
+    private void DispatchPreviewRefresh(string watchedDir)
+    {
+        if (disposed) return;
+        uiDispatch(() =>
+        {
+            if (disposed || currentProject is null) return;
+            if (!string.Equals(currentProject.ProjectPath, watchedDir, StringComparison.OrdinalIgnoreCase))
+                return;
+            RefreshBuildPreview();
+        });
+    }
+
+    private void DisposeManifestWatcher()
+    {
+        var w = Interlocked.Exchange(ref manifestWatcher, null);
+        if (w is not null)
+        {
+            try { w.EnableRaisingEvents = false; } catch { }
+            w.Dispose();
+        }
+    }
+
+    private static void OpenExplorerDirectory(string fullDirectoryPath)
+    {
+        var psi = new ProcessStartInfo("explorer.exe")
+        {
+            UseShellExecute = false
+        };
+        psi.ArgumentList.Add(fullDirectoryPath);
+        using var _ = Process.Start(psi);
     }
 
     private static string BuildActionHeadline(EnvironmentItemRow first, int count)
@@ -649,6 +1284,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         "source_revision" => "Git 源码提交状态",
         "requirement" => "待确认的环境或构建要求",
         "build plan" => "构建命令声明",
+        "build_artifacts" => "声明产物核验",
         _ when rawName.StartsWith("tool:", StringComparison.Ordinal) => $"工具 ({rawName["tool:".Length..]})",
         _ when rawName.StartsWith("variable:", StringComparison.Ordinal) => $"环境变量 ({rawName["variable:".Length..]})",
         _ => rawName
@@ -677,7 +1313,14 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
     private void ResetProjectSession()
     {
         previousSnapshot = null;
+        currentPreview = null;
+        checkedManifestFileSha256 = "";
+        checkedManifestSource = "";
+        BuildPreviewSteps.Clear();
+        buildFullCommandsText = "";
+        buildCommandsExpanded = false;
         ClearOutcomeCore();
+        ClearBuildResultCore();
     }
 
     private void ClearRecheckFailureBanner()
@@ -685,6 +1328,20 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         recheckFailureTitle = "";
         recheckFailureText = "";
         recheckFailureDetail = "";
+    }
+
+    private void ClearBuildResultCore()
+    {
+        BuildStepRows.Clear();
+        buildProgressText = "";
+        buildOutcome = BuildOutcomeKind.None;
+        buildHeadline = "";
+        buildNote = "";
+        buildCheckedTimeText = "";
+        buildFailureErrorSummary = "";
+        buildLogText = "";
+        showBuildLog = false;
+        confirmedArtifactDirectory = "";
     }
 
     private void ClearOutcomeCore()
@@ -725,6 +1382,8 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
     private void NotifyAll()
     {
         OnPropertyChanged(nameof(IsChecking));
+        OnPropertyChanged(nameof(IsBuilding));
+        OnPropertyChanged(nameof(CanEditProjectSelection));
         OnPropertyChanged(nameof(HasProject));
         OnPropertyChanged(nameof(ProjectName));
         OnPropertyChanged(nameof(ProjectPath));
@@ -759,6 +1418,38 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ShowDetailedReport));
         OnPropertyChanged(nameof(DetailedReportButtonText));
         OnPropertyChanged(nameof(DetailedReportText));
+        OnPropertyChanged(nameof(ShowProjectBuildSection));
+        OnPropertyChanged(nameof(IsManifestChangedSinceCheck));
+        OnPropertyChanged(nameof(CanShowStartBuild));
+        OnPropertyChanged(nameof(CanStartBuild));
+        OnPropertyChanged(nameof(StartBuildButtonText));
+        OnPropertyChanged(nameof(HasBuildPrerequisiteBlocker));
+        OnPropertyChanged(nameof(BuildPrerequisiteMessage));
+        OnPropertyChanged(nameof(ShowBuildStepsPreview));
+        OnPropertyChanged(nameof(BuildPreviewProjectName));
+        OnPropertyChanged(nameof(BuildPreviewWorkingDirectory));
+        OnPropertyChanged(nameof(BuildPreviewStepsSummary));
+        OnPropertyChanged(nameof(BuildPreviewArtifactHint));
+        OnPropertyChanged(nameof(BuildCommandsExpanded));
+        OnPropertyChanged(nameof(BuildFullCommandsText));
+        OnPropertyChanged(nameof(BuildProgressText));
+        OnPropertyChanged(nameof(HasBuildOutcome));
+        OnPropertyChanged(nameof(BuildOutcome));
+        OnPropertyChanged(nameof(IsBuildSucceeded));
+        OnPropertyChanged(nameof(IsBuildFailed));
+        OnPropertyChanged(nameof(BuildOutcomeBadge));
+        OnPropertyChanged(nameof(BuildHeadline));
+        OnPropertyChanged(nameof(BuildNote));
+        OnPropertyChanged(nameof(BuildCheckedTimeText));
+        OnPropertyChanged(nameof(BuildFailureErrorSummary));
+        OnPropertyChanged(nameof(HasBuildStepRows));
+        OnPropertyChanged(nameof(ConfirmedArtifactDirectory));
+        OnPropertyChanged(nameof(CanOpenArtifactFolder));
+        OnPropertyChanged(nameof(LastOpenedArtifactDirectory));
+        OnPropertyChanged(nameof(CanToggleBuildLog));
+        OnPropertyChanged(nameof(ShowBuildLog));
+        OnPropertyChanged(nameof(BuildLogButtonText));
+        OnPropertyChanged(nameof(BuildLogText));
         OnPropertyChanged(nameof(StatusMessage));
         OnPropertyChanged(nameof(CheckingBannerText));
     }
