@@ -979,6 +979,7 @@ internal static class EnvironmentChecks
                 "dotnet publish DeskStarter.Project.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o target/workflow/publish/win-x64",
                 [
                     new OnboardingFieldRow("项目文件", "DeskStarter.Project.csproj", ".csproj 根目录声明"),
+                    new OnboardingFieldRow("应用类型", "控制台应用 (OutputType=Exe)", "项目声明 OutputType=Exe"),
                     new OnboardingFieldRow("启动入口", "HelloDesk.exe", ".csproj <AssemblyName>")
                 ],
                 generatedManifestJson,
@@ -1004,7 +1005,7 @@ internal static class EnvironmentChecks
             True(vm.SelectProject(projectDir), "select unconfigured C# project");
             True(vm.IsOnboardingReadyToConfirm && !vm.IsOnboardingUnsupported, "ready to confirm card visible");
             True(!vm.CanStartCheck && vm.CanConfirmOnboarding, "Start Check gated until onboarding confirmed");
-            Equal("已识别 HelloDesk · 控制台应用", vm.OnboardingHeadline, "concise onboarding headline");
+            Equal("已识别 HelloDesk · 控制台应用 (OutputType=Exe)", vm.OnboardingHeadline, "shows the console classification supplied by the CLI");
             True(vm.OnboardingProvenanceSummary.Contains("HelloDesk.exe", StringComparison.Ordinal)
                 && vm.OnboardingProvenanceSummary.Contains("AssemblyName=HelloDesk", StringComparison.Ordinal)
                 && vm.OnboardingProvenanceSummary.Contains("0.1.0", StringComparison.Ordinal),
@@ -1060,7 +1061,9 @@ internal static class EnvironmentChecks
                 SourceFingerprintSha256 = new string('2', 64),
                 AppName = "AppV2",
                 AssemblyName = "AppV2",
-                EntryExecutable = "AppV2.exe"
+                EntryExecutable = "AppV2.exe",
+                TargetFramework = "net10.0-windows",
+                EvidenceFields = [new OnboardingFieldRow("应用类型", "WPF 桌面应用", "App.csproj：UseWPF=true，OutputType=WinExe")]
             };
 
             var applyAttempt = 0;
@@ -1083,17 +1086,25 @@ internal static class EnvironmentChecks
 
             using var vm = new EnvironmentCheckViewModel(service);
             vm.SelectProject(changingDir);
-            Equal("已识别 AppV1 · 控制台应用", vm.OnboardingHeadline, "initial preview V1");
+            Equal("已识别 AppV1", vm.OnboardingHeadline, "preview with no type evidence shows only the application name");
 
             // Confirm when source changed -> refreshes preview to V2 without writing
             True(!await vm.ConfirmOnboardingAsync(), "stale fingerprint requires re-confirmation");
             True(vm.IsOnboardingReadyToConfirm && vm.HasOnboardingChangeNotice, "shows refresh notice and keeps onboarding open");
-            Equal("已识别 AppV2 · 控制台应用", vm.OnboardingHeadline, "headline refreshed to AppV2");
+            Equal("已识别 AppV2 · WPF 桌面应用", vm.OnboardingHeadline, "refreshed preview uses the new WPF classification");
+            True(vm.OnboardingDetailsText.Contains("UseWPF=true", StringComparison.Ordinal), "WPF evidence source is readable in details");
             True(!File.Exists(Path.Combine(changingDir, "contain.environment.json")), "still zero manifest written");
 
             // Confirm when external manifest appeared -> preserves existing manifest cleanly
             True(await vm.ConfirmOnboardingAsync(), "preserved_existing_manifest transitions cleanly");
             True(!vm.IsOnboardingReadyToConfirm && vm.CanStartCheck && vm.HasOnboardingSavedNotice, "existing manifest preserved and usable");
+
+            var wpfDir = temp.Sub("WindowApp");
+            service.OnboardingInspectFactory = _ => updatedPreview;
+            True(vm.SelectProject(wpfDir) && vm.CanConfirmOnboarding, "WPF preview is available on folder selection");
+            Equal("已识别 AppV2 · WPF 桌面应用", vm.OnboardingHeadline, "fresh selection shows WPF classification");
+            True(vm.StatusMessage.Contains("AppV2", StringComparison.Ordinal)
+                && !vm.StatusMessage.Contains("控制台", StringComparison.Ordinal), "selection status agrees with WPF preview");
 
             // Unsupported multi-project / class library folder -> clear reason + next step + zero files written
             var multiDir = temp.Sub("MultiProjectSolution");

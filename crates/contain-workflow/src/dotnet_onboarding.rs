@@ -93,10 +93,11 @@ struct RawPropertyEntry {
 struct ParsedCsproj {
     sdk_attr: Option<String>,
     has_import: bool,
+    has_project_reference: bool,
     properties: BTreeMap<String, Vec<RawPropertyEntry>>,
 }
 
-/// Purely read-only inspection of a folder for C# console onboarding.
+/// Purely read-only inspection of a folder for C# console and WPF onboarding.
 /// Never executes project code, MSBuild targets, or `dotnet restore`, and never writes files.
 pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection> {
     if !project_root.is_dir() {
@@ -189,7 +190,7 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
             "multiple_csproj_in_root",
             format!("这个目录包含 {} 个 C# 项目文件", root_csprojs.len()),
             format!("当前文件夹根部同时存在多个 .csproj（{names}），Contain 不会默认挑选第一个。"),
-            "请把要发布的控制台应用放在独立文件夹并重新选择该文件夹，或手动编写 contain.environment.json 明确指定构建项目与入口。",
+            "请把要发布的应用放在独立文件夹并重新选择该文件夹，或手动编写 contain.environment.json 明确指定构建项目与入口。",
         ));
     }
 
@@ -201,8 +202,8 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
                 existing_id,
                 "non_csharp_dotnet_project",
                 "暂不支持自动配置非 C# 的 .NET 项目".into(),
-                format!("检测到项目文件 {names}，首版自动配置仅支持 C#（.csproj）控制台应用。"),
-                "请选择 C# 控制台应用所在文件夹，或为当前项目手动添加 contain.environment.json。",
+                format!("检测到项目文件 {names}，自动配置支持 C#（.csproj）控制台和 WPF 应用。"),
+                "请选择 C# 应用所在文件夹，或为当前项目手动添加 contain.environment.json。",
             ));
         }
 
@@ -227,7 +228,7 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
                     "所选根目录本身没有 .csproj，但在子目录中发现多个项目（{sample}），无法自动决定发布哪一个。"
                 ),
                 &format!(
-                    "请点击右上角“选择文件夹”，直接进入并选择要发布的那个控制台应用所在文件夹（例如“{first_dir}”）。"
+                    "请点击右上角“选择文件夹”，直接选择要发布的应用所在文件夹（例如“{first_dir}”）。"
                 ),
             ));
         } else if child_csprojs.len() == 1 {
@@ -254,11 +255,11 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
                     "所选目录没有 contain.environment.json，也没有可识别的 .csproj 文件。".into()
                 } else {
                     format!(
-                        "检测到解决方案文件（{}），但未找到 C# 控制台项目的 .csproj 文件。",
+                        "检测到解决方案文件（{}），但未找到 C# 项目的 .csproj 文件。",
                         root_slns.join("、")
                     )
                 },
-                "请选择根目录包含单个 C# 控制台项目 (.csproj) 的文件夹。",
+                "请选择根目录包含单个 C# 应用项目 (.csproj) 的文件夹。",
             ));
         }
     }
@@ -272,7 +273,7 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
             "multiple_dotnet_projects_in_root",
             "这个目录同时包含多个 .NET 项目文件".into(),
             format!("除 {csproj_name} 外还检测到 {extra}，无法唯一确定发布对象。"),
-            "请将要发布的 C# 控制台应用放在独立文件夹后重新选择。",
+            "请将要发布的 C# 应用放在独立文件夹后重新选择。",
         ));
     }
 
@@ -283,7 +284,7 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
             "directory_build_props_present",
             "项目包含 Directory.Build.props / targets 外部构建属性".into(),
             "在不执行 MSBuild 的前提下，无法静态保证外部构建属性未改写目标框架、输出类型或程序集入口名。".into(),
-            "请为该项目手动提供 contain.environment.json，或使用无外部属性注入的独立控制台项目目录。",
+            "请为该项目手动提供 contain.environment.json，或使用没有外部属性注入的独立应用项目目录。",
         ));
     }
 
@@ -322,7 +323,7 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
             "msbuild_import_present",
             format!("{csproj_name} 包含自定义 MSBuild <Import>"),
             "项目使用了外部 <Import>，在不运行 MSBuild 的只读模式下无法静态确定最终入口与构建行为。".into(),
-            "请改为标准 SDK 风格控制台项目配置，或手动提供 contain.environment.json。",
+            "请改为标准 SDK 风格应用项目配置，或手动提供 contain.environment.json。",
         ));
     }
 
@@ -334,7 +335,7 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
             format!("{csproj_name} 不是现代 SDK 风格项目"),
             "未检测到 <Project Sdk=\"Microsoft.NET.Sdk\">，可能为旧版 .NET Framework 项目格式。"
                 .into(),
-            "请先迁移为现代 Microsoft.NET.Sdk 控制台项目，或手动编写 contain.environment.json。",
+            "请先迁移为现代 Microsoft.NET.Sdk 应用项目，或手动编写 contain.environment.json。",
         ));
     };
     if !sdk.eq_ignore_ascii_case("Microsoft.NET.Sdk") {
@@ -344,27 +345,66 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
             "unsupported_project_sdk",
             format!("暂不支持 {sdk} 项目类型自动生成安装包配置"),
             format!(
-                "{csproj_name} 声明的 SDK 为“{sdk}”，首版仅支持 Microsoft.NET.Sdk 控制台应用。"
+                "{csproj_name} 声明的 SDK 为“{sdk}”，自动配置支持 Microsoft.NET.Sdk 控制台和 WPF 应用。"
             ),
-            "请选择标准 Microsoft.NET.Sdk 控制台应用目录，其他项目模板留待后续版本支持。",
+            "请为此项目提供 contain.environment.json，或选择标准 Microsoft.NET.Sdk 应用目录。",
         ));
     }
 
-    for gui_prop in ["UseWPF", "UseWindowsForms", "UseMaui"] {
-        if let Some(entries) = parsed.properties.get(&gui_prop.to_ascii_lowercase())
-            && entries
-                .iter()
-                .any(|e| e.conditional || e.dynamic_expr || e.value.eq_ignore_ascii_case("true"))
-        {
-            return Ok(unsupported(
-                &fingerprint,
-                existing_id,
-                "gui_framework_project",
-                format!("{csproj_name} 启用了图形界面属性 ({gui_prop})"),
-                "首版无配置向导仅支持明确识别的控制台应用，暂不自动生成 WPF / WinForms / MAUI 配置。".into(),
-                "请选择普通 C# 控制台应用项目，或为桌面界面项目手动编写 contain.environment.json。",
-            ));
+    // A windowed executable can belong to several UI frameworks. Only opt in
+    // to the WPF workflow when all framework switches are statically known.
+    let mut use_wpf = false;
+    for flag in ["UseWPF", "UseWindowsForms", "UseMaui", "UseWinUI"] {
+        match resolve_single_static_property(&parsed, &flag.to_ascii_lowercase()) {
+            PropState::Missing => {}
+            PropState::Present(value) if value.eq_ignore_ascii_case("false") => {}
+            PropState::Present(value) if value.eq_ignore_ascii_case("true") => {
+                if flag == "UseWPF" {
+                    use_wpf = true;
+                } else {
+                    return Ok(unsupported(
+                        &fingerprint,
+                        existing_id,
+                        "gui_framework_project",
+                        format!("{csproj_name} 启用了 {flag}"),
+                        "自动配置支持控制台应用和单独使用 WPF 的桌面应用。".into(),
+                        "请为此项目提供 contain.environment.json 来指定构建步骤。",
+                    ));
+                }
+            }
+            _ => {
+                return Ok(unsupported(
+                    &fingerprint,
+                    existing_id,
+                    "ambiguous_gui_framework",
+                    format!("无法从 {csproj_name} 确定 {flag}"),
+                    format!("自动配置需要 {flag} 为无条件的 true 或 false。"),
+                    "请手动添加 contain.environment.json 来指定构建步骤。",
+                ));
+            }
         }
+    }
+
+    if use_wpf && let Some(name) = inherited_build_file(project_root)? {
+        return Ok(unsupported(
+            &fingerprint,
+            existing_id,
+            "directory_build_props_present",
+            format!("WPF 项目从上级目录继承了 {name}"),
+            "上级构建文件可以改写输出类型、目标框架和程序集名称。".into(),
+            "请为此项目提供 contain.environment.json，明确指定构建步骤和启动入口。",
+        ));
+    }
+
+    if use_wpf && parsed.has_project_reference {
+        return Ok(unsupported(
+            &fingerprint,
+            existing_id,
+            "wpf_project_reference",
+            format!("{csproj_name} 引用了其他项目"),
+            "WPF 自动配置目前支持独立的单项目应用。".into(),
+            "请为包含 ProjectReference 的应用提供 contain.environment.json 来指定构建步骤。",
+        ));
     }
 
     if let Some(aot) = parsed.properties.get("publishaot")
@@ -421,7 +461,7 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
         }
     };
 
-    let Some(tfm_major) = parse_supported_console_tfm(&tfm) else {
+    let Some(tfm_major) = parse_supported_tfm(&tfm) else {
         return Ok(unsupported(
             &fingerprint,
             existing_id,
@@ -434,17 +474,28 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
         ));
     };
 
-    // OutputType check (must be explicit Exe!)
+    if use_wpf && !is_supported_wpf_tfm(&tfm, tfm_major) {
+        return Ok(unsupported(
+            &fingerprint,
+            existing_id,
+            "unsupported_wpf_target",
+            format!("WPF 项目声明的目标框架为 {tfm}"),
+            "WPF 自动配置需要 .NET 8 或更高版本的 Windows 专用目标框架。".into(),
+            "请选择使用如 net8.0-windows 目标框架的 WPF 应用，或手动提供 contain.environment.json。",
+        ));
+    }
+
     match resolve_single_static_property(&parsed, "outputtype") {
-        PropState::Present(v) if v.eq_ignore_ascii_case("Exe") => {}
+        PropState::Present(v) if !use_wpf && v.eq_ignore_ascii_case("Exe") => {}
+        PropState::Present(v) if use_wpf && v.eq_ignore_ascii_case("WinExe") => {}
         PropState::Present(v) if v.eq_ignore_ascii_case("Library") => {
             return Ok(unsupported(
                 &fingerprint,
                 existing_id,
                 "class_library_project",
-                format!("{csproj_name} 是类库项目（OutputType=Library），不是控制台应用"),
-                "类库只生成供其他程序引用的 .dll，没有可独立安装启动的控制台程序入口。".into(),
-                "请选择包含可执行入口的控制台应用所在文件夹；若该项目本应作为控制台应用运行，请在 .csproj 中改为 <OutputType>Exe</OutputType>。",
+                format!("{csproj_name} 是类库项目（OutputType=Library）"),
+                "类库生成供其他程序引用的 .dll。自动配置需要可独立启动的应用入口。".into(),
+                "请选择包含可执行入口的控制台应用或 WPF 应用文件夹。",
             ));
         }
         PropState::Missing => {
@@ -452,9 +503,9 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
                 &fingerprint,
                 existing_id,
                 "class_library_project",
-                format!("{csproj_name} 未声明 <OutputType>Exe</OutputType>（默认为类库）"),
+                format!("{csproj_name} 未声明可执行的 OutputType（默认为类库）"),
                 "SDK 风格 C# 项目未声明 OutputType 时默认按类库（Library）编译，不会生成可独立启动的应用入口。".into(),
-                "请选择控制台应用项目目录；若该项目确为控制台程序，请在 .csproj 的 <PropertyGroup> 中添加 <OutputType>Exe</OutputType> 后重新选择。",
+                "请选择包含明确 OutputType 声明的应用项目目录。",
             ));
         }
         PropState::Present(v) if v.eq_ignore_ascii_case("WinExe") => {
@@ -463,8 +514,8 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
                 existing_id,
                 "winexe_project",
                 format!("{csproj_name} 声明为窗口程序（OutputType=WinExe）"),
-                "首版零配置引导仅支持控制台应用（OutputType=Exe）。".into(),
-                "请选择控制台应用项目，或为该窗口程序手动添加 contain.environment.json。",
+                "此窗口程序缺少明确的 WPF 声明（UseWPF=true）。".into(),
+                "请为该窗口程序手动提供 contain.environment.json。",
             ));
         }
         PropState::Present(v) => {
@@ -473,7 +524,7 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
                 existing_id,
                 "unsupported_output_type",
                 format!("不支持的输出类型 OutputType={v}"),
-                "仅支持明确声明 <OutputType>Exe</OutputType> 的控制台应用。".into(),
+                "可自动配置的组合为控制台 Exe 或 WPF WinExe。".into(),
                 "请核对 .csproj 中的 <OutputType> 设置。",
             ));
         }
@@ -484,7 +535,7 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
                 "dynamic_output_type",
                 format!("{csproj_name} 的 <OutputType> 依赖条件或动态属性"),
                 reason,
-                "请在 .csproj 中使用字面量 <OutputType>Exe</OutputType> 明确声明控制台输出类型。",
+                "请在 .csproj 中明确声明应用的输出类型，或为此项目提供 contain.environment.json。",
             ));
         }
     }
@@ -746,6 +797,26 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
     ];
     let publish_command = format!("dotnet {}", publish_args.join(" "));
 
+    let mut artifacts = vec![
+        entry_exe.clone(),
+        format!("{assembly_name}.dll"),
+        format!("{assembly_name}.deps.json"),
+        format!("{assembly_name}.runtimeconfig.json"),
+        "coreclr.dll".into(),
+    ];
+    let (application_type, type_source) = if use_wpf {
+        artifacts.push("PresentationFramework.dll".into());
+        (
+            "WPF 桌面应用",
+            format!("依据 {csproj_name} 声明的 OutputType=WinExe 和 UseWPF=true"),
+        )
+    } else {
+        (
+            "控制台应用 (OutputType=Exe)",
+            format!("依据 {csproj_name} 声明的 <OutputType>Exe</OutputType>"),
+        )
+    };
+
     let proposed = Manifest {
         schema_version: 1,
         target: "windows-x64".into(),
@@ -762,13 +833,7 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
         }],
         verify: vec![],
         artifact_dir: Some(publish_dir.clone()),
-        artifacts: vec![
-            entry_exe.clone(),
-            format!("{assembly_name}.dll"),
-            format!("{assembly_name}.deps.json"),
-            format!("{assembly_name}.runtimeconfig.json"),
-            "coreclr.dll".into(),
-        ],
+        artifacts,
         installer: Some(InstallerSpec {
             app_id: None,
             app_name: Some(app_name.clone()),
@@ -792,8 +857,8 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
         },
         OnboardingEvidenceField {
             label: "应用类型".into(),
-            value: "控制台应用 (OutputType=Exe)".into(),
-            source: format!("依据 {csproj_name} 声明的 <OutputType>Exe</OutputType>"),
+            value: application_type.into(),
+            source: type_source,
         },
         OnboardingEvidenceField {
             label: "目标框架与 SDK 要求".into(),
@@ -1086,33 +1151,30 @@ fn resolve_single_static_property(parsed: &ParsedCsproj, key_lower: &str) -> Pro
     let Some(entries) = parsed.properties.get(key_lower) else {
         return PropState::Missing;
     };
-    let non_empty: Vec<&RawPropertyEntry> = entries
-        .iter()
-        .filter(|e| !e.value.trim().is_empty() || e.conditional || e.dynamic_expr)
-        .collect();
-    if non_empty.is_empty() {
-        return PropState::Missing;
-    }
-    if non_empty.iter().any(|e| e.conditional) {
+    if entries.iter().any(|e| e.conditional) {
         return PropState::DynamicOrConditional(format!(
-            "属性 {key_lower} 带有 MSBuild Condition 条件判断，无法在只读模式下静态唯一确定。"
+            "属性 {key_lower} 依赖 MSBuild 条件或目标，无法从静态声明确定。"
         ));
     }
-    if non_empty.iter().any(|e| e.dynamic_expr) {
+    if entries.iter().any(|e| e.dynamic_expr) {
         return PropState::DynamicOrConditional(format!(
             "属性 {key_lower} 使用了 $(...) 或 @(...) MSBuild 动态表达式，无法在只读模式下静态求值。"
         ));
     }
-    let first = non_empty[0].value.trim();
-    if non_empty.iter().any(|e| e.value.trim() != first) {
+    let first = entries.first().map_or("", |e| e.value.trim());
+    if entries.iter().any(|e| e.value.trim() != first) {
         return PropState::DynamicOrConditional(format!(
-            "属性 {key_lower} 在多个 <PropertyGroup> 中声明了不同值，无法静态确定采用哪一个。"
+            "属性 {key_lower} 有多个不同的声明值，无法静态确定采用哪一个。"
         ));
     }
-    PropState::Present(first.to_string())
+    if first.is_empty() {
+        PropState::Missing
+    } else {
+        PropState::Present(first.to_string())
+    }
 }
 
-fn parse_supported_console_tfm(tfm: &str) -> Option<u32> {
+fn parse_supported_tfm(tfm: &str) -> Option<u32> {
     let trimmed = tfm.trim().to_ascii_lowercase();
     let rest = trimmed.strip_prefix("net")?;
     let (ver_part, os_suffix) = match rest.split_once('-') {
@@ -1132,6 +1194,32 @@ fn parse_supported_console_tfm(tfm: &str) -> Option<u32> {
         return None;
     }
     Some(major)
+}
+
+fn inherited_build_file(project_root: &Path) -> Result<Option<&'static str>> {
+    let project = project_root.canonicalize()?;
+    for ancestor in project.ancestors().skip(1) {
+        for name in ["Directory.Build.props", "Directory.Build.targets"] {
+            if ancestor.join(name).try_exists()? {
+                return Ok(Some(name));
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn is_supported_wpf_tfm(tfm: &str, major: u32) -> bool {
+    let normalized = tfm.to_ascii_lowercase();
+    let prefix = format!("net{major}.0-windows");
+    let Some(platform_version) = normalized.strip_prefix(&prefix) else {
+        return false;
+    };
+    major >= 8
+        && (platform_version.is_empty()
+            || ((2..=4).contains(&platform_version.split('.').count())
+                && platform_version.split('.').all(|part| {
+                    part.bytes().all(|b| b.is_ascii_digit()) && part.parse::<u16>().is_ok()
+                })))
 }
 
 fn detect_host_sdk_directories_readonly(min_major: u32) -> Vec<String> {
@@ -1218,25 +1306,52 @@ fn parse_csproj_xml(raw: &str) -> std::result::Result<ParsedCsproj, String> {
         parsed.has_import = true;
     }
 
-    let mut rest = cleaned.as_str();
-    while let Some(pg_idx) = find_tag_open(rest, "PropertyGroup") {
-        let after_pg_name = &rest[pg_idx + "<PropertyGroup".len()..];
-        let Some(pg_gt) = find_tag_end(after_pg_name) else {
-            return Err("<PropertyGroup> 标签未闭合。".into());
-        };
-        let pg_attrs = &after_pg_name[..pg_gt];
-        let group_conditional = extract_xml_attr(pg_attrs, "Condition").is_some();
-        if pg_attrs.trim_end().ends_with('/') {
-            rest = &after_pg_name[pg_gt + 1..];
+    // Properties inside Choose/When and Target are not unconditional project
+    // declarations. Track the enclosing elements while locating PropertyGroups.
+    let mut parents = vec!["Project"];
+    let mut rest = &proj_after[proj_gt + 1..];
+    while let Some(lt) = rest.find('<') {
+        let after_lt = &rest[lt + 1..];
+        if let Some(cdata) = after_lt.strip_prefix("![CDATA[") {
+            let (_, remaining) = cdata.split_once("]]>").ok_or("CDATA 缺少结束标记。")?;
+            rest = remaining;
             continue;
         }
-        let body_start = &after_pg_name[pg_gt + 1..];
-        let Some(close_pg) = body_start.find("</PropertyGroup>") else {
-            return Err("<PropertyGroup> 缺少闭合标签 </PropertyGroup>。".into());
-        };
-        let group_body = &body_start[..close_pg];
-        parse_property_group_body(group_body, group_conditional, &mut parsed.properties)?;
-        rest = &body_start[close_pg + "</PropertyGroup>".len()..];
+        let gt = find_tag_end(after_lt).ok_or("XML 标签未闭合。")?;
+        let element = after_lt[..gt].trim_end();
+        rest = &after_lt[gt + 1..];
+        if let Some(name) = element.strip_prefix('/') {
+            if parents.pop() != Some(name.trim()) {
+                return Err(format!("XML 闭合标签 </{name}> 与起始标签不匹配。"));
+            }
+            continue;
+        }
+        if parents.is_empty() {
+            return Err("项目 XML 包含多个根节点。".into());
+        }
+        let name_end = element
+            .find(|c: char| c.is_whitespace() || c == '/')
+            .unwrap_or(element.len());
+        let (name, attrs) = element.split_at(name_end);
+        if name.eq_ignore_ascii_case("ProjectReference") {
+            parsed.has_project_reference = true;
+        }
+        if attrs.ends_with('/') {
+            continue;
+        }
+        if name == "PropertyGroup" {
+            let conditional = parents.len() != 1 || extract_xml_attr(attrs, "Condition").is_some();
+            let (group, remaining) = rest
+                .split_once("</PropertyGroup>")
+                .ok_or("<PropertyGroup> 缺少闭合标签。")?;
+            parse_property_group_body(group, conditional, &mut parsed.properties)?;
+            rest = remaining;
+        } else {
+            parents.push(name);
+        }
+    }
+    if !parents.is_empty() {
+        return Err("项目 XML 缺少闭合标签。".into());
     }
 
     Ok(parsed)
