@@ -15,7 +15,6 @@ repository = "https://github.com/LuckyLivio/Contain"
 [workspace.dependencies]
 anyhow = "1"
 blake3 = "1"
-chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 notify = "8"
 # Preserve the existing native cache and checked u64 SQL conversions explicitly.

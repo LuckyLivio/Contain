@@ -1,8 +1,8 @@
 //! Small Win32 wrappers. All owned handles are closed in this module.
-use chrono::{DateTime, Utc};
 use std::mem::{size_of, zeroed};
 use std::os::windows::io::{AsHandle, AsRawHandle, BorrowedHandle, FromRawHandle, OwnedHandle};
 use std::ptr::null_mut;
+use std::time::{SystemTime, UNIX_EPOCH};
 use windows_sys::Win32::Foundation::{
     CloseHandle, FILETIME, GetLastError, INVALID_HANDLE_VALUE, WAIT_TIMEOUT,
 };
@@ -18,15 +18,55 @@ use windows_sys::Win32::System::Threading::*;
 const EPOCH: u64 = 116_444_736_000_000_000;
 
 pub fn now_ticks() -> u64 {
-    (Utc::now().timestamp_nanos_opt().unwrap_or(0) / 100) as u64 + EPOCH
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(d) => (d.as_nanos() / 100) as u64 + EPOCH,
+        Err(e) => EPOCH.saturating_sub((e.duration().as_nanos() / 100) as u64),
+    }
 }
 
 pub fn timestamp(ticks: u64) -> String {
     let nanos = (i128::from(ticks) - i128::from(EPOCH)) * 100;
     let secs = nanos.div_euclid(1_000_000_000) as i64;
-    DateTime::<Utc>::from_timestamp(secs, nanos.rem_euclid(1_000_000_000) as u32)
-        .map(|time| time.to_rfc3339())
-        .unwrap_or_default()
+    let subsec_nanos = nanos.rem_euclid(1_000_000_000) as u32;
+
+    let days = secs.div_euclid(86_400);
+    let sec_of_day = secs.rem_euclid(86_400) as u32;
+    let hour = sec_of_day / 3_600;
+    let minute = (sec_of_day % 3_600) / 60;
+    let second = sec_of_day % 60;
+
+    // Proleptic Gregorian calendar conversion (Howard Hinnant's civil_from_days)
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = (yoe as i64) + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let month = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32;
+    let year = if month <= 2 { y + 1 } else { y };
+
+    let year_prefix = if (0..=9_999).contains(&year) {
+        format!("{year:04}")
+    } else if year > 9_999 {
+        format!("+{year}")
+    } else {
+        format!("-{:04}", -year)
+    };
+
+    // Preserve exact AutoSi fractional-second formatting (0, 3, 6, or 9 digits) + "+00:00"
+    let frac = if subsec_nanos == 0 {
+        String::new()
+    } else if subsec_nanos.is_multiple_of(1_000_000) {
+        format!(".{:03}", subsec_nanos / 1_000_000)
+    } else if subsec_nanos.is_multiple_of(1_000) {
+        format!(".{:06}", subsec_nanos / 1_000)
+    } else {
+        format!(".{subsec_nanos:09}")
+    };
+
+    format!("{year_prefix}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}{frac}+00:00")
 }
 
 fn ticks(time: FILETIME) -> u64 {
@@ -602,5 +642,39 @@ mod identity_tests {
             }
         }
         assert!(found);
+    }
+
+    #[test]
+    fn filetime_rfc3339_preserves_historical_contracts_and_autosi_precision() {
+        let cases = [
+            (0_u64, "1601-01-01T00:00:00+00:00"),
+            (1, "1601-01-01T00:00:00.000000100+00:00"),
+            (EPOCH - 1, "1969-12-31T23:59:59.999999900+00:00"),
+            (EPOCH, "1970-01-01T00:00:00+00:00"),
+            (EPOCH + 10_000, "1970-01-01T00:00:00.001+00:00"),
+            (EPOCH + 10, "1970-01-01T00:00:00.000001+00:00"),
+            (EPOCH + 12_345_678, "1970-01-01T00:00:01.234567800+00:00"),
+            (
+                EPOCH + 11_016 * 86_400 * 10_000_000,
+                "2000-02-29T00:00:00+00:00",
+            ),
+            (
+                EPOCH - 25_508 * 86_400 * 10_000_000,
+                "1900-03-01T00:00:00+00:00",
+            ),
+            (
+                134_385_045_785_933_596,
+                "2026-11-07T05:56:18.593359600+00:00",
+            ),
+            (
+                134_385_045_786_059_615,
+                "2026-11-07T05:56:18.605961500+00:00",
+            ),
+            (u64::MAX, "+60056-05-28T05:36:10.955161500+00:00"),
+        ];
+        for (ticks, expected) in cases {
+            assert_eq!(timestamp(ticks), expected, "tick={ticks}");
+        }
+        assert!(now_ticks() > 134_000_000_000_000_000);
     }
 }
