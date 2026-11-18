@@ -216,3 +216,29 @@ Windows 实测通过。
   - 复用固定 `.NET SDK 10.0.404` 隔离测试环境与声明明确构建及输出 SHA-256 验证步骤的小型 `.NET` 控制台项目完成两项实包验收：
     1. **成功场景**：从尚不存在的输出目录开始，界面预览步骤与展开命令正常，点击“开始构建”生成可执行程序并通过输出摘要验证；“打开产物文件夹”准确定位到实际输出目录，独立运行生成程序得到预定输出。
     2. **失败与同界面恢复场景**：在保留上一步旧产物的隔离副本中注入确定性编译错误（`CS0029`），点击构建后明确报告构建步骤失败并展示具体编译器错误，后续验证步骤显示“未执行”，且不因旧产物存在而误报成功或显示打开产物入口；修正源码后在同一窗口点击“再次构建”恢复通过。
+
+## 桌面端只读“检查交付包”页面与实包三场景验收补充（`feat/desktop-package-check`）
+
+在保留 `delivery-build-01`、`delivery-envcheck-02`、`delivery-envcheck-01` 与 `delivery-04` 原包不变的前提下，于代码修订 `73ed7d02ac76b8a3f9131cfecac565c7649d2579` 在 WPF 导航栏新增“检查交付包”页面并产出新候选包：
+
+- **功能与安全边界**：
+  - 用户选择 `.zip` 交付包后，自动查找同目录 `package-spec.json` 并显示采用的清单名称；同目录无清单时提示缺少交付清单并一句话说明其用途，提供“选择校验清单”入口，绝不根据待测 ZIP 临时伪造预期哈希。
+  - 从应用所在目录调用随包 `contain-workflow.exe verify` 读取结构化 `report.json`（`schema 1 / package`），选择与检查全程不传 `--run`、不解压且不启动包内程序。
+  - 界面将“文件校验通过／失败”与“启动未测试”并列分开展示：通过时列出实际核对的项目（整体 SHA-256、主入口 PE x64 头、必需文件数量、包内 `CONTENTS.json` 与自检程序存在性）；失败时优先提示可处理原因（如“这份清单对应另一个 ZIP”或“缺少 `coreclr.dll`”）并提供“更换校验清单”；详细哈希与技术报告默认折叠；切换 ZIP 时丢弃前序结果，页面始终绑定当前文件。
+- **候选包冻结身份（`source_sha = 73ed7d02ac76b8a3f9131cfecac565c7649d2579`）**：
+  - 桌面候选包 `contain-source-windows-x64.zip`：`2a1292cd266b9f34d82f8c36866cdbbe09ee0bc20a61913477f6c0d77d18eeda`
+    （`Contain.Viewer.exe`：`2ce14e4174482ce38dd4354816823afa9c7334fd22d323851830d47ea0a234f0`，
+    `contain.exe`：`063d0ef2ca08a10ab859e7be0b9768f564e4bfaa8ad1b0c72a10c39b97c03385`，
+    随包 `contain-workflow.exe`：`efc4dec7eacd30695fb74d834b0e71867ac5a6ba027b7ed57009b8e3a51b8199`，
+    `package-spec.json`：`cc0fe4a431e231a96eb484de500f499281327132fc134008e8665189598f5e9e`）。
+  - 独立 CLI 包 `contain-workflow-windows-x64.zip`：`68ba0081f89361d96e47fe3bfaed06827b5be70dac1121b5f7f3d5c217fad95a`
+    （`contain-workflow.exe`：`5ff1dd8d382319d0f7feeb3b794099e8b62991f9b8e34a22e59b1507f827506e`，
+    `package-spec.json`：`ec297a35bac78cfe984d9f31996092683a2ee85955eb83147b6f70b96bdbfc9a`）。
+- **最终 ZIP 解压 `Contain.Viewer.exe` 实测结果**：
+  - 双包 `verify --run`（带空格工作目录）均退出 `0`；桌面模型回归 **53/53** 通过，导航控件回归 **12/12** 通过，`contain-workflow` **40/40** 通过。
+  - 从带空格外部目录启动最终桌面包中的 `Contain.Viewer.exe` 完成三场景与构建回归核验（全部 734 项报告检查条目与独立 CLI 报告逐条一致）：
+    1. 选择保留的 `delivery-build-01` 原始桌面 ZIP：自动匹配同目录 `package-spec.json`，显示“文件校验通过”与“启动未测试”，技术详情默认折叠。
+    2. 选择移除了 `coreclr.dll` 的隔离副本并继续配对原始清单：显示“文件校验失败”与“启动未测试”，明确提示压缩包身份（SHA-256）不匹配及缺少 `coreclr.dll`，`delivery-build-01` 原包哈希保持未变。
+    3. 选择单独放入带空格目录的正确 ZIP：界面提示缺少 `package-spec.json` 并说明其用途，手动指定原配清单后立即完成核对并显示“文件校验通过”与“启动未测试”。
+    4. 同窗口切换回“检查项目环境”执行 `.NET` 控制台样例构建回归，显示“构建通过”。
+  - 当前机器为已安装开发工具的开发机，未具备独立的从未安装开发工具 Windows x64 接收机环境，干净快照 B 接收机实测仍单列为**待验证**。
