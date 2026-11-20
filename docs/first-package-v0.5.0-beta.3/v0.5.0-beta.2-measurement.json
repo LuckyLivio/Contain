@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "protocol": "contain-first-package-measurement-1",
+  "status": "passed",
+  "scope": "From first ready product window through displayed Setup; excludes launch, close and installer acceptance.",
+  "workflow_sha": "0e6f2db8f39420481b24fd1781f1cacc9400d9bd",
+  "run_id": "44735848078",
+  "product_source_sha": "18782fc4e8cfd91df4d60fa339b77070236f130a",
+  "viewport": {
+    "width_px": 960,
+    "height_px": 650,
+    "x": 30,
+    "y": 30
+  },
+  "observed_window": {
+    "width_px": 960,
+    "height_px": 650
+  },
+  "last_operation": "verify_output_folder",
+  "pages": [
+    "records",
+    "project"
+  ],
+  "page_transitions": 1,
+  "semantic_steps": 6,
+  "semantic_actions": [
+    "CheckProjectEnvironment",
+    "PickProjectFolder",
+    "ConfirmOnboardingButton",
+    "StartEnvironmentCheck",
+    "StartProjectBuild",
+    "GenerateInstallerButton"
+  ],
+  "pointer_clicks": 8,
+  "folder_entries": 1,
+  "keyboard_operations": 3,
+  "scroll_pages": 3,
+  "inputs": [
+    {
+      "ordinal": 1,
+      "kind": "mouse_click_button",
+      "control": "CheckProjectEnvironment",
+      "page": "records"
+    },
+    {
+      "ordinal": 2,
+      "kind": "mouse_click_open_picker",
+      "control": "PickProjectFolder",
+      "page": "project"
+    },
+    {
+      "ordinal": 3,
+      "kind": "mouse_click_path_edit",
+      "control": "PickProjectFolder",
+      "page": "project"
+    },
+    {
+      "ordinal": 4,
+      "kind": "key_chord_select_all",
+      "control": "PickProjectFolder",
+      "page": "project"
+    },
+    {
+      "ordinal": 5,
+      "kind": "type_folder_path",
+      "control": "PickProjectFolder",
+      "page": "project"
+    },
+    {
+      "ordinal": 6,
+      "kind": "key_tab",
+      "control": "PickProjectFolder",
+      "page": "project"
+    },
+    {
+      "ordinal": 7,
+      "kind": "mouse_click_accept_folder",
+      "control": "PickProjectFolder",
+      "page": "project"
+    },
+    {
+      "ordinal": 8,
+      "kind": "scroll_page",
+      "control": "ConfirmOnboardingButton",
+      "page": "project"
+    },
+    {
+      "ordinal": 9,
+      "kind": "mouse_click_button",
+      "control": "ConfirmOnboardingButton",
+      "page": "project"
+    },
+    {
+      "ordinal": 10,
+      "kind": "mouse_click_button",
+      "control": "StartEnvironmentCheck",
+      "page": "project"
+    },
+    {
+      "ordinal": 11,
+      "kind": "scroll_page",
+      "control": "StartProjectBuild",
+      "page": "project"
+    },
+    {
+      "ordinal": 12,
+      "kind": "mouse_click_button",
+      "control": "StartProjectBuild",
+      "page": "project"
+    },
+    {
+      "ordinal": 13,
+      "kind": "scroll_page",
+      "control": "GenerateInstallerButton",
+      "page": "project"
+    },
+    {
+      "ordinal": 14,
+      "kind": "mouse_click_button",
+      "control": "GenerateInstallerButton",
+      "page": "project"
+    }
+  ],
+  "after_setup": {
+    "folder_button_clicked": true,
+    "viewer_reported_exact_folder": true,
+    "explorer_opened_exact_folder": true,
+    "button_geometry": "owned_main_window_reached"
+  },
+  "screenshots": [
+    {
+      "stage": "first-launch",
+      "page": "records",
+      "file": "first-launch.png",
+      "sha256": "9169a6978dac54e72055d2769dfa44cf66666ced18dce85d2be7df52f0035e70",
+      "width": 960,
+      "height": 650,
+      "dpi": 96
+    },
+    {
+      "stage": "project-preview",
+      "page": "project",
+      "file": "project-preview.png",
+      "sha256": "54b86bf9617e05883f8b92a1093fa90fb396c4672ad94259ccdc5aa8e7537040",
+      "width": 960,
+      "height": 650,
+      "dpi": 96
+    },
+    {
+      "stage": "package-complete",
+      "page": "project",
+      "file": "package-complete.png",
+      "sha256": "93a2ed51099a5c8b539eef5328a249a3de407a2520f19c7263068f789f3a5a08",
+      "width": 960,
+      "height": 650,
+      "dpi": 96
+    }
+  ]
+}
