@@ -12,13 +12,13 @@
 
 本版已在 GitHub 托管 Windows Server 2022 x64 上实测安装、桌面启动、示例记录读取和卸载。无开发工具的干净机交接与完全断网试装列入稳定版前的兼容性验证。[验收记录](docs/beta05-release.md)
 
-## Beta.2 开发进度：单项目 WPF 应用
+## v0.5.0-beta.2 候选验收
 
 在本分支的「检查项目环境」中选择单项目 WPF 应用目录，预览应用类型和入口 EXE。点击「使用此配置」后生成 `contain.environment.json`，随后可以检查环境、构建并生成该应用自己的安装包。首次预览只读取项目文件。
 
 支持使用 `Microsoft.NET.Sdk`、显式声明 `OutputType=WinExe` 与 `UseWPF=true` 的独立应用，目标框架为单个 `net8.0-windows` 或更高版本。入口默认采用项目文件名，也支持显式的 `AssemblyName`。项目引用、外部构建属性、混合 UI 框架和条件属性需要手动清单。
 
-Windows x64 已实测带独立 `AssemblyName` 的 WPF 模板。从只读预览、构建和组包，到使用生成的 Setup 安装、通过快捷方式启动响应正常的主窗口，再到标准卸载，均已通过。构建记录和安装收据核对了同一入口 EXE 的摘要。[Windows 验收](https://github.com/LuckyLivio/Contain/actions/runs/44695075267)
+已在 GitHub 托管 Windows x64 上从候选安装的 Contain 窗口完成整个打包流程，并验证 Beta.1 原位升级后能打开原有记录。[候选验收记录](docs/beta05-beta2-release.md)
 
 ## 接手源码、恢复开发环境
 
