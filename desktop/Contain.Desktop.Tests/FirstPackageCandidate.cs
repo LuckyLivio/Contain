@@ -90,7 +90,8 @@ internal static class FirstPackageCandidate
             checks[stage] = "passed";
             stage = "check_environment";
             await TextEquals("FirstPackageAction", "构建并生成安装包", 150);
-            await TextContains("FirstPackageNextStep", "dotnet publish");
+            await TextContains("FirstPackageNextStep", "将构建此项目");
+            await TextContains("FirstPackageNextStep", "请确认信任此项目");
             Require(!Directory.Exists(Path.Combine(project, "target", "workflow", "publish")), "build_ran_before_consent");
             checks[stage] = "passed";
 
@@ -101,26 +102,39 @@ internal static class FirstPackageCandidate
             checks[stage] = "passed";
 
             stage = "package_project";
-            await TextEquals("FirstPackageAction", "打开安装包文件夹", 360);
+            const string openFolderButton = "FirstPackageOpenFolder";
+            await TextEquals(openFolderButton, "打开安装包文件夹", 360);
             var setupName = assembly + "-Setup-x64.exe";
-            await TextContains("FirstPackageResultName", setupName);
-            control = "FirstPackageResultPath";
-            var installer = Path.GetFullPath((await ui.TextAsync(control)).Trim());
-            var outputRoot = Path.Combine(project, "target", "workflow", "installers") + Path.DirectorySeparatorChar;
-            Require(installer.StartsWith(outputRoot, StringComparison.OrdinalIgnoreCase) && File.Exists(installer) &&
-                Path.GetFileName(installer) == setupName, "displayed_installer_mismatch");
+            await TextEquals("FirstPackageResultName", setupName, 30);
+            await measure.ShotAsync("package-complete");
+            Require(await ui.VisibleInOwnedViewportAsync(openFolderButton) && await ui.VisibleInOwnedViewportAsync("FirstPackageResultName"),
+                "success_action_or_filename_outside_viewport");
+            Require(await ui.CollapsedAsync("FirstPackageDetails") && !await ui.VisibleAsync("FirstPackageResultPath")
+                && !await ui.VisibleAsync("FirstPackageAction") && !await ui.VisibleAsync("FirstPackageNextStep"),
+                "success_details_or_old_action_visible");
+
+            var outputRoot = Path.Combine(project, "target", "workflow", "installers");
+            var outputs = Directory.GetDirectories(outputRoot, "installer-*");
+            Require(outputs.Length == 1, "expected_one_output_directory");
+            var installer = Path.Combine(outputs[0], setupName);
+            using var generatedReceipt = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(outputs[0], "installer-receipt.json")));
+            var generated = generatedReceipt.RootElement;
+            Require(generated.GetProperty("installer_file").GetString() == setupName && File.Exists(installer), "generated_setup_mismatch");
+            string digest;
+            using (var artifact = File.OpenRead(installer))
+                digest = Convert.ToHexString(SHA256.HashData(artifact)).ToLowerInvariant();
+            Require(generated.GetProperty("installer_sha256").GetString() == digest, "generated_setup_digest");
             setupRelative = Path.GetRelativePath(project, installer);
-            await measure.ShotAsync("package-complete", "FirstPackageResultName");
 
             // Folder opening is verified after the timed path has produced its first installer.
-            control = "FirstPackageAction";
-            await measure.VerifyOutputFolderAsync(control, Path.GetDirectoryName(installer)!);
+            control = openFolderButton;
+            await measure.VerifyOutputFolderAsync(control, outputs[0], alreadyVisible: true);
             openFolder = true;
             control = "FirstPackageDetails";
             await ui.ExpandAsync(control);
+            await TextEquals("FirstPackageResultPath", installer, 30);
             await TextContains("FirstPackageBuildCommand", "dotnet publish");
-            using (var artifact = File.OpenRead(installer))
-                await TextContains("FirstPackageReceipt", Convert.ToHexString(SHA256.HashData(artifact)).ToLowerInvariant());
+            await TextContains("FirstPackageReceipt", digest);
             await ui.CloseAsync();
             Require(ui.HasExited && ui.ExitCode == 0, "installed_viewer_close_failed");
             checks[stage] = "passed";
@@ -130,7 +144,7 @@ internal static class FirstPackageCandidate
             {
                 control = id;
                 await ui.UntilAsync(stage, id, async () => (await ui.TryTextAsync(id))?.Trim() == expected &&
-                    (id != "FirstPackageAction" || await ui.EnabledAsync(id)),
+                    (id is not ("FirstPackageAction" or "FirstPackageOpenFolder") || await ui.EnabledAsync(id)),
                     TimeSpan.FromSeconds(seconds));
             }
             async Task TextContains(string id, string expected)

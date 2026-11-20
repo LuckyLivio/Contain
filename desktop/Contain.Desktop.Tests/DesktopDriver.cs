@@ -238,6 +238,10 @@ internal sealed class DesktopDriver : IDisposable
                 targetRealized, errorType is null, errorType));
         }
     }
+    internal Task<bool> CollapsedAsync(string id) => Ui(id, () =>
+        ((ExpandCollapsePattern)Required(id).GetCurrentPattern(ExpandCollapsePattern.Pattern)).Current.ExpandCollapseState
+        == ExpandCollapseState.Collapsed);
+
     internal Task ExpandAsync(string id) => Ui(id, () =>
     {
         var element = Required(id);
@@ -606,7 +610,7 @@ internal sealed class DesktopDriver : IDisposable
                 var unreadable = false;
                 try { if (node.TryGetCurrentPattern(ValuePattern.Pattern, out var value)) text += " " + ((ValuePattern)value).Current.Value; }
                 catch (InvalidOperationException) { unreadable = true; }
-                if (!unreadable && !System.Text.RegularExpressions.Regex.IsMatch(text, @"(?i)[A-Z]:[\\/](?!ContainDemo[\\/])")) continue;
+                if (!unreadable && !ScreenshotPrivacy.ContainsHostPath(text)) continue;
                 var rect = node.Current.BoundingRectangle;
                 if (!rect.IsEmpty)
                     overlay.FillRectangle(Brushes.DarkGray, (float)(rect.X - bounds.Left), (float)(rect.Y - bounds.Top),

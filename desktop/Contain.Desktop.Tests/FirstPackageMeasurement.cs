@@ -18,6 +18,7 @@ internal sealed class FirstPackageMeasurement(DesktopDriver ui, string output)
 
     internal async Task StartAsync()
     {
+        ScreenshotPrivacy.VerifyContract();
         operation = "resize";
         await ui.ResizeAsync(Width, Height);
         await ui.UntilAsync("measurement_viewport", "window", async () =>
@@ -80,12 +81,12 @@ internal sealed class FirstPackageMeasurement(DesktopDriver ui, string output)
         shots.Add(new { stage, page, file = shot.Name, sha256 = shot.Sha256, width = shot.Width, height = shot.Height, dpi = shot.Dpi });
     }
 
-    internal async Task VerifyOutputFolderAsync(string control, string folder)
+    internal async Task VerifyOutputFolderAsync(string control, string folder, bool alreadyVisible = false)
     {
         operation = "verify_output_folder";
         folderControl = control;
         if (ExplorerShows(folder)) throw new AssertionException("folder_already_open");
-        await RevealAsync(control, countInput: false, fullyVisible: true);
+        if (!alreadyVisible) await RevealAsync(control, countInput: false, fullyVisible: true);
         await ui.ClickVisibleButtonAsync(control);
         folderButtonClicked = true;
         await ui.UntilAsync("verify_folder_action", "ShellStatus", async () =>
