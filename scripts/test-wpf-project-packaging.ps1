@@ -13,13 +13,14 @@ $Cli = (Get-Item -LiteralPath $Cli).FullName
 $Iscc = (Get-Item -LiteralPath $Iscc).FullName
 if (Test-Path -LiteralPath $OutputDirectory) { throw 'Choose a fresh output directory.' }
 $out = (New-Item -ItemType Directory -Path $OutputDirectory).FullName
-$name = 'WpfSmoke' + [guid]::NewGuid().ToString('N').Substring(0,12)
-$project = Join-Path ([IO.Path]::GetTempPath()) $name
+$projectName = 'WpfSmoke' + [guid]::NewGuid().ToString('N').Substring(0,12)
+$assemblyName = "${projectName}Desktop"
+$project = Join-Path ([IO.Path]::GetTempPath()) $projectName
 $appDir = Join-Path $out 'installed fixture'
-$entry = Join-Path $appDir "$name.exe"
+$entry = Join-Path $appDir "$assemblyName.exe"
 $app = $null
 $setupStarted = $false
-$summary = [ordered]@{ status = 'failed'; stage = 'create-template'; fixture = $name }
+$summary = [ordered]@{ status = 'failed'; stage = 'create-template'; fixture = $projectName; assembly_name = $assemblyName }
 
 function Invoke-Checked([string]$Program, [string[]]$Arguments) {
     & $Program @Arguments | Out-Host
@@ -38,9 +39,15 @@ try {
     $null = New-Item -ItemType Directory -Path $project
     Push-Location $project
     try {
-        Invoke-Checked 'dotnet' @('new','wpf','--name',$name,'--output','.','--framework','net10.0','--no-restore')
+        Invoke-Checked 'dotnet' @('new','wpf','--name',$projectName,'--output','.','--framework','net10.0','--no-restore')
     } finally { Pop-Location }
-    $csproj = Join-Path $project "$name.csproj"
+    $csproj = Join-Path $project "$projectName.csproj"
+    [xml]$projectXml = Get-Content -LiteralPath $csproj -Raw
+    $wpfGroup = $projectXml.SelectSingleNode('/Project/PropertyGroup[UseWPF]')
+    $assembly = $projectXml.CreateElement('AssemblyName')
+    $assembly.InnerText = $assemblyName
+    [void]$wpfGroup.AppendChild($assembly)
+    $projectXml.Save($csproj)
     $originalProjectHash = (Get-FileHash -LiteralPath $csproj).Hash
     [xml]$window = Get-Content -LiteralPath (Join-Path $project 'MainWindow.xaml') -Raw
     $expectedTitle = $window.DocumentElement.GetAttribute('Title')
@@ -50,7 +57,10 @@ try {
     $inspect = Join-Path $out 'preview.json'
     Invoke-Checked $Cli @('onboard-dotnet','--project',$project,'--output-json',$inspect)
     $preview = Read-Json $inspect
-    if ($preview.status -ne 'ready_to_confirm' -or $preview.entry_executable -ne "$name.exe" -or
+    $type = @($preview.evidence_fields | Where-Object label -CEQ '应用类型')
+    if ($preview.status -ne 'ready_to_confirm' -or $preview.csproj_file -cne "$projectName.csproj" -or
+        $type.Count -ne 1 -or $type[0].value -cne 'WPF 桌面应用' -or
+        $preview.assembly_name -cne $assemblyName -or $preview.entry_executable -cne "$assemblyName.exe" -or
         (Test-Path -LiteralPath (Join-Path $project 'contain.environment.json'))) { throw 'Unexpected read-only preview.' }
     Invoke-Checked $Cli @('onboard-dotnet','--project',$project,'--apply','--expected-fingerprint',$preview.source_fingerprint_sha256,'--output-json',(Join-Path $out 'apply.json'))
     if ((Get-FileHash -LiteralPath $csproj).Hash -ne $originalProjectHash) { throw 'Project file changed during onboarding.' }
@@ -58,16 +68,20 @@ try {
     $summary.stage = 'check-and-build'
     Invoke-Checked $Cli @('check','--project',$project,'--safe-probes','--report',(Join-Path $out 'check'))
     Invoke-Checked $Cli @('build','--project',$project,'--safe-probes','--execute','--log-dir',(Join-Path $out 'logs'),'--report',(Join-Path $out 'build'))
+    $attestationPath = Join-Path $out 'build/build-attestation.json'
+    $attestation = Read-Json $attestationPath
+    $builtEntry = @($attestation.files | Where-Object path -CEQ "$assemblyName.exe")
+    if (!$attestation.build_passed -or $builtEntry.Count -ne 1) { throw 'Build did not attest the custom AssemblyName executable.' }
     $summary.stage = 'package'
     $setupFolder = Join-Path $out 'package'
-    Invoke-Checked $Cli @('package-installer','--project',$project,'--attestation',(Join-Path $out 'build/build-attestation.json'),'--output-dir',$setupFolder,'--iscc',$Iscc,'--report',(Join-Path $out 'packaging'))
+    Invoke-Checked $Cli @('package-installer','--project',$project,'--attestation',$attestationPath,'--output-dir',$setupFolder,'--iscc',$Iscc,'--report',(Join-Path $out 'packaging'))
     $receipt = Read-Json (Join-Path $setupFolder 'installer-receipt.json')
-    $setup = Join-Path $setupFolder "$name-Setup-x64.exe"
-    if ($receipt.entry -ne "$name.exe" -or $receipt.installer_file -ne "$name-Setup-x64.exe" -or
+    $setup = Join-Path $setupFolder "$assemblyName-Setup-x64.exe"
+    if ($receipt.entry -cne "$assemblyName.exe" -or $receipt.entry_sha256 -ne $builtEntry[0].sha256 -or $receipt.installer_file -ne "$assemblyName-Setup-x64.exe" -or
         (Get-FileHash -LiteralPath $setup).Hash -ne $receipt.installer_sha256) { throw 'Generated installer identity mismatch.' }
     $appId = [guid]::Parse($receipt.app_id)
     $shortId = $appId.ToString('N').Substring(0,8)
-    $link = Join-Path ([Environment]::GetFolderPath('Programs')) "$name ($shortId).lnk"
+    $link = Join-Path ([Environment]::GetFolderPath('Programs')) "$assemblyName ($shortId).lnk"
     $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\' + $appId.ToString('B') + '_is1'
     if ((Test-Path -LiteralPath $link) -or (Test-Path -LiteralPath $key) -or (Test-Path -LiteralPath $appDir)) {
         throw 'Fixture identity already in use.'
@@ -89,11 +103,15 @@ try {
     do {
         $app.Refresh()
         if ($app.HasExited) { throw "Installed WPF app exited before displaying its window ($($app.ExitCode))." }
-        if ($app.MainWindowHandle -ne [IntPtr]::Zero -and $app.MainWindowTitle -ceq $expectedTitle) { break }
-        if ([DateTime]::UtcNow -gt $deadline) { throw 'Installed WPF window did not appear with the expected title.' }
+        if ($app.MainWindowHandle -ne [IntPtr]::Zero -and $app.MainWindowTitle -ceq $expectedTitle -and $app.Responding) { break }
+        if ([DateTime]::UtcNow -gt $deadline) { throw 'Installed WPF process did not expose a responsive window with the expected title.' }
         Start-Sleep -Milliseconds 100
     } while ($true)
+    if ($app.MainModule.FileName -ne $entry) { throw 'Window process did not load the installed custom entry.' }
+    $summary.window_pid = $app.Id
     $summary.window_title = $app.MainWindowTitle
+    $summary.window_responding = $true
+    $summary.project_type = $type[0].value
     if (!$app.CloseMainWindow() -or !$app.WaitForExit(10000) -or $app.ExitCode -ne 0) { throw 'The WPF application did not close normally.' }
 
     $summary.stage = 'uninstall'
