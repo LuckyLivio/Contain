@@ -1,13 +1,14 @@
-name: Accept the staged Beta 2 Windows candidate
+name: Accept the staged Windows prerelease candidate
 
 on:
   push:
-    branches: [feat/wpf-project-onboarding]
+    branches: [feat/first-package-experience]
     paths:
-      - '.github/workflows/beta05-beta2-acceptance.yml'
+      - '.github/workflows/beta05-candidate-acceptance.yml'
       - 'scripts/test-prerelease-delivery.ps1'
-      - 'scripts/test-beta2-upgrade.ps1'
+      - 'scripts/test-prerelease-upgrade.ps1'
       - 'scripts/test-installed-wpf-*.ps1'
+      - 'scripts/test-first-package-candidate.ps1'
       - 'desktop/Contain.Desktop.Tests/**'
 
 permissions:
@@ -15,12 +16,15 @@ permissions:
   actions: read
 
 env:
-  CANDIDATE_SOURCE_SHA: 18782fc4e8cfd91df4d60fa339b77070236f130a
-  BUILD_WORKFLOW_SHA: 2eebc6b93c1dcce0dd027a5290ab35676011a1e7
-  BUILD_RUN_ID: '44708424263'
-  CANDIDATE_ARTIFACT_ID: '14617205538'
-  CANDIDATE_ARCHIVE_SHA256: 8b07c29e044e90f60dc0674e41c5668f2c8dcf974911cdbba127a069557c21bc
-  CANDIDATE_MANIFEST_SHA256: 0b2c308f631a8ea028a24c82e71b14bd8064048df2057389916550c3f0b5726a
+  CANDIDATE_SOURCE_SHA: e85128c99caacf3180415819c7eb6668112942aa
+  CANDIDATE_VERSION: 0.5.0-beta.3
+  UPGRADE_BASELINE_VERSION: 0.5.0-beta.2
+  UPGRADE_BASELINE_SETUP_SHA256: 4f0bd9aa89507f69e90ded3356e1c7531a4025a85b4ffbb7a662fb6ff58e7c6f
+  BUILD_WORKFLOW_SHA: d4d258259a0f1165bba59913be78e1ec4209a0ee
+  BUILD_RUN_ID: '44731120863'
+  CANDIDATE_ARTIFACT_ID: '14626368573'
+  CANDIDATE_ARCHIVE_SHA256: f687a47afaf5004972cd9fcf5b1d7500793803f8ce52f80344168684773bd91b
+  CANDIDATE_MANIFEST_SHA256: a3c1d8272ba30ec597af1185ee65c2be878f0df6a831ad17fdf9108d41a41393
 
 jobs:
   acceptance:
@@ -34,9 +38,15 @@ jobs:
           - gate: stock
             receipt: prerelease-smoke.json
           - gate: upgrade
-            receipt: beta2-upgrade.json
+            receipt: prerelease-upgrade.json
           - gate: wpf
             receipt: installed-wpf-workflow.json
+          - gate: experience-wpf
+            scenario: Wpf
+            receipt: first-package-candidate.json
+          - gate: experience-missing-inno
+            scenario: MissingInno
+            receipt: first-package-candidate.json
     env:
       ACCEPTANCE_WORKFLOW_SHA: ${{ github.workflow_sha || github.sha }}
     steps:
@@ -65,17 +75,17 @@ jobs:
           env = os.environ
           run = json.loads(subprocess.check_output(["gh", "api", f"{api}/runs/{env['BUILD_RUN_ID']}"]))
           if (run["status"] != "completed" or run["conclusion"] != "success" or run["event"] != "push"
-                  or run["head_branch"] != "feat/wpf-project-onboarding" or run["head_sha"] != env["BUILD_WORKFLOW_SHA"]
-                  or run["path"] != ".github/workflows/beta05-beta2-build.yml"):
+                  or run["head_branch"] != "feat/first-package-experience" or run["head_sha"] != env["BUILD_WORKFLOW_SHA"]
+                  or run["path"] != ".github/workflows/beta05-candidate-build.yml"):
               raise SystemExit("Unexpected candidate build run")
           url = f"{api}/artifacts/{env['CANDIDATE_ARTIFACT_ID']}"
           artifact = json.loads(subprocess.check_output(["gh", "api", url]))
           if (artifact["expired"] or artifact["workflow_run"]["id"] != run["id"]
-                  or artifact["name"] != "contain-beta2-staged-" + env["CANDIDATE_SOURCE_SHA"]
+                  or artifact["name"] != f"contain-{env['CANDIDATE_VERSION']}-staged-{env['CANDIDATE_SOURCE_SHA']}"
                   or artifact["digest"] != "sha256:" + env["CANDIDATE_ARCHIVE_SHA256"]):
               raise SystemExit("Incorrect staged artifact identity")
           temp = Path(env["RUNNER_TEMP"])
-          archive = temp / "staged-beta2.zip"
+          archive = temp / "staged-candidate.zip"
           with archive.open("xb") as f:
               subprocess.run(["gh", "api", url + "/zip"], stdout=f, check=True)
           with archive.open("rb") as f:
@@ -100,7 +110,7 @@ jobs:
                   if hashlib.file_digest(f, "sha256").hexdigest() != expected:
                       raise SystemExit(f"Digest mismatch for {name}")
           identity = json.loads((candidate / "candidate-identity.json").read_bytes())
-          if identity["source_sha"] != env["CANDIDATE_SOURCE_SHA"] or identity["version"] != "0.5.0-beta.2":
+          if identity["source_sha"] != env["CANDIDATE_SOURCE_SHA"] or identity["version"] != env["CANDIDATE_VERSION"]:
               raise SystemExit("Candidate source or version mismatch")
       - uses: actions/setup-dotnet@v4
         if: matrix.gate != 'stock'
@@ -109,13 +119,13 @@ jobs:
         with:
           global-json-file: global.json
       - name: Capture the native Windows PowerShell module path for the installed app
-        if: matrix.gate == 'wpf'
+        if: matrix.gate == 'wpf' || startsWith(matrix.gate, 'experience-')
         shell: powershell
         run: |
           $null = Get-Command Get-FileHash -ErrorAction Stop
           "CONTAIN_WINDOWS_POWERSHELL_MODULE_PATH=$env:PSModulePath" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Install the compiler for the generated WPF installer
-        if: matrix.gate == 'wpf'
+        if: matrix.gate == 'wpf' || startsWith(matrix.gate, 'experience-')
         shell: pwsh
         run: |
           $installer = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
@@ -128,6 +138,7 @@ jobs:
           if ($install.ExitCode -ne 0 -or !(Test-Path -LiteralPath "$inno/ISCC.exe")) { throw 'Inno Setup installation failed' }
           $inno >> $env:GITHUB_PATH
           "CONTAIN_ISCC_PATH=$inno/ISCC.exe" >> $env:GITHUB_ENV
+          "CONTAIN_TEST_ISCC_PATH=$inno/ISCC.exe" >> $env:GITHUB_ENV
       - name: Publish the independent UI harness
         if: matrix.gate != 'stock'
         shell: pwsh
@@ -143,22 +154,56 @@ jobs:
         shell: pwsh
         run: |
           ./scripts/test-prerelease-delivery.ps1 -CandidateDirectory "$env:RUNNER_TEMP/candidate" -EvidenceDirectory "$env:RUNNER_TEMP/stock"
-      - name: Verify the published Beta 1 to Beta 2 upgrade
+      - name: Verify the in-place upgrade from the published baseline
         if: matrix.gate == 'upgrade'
         id: upgrade
         shell: pwsh
         run: |
-          ./scripts/test-beta2-upgrade.ps1 -CandidateDirectory "$env:RUNNER_TEMP/candidate" -EvidenceDirectory "$env:RUNNER_TEMP/upgrade" -HarnessPath "$env:RUNNER_TEMP/acceptance-harness/Contain.Desktop.Tests.exe"
+          ./scripts/test-prerelease-upgrade.ps1 -CandidateDirectory "$env:RUNNER_TEMP/candidate" -EvidenceDirectory "$env:RUNNER_TEMP/upgrade" `
+              -HarnessPath "$env:RUNNER_TEMP/acceptance-harness/Contain.Desktop.Tests.exe" -CandidateVersion $env:CANDIDATE_VERSION `
+              -BaselineVersion $env:UPGRADE_BASELINE_VERSION -BaselineSetupSha256 $env:UPGRADE_BASELINE_SETUP_SHA256
       - name: Exercise the installed WPF project workflow
         if: matrix.gate == 'wpf'
         id: wpf
         shell: pwsh
         run: |
-          ./scripts/test-installed-wpf-workflow.ps1 -CandidateDirectory "$env:RUNNER_TEMP/candidate" -EvidenceDirectory "$env:RUNNER_TEMP/wpf" -HarnessPath "$env:RUNNER_TEMP/acceptance-harness/Contain.Desktop.Tests.exe"
-      - name: Upload this Windows acceptance receipt
+          ./scripts/test-installed-wpf-workflow.ps1 -ExpectedVersion $env:CANDIDATE_VERSION -CandidateDirectory "$env:RUNNER_TEMP/candidate" -EvidenceDirectory "$env:RUNNER_TEMP/wpf" -HarnessPath "$env:RUNNER_TEMP/acceptance-harness/Contain.Desktop.Tests.exe"
+      - name: Verify the first package through the installed desktop
+        if: startsWith(matrix.gate, 'experience-')
+        id: experience
+        shell: pwsh
+        env:
+          GATE: ${{ matrix.gate }}
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          ./scripts/test-first-package-candidate.ps1 -CandidateDirectory "$env:RUNNER_TEMP/candidate" -EvidenceDirectory "$env:RUNNER_TEMP/$env:GATE" `
+              -HarnessPath "$env:RUNNER_TEMP/acceptance-harness/Contain.Desktop.Tests.exe" -Scenario $env:SCENARIO
+      - name: Upload the Windows acceptance receipt
         if: ${{ !cancelled() && (steps.stock.outcome != 'skipped' || steps.upgrade.outcome != 'skipped' || steps.wpf.outcome != 'skipped') }}
         uses: actions/upload-artifact@v4
         with:
-          name: contain-beta2-windows-${{ matrix.gate }}-${{ env.CANDIDATE_SOURCE_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: contain-${{ env.CANDIDATE_VERSION }}-windows-${{ matrix.gate }}-${{ env.CANDIDATE_SOURCE_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/${{ matrix.gate }}/${{ matrix.receipt }}
+          if-no-files-found: error
+      - name: Select the public first-package evidence
+        if: ${{ !cancelled() && steps.experience.outcome != 'skipped' }}
+        shell: pwsh
+        env:
+          GATE: ${{ matrix.gate }}
+          SUCCEEDED: ${{ steps.experience.outcome == 'success' }}
+        run: |
+          $source = Join-Path $env:RUNNER_TEMP $env:GATE
+          $share = New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/first-package-public"
+          $names = @('first-package-candidate.json')
+          if ($env:SUCCEEDED -eq 'true') {
+              $names += 'first-package-measurement.json', 'first-launch.png', 'project-preview.png', 'package-complete.png'
+              if ($env:GATE -eq 'experience-missing-inno') { $names += 'missing-inno.png' }
+          }
+          foreach ($name in $names) { Copy-Item -LiteralPath (Join-Path $source $name) -Destination $share }
+      - name: Upload the first-package evidence
+        if: ${{ !cancelled() && steps.experience.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: contain-${{ env.CANDIDATE_VERSION }}-windows-${{ matrix.gate }}-${{ env.CANDIDATE_SOURCE_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/first-package-public/
           if-no-files-found: error
