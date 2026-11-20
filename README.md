@@ -4,15 +4,13 @@
 
 ## 下载 Windows 版
 
-当前公开版是 **v0.4.0-beta.1**。下载 Windows x64 便携 ZIP，完整解压后运行 `Contain.Viewer.exe`，即可记录安装行为、浏览记录并导出报告。
+**[下载 Contain v0.5.0-beta.1 安装包（Windows x64）](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.1/Contain-Setup-x64.exe)**
 
-[下载 Windows x64 便携 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/contain-0.4.0-beta.1-windows-x64.zip) · [发行说明](https://github.com/LuckyLivio/Contain/releases/tag/v0.4.0-beta.1) · [SHA-256 校验文件](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/SHA256SUMS.txt)
+运行安装包后，从开始菜单打开 **Contain**。你可以查看已有的安装记录，或选择单项目 C# 控制台应用，检查环境、构建并生成可分发的安装包。这个预发行版的安装器尚未签名。
 
-## 即将发布的 v0.5.0-beta.1
+[免安装桌面 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.1/contain-0.5.0-beta.1-windows-x64.zip) · [独立 CLI ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.1/contain-workflow-0.5.0-beta.1-windows-x64.zip) · [发行说明](https://github.com/LuckyLivio/Contain/releases/tag/v0.5.0-beta.1) · [SHA-256 校验文件](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.1/SHA256SUMS.txt)
 
-这一版提供当前用户安装的 Setup，支持将单项目 C# 控制台应用打成可分发的安装包。预发行候选的产品源码固定为 `aac52e52`。同一批 Setup 和双 ZIP 已通过 GitHub 托管 Windows x64 验收。收据记录了安装、版本、桌面启动、随包示例读取、卸载与包规格检查。[Windows 验收记录](https://github.com/LuckyLivio/Contain/actions/runs/44690323749/attempts/1) · [候选进度与历史试装记录](docs/beta05-release.md)
-
-干净 Windows 上的缺项恢复构建和断网接收机 A/B 验收保留在稳定版发布前完成。Windows 本地 A/B 验收：云端未收到最终收据。
+本版已在 GitHub 托管 Windows Server 2022 x64 上实测安装、桌面启动、示例记录读取和卸载。无开发工具的干净机交接与完全断网试装列入稳定版前的兼容性验证。[验收记录](docs/beta05-release.md)
 
 ## 接手源码、恢复开发环境
 
