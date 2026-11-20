@@ -46,7 +46,8 @@ internal sealed class DesktopDriver : IDisposable
     internal bool LiveInstallationStarted { get; set; }
     internal int ChooserInteractions { get; private set; }
 
-    internal DesktopDriver(string package, string working, string isolatedRoot, IReadOnlyDictionary<string, string>? environment = null)
+    internal DesktopDriver(string package, string working, string isolatedRoot, IReadOnlyDictionary<string, string>? environment = null,
+        bool useHostedUpgradeFixture = false)
     {
         if (!Path.IsPathFullyQualified(isolatedRoot)
             || File.ReadAllText(Path.Combine(isolatedRoot, ".contain-records-test-root")) != "Contain isolated record library test data")
@@ -58,7 +59,20 @@ internal sealed class DesktopDriver : IDisposable
         };
         start.Environment["CONTAIN_VIEWER_TEST_ROOT"] = isolatedRoot;
         if (environment is not null) foreach (var pair in environment) start.Environment[pair.Key] = pair.Value;
+        if (useHostedUpgradeFixture)
+        {
+            UpgradeRecords.CheckDefaultFixture(isolatedRoot);
+            start.Environment.Remove("CONTAIN_VIEWER_TEST_ROOT");
+        }
         process = Process.Start(start) ?? throw new IOException("Packaged desktop did not start.");
+        _ = process.Handle;
+    }
+
+    internal DesktopDriver(int installedProcessId, string expectedExecutable)
+    {
+        process = Process.GetProcessById(installedProcessId);
+        if (!string.Equals(process.MainModule?.FileName, Path.GetFullPath(expectedExecutable), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Shortcut process is not the installed viewer.");
         _ = process.Handle;
     }
 
@@ -402,15 +416,26 @@ internal sealed class DesktopDriver : IDisposable
             }, TreeWalker.RawViewWalker.GetParent, observe);
     }
 
-    internal async Task ChooseFileAsync(string action, string? path, bool save = false, bool existingRefusal = false)
+    internal Task ChooseFileAsync(string action, string? path, bool save = false, bool existingRefusal = false) =>
+        ChoosePathAsync(action, path, save, existingRefusal);
+
+    internal Task ChooseProjectFolderAsync(string path) =>
+        ChoosePathAsync("PickProjectFolder", path, save: false, existingRefusal: false);
+
+    private async Task ChoosePathAsync(string action, string? path, bool save, bool existingRefusal)
     {
         Stage = "native_picker_" + action;
         if (existingRefusal && (!save || path is null || !File.Exists(path)))
             throw new IOException("Existing-target refusal requires a deliberate existing save target.");
-        if (path is not null && (save ? !Directory.Exists(Path.GetDirectoryName(path)) || (File.Exists(path) && !existingRefusal) : !File.Exists(path)))
+        if (action == "PickProjectFolder")
+        {
+            if (!Directory.Exists(path)) throw new IOException("Expected an existing project folder.");
+        }
+        else if (path is not null && (save ? !Directory.Exists(Path.GetDirectoryName(path)) || (File.Exists(path) && !existingRefusal) : !File.Exists(path)))
             throw new IOException("Picker test target violates isolated existing/new-file precondition.");
         var expectedTitle = action switch
         {
+            "PickProjectFolder" => "选择要检查的本地项目文件夹",
             "PickInstaller" => "选择要记录的安装器", "OpenDatabase" => "打开外部记录库（只读）",
             "ExportMatches" => "导出全部匹配结果", "ExportPage" => "导出本页报告",
             _ => throw new InvalidOperationException("No fixed native picker title contract for this action.")
