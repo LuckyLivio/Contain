@@ -1,6 +1,6 @@
 [package]
 name = "contain-workflow"
-version = "0.5.0-beta.1"
+version = "0.5.0-beta.2"
 edition.workspace = true
 license.workspace = true
 description = "Source environment recovery and Windows package verification, independent of ETW"
