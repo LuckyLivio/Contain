@@ -99,6 +99,18 @@ CONTENTS 精确成员/尺寸/SHA-256 契约。`reused_core_binary=false`，core_
 source_sha 均为本次检出。外部 identity 另绑定最终 ZIP（避免 ZIP 自包含哈希循环）。
 旧 Beta.1/Beta.10 打包脚本及固定核心规则原样保留；新包不继承旧验收。
 
+发布分支集成后，在快照 A 使用生成这份 delivery 的干净检出组装候选。将
+`$sourceSha` 设为本轮确认的完整 40 位发布源码提交，安装 Inno Setup 6 后执行：
+
+```powershell
+python scripts/assemble-release-candidate.py --source-sha $sourceSha --delivery C:\ContainRuns\A-restored\delivery --output C:\ContainRuns\candidate-01
+```
+
+入口校验 A 的交接身份、双 ZIP、清单和选择器，在开发机用两份包内 CLI 各运行普通
+`check` 与 `--safe-probes`，再从已核对的桌面 ZIP 构建 Setup。新目录包含版本化双 ZIP、
+两份清单及身份、Setup 及其收据、A 的原始 `handoff.json`、`candidate-identity.json` 与
+`SHA256SUMS.txt`。保留 B 的独立收据及新 Setup 的离线试装记录。
+
 ## 快照 B：同一份 ZIP，开发工具缺失，独立验收
 
 从**另一套从未安装开发工具**的干净 Windows x64 快照开始，只复制 A 输出的两份 ZIP、

@@ -46,6 +46,27 @@ class SourcePackageTests(unittest.TestCase):
     def freeze(self):
         with patch.object(P.subprocess,'check_output',side_effect=self.process),patch.object(P.LEGACY,'validate_sample') as sample,patch.object(P.LEGACY,'copy_runtime_licenses',return_value=[]):
             result=P.freeze(self.args);sample.assert_called_once_with(self.core,self.args.fixtures);return result
+    def test_candidate_stages_the_existing_desktop_zip_and_its_cli(self):
+        candidate = load('assemble-release-candidate.py')
+        delivery = self.root / 'A-delivery'
+        self.args.output = delivery / 'desktop-delivery'
+        self.freeze()
+        identity = candidate.read_json(self.args.output / 'identity.json')
+        assets = self.root / 'assets'
+        assets.mkdir()
+        # The synthetic PE fixture cannot execute. Check exactly which bytes reach the native probe gate.
+        def probe(cli, version, work):
+            self.assertEqual(cli.read_bytes(), self.workflow_cli.read_bytes())
+            self.assertEqual(version, P.SOURCE_VERSION)
+            return {'fixture': True}
+        with patch.object(candidate, 'check_packaged_probes', side_effect=probe) as check:
+            archive, spec, staged, _ = candidate.stage_package(
+                'desktop', SOURCE, P.SOURCE_VERSION, delivery, {'desktop': identity}, assets, self.root / 'probe')
+        check.assert_called_once()
+        self.assertEqual(archive.name, f'contain-{P.SOURCE_VERSION}-windows-x64.zip')
+        self.assertEqual(candidate.digest(archive), identity['zip_sha256'])
+        self.assertEqual(candidate.digest(spec), identity['spec_sha256'])
+        self.assertEqual(candidate.read_json(staged), identity)
     def test_current_inputs_bound_without_historical_core_fallback(self):
         build=self.freeze();out=self.args.output
         self.assertEqual(build['source_sha'],SOURCE);self.assertEqual(build['core_source_sha'],SOURCE)
