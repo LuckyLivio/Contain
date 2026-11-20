@@ -216,11 +216,11 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
     {
         if (!Directory.Exists(normalizedProjectPath))
             return false;
-        if (File.Exists(Path.Combine(normalizedProjectPath, "contain.environment.json")))
-            return false;
 
         try
         {
+            if (File.Exists(Path.Combine(normalizedProjectPath, "contain.environment.json")))
+                return Directory.EnumerateFiles(normalizedProjectPath, "*.csproj", SearchOption.TopDirectoryOnly).Any();
             foreach (var file in Directory.EnumerateFiles(normalizedProjectPath, "*", SearchOption.TopDirectoryOnly))
             {
                 var ext = Path.GetExtension(file);

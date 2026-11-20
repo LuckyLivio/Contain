@@ -42,7 +42,7 @@ public sealed record BuildStepResultRow(
 /// Drives the "检查项目环境" page from folder selection and read-only environment checks
 /// through in-process manifest preview, guarded build execution, and confirmed artifact access.
 /// </summary>
-public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
+public sealed partial class EnvironmentCheckViewModel : ObservableObject, IDisposable
 {
     private const string ManifestDigestPrefix = "canonical JSON SHA-256 ";
 
@@ -449,10 +449,24 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         InspectSelectionAsync(string path, CancellationToken token) => Task.Run(async () =>
         {
             var info = service.InspectProject(path);
-            var onboarding = info.ManifestKind == ProjectManifestKind.EnvironmentManifest ? null
-                : await service.InspectDotnetOnboardingAsync(info.ProjectPath, token).ConfigureAwait(false);
+            var configured = info.ManifestKind == ProjectManifestKind.EnvironmentManifest;
+            DotnetOnboardingPreviewData? onboarding = null;
+            if (!configured || WorkflowCliEnvironmentService.HasDotnetOnboardingCandidate(info.ProjectPath))
+            {
+                try
+                {
+                    onboarding = await service.InspectDotnetOnboardingAsync(info.ProjectPath, token).ConfigureAwait(false);
+                }
+                catch (Exception error) when (configured && error is EnvironmentCheckException or IOException or UnauthorizedAccessException)
+                {
+                    // The manual manifest remains reviewable if its optional project classification fails.
+                }
+            }
             token.ThrowIfCancellationRequested();
-            var manifest = onboarding is null ? service.InspectBuildPreview(info.ProjectPath) : null;
+            var manifest = configured || onboarding is null ? service.InspectBuildPreview(info.ProjectPath) : null;
+            if (configured && (onboarding?.Status != "existing_manifest" || manifest?.Status != ManifestPreviewStatus.Valid
+                || onboarding.MatchingGeneratedManifestSha256 != manifest.RawFileSha256))
+                onboarding = null;
             return (info, onboarding, manifest);
         }, token);
 
@@ -477,12 +491,20 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
             currentProject = info;
             folderInput = info.ProjectPath;
+            if (onboarding?.MatchingGeneratedManifestSha256 is { Length: 64 } savedSha && manifest is not null)
+            {
+                savedPackagePlan = onboarding;
+                savedPackageManifestSha = savedSha;
+                ApplyManifestPreview(manifest);
+                StartManifestWatcher(info.ProjectPath);
+                return await CheckCoreAsync();
+            }
             if (onboarding is not null)
             {
                 ApplyOnboardingPreview(onboarding, info.ProjectPath);
                 StartOnboardingDirectoryWatcher(info.ProjectPath);
                 statusMessage = onboarding.Status == "ready_to_confirm"
-                    ? $"请核对“{onboarding.AppName}”的发布配置，然后点击“使用此配置”。"
+                    ? $"已读取“{onboarding.AppName}”的项目配置。"
                     : onboarding.UnsupportedTitle ?? "当前文件夹暂不能自动生成发布配置。";
                 NotifyAll();
                 return true;
@@ -534,7 +556,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
     public Task<bool> ConfirmOnboardingAsync() => Track(() => ConfirmOnboardingCoreAsync());
 
-    private async Task<bool> ConfirmOnboardingCoreAsync()
+    private async Task<bool> ConfirmOnboardingCoreAsync(bool firstPackage = false)
     {
         if (!CanConfirmOnboarding || currentProject is null || onboardingPreview is null)
             return false;
@@ -572,6 +594,14 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
                     currentProject = refreshedInfo;
                     ApplyManifestPreview(service.InspectBuildPreview(refreshedInfo.ProjectPath));
                     StartManifestWatcher(refreshedInfo.ProjectPath);
+                    if (firstPackage && applyOutcome.WroteFile && applyOutcome.SavedManifestSha256 is { Length: 64 } savedSha
+                        && currentPreview is { Status: ManifestPreviewStatus.Valid } && currentPreview.RawFileSha256 == savedSha)
+                    {
+                        savedPackagePlan = applyOutcome.Inspection;
+                        savedPackageManifestSha = savedSha;
+                        onboardingSavedNotice = $"配置已保存至：{savedFullPath}";
+                        return await CheckCoreAsync();
+                    }
                     onboardingSavedNotice = $"配置已保存至：{savedFullPath}（未修改 {csprojName}，也未覆盖原有 bin/ 或 obj/ 目录）。现在可直接点击“开始检查” → “开始构建” → “生成安装包”。";
                     statusMessage = $"已保存 {savedName}，请点击“开始检查”继续。";
                     NotifyAll();
@@ -664,7 +694,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
             var (info, fresh, manifest) = await InspectSelectionAsync(projectDir, ticket.Token);
             if (!IsStillCurrent(ticket, projectDir) || onboardingPreview is null)
                 return false;
-            if (fresh is null)
+            if (fresh is null || manifest is not null)
             {
                 DisposeOnboardingWatcher();
                 ClearOnboardingStateCore();
@@ -694,6 +724,12 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
                 {
                     statusMessage = fresh.UnsupportedTitle ?? "项目文件变更后暂不支持自动生成配置。";
                 }
+                NotifyAll();
+            }
+            else if (fresh.PackagerDetected != onboardingPreview.PackagerDetected
+                || !fresh.HostDetectedCompatibleSdks.SequenceEqual(onboardingPreview.HostDetectedCompatibleSdks))
+            {
+                onboardingPreview = fresh;
                 NotifyAll();
             }
         }
@@ -849,6 +885,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
             buildProgressText = update.FormatDisplayText(targetProject.ProjectName);
             statusMessage = buildProgressText;
             OnPropertyChanged(nameof(BuildProgressText));
+            OnPropertyChanged(nameof(FirstPackageNextStep));
             OnPropertyChanged(nameof(StatusMessage));
         });
 
@@ -1952,6 +1989,8 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         if (allPassed && execution.Receipt is { } receipt)
         {
             lastValidInstaller = receipt;
+            if (savedPackagePlan is not null)
+                savedPackagePlan = savedPackagePlan with { PackagerDetected = true };
             lastValidInstallerAt = now;
             installerMatchesCurrentBuild = true;
             installerReceiptExpanded = false;
@@ -1964,6 +2003,10 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
         var failedChecks = execution.Report.Checks.Where(static c => c.Status == "failed").ToList();
         var primary = failedChecks.FirstOrDefault();
+        installerNeedsRebuild = failedChecks.Any(check => check.Outcome is "artifacts_modified_or_stale"
+            or "manifest_changed_since_build" or "missing_publish_dir" or "missing_entry");
+        if (savedPackagePlan is not null && primary?.Outcome == "inno_setup_missing")
+            savedPackagePlan = savedPackagePlan with { PackagerDetected = false };
         var baseTitle = primary?.Outcome switch
         {
             "framework_dependent_output" => "尚不能打包：当前构建产物依赖本机 .NET 运行时",
@@ -2015,6 +2058,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
     private void ClearInstallerFailureCore()
     {
+        installerNeedsRebuild = false;
         installerFailureTitle = "";
         installerFailureSummary = "";
         installerFailureRemedy = "";
@@ -2023,6 +2067,8 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
     private void ResetProjectSession()
     {
+        savedPackagePlan = null;
+        savedPackageManifestSha = "";
         previousSnapshot = null;
         currentPreview = null;
         checkedManifestFileSha256 = "";
@@ -2106,6 +2152,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
 
     private void NotifyAll()
     {
+        NotifyFirstPackage();
         OnPropertyChanged(nameof(IsChecking));
         OnPropertyChanged(nameof(IsBuilding));
         OnPropertyChanged(nameof(IsPackaging));

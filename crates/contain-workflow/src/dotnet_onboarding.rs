@@ -54,6 +54,10 @@ pub struct DotnetOnboardingInspection {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub host_detected_compatible_sdks: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub packager_detected: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matching_generated_manifest_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publish_dir: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publish_command: Option<String>,
@@ -79,6 +83,8 @@ pub struct DotnetOnboardingApplyResult {
     pub wrote_file: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub saved_manifest_filename: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saved_manifest_sha256: Option<String>,
     pub inspection: DotnetOnboardingInspection,
 }
 
@@ -111,7 +117,18 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
 
     let manifest_path = project_root.join("contain.environment.json");
     if manifest_path.is_file() {
-        let raw_sha = sha256(&fs::read(&manifest_path)?);
+        let bytes = fs::read(&manifest_path)?;
+        let raw_sha = sha256(&bytes);
+        if let Ok(mut preview) = inspect_project_files(project_root, existing_id.clone())
+            && let Some(generated) = &preview.proposed_manifest
+            && generated_manifest_bytes(generated)? == bytes
+        {
+            preview.status = "existing_manifest".into();
+            preview.source_fingerprint_sha256 = raw_sha.clone();
+            preview.matching_generated_manifest_sha256 = Some(raw_sha);
+            preview.proposed_manifest = None;
+            return Ok(preview);
+        }
         return Ok(DotnetOnboardingInspection {
             schema_version: 1,
             protocol: "contain-dotnet-onboarding-1".into(),
@@ -129,6 +146,8 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
             sdk_requirement_summary: None,
             sdk_source: None,
             host_detected_compatible_sdks: vec![],
+            packager_detected: Some(project_installer::resolve_iscc_executable(None).is_some()),
+            matching_generated_manifest_sha256: None,
             publish_dir: None,
             publish_command: None,
             evidence_fields: vec![],
@@ -140,6 +159,13 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
         });
     }
 
+    inspect_project_files(project_root, existing_id)
+}
+
+fn inspect_project_files(
+    project_root: &Path,
+    existing_id: Option<String>,
+) -> Result<DotnetOnboardingInspection> {
     let mut root_csprojs: Vec<(String, PathBuf)> = Vec::new();
     let mut root_other_dotnet_projs: Vec<String> = Vec::new();
     let mut root_slns: Vec<String> = Vec::new();
@@ -652,7 +678,6 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
     };
 
     // global.json inspection + read-only host SDK directory check (zero subprocesses!)
-    let host_compatible_sdks = detect_host_sdk_directories_readonly(tfm_major);
     let global_json_path = project_root.join("global.json");
     let (dotnet_tool, sdk_req_summary, sdk_source_code, sdk_source_desc) = if global_json_path
         .is_file()
@@ -701,14 +726,6 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
                 )
             } else {
                 let req_ver = format!("{tfm_major}.0");
-                let host_note = if host_compatible_sdks.is_empty() {
-                    String::new()
-                } else {
-                    format!(
-                        "；本机已检测到兼容 SDK：{}",
-                        host_compatible_sdks.join(", ")
-                    )
-                };
                 let tool = Tool {
                     program: "dotnet".into(),
                     version: req_ver.clone(),
@@ -722,9 +739,7 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
                     tool,
                     format!(".NET SDK {tfm_major}.0 及以上"),
                     "global_json_and_tfm".to_string(),
-                    format!(
-                        "项目声明 TargetFramework={tfm}（含允许前滚的 global.json {ver}）{host_note}"
-                    ),
+                    format!("项目声明 TargetFramework={tfm}（含允许前滚的 global.json {ver}）"),
                 )
             }
         } else {
@@ -749,14 +764,6 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
         }
     } else {
         let req_ver = format!("{tfm_major}.0");
-        let host_note = if host_compatible_sdks.is_empty() {
-            "；本机将在点击“开始检查”时核实具体 SDK".to_string()
-        } else {
-            format!(
-                "；本机目录只读检测到兼容 SDK：{}",
-                host_compatible_sdks.join(", ")
-            )
-        };
         let tool = Tool {
             program: "dotnet".into(),
             version: req_ver,
@@ -770,12 +777,15 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
             tool,
             format!(".NET SDK {tfm_major}.0 及以上（兼容 {tfm}，不绑定特定补丁版本）"),
             "target_framework_major".to_string(),
-            format!(
-                "项目仅声明 <TargetFramework>{tfm}</TargetFramework>（无 global.json）{host_note}"
-            ),
+            format!("项目仅声明 <TargetFramework>{tfm}</TargetFramework>（无 global.json）"),
         )
     };
 
+    let exact_sdk = dotnet_tool
+        .version_policy
+        .is_none()
+        .then_some(dotnet_tool.version.as_str());
+    let host_compatible_sdks = detect_host_sdk_directories_readonly(tfm_major, exact_sdk);
     let entry_exe = format!("{assembly_name}.exe");
     let publish_dir = DEFAULT_ONBOARDING_PUBLISH_DIR.to_string();
     let publish_args = vec![
@@ -901,6 +911,8 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
         sdk_requirement_summary: Some(sdk_req_summary),
         sdk_source: Some(sdk_source_code),
         host_detected_compatible_sdks: host_compatible_sdks,
+        packager_detected: Some(project_installer::resolve_iscc_executable(None).is_some()),
+        matching_generated_manifest_sha256: None,
         publish_dir: Some(publish_dir),
         publish_command: Some(publish_command),
         evidence_fields,
@@ -910,6 +922,12 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
         unsupported_reason: None,
         actionable_next_step: None,
     })
+}
+
+fn generated_manifest_bytes(manifest: &Manifest) -> Result<Vec<u8>> {
+    let mut json_bytes = serde_json::to_vec_pretty(manifest)?;
+    json_bytes.push(b'\n');
+    Ok(json_bytes)
 }
 
 pub fn apply_onboarding(
@@ -925,6 +943,7 @@ pub fn apply_onboarding(
             status: "preserved_existing_manifest".into(),
             wrote_file: false,
             saved_manifest_filename: Some("contain.environment.json".into()),
+            saved_manifest_sha256: None,
             inspection,
         });
     }
@@ -939,6 +958,7 @@ pub fn apply_onboarding(
             status: "source_changed_refresh_required".into(),
             wrote_file: false,
             saved_manifest_filename: None,
+            saved_manifest_sha256: None,
             inspection: current,
         });
     }
@@ -950,6 +970,7 @@ pub fn apply_onboarding(
             status: "unsupported".into(),
             wrote_file: false,
             saved_manifest_filename: None,
+            saved_manifest_sha256: None,
             inspection: current,
         });
     }
@@ -959,8 +980,8 @@ pub fn apply_onboarding(
         .as_ref()
         .context("missing proposed_manifest")?;
     manifest.validate()?;
-    let mut json_bytes = serde_json::to_vec_pretty(manifest)?;
-    json_bytes.push(b'\n');
+    let json_bytes = generated_manifest_bytes(manifest)?;
+    let manifest_sha256 = sha256(&json_bytes);
 
     match fs::OpenOptions::new()
         .write(true)
@@ -978,6 +999,7 @@ pub fn apply_onboarding(
                 status: "applied".into(),
                 wrote_file: true,
                 saved_manifest_filename: Some("contain.environment.json".into()),
+                saved_manifest_sha256: Some(manifest_sha256),
                 inspection: current,
             })
         }
@@ -989,6 +1011,7 @@ pub fn apply_onboarding(
                 status: "preserved_existing_manifest".into(),
                 wrote_file: false,
                 saved_manifest_filename: Some("contain.environment.json".into()),
+                saved_manifest_sha256: None,
                 inspection: refreshed,
             })
         }
@@ -1021,6 +1044,8 @@ fn unsupported(
         sdk_requirement_summary: None,
         sdk_source: None,
         host_detected_compatible_sdks: vec![],
+        packager_detected: None,
+        matching_generated_manifest_sha256: None,
         publish_dir: None,
         publish_command: None,
         evidence_fields: vec![],
@@ -1241,7 +1266,10 @@ fn is_supported_wpf_tfm(tfm: &str, major: u32) -> bool {
                 })))
 }
 
-fn detect_host_sdk_directories_readonly(min_major: u32) -> Vec<String> {
+fn detect_host_sdk_directories_readonly(
+    min_major: u32,
+    exact_version: Option<&str>,
+) -> Vec<String> {
     let mut versions = Vec::new();
     let mut roots = Vec::new();
     if let Some(dot_root) = std::env::var_os("DOTNET_ROOT") {
@@ -1280,6 +1308,8 @@ fn detect_host_sdk_directories_readonly(min_major: u32) -> Vec<String> {
                     .all(|c| c.is_ascii_alphanumeric() || ".-+".contains(c))
                 && let Some(maj) = name.split('.').next().and_then(|s| s.parse::<u32>().ok())
                 && maj >= min_major
+                && exact_version.is_none_or(|version| version == name)
+                && entry.path().join("dotnet.dll").is_file()
                 && !versions.contains(&name)
             {
                 versions.push(name);

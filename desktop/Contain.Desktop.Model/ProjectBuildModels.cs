@@ -202,13 +202,16 @@ public sealed record DotnetOnboardingPreviewData(
     string? UnsupportedCode,
     string? UnsupportedTitle,
     string? UnsupportedReason,
-    string? ActionableNextStep);
+    string? ActionableNextStep,
+    bool? PackagerDetected = null,
+    string? MatchingGeneratedManifestSha256 = null);
 
 public sealed record DotnetOnboardingApplyOutcome(
     string Status,
     bool WroteFile,
     string? SavedManifestFilename,
-    DotnetOnboardingPreviewData Inspection);
+    DotnetOnboardingPreviewData Inspection,
+    string? SavedManifestSha256 = null);
 
 public static class DotnetOnboardingParser
 {
@@ -246,7 +249,8 @@ public static class DotnetOnboardingParser
             if (!root.TryGetProperty("inspection", out var inspEl) || inspEl.ValueKind != JsonValueKind.Object)
                 throw new EnvironmentCheckException("onboarding_contract", "项目配置写入结果缺少 inspection 对象。");
 
-            return new DotnetOnboardingApplyOutcome(status, wrote, savedFile, ParseInspectionElement(inspEl));
+            return new DotnetOnboardingApplyOutcome(status, wrote, savedFile, ParseInspectionElement(inspEl),
+                OptStr(root, "saved_manifest_sha256"));
         }
         catch (EnvironmentCheckException)
         {
@@ -320,7 +324,10 @@ public static class DotnetOnboardingParser
             OptStr(root, "unsupported_code"),
             OptStr(root, "unsupported_title"),
             OptStr(root, "unsupported_reason"),
-            OptStr(root, "actionable_next_step"));
+            OptStr(root, "actionable_next_step"),
+            root.TryGetProperty("packager_detected", out var packager)
+                && packager.ValueKind is JsonValueKind.True or JsonValueKind.False ? packager.GetBoolean() : null,
+            OptStr(root, "matching_generated_manifest_sha256"));
     }
 
     private static string? OptStr(JsonElement el, string prop) =>
