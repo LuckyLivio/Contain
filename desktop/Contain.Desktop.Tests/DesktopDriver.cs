@@ -27,6 +27,7 @@ internal sealed record CloseDiagnostic(long RequestElapsedMs, long WaitElapsedMs
 internal sealed class DesktopDriver : IDisposable
 {
     private readonly Process process;
+    private readonly bool beta2ProjectPicker;
     private readonly List<Probe> probes = [];
     private readonly List<ActionProbe> actions = [];
     private readonly List<RowSelectionProbe> rowSelections = [];
@@ -68,8 +69,9 @@ internal sealed class DesktopDriver : IDisposable
         _ = process.Handle;
     }
 
-    internal DesktopDriver(int installedProcessId, string expectedExecutable)
+    internal DesktopDriver(int installedProcessId, string expectedExecutable, bool beta2ProjectPicker = false)
     {
+        this.beta2ProjectPicker = beta2ProjectPicker;
         process = Process.GetProcessById(installedProcessId);
         if (!string.Equals(process.MainModule?.FileName, Path.GetFullPath(expectedExecutable), StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Shortcut process is not the installed viewer.");
@@ -236,6 +238,10 @@ internal sealed class DesktopDriver : IDisposable
                 targetRealized, errorType is null, errorType));
         }
     }
+    internal Task<bool> CollapsedAsync(string id) => Ui(id, () =>
+        ((ExpandCollapsePattern)Required(id).GetCurrentPattern(ExpandCollapsePattern.Pattern)).Current.ExpandCollapseState
+        == ExpandCollapseState.Collapsed);
+
     internal Task ExpandAsync(string id) => Ui(id, () =>
     {
         var element = Required(id);
@@ -270,7 +276,7 @@ internal sealed class DesktopDriver : IDisposable
     internal Task<bool> CheckedAsync(string id) => Ui(id, () =>
         ((TogglePattern)Required(id).GetCurrentPattern(TogglePattern.Pattern)).Current.ToggleState == ToggleState.On);
 
-    private async Task ClickAsync(string id, Stopwatch sharedClock, TimeSpan deadline)
+    private async Task ClickAsync(string id, Stopwatch sharedClock, TimeSpan deadline, bool restorePointer = true)
     {
         Stage = "native_click_readiness"; LastControl = id;
         var attempts = 0; var clicked = false;
@@ -309,14 +315,8 @@ internal sealed class DesktopDriver : IDisposable
                 if (owner != process.Id) throw new ClickTargetUnavailableException(id);
                 if (NativeDialog() != IntPtr.Zero) throw new UnexpectedNativeDialogException();
                 if (sharedClock.Elapsed >= deadline) throw new TimeoutException("Native click exceeded the shared picker deadline.");
-                GetCursorPos(out var old);
-                try
-                {
-                    SetCursorPos(ready.Point.X, ready.Point.Y);
-                    mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero); mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
-                    clicked = true;
-                }
-                finally { SetCursorPos(old.X, old.Y); }
+                SendClick(ready.Point.X, ready.Point.Y, restorePointer);
+                clicked = true;
             }), EnsureAlive, deadline, () => sharedClock.Elapsed, Task.Delay);
         }
         catch (Exception error) { errorType = error.GetType().Name; throw; }
@@ -419,10 +419,10 @@ internal sealed class DesktopDriver : IDisposable
     internal Task ChooseFileAsync(string action, string? path, bool save = false, bool existingRefusal = false) =>
         ChoosePathAsync(action, path, save, existingRefusal);
 
-    internal Task ChooseProjectFolderAsync(string path) =>
-        ChoosePathAsync("PickProjectFolder", path, save: false, existingRefusal: false);
+    internal Task ChooseProjectFolderAsync(string path, Action<string>? observe = null) =>
+        ChoosePathAsync("PickProjectFolder", path, save: false, existingRefusal: false, observe);
 
-    private async Task ChoosePathAsync(string action, string? path, bool save, bool existingRefusal)
+    private async Task ChoosePathAsync(string action, string? path, bool save, bool existingRefusal, Action<string>? observe = null)
     {
         Stage = "native_picker_" + action;
         if (existingRefusal && (!save || path is null || !File.Exists(path)))
@@ -435,13 +435,14 @@ internal sealed class DesktopDriver : IDisposable
             throw new IOException("Picker test target violates isolated existing/new-file precondition.");
         var expectedTitle = action switch
         {
-            "PickProjectFolder" => "选择要检查的本地项目文件夹",
+            "PickProjectFolder" => beta2ProjectPicker ? "选择要检查的本地项目文件夹" : "选择包含项目文件的文件夹",
             "PickInstaller" => "选择要记录的安装器", "OpenDatabase" => "打开外部记录库（只读）",
             "ExportMatches" => "导出全部匹配结果", "ExportPage" => "导出本页报告",
             _ => throw new InvalidOperationException("No fixed native picker title contract for this action.")
         };
         var pickerClock = Stopwatch.StartNew(); var pickerDeadline = TimeSpan.FromSeconds(15);
-        await ClickAsync(action, pickerClock, pickerDeadline); // Modal InvokePattern can synchronously block.
+        await ClickAsync(action, pickerClock, pickerDeadline);
+        observe?.Invoke("mouse_click_open_picker"); // Modal InvokePattern can synchronously block.
         IntPtr dialog = IntPtr.Zero;
         var remaining = pickerDeadline - pickerClock.Elapsed;
         if (remaining <= TimeSpan.Zero) throw new TimeoutException("Native picker readiness exhausted the original discovery deadline.");
@@ -462,9 +463,11 @@ internal sealed class DesktopDriver : IDisposable
                 if (path is null) { Forms.SendKeys.SendWait("{ESC}"); return; }
                 var edits = NativeChildren(dialog).Where(item => item.Id is 1001 or 1148 or 1152 && item.Class == "Edit" && IsWindowVisible(item.Window)).ToArray();
                 if (edits.Length != 1) throw new InvalidOperationException("Native file picker has no unique filename entry.");
-                AutomationElement.FromHandle(edits[0].Window).SetFocus();
-                Forms.SendKeys.SendWait("^a"); Forms.SendKeys.SendWait(KeysLiteral(Path.GetFullPath(path)));
-                Forms.SendKeys.SendWait("{TAB}");
+                if (observe == null) AutomationElement.FromHandle(edits[0].Window).SetFocus();
+                else { ClickPickerChild(edits[0].Window); observe("mouse_click_path_edit"); }
+                Forms.SendKeys.SendWait("^a"); observe?.Invoke("key_chord_select_all");
+                Forms.SendKeys.SendWait(KeysLiteral(Path.GetFullPath(path))); observe?.Invoke("type_folder_path");
+                Forms.SendKeys.SendWait("{TAB}"); observe?.Invoke("key_tab");
             });
             if (path is not null)
             {
@@ -474,7 +477,8 @@ internal sealed class DesktopDriver : IDisposable
                 await Ui(action, () =>
                 {
                     var accept = NativeChildren(dialog).Single(item => item.Id == 1 && item.Class == "Button" && IsWindowVisible(item.Window));
-                    ((InvokePattern)AutomationElement.FromHandle(accept.Window).GetCurrentPattern(InvokePattern.Pattern)).Invoke();
+                    if (observe == null) ((InvokePattern)AutomationElement.FromHandle(accept.Window).GetCurrentPattern(InvokePattern.Pattern)).Invoke();
+                    else { ClickPickerChild(accept.Window); observe("mouse_click_accept_folder"); }
                 });
             }
             await UntilAsync("native_picker_closed", action, () => Task.FromResult(!IsWindowVisible(dialog)), TimeSpan.FromSeconds(15));
@@ -482,9 +486,79 @@ internal sealed class DesktopDriver : IDisposable
         catch { if (dialog != IntPtr.Zero) PostMessage(dialog, 0x0010, IntPtr.Zero, IntPtr.Zero); throw; }
     }
 
+    internal Task MeasuredClickAsync(string id) => Ui(id, () =>
+    {
+        var target = Required(id);
+        var bounds = target.Current.BoundingRectangle;
+        if (bounds.IsEmpty || !target.Current.IsEnabled || target.Current.IsOffscreen)
+            throw new InvalidOperationException("Measured target is not visible and enabled.");
+        SetForegroundWindow(MainWindow());
+        var x = (int)(bounds.X + bounds.Width / 2);
+        var y = (int)(bounds.Y + bounds.Height / 2);
+        GetWindowThreadProcessId(WindowFromPoint(new Point { X = x, Y = y }), out var owner);
+        if (owner != process.Id || NativeDialog() != IntPtr.Zero)
+            throw new InvalidOperationException("Measured target is not on the owned window.");
+        SendClick(x, y, restorePointer: false);
+    });
+
+    internal Task ClickVisibleButtonAsync(string id) =>
+        ClickAsync(id, Stopwatch.StartNew(), TimeSpan.FromSeconds(12), restorePointer: false);
+
+    private static void SendClick(int x, int y, bool restorePointer = true)
+    {
+        GetCursorPos(out var old);
+        try
+        {
+            SetCursorPos(x, y);
+            mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
+            mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+        }
+        finally { if (restorePointer) SetCursorPos(old.X, old.Y); }
+    }
+
+    private static void ClickPickerChild(IntPtr child)
+    {
+        if (!GetWindowRect(child, out var bounds)) throw new IOException("Picker child bounds unavailable.");
+        var x = (bounds.Left + bounds.Right) / 2;
+        var y = (bounds.Top + bounds.Bottom) / 2;
+        if (WindowFromPoint(new Point { X = x, Y = y }) != child) throw new IOException("Picker child is covered.");
+        SendClick(x, y);
+    }
+
+    internal Task<bool> ScrollTowardAsync(string id, bool fullyVisible = false) => Ui(id, () =>
+    {
+        var element = Required(id);
+        var bounds = element.Current.BoundingRectangle;
+        var clip = System.Windows.Rect.Empty;
+        for (var parent = TreeWalker.RawViewWalker.GetParent(element); parent != null; parent = TreeWalker.RawViewWalker.GetParent(parent))
+        {
+            if (fullyVisible && parent.Current.ClassName == "ScrollContentPresenter")
+                clip = parent.Current.BoundingRectangle;
+            if (!parent.TryGetCurrentPattern(ScrollPattern.Pattern, out var pattern)) continue;
+            var scroll = (ScrollPattern)pattern;
+            if (!scroll.Current.VerticallyScrollable) continue;
+            var viewport = parent.Current.BoundingRectangle;
+            if (!clip.IsEmpty) viewport.Intersect(clip);
+            var within = fullyVisible ? viewport.Contains(bounds)
+                : bounds.Y + bounds.Height / 2 >= viewport.Top && bounds.Y + bounds.Height / 2 <= viewport.Bottom;
+            if (!bounds.IsEmpty && !viewport.IsEmpty && within && !element.Current.IsOffscreen) continue;
+            var up = !bounds.IsEmpty && bounds.Y < viewport.Y;
+            var percent = scroll.Current.VerticalScrollPercent;
+            if ((up && percent <= 0) || (!up && percent >= 100)) continue;
+            scroll.Scroll(ScrollAmount.NoAmount, up ? ScrollAmount.LargeDecrement : ScrollAmount.LargeIncrement);
+            return true;
+        }
+        return false;
+    });
+
     internal Task ResizeAsync(int width, int height) => Ui("window", () =>
     {
         if (!SetWindowPos(MainWindow(), IntPtr.Zero, 30, 30, width, height, 0x0004)) throw new IOException("Resize failed.");
+    });
+    internal Task<(int Width, int Height)> WindowSizeAsync() => Ui("window", () =>
+    {
+        if (!GetWindowRect(MainWindow(), out var bounds)) throw new IOException("Owned window bounds unavailable.");
+        return (bounds.Right - bounds.Left, bounds.Bottom - bounds.Top);
     });
     internal Task RequestCloseAsync() => Ui("window", () => PostMessage(MainWindow(), 0x0010, IntPtr.Zero, IntPtr.Zero));
     internal async Task CloseAsync()
@@ -506,11 +580,13 @@ internal sealed class DesktopDriver : IDisposable
             Record("normal_close", "window", request.ElapsedMilliseconds + wait.ElapsedMilliseconds, errorType);
         }
     }
-    internal Task<Screenshot> CaptureAsync(string output, string name, string kind) => Ui("window", () =>
+    internal Task<Screenshot> CaptureAsync(string output, string name, string kind, bool maskHostPaths = false,
+        Action<string>? progress = null) => Ui("window", () =>
     {
         var window = MainWindow();
         if (!GetWindowRect(window, out var bounds) || bounds.Right <= bounds.Left || bounds.Bottom <= bounds.Top)
             throw new IOException("Actual window bounds unavailable.");
+        progress?.Invoke("print_owned_window");
         SetForegroundWindow(window);
         using var bitmap = new Bitmap(bounds.Right - bounds.Left, bounds.Bottom - bounds.Top);
         using (var graphics = Graphics.FromImage(bitmap))
@@ -519,6 +595,29 @@ internal sealed class DesktopDriver : IDisposable
             try { if (!PrintWindow(window, dc, 2)) throw new IOException("Native screenshot failed."); }
             finally { graphics.ReleaseHdc(dc); }
         }
+        if (maskHostPaths)
+        {
+            progress?.Invoke("mask_host_paths");
+            using var overlay = Graphics.FromImage(bitmap);
+            var root = AutomationElement.FromHandle(window);
+            var nodes = root.FindAll(TreeScope.Descendants, new OrCondition(
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit),
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Text)));
+            foreach (AutomationElement node in nodes)
+            {
+                if (node.Current.IsOffscreen) continue;
+                var text = node.Current.Name ?? "";
+                var unreadable = false;
+                try { if (node.TryGetCurrentPattern(ValuePattern.Pattern, out var value)) text += " " + ((ValuePattern)value).Current.Value; }
+                catch (InvalidOperationException) { unreadable = true; }
+                if (!unreadable && !ScreenshotPrivacy.ContainsHostPath(text)) continue;
+                var rect = node.Current.BoundingRectangle;
+                if (!rect.IsEmpty)
+                    overlay.FillRectangle(Brushes.DarkGray, (float)(rect.X - bounds.Left), (float)(rect.Y - bounds.Top),
+                        (float)rect.Width, (float)rect.Height);
+            }
+        }
+        progress?.Invoke("write_png");
         Directory.CreateDirectory(output); var path = Path.Combine(output, name); bitmap.Save(path, ImageFormat.Png);
         return new Screenshot(name, Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant(), bitmap.Width, bitmap.Height, GetDpiForWindow(window), kind);
     });

@@ -1174,6 +1174,173 @@ internal static class EnvironmentChecks
             Equal(0, Directory.GetFiles(multiDir).Length, "unsupported selection writes zero files");
         });
 
+        await Check("first package waits for both consents and opens the resulting setup folder", async () =>
+        {
+            foreach (var type in new[] { "控制台应用 (OutputType=Exe)", "WPF 桌面应用" })
+            {
+                using var temp = new TempDir();
+                var project = temp.Sub("Selected");
+                var service = FirstPackageService(project, type);
+                string? opened = null;
+                using var vm = new EnvironmentCheckViewModel(service, dispatcher: _ => { }, artifactFolderOpener: dir => opened = dir);
+                True(await vm.SelectProjectAsync(project), "select project");
+                Equal(type == "WPF 桌面应用" ? "Greeting" : "Desk · Greeting", vm.FirstPackageProjectName,
+                    "display project name and assembly when they differ");
+                Equal(type, vm.FirstPackageProjectType, "project type");
+                Equal("Greeting.exe", vm.FirstPackageEntry, "packaged entry");
+                Equal("保存配置并检查", vm.FirstPackageActionText, "configuration consent");
+                True(!vm.ShowFirstPackageResult, "project selection does not show a setup result");
+                True(!File.Exists(Path.Combine(project, "contain.environment.json")), "selection does not create the manifest");
+                Equal((0, 0, 0, 0), service.OperationCounts, "selection only inspects");
+                True(await vm.RunFirstPackageActionAsync(), "explicitly save and check");
+                Equal((1, 1, 0, 0), service.OperationCounts, "check does not start a build");
+                Equal("构建并生成安装包", vm.FirstPackageActionText, "separate execution consent");
+                True(vm.FirstPackageNextStep.Contains("构建会执行项目代码，请确认信任此项目", StringComparison.Ordinal),
+                    "execution consent explains project trust in plain language");
+                var build = service.BuildFactory;
+                var releaseBuild = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                service.BuildFactory = async (dir, preview, progress, token) =>
+                {
+                    await releaseBuild.Task;
+                    return await build(dir, preview, progress, token);
+                };
+                var first = vm.RunFirstPackageActionAsync();
+                True(vm.IsBuilding && !vm.CanRunFirstPackageAction, "busy while building");
+                True(!await vm.RunFirstPackageActionAsync(), "second click cannot start another build or package");
+                releaseBuild.SetResult();
+                True(await first, "one action builds and then packages");
+                Equal((1, 1, 1, 1), service.OperationCounts, "each stage ran once");
+                Equal("Greeting-Setup-x64.exe", vm.GeneratedInstallerFileName, "actual filename from receipt");
+                True(vm.ShowFirstPackageResult && vm.CanOpenInstallerFolder, "show the current setup and its folder action");
+                Equal("打开安装包文件夹", vm.FirstPackageActionText, "open folder offered as final action");
+                True(await vm.RunFirstPackageActionAsync(), "open resulting folder");
+                Equal(Path.GetDirectoryName(vm.GeneratedInstallerFullPath), opened, "opened the receipt directory");
+                Equal((1, 1, 1, 1), service.OperationCounts, "opening the folder never rebuilds");
+                File.Delete(vm.GeneratedInstallerFullPath);
+                opened = null;
+                var resultChanges = new List<bool>();
+                vm.PropertyChanged += (_, change) =>
+                {
+                    if (change.PropertyName == nameof(vm.ShowFirstPackageResult)) resultChanges.Add(vm.ShowFirstPackageResult);
+                };
+                True(!vm.OpenInstallerFolder() && opened is null, "the result button checks the file again before opening");
+                True(resultChanges.Contains(false) && !vm.CanOpenInstallerFolder, "removing the setup hides the result");
+                Equal("重试生成安装包", vm.FirstPackageActionText, "a removed setup can be regenerated");
+                True(await vm.RunFirstPackageActionAsync() && resultChanges.Contains(true), "retry restores the result view");
+                Equal((1, 1, 1, 2), service.OperationCounts, "regeneration reuses the verified build");
+                True(vm.OpenInstallerFolder(), "the result button opens the newly generated setup folder");
+                Equal(Path.GetDirectoryName(vm.GeneratedInstallerFullPath), opened, "the result button opens the current receipt directory");
+            }
+        });
+
+        await Check("first package retries missing prerequisites at the stage that observed them", async () =>
+        {
+            using var temp = new TempDir();
+            var project = temp.Sub("MissingTools");
+            var service = FirstPackageService(project, "WPF 桌面应用");
+            var inspect = service.OnboardingInspectFactory;
+            var compilerInstalled = false;
+            service.OnboardingInspectFactory = dir => inspect(dir)! with { PackagerDetected = compilerInstalled };
+            using var vm = new EnvironmentCheckViewModel(service, dispatcher: _ => { });
+            True(await vm.SelectProjectAsync(project), "read project with missing Inno");
+            Equal("重新检测打包工具", vm.FirstPackageActionText, "redetect Inno before saving");
+            compilerInstalled = true;
+            True(await vm.RunFirstPackageActionAsync(), "detect newly installed Inno");
+            Equal((0, 0, 0, 0), service.OperationCounts, "retry detection performs no writes, build or checks");
+            Equal("保存配置并检查", vm.FirstPackageActionText, "same project can now be configured");
+
+            var missingSdk = new WorkflowCheckItem("tool:dotnet", "failed", "SDK unavailable", "not_installed",
+                "10.0", null, "Install .NET SDK 10.0");
+            var sdkCheck = ReadyExecution() with { ExitCode = 1, Report = ReadyExecution().Report with { Checks = [missingSdk] } };
+            service.NextFactory = (_, _) => Task.FromResult(sdkCheck);
+            True(await vm.RunFirstPackageActionAsync(), "save configuration and inspect SDK");
+            Equal((1, 1, 0, 0), service.OperationCounts, "stopped at missing SDK");
+            Equal("重新检查环境", vm.FirstPackageActionText, "retry SDK check");
+            True(vm.FirstPackageNextStep.Contains("SDK", StringComparison.Ordinal), "missing SDK explains remedy");
+            service.NextFactory = (_, _) => Task.FromResult(ReadyExecution());
+            True(await vm.RunFirstPackageActionAsync(), "recover SDK");
+            Equal((1, 2, 0, 0), service.OperationCounts, "retry does not rewrite config or start building");
+
+            var package = service.InstallerFactory;
+            service.InstallerFactory = (_, _, _) => Task.FromResult(new ProjectInstallerExecution(1,
+                ReadyExecution().Report with { Workflow = "project_installer", Checks = [
+                    new WorkflowCheckItem("inno_setup_compiler", "failed", "Inno Setup not found", "inno_setup_missing",
+                        "Inno Setup 6", null, "Install Inno Setup 6")] }, "", "{}", null));
+            True(!await vm.RunFirstPackageActionAsync(), "compiler removed after inspection prevents setup");
+            True(!vm.ShowFirstPackageResult, "a failed package offers recovery");
+            Equal((1, 2, 1, 1), service.OperationCounts, "one verified build and one failed package");
+            True(vm.FirstPackageNextStep.Contains("Inno Setup", StringComparison.Ordinal), "packager recovery guidance");
+            Equal("重试生成安装包", vm.FirstPackageActionText, "only package again");
+            var missingCompiler = service.InstallerFactory;
+            service.InstallerFactory = package;
+            True(await vm.RunFirstPackageActionAsync(), "package from same verified build");
+            Equal((1, 2, 1, 2), service.OperationCounts, "package retry avoids redundant check, write and build");
+            service.InstallerFactory = missingCompiler;
+            True(!await vm.GenerateInstallerAsync(), "another packaging attempt can fail while the previous file exists");
+            True(vm.HasValidInstaller && !vm.ShowFirstPackageResult, "a retained historical setup does not show the current completion view");
+        });
+
+        await Check("first package rejects a replaced manifest and an untrusted write receipt", async () =>
+        {
+            foreach (var mode in new[] { "changed_after_check", "missing_write_digest", "mismatched_write_digest" })
+            {
+                using var temp = new TempDir();
+                var project = temp.Sub(mode);
+                var service = FirstPackageService(project, "控制台应用 (OutputType=Exe)");
+                var apply = service.OnboardingApplyFactory;
+                if (mode != "changed_after_check")
+                    service.OnboardingApplyFactory = async (dir, sha, token) => (await apply(dir, sha, token)) with
+                    { SavedManifestSha256 = mode == "missing_write_digest" ? null : new string('0', 64) };
+                using var vm = new EnvironmentCheckViewModel(service, dispatcher: _ => { });
+                await vm.SelectProjectAsync(project);
+                await vm.RunFirstPackageActionAsync();
+                if (mode == "changed_after_check")
+                {
+                    Equal("构建并生成安装包", vm.FirstPackageActionText, "original generated config was checked");
+                    File.AppendAllText(Path.Combine(project, "contain.environment.json"), "\n");
+                }
+                True(!await vm.RunFirstPackageActionAsync(), "withhold build when consent and actual manifest do not match");
+                True(!vm.ShowFirstPackageFlow, "return changed or unbound config to normal manifest review");
+                Equal(0, service.BuildCalls, "did not start any manifest step");
+                Equal(0, service.InstallerCalls, "did not package artifacts");
+                True(vm.CanStartCheck, "existing explicit manifest review remains available");
+            }
+        });
+
+        await Check("first package resumes a proven generated manifest and leaves other manifests to manual review", async () =>
+        {
+            foreach (var provenance in new[] { "exact", "raced", "manual" })
+            {
+                using var temp = new TempDir();
+                var project = temp.Sub(provenance);
+                var service = FirstPackageService(project, "控制台应用 (OutputType=Exe)");
+                var plan = service.OnboardingInspectFactory(project)!;
+                var manifest = Path.Combine(project, "contain.environment.json");
+                File.WriteAllText(manifest, plan.ProposedManifestJson);
+                var original = File.ReadAllBytes(manifest);
+                var inspectedSha = WorkflowManifestReader.ReadPreview(project).RawFileSha256;
+                service.OnboardingInspectFactory = _ => plan with
+                {
+                    Status = "existing_manifest",
+                    SourceFingerprintSha256 = inspectedSha,
+                    MatchingGeneratedManifestSha256 = provenance switch
+                    {
+                        "exact" => inspectedSha, "raced" => new string('0', 64), _ => null
+                    }
+                };
+                using var reopened = new EnvironmentCheckViewModel(service, dispatcher: _ => { });
+                True(await reopened.SelectProjectAsync(project), "reopen saved project");
+                Equal(provenance == "exact", reopened.ShowFirstPackageFlow, "only exact generated manifest resumes guided flow");
+                Equal((0, provenance == "exact" ? 1 : 0, 0, 0), service.OperationCounts,
+                    "resume only checks the expected generated config and never writes or builds");
+                True(File.ReadAllBytes(manifest).SequenceEqual(original), "config bytes preserved");
+                if (provenance == "exact")
+                    Equal("构建并生成安装包", reopened.FirstPackageActionText, "execution consent is still required after reopening");
+                else
+                    True(reopened.CanStartCheck, "permit manual check of other manifests");
+            }
+        });
+
         return passed;
 
         async Task Check(string name, Func<Task> action)
@@ -1181,6 +1348,55 @@ internal static class EnvironmentChecks
             await action();
             passed.Add("environment:" + name);
         }
+    }
+
+    private static ControlledEnvironmentService FirstPackageService(string project, string type)
+    {
+        var csproj = type == "WPF 桌面应用" ? "Greeting.csproj" : "Desk.csproj";
+        File.WriteAllText(Path.Combine(project, csproj), "<Project />");
+        var manifest = $$"""
+            {
+              "schema_version":1,"target":"windows-x64","tools":[],"required_variables":[],
+              "build":[{"name":"Publish","program":"dotnet","args":["publish","{{csproj}}","-r","win-x64","--self-contained","true","-o","artifacts/app"],"expected_exit":0,"timeout_ms":300000}],
+              "verify":[],"artifact_dir":"artifacts/app","artifacts":["Greeting.exe"],
+              "installer":{"app_name":"Greeting","version":"1.0.0","entry":"Greeting.exe","publish_dir":"artifacts/app","publish_kind":"dotnet-self-contained-win-x64"}
+            }
+            """;
+        var preview = new DotnetOnboardingPreviewData("ready_to_confirm", new string('1', 64), false, null,
+            csproj, "Greeting", "Greeting", "Greeting.exe", "net10.0", "1.0.0", null, ".NET SDK 10.0", null,
+            ["10.0.403"], "artifacts/app", $"dotnet publish {csproj}", [new OnboardingFieldRow("应用类型", type, csproj)],
+            manifest, null, null, null, null, true);
+        const string attestation = """{"schema_version":1,"marker":"current-build"}""";
+        return new ControlledEnvironmentService
+        {
+            OnboardingInspectFactory = dir => File.Exists(Path.Combine(dir, "contain.environment.json")) ? null : preview,
+            OnboardingApplyFactory = (dir, fingerprint, _) =>
+            {
+                Equal(preview.SourceFingerprintSha256, fingerprint, "confirm the selected preview");
+                File.WriteAllText(Path.Combine(dir, "contain.environment.json"), manifest);
+                var savedSha = WorkflowManifestReader.ReadPreview(dir).RawFileSha256;
+                return Task.FromResult(new DotnetOnboardingApplyOutcome("applied", true, "contain.environment.json", preview, savedSha));
+            },
+            BuildFactory = (dir, _, _, _) =>
+            {
+                var publish = Directory.CreateDirectory(Path.Combine(dir, "artifacts", "app")).FullName;
+                File.WriteAllText(Path.Combine(publish, "Greeting.exe"), "fixture");
+                return Task.FromResult(new ProjectBuildExecution(0, ReadyExecution().Report, "", "{}", [], "", publish, attestation));
+            },
+            InstallerFactory = (dir, passedAttestation, _) =>
+            {
+                Equal(attestation, passedAttestation, "package the verified build");
+                var output = Directory.CreateDirectory(Path.Combine(dir, "setup")).FullName;
+                const string filename = "Greeting-Setup-x64.exe";
+                var setup = Path.Combine(output, filename);
+                File.WriteAllText(setup, "fixture");
+                var receipt = new ProjectInstallerReceiptData("Greeting", "Greeting", "id", "short", "existing", "1.0.0", "1.0.0.0",
+                    null, "dotnet-self-contained-win-x64", "artifacts/app", "Greeting.exe", "entry", "manifest", "attestation", 1,
+                    "install", "Greeting.lnk", filename, 7, "setup", "NotSigned", false, "6", setup, output, "");
+                return Task.FromResult(new ProjectInstallerExecution(0, ReadyExecution().Report with { Workflow = "project_installer" },
+                    "", "{}", receipt));
+            }
+        };
     }
 
     private static EnvironmentCheckExecution ReadyExecution(string marker = "ready-marker") =>
@@ -1252,6 +1468,8 @@ internal static class EnvironmentChecks
 
     private sealed class ControlledEnvironmentService : IEnvironmentCheckService
     {
+        public int ApplyCalls { get; private set; }
+        public (int, int, int, int) OperationCounts => (ApplyCalls, CheckCalls, BuildCalls, InstallerCalls);
         public int CheckCalls { get; private set; }
         public int BuildCalls { get; private set; }
         public int InstallerCalls { get; private set; }
@@ -1277,8 +1495,11 @@ internal static class EnvironmentChecks
         public Task<DotnetOnboardingApplyOutcome> ApplyDotnetOnboardingAsync(
             string projectPath,
             string expectedFingerprintSha256,
-            CancellationToken cancellationToken = default) =>
-            OnboardingApplyFactory(WorkflowCliEnvironmentService.NormalizeDirectoryPath(projectPath), expectedFingerprintSha256, cancellationToken);
+            CancellationToken cancellationToken = default)
+        {
+            ApplyCalls++;
+            return OnboardingApplyFactory(WorkflowCliEnvironmentService.NormalizeDirectoryPath(projectPath), expectedFingerprintSha256, cancellationToken);
+        }
 
         public Task<EnvironmentCheckExecution> CheckAsync(string projectPath, CancellationToken cancellationToken = default)
         {

@@ -1,0 +1,91 @@
+name: Measure the published Beta 2 first package experience
+on:
+  push:
+    branches: [feat/first-package-experience]
+    paths:
+      - '.github/workflows/first-package-baseline.yml'
+      - 'desktop/Contain.Desktop.Tests/FirstPackageMeasurement.cs'
+permissions:
+  contents: read
+jobs:
+  baseline:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    env:
+      CANDIDATE_SOURCE_SHA: 18782fc4e8cfd91df4d60fa339b77070236f130a
+      ACCEPTANCE_WORKFLOW_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify the published Beta 2 files
+        shell: pwsh
+        run: |
+          $base = 'https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.2'
+          $dir = New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/baseline-candidate"
+          $sums = Join-Path $dir 'SHA256SUMS.txt'
+          Invoke-WebRequest "$base/SHA256SUMS.txt" -OutFile $sums
+          if ((Get-FileHash $sums).Hash -ne '0b2c308f631a8ea028a24c82e71b14bd8064048df2057389916550c3f0b5726a') { throw 'Published manifest identity differs' }
+          foreach ($line in Get-Content -LiteralPath $sums) {
+            if ($line -cnotmatch '^([0-9a-f]{64})  ([A-Za-z0-9][A-Za-z0-9._-]+)$') { throw 'Invalid file entry' }
+            $sha = $Matches[1]; $name = $Matches[2]
+            $dest = Join-Path $dir $name
+            Invoke-WebRequest "$base/$name" -OutFile $dest
+            if ((Get-FileHash $dest).Hash -ne $sha) { throw "Published artifact differs: $name" }
+          }
+          if ((Get-FileHash "$dir/Contain-Setup-x64.exe").Hash -ne '4f0bd9aa89507f69e90ded3356e1c7531a4025a85b4ffbb7a662fb6ff58e7c6f') { throw 'Setup identity differs' }
+      - uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/acceptance-dotnet
+        with:
+          global-json-file: global.json
+      - name: Capture the native Windows PowerShell module path for the installed app
+        shell: powershell
+        run: |
+          $null = Get-Command Get-FileHash -ErrorAction Stop
+          "CONTAIN_WINDOWS_POWERSHELL_MODULE_PATH=$env:PSModulePath" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Install the compiler for the generated WPF installer
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
+          $inno = Join-Path $env:RUNNER_TEMP 'inno-6.7.3'
+          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $installer
+          if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne '9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732') {
+              throw 'Inno Setup installer hash mismatch'
+          }
+          $install = Start-Process $installer -ArgumentList "/CURRENTUSER /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=`"$inno`"" -Wait -PassThru
+          if ($install.ExitCode -ne 0 -or !(Test-Path -LiteralPath "$inno/ISCC.exe")) { throw 'Inno Setup installation failed' }
+          $inno >> $env:GITHUB_PATH
+          "CONTAIN_ISCC_PATH=$inno/ISCC.exe" >> $env:GITHUB_ENV
+      - name: Publish the independent UI harness
+        shell: pwsh
+        run: |
+          if ((dotnet --version) -ne '10.0.403') { throw 'Incorrect harness SDK' }
+          dotnet restore desktop/Contain.Desktop.Tests -r win-x64 --locked-mode -p:RuntimeIdentifiers=win-x64 -p:SelfContained=true
+          if ($LASTEXITCODE -ne 0) { throw 'Locked UI harness restore failed' }
+          dotnet publish desktop/Contain.Desktop.Tests -c Release -r win-x64 --self-contained true --no-restore -o "$env:RUNNER_TEMP/acceptance-harness"
+          if ($LASTEXITCODE -ne 0) { throw 'UI harness publish failed' }
+      - name: Measure the installed public product
+        shell: pwsh
+        run: |
+          ./scripts/test-installed-wpf-workflow.ps1 -CandidateDirectory "$env:RUNNER_TEMP/baseline-candidate" -HarnessPath "$env:RUNNER_TEMP/acceptance-harness/Contain.Desktop.Tests.exe" -EvidenceDirectory "$env:RUNNER_TEMP/first-package" -MeasureFirstPackage
+      - name: Upload the first-use trace and window screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: beta2-first-package-baseline-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/first-package/first-package-measurement.json
+            ${{ runner.temp }}/first-package/installed-wpf-workflow.json
+            ${{ runner.temp }}/first-package/first-launch.png
+            ${{ runner.temp }}/first-package/project-preview.png
+            ${{ runner.temp }}/first-package/package-complete.png
+          if-no-files-found: error
+      - name: Retain partial observations on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: beta2-first-package-attempt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/first-package/first-package-measurement.json
+            ${{ runner.temp }}/first-package/installed-wpf-workflow.json
+          if-no-files-found: warn

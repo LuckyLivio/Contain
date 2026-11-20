@@ -2,24 +2,26 @@
 param(
     [Parameter(Mandatory)][string]$CandidateDirectory,
     [Parameter(Mandatory)][string]$EvidenceDirectory,
-    [Parameter(Mandatory)][string]$HarnessPath
+    [Parameter(Mandatory)][string]$HarnessPath,
+    [Parameter(Mandatory)][ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$')][string]$BaselineVersion,
+    [Parameter(Mandatory)][ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$')][string]$CandidateVersion,
+    [Parameter(Mandatory)][ValidatePattern('^[a-f0-9]{64}$')][string]$BaselineSetupSha256
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if (Test-Path -LiteralPath $EvidenceDirectory) { throw 'Choose a new evidence directory' }
 $out = (New-Item -ItemType Directory -Path $EvidenceDirectory).FullName
-$oldVersion = '0.5.0-beta.1'
-$newVersion = '0.5.0-beta.2'
-$oldSetupSha = 'dc110d6615705aced0ae71cb46cab835cbc0f2986dcf1b58b29cb5708892d55b'
+$expectedFileVersion = $CandidateVersion.Replace('-beta.', '.')
+$expectedProductVersion = '^' + [regex]::Escape($CandidateVersion) + '(?:\+[0-9A-Za-z.-]+)?$'
 $recordIds = @('synthetic-finished', 'synthetic-historical', 'synthetic-interrupted')
 $eventId = 'synthetic-finished-event-0'
 $checks = [ordered]@{runner='not_run'; identity='not_run'; baseline_install='not_run'; baseline_records='not_run'
     in_place_upgrade='not_run'; default_library_preserved='not_run'; upgraded_records='not_run'; uninstall='not_run'}
 $receipt = [ordered]@{
-    protocol='contain-beta2-upgrade-1'; schema_version=1; status='failed'
+    protocol='contain-prerelease-upgrade-1'; schema_version=1; status='failed'
     source_sha=$env:CANDIDATE_SOURCE_SHA; workflow_sha=($env:GITHUB_WORKFLOW_SHA ?? $env:ACCEPTANCE_WORKFLOW_SHA)
-    run_id=$env:GITHUB_RUN_ID; attempt=$env:GITHUB_RUN_ATTEMPT; baseline_version=$oldVersion; version=$newVersion
-    baseline_setup_sha256=$oldSetupSha; setup_sha256=$null; checksums_sha256=$null; records_sha256=$null
+    run_id=$env:GITHUB_RUN_ID; attempt=$env:GITHUB_RUN_ATTEMPT; baseline_version=$BaselineVersion; version=$CandidateVersion
+    baseline_setup_sha256=$BaselineSetupSha256; setup_sha256=$null; checksums_sha256=$null; records_sha256=$null
     record_ids=$recordIds; event_id=$eventId; installed_versions=[ordered]@{}; checks=$checks
 }
 
@@ -90,16 +92,16 @@ try {
     $checks[$gate] = 'passed'
 
     $gate = 'identity'
-    $oldSetup = Join-Path $scratch 'beta1-setup.exe'
-    Invoke-WebRequest 'https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.1/Contain-Setup-x64.exe' -OutFile $oldSetup
-    Require ((Sha $oldSetup) -ceq $oldSetupSha) 'Public Beta 1 Setup digest mismatch'
+    $oldSetup = Join-Path $scratch 'baseline-setup.exe'
+    Invoke-WebRequest "https://github.com/LuckyLivio/Contain/releases/download/v$BaselineVersion/Contain-Setup-x64.exe" -OutFile $oldSetup
+    Require ((Sha $oldSetup) -ceq $BaselineSetupSha256) 'Public baseline Setup digest mismatch'
     $newSetup = Join-Path $CandidateDirectory 'Contain-Setup-x64.exe'
     $manifest = Join-Path $CandidateDirectory 'SHA256SUMS.txt'
     $setupSha = Sha $newSetup
     $identity = Get-Content -LiteralPath (Join-Path $CandidateDirectory 'installer-receipt.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     $desktop = Get-Content -LiteralPath (Join-Path $CandidateDirectory 'desktop-identity.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     Require ($identity.source_sha -ceq $receipt.source_sha -and $desktop.source_sha -ceq $receipt.source_sha -and
-        $identity.app_version -ceq $newVersion -and $identity.installer_sha256 -ceq $setupSha -and
+        $identity.app_version -ceq $CandidateVersion -and $identity.installer_sha256 -ceq $setupSha -and
         @(Get-Content -LiteralPath $manifest | Where-Object { $_ -ceq "$setupSha  Contain-Setup-x64.exe" }).Count -eq 1) 'Candidate Setup identity mismatch'
     $receipt.setup_sha256 = $setupSha
     $receipt.checksums_sha256 = Sha $manifest
@@ -107,14 +109,14 @@ try {
 
     $gate = 'baseline_install'
     Install-OrUninstall $oldSetup
-    Check-Installed $oldVersion
+    Check-Installed $BaselineVersion
     $checks[$gate] = 'passed'
 
     $gate = 'baseline_records'
     [IO.File]::WriteAllText((Join-Path $scratch '.contain-records-test-root'), 'Contain isolated record library test data')
     $database = Join-Path $scratch 'Contain/Records/contain.db'
     & $harness --upgrade-records $install $scratch seed
-    Require ($LASTEXITCODE -eq 0) 'Beta 1 could not open the marked personal records in its desktop'
+    Require ($LASTEXITCODE -eq 0) 'Baseline desktop could not open the marked personal records'
     $receipt.records_sha256 = Sha $database
     Require ($receipt.records_sha256 -cne (Sha (Join-Path $install 'samples/viewer-demo.db'))) 'Expected a customized personal library'
     Read-OldRecords $database
@@ -128,16 +130,16 @@ try {
 
     $gate = 'in_place_upgrade'
     Install-OrUninstall $newSetup
-    Check-Installed $newVersion
+    Check-Installed $CandidateVersion
     foreach ($name in 'Contain.Viewer.exe','Contain.Viewer.dll','Contain.Desktop.Model.dll') {
         $binary = Join-Path $install $name
         $metadata = [Diagnostics.FileVersionInfo]::GetVersionInfo($binary)
         $fileVersion = '{0}.{1}.{2}.{3}' -f $metadata.FileMajorPart,$metadata.FileMinorPart,$metadata.FileBuildPart,$metadata.FilePrivatePart
-        Require ($fileVersion -ceq '0.5.0.2' -and $metadata.ProductVersion -cmatch '^0\.5\.0-beta\.2(?:\+[0-9A-Za-z.-]+)?$') 'Installed file or informational product version mismatch'
+        Require ($fileVersion -ceq $expectedFileVersion -and $metadata.ProductVersion -cmatch $expectedProductVersion) 'Installed file or informational product version mismatch'
         $versionRow = [ordered]@{file_version=$fileVersion; product_version=$metadata.ProductVersion}
         if ($name.EndsWith('.dll')) {
             $versionRow.assembly_version = [Reflection.AssemblyName]::GetAssemblyName($binary).Version.ToString()
-            Require ($versionRow.assembly_version -ceq '0.5.0.2') 'Installed managed assembly version mismatch'
+            Require ($versionRow.assembly_version -ceq $expectedFileVersion) 'Installed managed assembly version mismatch'
         }
         $receipt.installed_versions[$name] = $versionRow
     }
@@ -176,8 +178,8 @@ try {
         $line = $_.Exception.Data['gate_line']
     }
     $receipt.failure = @{gate=$gate; reason=$reason; line=$line}
-    Write-Warning "Beta 2 upgrade failed at $gate, line $line. $reason"
+    Write-Warning "Installed upgrade failed at $gate, line $line. $reason"
 } finally {
-    [IO.File]::WriteAllText((Join-Path $out 'beta2-upgrade.json'), ($receipt | ConvertTo-Json -Depth 8) + "`n", [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $out 'prerelease-upgrade.json'), ($receipt | ConvertTo-Json -Depth 8) + "`n", [Text.UTF8Encoding]::new($false))
 }
 if ($receipt.status -ne 'passed') { exit 1 }

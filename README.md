@@ -1,18 +1,14 @@
 # Contain
 
-让 Windows 项目换一台电脑也能构建，让发出去的包在别人电脑上也能运行，并能核实具体哪些检查通过。
+**[下载 Contain v0.5.0-beta.3 安装包（Windows x64）](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.3/Contain-Setup-x64.exe)**
 
-## 下载 Windows 版
+把单项目 C# 控制台或 WPF 工程做成可以发给用户安装的 Windows 应用。首次打开 Contain 会直接进入“打包项目”。
 
-**[下载 Contain v0.5.0-beta.2 安装包（Windows x64）](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.2/Contain-Setup-x64.exe)**
+**最短路径**　选择项目文件夹 → 保存配置并检查 → 构建并生成安装包 → 打开安装包文件夹。
 
-用 Contain 将受支持的单项目 WPF 或 C# 控制台工程构建为可以发给用户安装的 Windows 应用。
+[便携桌面 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.3/contain-0.5.0-beta.3-windows-x64.zip) · [独立 CLI ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.3/contain-workflow-0.5.0-beta.3-windows-x64.zip) · [发行说明](https://github.com/LuckyLivio/Contain/releases/tag/v0.5.0-beta.3) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.3/SHA256SUMS.txt) · [上一个版本 v0.5.0-beta.2](https://github.com/LuckyLivio/Contain/releases/tag/v0.5.0-beta.2)
 
-**最短路径**　从开始菜单打开 Contain → 检查项目环境 → 选择文件夹 → 使用此配置 → 开始检查 → 开始构建 → 生成安装包。
-
-[免安装桌面 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.2/contain-0.5.0-beta.2-windows-x64.zip) · [独立 CLI ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.2/contain-workflow-0.5.0-beta.2-windows-x64.zip) · [发行说明](https://github.com/LuckyLivio/Contain/releases/tag/v0.5.0-beta.2) · [SHA-256 校验文件](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.2/SHA256SUMS.txt)
-
-WPF 工程需使用 `Microsoft.NET.Sdk`，声明 `OutputType=WinExe`、`UseWPF=true` 和单个 `net8.0-windows` 或更高版本的 Windows 目标框架。构建机需要匹配的 .NET SDK 和 Inno Setup 6。安装器尚未签名。干净无工具机器与完全断网试装留待稳定版前验证。[WPF 实包验收](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.2/installed-wpf-workflow.json) · [升级和发布记录](docs/beta05-beta2-release.md)
+选择文件夹后可预览项目名、应用类型和入口 EXE。制作安装包的电脑需要匹配的 .NET SDK 和 Inno Setup 6。安装器尚未签名。干净无工具机器和完全断网试装留待稳定版前验证。[改前／改后截图及 Windows 实测](docs/beta05-beta3-release.md)
 
 ## 接手源码、恢复开发环境
 
@@ -51,14 +47,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows-inst
 
 - **陌生软件隔离试用**：后续设计隔离执行、权限和试用证据；第一阶段不提供隔离保护。
 - **配置回退**：后续设计配置备份、差异和可验证恢复；第一阶段不修改系统配置或提供回滚。
-- **WPF 渐进接入**：桌面包已自带本次构建的 `contain-workflow.exe`，并在界面接入“检查项目环境”（含普通单项目 C# 控制台应用首次使用只读识别与一次确认生成配置、同窗口复查对比、受控项目构建、产物目录打开，以及对已验证 Windows x64 `.NET` 自包含多文件发布生成 `<应用名>-Setup-x64.exe` 安装包）与只读“检查交付包”（静态校验 ZIP 与 `package-spec.json`）；桌面端不自动安装依赖、不修改用户 `.csproj` 或系统配置，也不在文件夹选择、预览或检查交付包时自动运行项目代码或包内程序。
+- **桌面工具**：从“打包项目”识别单项目控制台或 WPF 工程、构建并制作安装包。使用“检查交付包”可单独核对 ZIP 与包规格。“我的记录”提供安装记录与外部只读库入口。
 
 ## 旧版安装记录工具与历史证据
 
-**[Beta.1 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/contain-0.4.0-beta.1-windows-x64.zip)** · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/SHA256SUMS.txt) · [最终验收](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/FINAL-ACCEPTANCE.json)
+**[v0.4.0-beta.1 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/contain-0.4.0-beta.1-windows-x64.zip)** · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/SHA256SUMS.txt) · [最终验收](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/FINAL-ACCEPTANCE.json)
 
 完整解压后运行 `Contain.Viewer.exe`。旧版用于选择安装器、记录安装行为、查看及导出证据；不等于软件所有权或安全删除许可。
 
-Beta.1 已有一轮 Windows 发布验收通过：[发布说明](docs/beta04-release.md)、[全部尝试](docs/beta04-validation-attempts.md)、[桌面使用说明](desktop/README.md)、[实际截图](docs/beta04-screenshots.md)。Beta.2 的候选包能运行，但指定验收没有全部通过；其他分支的结果不作为本分支验收。
+v0.4.0-beta.1 已通过一轮 Windows 发布验收：[发布说明](docs/beta04-release.md)、[全部尝试](docs/beta04-validation-attempts.md)、[桌面使用说明](desktop/README.md)、[实际截图](docs/beta04-screenshots.md)。历史诊断候选 v0.4.0-beta.2 可以运行，部分指定检查未通过。其走查记录见 [#20](https://github.com/LuckyLivio/Contain/pull/20) 和 [#21](https://github.com/LuckyLivio/Contain/pull/21)。支持 WPF 项目打包的公开版本为 [v0.5.0-beta.2](https://github.com/LuckyLivio/Contain/releases/tag/v0.5.0-beta.2)。
 
-[Beta.10 WinForms 回退下载](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.10/contain-0.3.2-beta.10-windows-x64.zip) · [交付历史](docs/delivery-history.md) · [旧架构](docs/architecture.md) · [只读工作流](docs/read-only-workflow.md) · [贡献规范](CONTRIBUTING.md)
+[v0.3.2-beta.10 WinForms 回退下载](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.10/contain-0.3.2-beta.10-windows-x64.zip) · [交付历史](docs/delivery-history.md) · [旧架构](docs/architecture.md) · [只读工作流](docs/read-only-workflow.md) · [贡献规范](CONTRIBUTING.md)

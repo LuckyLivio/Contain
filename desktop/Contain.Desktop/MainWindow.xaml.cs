@@ -16,6 +16,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 {
     private enum ActiveSection { Records, NewRecord, EnvironmentCheck, PackageCheck }
 
+    private readonly PersonalRecords personalRecords;
     private readonly MyRecordsView recordsView = new();
     private readonly NewRecordView newRecordView = new();
     private readonly RecordDetailsView detailsView = new();
@@ -33,6 +34,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 
     public MainWindow(PersonalRecords personalRecords)
     {
+        this.personalRecords = personalRecords;
         var executable = Path.Combine(AppContext.BaseDirectory, "contain.exe");
         var workflowExecutable = Path.Combine(AppContext.BaseDirectory, "contain-workflow.exe");
         Records = new RecordsViewModel(new CoreRecordService(new CoreClient(executable)),
@@ -80,7 +82,13 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         if (loaded) return;
         loaded = true;
         ShowRecords();
-        await RunUiAsync(() => Records.LoadPersonalAsync());
+        await RunUiAsync(async () =>
+        {
+            if (personalRecords.IsMissing)
+                ShowEnvironmentCheck();
+            else
+                await Records.LoadPersonalAsync();
+        });
     }
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
@@ -163,7 +171,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     {
         if (GuardTaskNavigation()) return;
         ShowRecords();
-        if (!Records.IsPersonalLibrary) await RunUiAsync(() => Records.LoadPersonalAsync());
+        if (!Records.IsPersonalLibrary || Records.Sessions.Count == 0) await RunUiAsync(() => Records.LoadPersonalAsync());
     }
 
     private void OnNewRecord(object sender, RoutedEventArgs e) => ShowNewRecord();
@@ -209,7 +217,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     public async Task PickProjectFolderAsync()
     {
         if (!EnvironmentCheck.CanEditProjectSelection) return;
-        var dialog = new OpenFolderDialog { Title = "选择要检查的本地项目文件夹", Multiselect = false };
+        var dialog = new OpenFolderDialog { Title = "选择包含项目文件的文件夹", Multiselect = false };
         if (dialog.ShowDialog(this) == true)
             await RunUiAsync(() => EnvironmentCheck.SelectProjectAsync(dialog.FolderName));
         else EnvironmentCheck.CancelSelection();

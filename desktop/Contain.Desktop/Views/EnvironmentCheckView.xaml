@@ -5,26 +5,122 @@
     xmlns:model="clr-namespace:Contain.Desktop.Model;assembly=Contain.Desktop.Model">
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24,16,24,24">
         <StackPanel MaxWidth="920" HorizontalAlignment="Stretch">
-            <TextBlock Text="检查项目环境" Style="{StaticResource PageTitle}" AutomationProperties.AutomationId="EnvironmentPageTitle" />
-            <TextBlock Text="选择项目文件夹并点击“开始检查”，查看环境就绪状态、执行构建验证并生成可分发的 Windows 安装包。" Style="{StaticResource MutedText}" Margin="0,0,0,20" AutomationProperties.AutomationId="EnvironmentPurposeText" />
+            <TextBlock Text="打包项目" Style="{StaticResource PageTitle}" AutomationProperties.AutomationId="EnvironmentPageTitle" />
+            <TextBlock Text="将单项目 C# 控制台或 WPF 应用打成可分发的 Windows x64 安装包。" Style="{StaticResource MutedText}" Margin="0,0,0,18" AutomationProperties.AutomationId="EnvironmentPurposeText" />
 
             <Border Style="{StaticResource Surface}">
                 <StackPanel>
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                        <StackPanel>
+                        <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="项目文件夹" Style="{StaticResource SectionTitle}" />
-                            <TextBlock Text="{Binding EnvironmentCheck.ProjectName}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" AutomationProperties.AutomationId="SelectedProjectName" />
+                            <TextBlock Text="选择包含 .csproj 或 contain.environment.json 的文件夹。">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource MutedText}">
+                                        <Style.Triggers><DataTrigger Binding="{Binding EnvironmentCheck.HasProject}" Value="True"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBlock Text="{Binding EnvironmentCheck.ProjectName}" Visibility="{Binding EnvironmentCheck.HasProject, Converter={StaticResource BoolVisibility}}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" AutomationProperties.AutomationId="SelectedProjectName" />
                         </StackPanel>
-                        <ui:Button Grid.Column="1" Content="选择文件夹" Margin="16,0,0,0" VerticalAlignment="Center" Click="OnPickFolder" IsEnabled="{Binding EnvironmentCheck.CanEditProjectSelection}" AutomationProperties.AutomationId="PickProjectFolder">
+                        <ui:Button Grid.Column="1" Margin="14,0,0,0" Padding="14,9" VerticalAlignment="Center" Click="OnPickFolder" IsEnabled="{Binding EnvironmentCheck.CanEditProjectSelection}" AutomationProperties.AutomationId="PickProjectFolder">
+                            <ui:Button.Style>
+                                <Style TargetType="{x:Type ui:Button}" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                    <Setter Property="Content" Value="选择项目文件夹" />
+                                    <Setter Property="Appearance" Value="Primary" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding EnvironmentCheck.HasProject}" Value="True">
+                                            <Setter Property="Content" Value="更换文件夹" />
+                                            <Setter Property="Appearance" Value="Secondary" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ui:Button.Style>
                             <ui:Button.Icon><ui:SymbolIcon Symbol="FolderOpen24" /></ui:Button.Icon>
                         </ui:Button>
                     </Grid>
-                    <ui:TextBox Margin="0,12,0,0" Text="{Binding EnvironmentCheck.FolderInput, UpdateSourceTrigger=PropertyChanged}" IsReadOnly="{Binding EnvironmentCheck.IsBuilding}" PlaceholderText="点击右侧“选择文件夹”，或直接粘贴本地项目目录路径" AutomationProperties.AutomationId="ProjectPathInput" AutomationProperties.Name="项目文件夹路径" />
-                    <TextBlock Text="{Binding EnvironmentCheck.SelectionScopeNote}" Style="{StaticResource MutedText}" Margin="0,10,0,0" Visibility="{Binding EnvironmentCheck.SelectionScopeNote, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="ProjectScopeNote" />
+                    <Expander Header="文件夹路径" Margin="0,10,0,0" AutomationProperties.AutomationId="ProjectPathExpander">
+                        <ui:TextBox Margin="0,6,0,0" Text="{Binding EnvironmentCheck.FolderInput, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding EnvironmentCheck.CanEditProjectSelection}" PlaceholderText="粘贴本地项目文件夹路径" AutomationProperties.AutomationId="ProjectPathInput" AutomationProperties.Name="项目文件夹路径" />
+                    </Expander>
                 </StackPanel>
             </Border>
 
+            <StackPanel Visibility="{Binding EnvironmentCheck.ShowFirstPackageFlow, Converter={StaticResource BoolVisibility}}">
+                <Border Style="{StaticResource Surface}" Visibility="{Binding EnvironmentCheck.ShowFirstPackageResult, Converter={StaticResource BoolVisibility}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                            <TextBlock Text="安装包已生成" Foreground="{StaticResource AccentBrush}" />
+                            <TextBlock Text="{Binding EnvironmentCheck.GeneratedInstallerFileName}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="FirstPackageResultName" />
+                        </StackPanel>
+                        <ui:Button Grid.Column="1" Content="打开安装包文件夹" Appearance="Primary" Padding="16,9" VerticalAlignment="Center" Click="OnOpenInstallerFolder" IsEnabled="{Binding EnvironmentCheck.CanOpenInstallerFolder}" AutomationProperties.AutomationId="FirstPackageOpenFolder">
+                            <ui:Button.Icon><ui:SymbolIcon Symbol="FolderOpen24" /></ui:Button.Icon>
+                        </ui:Button>
+                    </Grid>
+                </Border>
+                <Border>
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource Surface}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding EnvironmentCheck.ShowFirstPackageResult}" Value="True"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel>
+                        <TextBlock Text="{Binding EnvironmentCheck.FirstPackageProjectName}" FontSize="21" FontWeight="SemiBold" AutomationProperties.AutomationId="FirstPackageProjectName" />
+                        <WrapPanel Margin="0,4,0,12">
+                            <TextBlock Text="{Binding EnvironmentCheck.FirstPackageProjectType}" Style="{StaticResource MutedText}" Margin="0,0,16,0" AutomationProperties.AutomationId="FirstPackageProjectType" />
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="启动程序  " Style="{StaticResource MutedText}" />
+                                <TextBlock Text="{Binding EnvironmentCheck.FirstPackageEntry}" FontWeight="SemiBold" AutomationProperties.AutomationId="FirstPackageEntry" />
+                            </StackPanel>
+                        </WrapPanel>
+                        <TextBlock Text="{Binding EnvironmentCheck.FirstPackageToolSummary}" Style="{StaticResource MutedText}" AutomationProperties.AutomationId="FirstPackageToolSummary" />
+                        <TextBlock Text="{Binding EnvironmentCheck.OnboardingChangeNotice}" Foreground="#7A5200" Margin="0,8,0,0" Visibility="{Binding EnvironmentCheck.HasOnboardingChangeNotice, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="FirstPackageChangeNotice" />
+                        <Border BorderThickness="0,1,0,0" BorderBrush="{StaticResource HairlineBrush}" Margin="0,14,0,0" Padding="0,14,0,0">
+                            <StackPanel>
+                                <TextBlock Text="{Binding EnvironmentCheck.FirstPackageNextStep}" FontSize="15" AutomationProperties.AutomationId="FirstPackageNextStep" />
+                                <TextBlock Text="{Binding EnvironmentCheck.BuildProgressText}" Style="{StaticResource MutedText}" Visibility="{Binding EnvironmentCheck.IsBuilding, Converter={StaticResource BoolVisibility}}" Margin="0,5,0,0" AutomationProperties.AutomationId="FirstPackageProgress" />
+                                <WrapPanel Margin="0,12,0,0">
+                                    <ui:Button Content="{Binding EnvironmentCheck.FirstPackageActionText}" Appearance="Primary" Padding="18,9" HorizontalAlignment="Left" Click="OnFirstPackageAction" IsEnabled="{Binding EnvironmentCheck.CanRunFirstPackageAction}" AutomationProperties.AutomationId="FirstPackageAction" />
+                                    <ui:Button Content="取消" Appearance="Transparent" Margin="8,0,0,0" VerticalAlignment="Center" Click="OnCancelOnboarding" Visibility="{Binding EnvironmentCheck.CanCancelOnboarding, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="FirstPackageCancel" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Border>
+                <Expander Header="查看技术详情" Margin="0,0,0,16" AutomationProperties.AutomationId="FirstPackageDetails">
+                    <StackPanel Margin="0,8,0,0">
+                        <StackPanel Visibility="{Binding EnvironmentCheck.ShowFirstPackageResult, Converter={StaticResource BoolVisibility}}">
+                            <TextBlock Text="{Binding EnvironmentCheck.GeneratedInstallerBadge}" Style="{StaticResource MutedText}" />
+                            <TextBox Text="{Binding EnvironmentCheck.GeneratedInstallerFullPath, Mode=OneWay}" Style="{StaticResource SelectableText}" AutomationProperties.AutomationId="FirstPackageResultPath" AutomationProperties.Name="安装包完整路径" />
+                        </StackPanel>
+                        <TextBox Text="{Binding EnvironmentCheck.OnboardingProvenanceSummary, Mode=OneWay}" Style="{StaticResource SelectableText}" Visibility="{Binding EnvironmentCheck.IsOnboardingReadyToConfirm, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="FirstPackageProvenance" />
+                        <TextBox Text="{Binding EnvironmentCheck.OnboardingDetailsText, Mode=OneWay}" Style="{StaticResource SelectableText}" Visibility="{Binding EnvironmentCheck.OnboardingDetailsText, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="FirstPackageProposedCommand" />
+                        <TextBox Text="{Binding EnvironmentCheck.BuildFullCommandsText, Mode=OneWay}" Style="{StaticResource SelectableText}" Visibility="{Binding EnvironmentCheck.BuildFullCommandsText, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="FirstPackageBuildCommand" />
+                        <TextBox Text="{Binding EnvironmentCheck.DetailedReportText, Mode=OneWay}" Style="{StaticResource SelectableText}" MaxHeight="240" Visibility="{Binding EnvironmentCheck.DetailedReportText, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="FirstPackageReport" />
+                        <TextBox Text="{Binding EnvironmentCheck.BuildLogText, Mode=OneWay}" Style="{StaticResource SelectableText}" MaxHeight="240" Visibility="{Binding EnvironmentCheck.BuildLogText, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="FirstPackageLog" />
+                        <TextBox Text="{Binding EnvironmentCheck.GeneratedInstallerReceiptText, Mode=OneWay}" Style="{StaticResource SelectableText}" Visibility="{Binding EnvironmentCheck.ShowFirstPackageResult, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="FirstPackageReceipt" />
+                    </StackPanel>
+                </Expander>
+            </StackPanel>
+
+            <StackPanel>
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding EnvironmentCheck.ShowFirstPackageFlow}" Value="True"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding EnvironmentCheck.HasProject}" Value="False" />
+                                    <Condition Binding="{Binding EnvironmentCheck.HasOutcome}" Value="False" />
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </MultiDataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
+                <TextBlock Text="{Binding EnvironmentCheck.SelectionScopeNote}" Style="{StaticResource MutedText}" Margin="0,0,0,12" Visibility="{Binding EnvironmentCheck.SelectionScopeNote, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="ProjectScopeNote" />
             <Border Background="#EEF7F5" BorderBrush="#137D74" BorderThickness="1" CornerRadius="10" Padding="20" Margin="0,0,0,16" Visibility="{Binding EnvironmentCheck.IsOnboardingReadyToConfirm, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="OnboardingPreviewSurface">
                 <StackPanel>
                     <TextBlock Text="首次使用 · 请确认发布配置" Foreground="#0E5A53" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" AutomationProperties.AutomationId="OnboardingBadge" />
@@ -415,6 +511,7 @@
                     <TextBox Text="{Binding EnvironmentCheck.DetailedReportText, Mode=OneWay}" Style="{StaticResource SelectableText}" MaxHeight="360" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" AutomationProperties.AutomationId="EnvironmentDetailedReport" AutomationProperties.Name="详细环境检查报告" />
                 </StackPanel>
             </Border>
+            </StackPanel>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

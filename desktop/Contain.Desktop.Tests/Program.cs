@@ -33,6 +33,8 @@ internal static class Program
             UpgradeRecords.VerifyAsync(install, root, seed: args[3] == "seed").GetAwaiter().GetResult();
             return 0;
         }
+        if (args.Length > 0 && args[0] == "--first-package")
+            return FirstPackageCandidate.RunAsync(args[1..]).GetAwaiter().GetResult();
         if (args.Length > 0 && args[0] == "--installed-wpf")
             return InstalledWpfWorkflow.RunAsync(args[1..]).GetAwaiter().GetResult();
         return new NativeSuite(Options.Parse(args)).RunAsync().GetAwaiter().GetResult();
@@ -179,6 +181,8 @@ internal sealed class NativeSuite(Options options)
     {
         currentRoot = Root("empty"); Start(currentRoot, "working-empty"); await D.ReadyAsync();
         Require(!File.Exists(Database(currentRoot)), "empty library does not create database");
+        await D.UntilAsync("first_package_picker", "PickProjectFolder", () => D.VisibleAsync("PickProjectFolder"));
+        await D.InvokeAsync("MyRecords");
         await D.UntilAsync("empty_records_ready", "EmptyRecordsCTA", () => D.VisibleAsync("EmptyRecordsCTA"));
         await Shot("records-empty.png", "isolated-empty");
         await D.InvokeAsync("NewInstall"); await D.UntilAsync("new_config", "PickInstaller", () => D.VisibleAsync("PickInstaller"));

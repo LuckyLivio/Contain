@@ -10,6 +10,7 @@ public partial class EnvironmentCheckView : UserControl
     private async void OnPickFolder(object sender, RoutedEventArgs e) => await Shell.PickProjectFolderAsync();
     private async void OnConfirmOnboarding(object sender, RoutedEventArgs e) => await Shell.RunConfirmOnboardingAsync();
     private void OnCancelOnboarding(object sender, RoutedEventArgs e) => Shell.CancelProjectOnboarding();
+    private async void OnFirstPackageAction(object sender, RoutedEventArgs e) => await Shell.RunUiAsync(() => Shell.EnvironmentCheck.RunFirstPackageActionAsync());
     private async void OnStartCheck(object sender, RoutedEventArgs e) => await Shell.RunEnvironmentCheckAsync();
     private void OnToggleReport(object sender, RoutedEventArgs e) => Shell.EnvironmentCheck.ToggleDetailedReport();
     private void OnCopyReport(object sender, RoutedEventArgs e) => Shell.CopyText(Shell.EnvironmentCheck.DetailedReportText);

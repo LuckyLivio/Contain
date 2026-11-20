@@ -1635,6 +1635,7 @@ fn dotnet_onboarding_reads_custom_assembly_name_without_writing_and_guards_apply
     let stale_apply = apply_onboarding(&proj, Some(&insp.source_fingerprint_sha256)).unwrap();
     assert_eq!(stale_apply.status, "source_changed_refresh_required");
     assert!(!stale_apply.wrote_file);
+    assert!(stale_apply.saved_manifest_sha256.is_none());
     assert!(!proj.join("contain.environment.json").exists());
     assert_eq!(stale_apply.inspection.app_version.as_deref(), Some("1.4.0"));
     assert_eq!(
@@ -1652,6 +1653,13 @@ fn dotnet_onboarding_reads_custom_assembly_name_without_writing_and_guards_apply
     .unwrap();
     assert_eq!(preserved.status, "preserved_existing_manifest");
     assert!(!preserved.wrote_file);
+    assert!(
+        preserved
+            .inspection
+            .matching_generated_manifest_sha256
+            .is_none()
+    );
+    assert!(preserved.saved_manifest_sha256.is_none());
     assert_eq!(
         fs::read(proj.join("contain.environment.json")).unwrap(),
         custom_bytes
@@ -1666,10 +1674,78 @@ fn dotnet_onboarding_reads_custom_assembly_name_without_writing_and_guards_apply
     .unwrap();
     assert_eq!(applied.status, "applied");
     assert!(applied.wrote_file);
-    assert!(proj.join("contain.environment.json").is_file());
+    assert_eq!(
+        applied.saved_manifest_sha256,
+        Some(sha256(
+            &fs::read(proj.join("contain.environment.json")).unwrap()
+        ))
+    );
+    let reopened = inspect_project(&proj).unwrap();
+    assert_eq!(reopened.status, "existing_manifest");
+    assert_eq!(
+        reopened.matching_generated_manifest_sha256,
+        applied.saved_manifest_sha256
+    );
+    assert_eq!(
+        reopened.entry_executable,
+        applied.inspection.entry_executable
+    );
     assert_eq!(fs::read_to_string(&csproj_path).unwrap(), updated_csproj);
     let written = Manifest::read(&proj.join("contain.environment.json")).unwrap();
     assert_eq!(written.installer.unwrap().version.as_deref(), Some("1.4.0"));
+}
+
+#[test]
+fn onboarding_inspects_the_pinned_sdk_and_packager_without_running_them() {
+    use contain_workflow::dotnet_onboarding::DotnetOnboardingInspection;
+    use std::process::Command;
+
+    let t = Temp::new();
+    let project = t.0.join("App");
+    fs::create_dir(&project).unwrap();
+    fs::write(project.join("App.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>"#).unwrap();
+    fs::write(
+        project.join("global.json"),
+        r#"{"sdk":{"version":"82.0.106","rollForward":"disable"}}"#,
+    )
+    .unwrap();
+
+    let sdk_root = t.0.join("dotnet");
+    for patch in 100..=106 {
+        let sdk = sdk_root.join("sdk").join(format!("82.0.{patch}"));
+        fs::create_dir_all(&sdk).unwrap();
+        if patch != 106 {
+            fs::write(sdk.join("dotnet.dll"), b"fixture").unwrap();
+        }
+    }
+    let iscc = t.0.join("ISCC.exe");
+    let inspect = || {
+        let output = Command::new(env!("CARGO_BIN_EXE_contain-workflow"))
+            .arg("onboard-dotnet")
+            .arg("--project")
+            .arg(&project)
+            .env("DOTNET_ROOT", &sdk_root)
+            .env("CONTAIN_ISCC_PATH", &iscc)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        serde_json::from_slice::<DotnetOnboardingInspection>(&output.stdout).unwrap()
+    };
+    let missing = inspect();
+    assert_eq!(missing.packager_detected, Some(false));
+    assert!(missing.host_detected_compatible_sdks.is_empty());
+    fs::write(sdk_root.join("sdk/82.0.106/dotnet.dll"), b"fixture").unwrap();
+    fs::write(&iscc, b"not executable").unwrap();
+    let observed = inspect();
+    assert_eq!(observed.packager_detected, Some(true));
+    assert_eq!(observed.host_detected_compatible_sdks, ["82.0.106"]);
+    assert!(!project.join("contain.environment.json").exists());
+
+    fs::write(project.join("contain.environment.json"), b"{}").unwrap();
+    assert_eq!(inspect().packager_detected, Some(true));
+    fs::remove_file(&iscc).unwrap();
+    assert_eq!(inspect().packager_detected, Some(false));
 }
 
 #[test]
@@ -1732,10 +1808,23 @@ fn wpf_onboarding_previews_and_persists_the_project_publish_plan() {
             saved.installer.unwrap().entry.as_deref(),
             Some("Greeting.exe")
         );
+        let reopened = inspect_project(&project.0).unwrap();
+        assert_eq!(reopened.status, "existing_manifest");
         assert_eq!(
-            inspect_project(&project.0).unwrap().status,
-            "existing_manifest"
+            reopened.matching_generated_manifest_sha256,
+            applied.saved_manifest_sha256
         );
+        assert_eq!(reopened.entry_executable.as_deref(), Some("Greeting.exe"));
+        // A project-supplied edit must return to explicit manual review.
+        let manifest_path = project.0.join("contain.environment.json");
+        let original = fs::read_to_string(&manifest_path).unwrap();
+        let modified = original.replace("\"publish\"", "\"build\"");
+        assert_ne!(original, modified);
+        fs::write(&manifest_path, &modified).unwrap();
+        let custom = inspect_project(&project.0).unwrap();
+        assert!(custom.matching_generated_manifest_sha256.is_none());
+        assert!(custom.entry_executable.is_none());
+        assert_eq!(fs::read_to_string(&manifest_path).unwrap(), modified);
         assert_eq!(fs::read_to_string(&csproj).unwrap(), xml);
     }
 }
