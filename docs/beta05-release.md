@@ -1,6 +1,6 @@
 # v0.5.0-beta.1：普通 C# 控制台项目零配置打包与桌面工作流
 
-**发布状态**　当前公开版为 v0.4.0-beta.1。v0.5.0-beta.1 正在整合 CLI 默认只读探测、项目选择时的后台检查及上级目录 MSBuild 配置识别。新候选须从包含全部产品修复的发布分支提交构建，并将双 ZIP、Setup、升级及离线试装收据绑定到同一批字节。Windows 本地 A/B 验收：云端未收到最终收据。[当前公开版](https://github.com/LuckyLivio/Contain/releases/tag/v0.4.0-beta.1)
+**发布状态**　#24 已合入发布分支，三项审查意见已处理。产品源码冻结于 `aac52e52cbe9395cb845be2d31c09ec117f86d06`。该提交的 Windows 引导 CLI 已核验；新候选的 A 构建、B 接收、Setup 升级及离线试装待收据。当前公开版为 v0.4.0-beta.1。[修复 PR](https://github.com/LuckyLivio/Contain/pull/24) · [当前公开版](https://github.com/LuckyLivio/Contain/releases/tag/v0.4.0-beta.1)
 
 本版面向在 Windows x64 上开发单项目 C# 控制台应用、希望把程序直接打包发给普通用户安装的开发者，同时也适合需要校验交付 ZIP 或查看既有安装记录的用户。双击运行 `Contain-Setup-x64.exe` 完成当前用户安装后，从开始菜单打开 `Contain`，进入「检查项目环境」选择只有 `.csproj` 和源码的项目文件夹，依次点击「使用此配置 → 开始检查 → 开始构建 → 生成安装包」，即可得到可独立分发的 `<应用名>-Setup-x64.exe`。历史冻结候选（`887f119`）已在 Windows 11 x64（`10.0.26300`）开发机、GitHub Actions `windows-latest` CI 与断网无开发工具的干净 Windows 11 x64 沙箱（`10.0.26100`）完成构建、离线安装启动、随包示例记录读取及卸载验证；完整快照 A→B（空白源码机缺项恢复构建并交接至干净接收机 `-Stage Package`）的最终收据尚未送达云端。所有候选安装包均未配置代码签名证书（`NotSigned`），首次运行可能出现 Windows SmartScreen 提示。
 
@@ -8,13 +8,28 @@
 
 ### 发布前修复进度
 
-| 审查项 | 已推送的修复与验证 |
+| 审查项 | 已合入的修复与验证 |
 | --- | --- |
 | CLI 环境探测 | [`07feeae`](https://github.com/LuckyLivio/Contain/commit/07feeaeec165033aeccc89d20f3494f056760e59) 将只读策略设为默认，保留桌面端显式参数。该提交的 Windows Rust 和桌面 CI 均通过。Linux 套件的两项失败在发布基线也能复现。 |
 | 上级目录构建配置 | [`44fd575`](https://github.com/LuckyLivio/Contain/commit/44fd575f3d7ce6a083b2cdb6e81bb1a88c4122a0) 识别继承的 MSBuild 属性和目标，重新核对确认指纹。两种父目录样例均实际改变了子项目输出名。 |
 | 项目选择响应 | [`3f564a8`](https://github.com/LuckyLivio/Contain/commit/3f564a8f2ef23783beeca1683519c73ad4b3360a) 将选择与刷新移出界面线程并丢弃过期结果。桌面模型测试 59/59 通过。 |
 
-正式候选的产品源码 SHA 待上述改动合入发布分支后记录。下面的冻结包、哈希和安装收据属于此前的 `887f119`。快照 A 的引导 CLI 已在 Windows 上完成试构建。[引导 CLI 构建记录](https://github.com/LuckyLivio/Contain/actions/runs/44681314014)
+## 冻结源码与 Windows 验收
+
+| 项目 | 已核验的身份或待收材料 |
+| --- | --- |
+| 产品源码 `source_sha` | `aac52e52cbe9395cb845be2d31c09ec117f86d06`，即 #24 的实际合并提交。后续发布文档提交单独记录在 [#23](https://github.com/LuckyLivio/Contain/pull/23)。 |
+| 快照 A 的引导 CLI | [下载 Actions 产物（需登录 GitHub）](https://github.com/LuckyLivio/Contain/actions/runs/44686488644/artifacts/14605909789) · [Windows 构建记录](https://github.com/LuckyLivio/Contain/actions/runs/44686488644)。已下载归档，核验内层 `identity.json.source_sha`、ZIP、包规格、x64 EXE 和两份随包选择器。 |
+| SHA-256 | Actions 外层归档 `402a34f1f345d79e921ef88771529bf98ae32a42588b9e5ed7e2fd60cc5d3fee`；内层 CLI ZIP `dba49cb3690558bc2ada2b44420583f7ab3854cf0b15f7fe29bb7a5525655d0e`；其中的 `contain-workflow.exe` 为 `02f23ef1d5310ab91e71265f5cc75caf2058ba4e69cb79cd238503541d8bfad0`。 |
+| 持久快照 A | 旧源码 `887f119` 的补工具前收据已报告写回宿主机，待核对。新源码的 `Source` 成功收据、实际双 ZIP 和 `handoff.json` 待回传。 |
+| 独立断网快照 B | Windows 本地 A/B 验收：云端未收到最终收据。用 A 的同一批候选验证，在 B 导出 `B-receipt.json`。 |
+| 新 Setup | 由 A 的桌面 ZIP 组装；待核对同一 Setup 哈希的原位升级、旧记录读取及离线安装、启动、卸载记录。 |
+
+**先取回 A 的既有收据。** 在宿主机保存旧 `A-before` 的目录中取 `acceptance.json` 和 `before-install/report.json`。前者记录快照标签、阶段和退出状态，后者记录工具缺项及可用的 Git 源码证据。本次工具清单、Rust 与 .NET 版本文件、工具链选择脚本及 A 阶段脚本与 `887f119` 内容一致；CLI 默认探测策略已有修复。结合收据和同一持久快照的状态，确定可接续的首个阶段。已有 SDK 安装进度单独保留。
+
+后续在干净检出上固定上表的产品 SHA。将引导包的外层归档与内层 CLI ZIP 依次解压，保留 EXE 旁的 `workflow/`。按阶段记录执行 A 的 `Source`、从其 `delivery` 组装 Setup，再把完整候选及独立传递的清单摘要送至 B。保留候选目录的原始字节，供通过验收后发布。[Windows 分阶段命令与回传文件](phase-one.md)
+
+此前的 [引导 CLI 试构建](https://github.com/LuckyLivio/Contain/actions/runs/44681314014) 来自 `2f9f09a`。下文旧 Setup、桌面和 CLI ZIP 的哈希及试装收据属于 `887f119`。
 
 ## 本版交付范围
 
@@ -56,5 +71,3 @@
 | **Windows 11 x64 开发机（`10.0.26300`）** | 1. 桌面 ZIP 与 CLI ZIP `contain-workflow verify --run`；<br>2. 先安装 `0.4.0-beta.1` 再运行本次 `Contain-Setup-x64.exe`（`0.5.0-beta.1`）原位升级，核实系统卸载列表仅保留 **1 个** `Contain` 条目（版本 `0.5.0-beta.1`）；<br>3. 从开始菜单快捷方式启动安装后的 `Contain · 0.5.0-beta.1`，通过隔离历史记录库确认 3 条旧会话在界面与 CLI 中均可正常读取；<br>4. 选择仅含 `.csproj` 与 `Program.cs` 的全新控制台项目 `HelloReleaseApp`，完成「使用此配置 → 开始检查 → 开始构建 → 生成安装包」，产出 `HelloRelease-Setup-x64.exe`（SHA-256 `4a33436ce17e309a156e6d9f12e9b91c53a5bfa228ad35d9697bd0ea4b329272`）；<br>5. 将 `HelloRelease-Setup-x64.exe` 单独复制到另一目录安装，从开始菜单目标运行 `HelloRelease.exe` 实测输出 `CONTAIN_V050_BETA1_OK`、退出码 `0`，随后标准卸载 `HelloRelease` 与 `Contain`。 | **通过** |
 | **断网无开发工具干净 Windows 11 x64 沙箱（`10.0.26100`，两套独立实例）** | 1. **实例 1（无 Contain 环境）**：断网安装 `HelloRelease-Setup-x64.exe`（`4a33436c...`）与 `HelloContain-Setup-x64.exe`（`b1d7a299...`），从开始菜单快捷方式核实入口并运行输出 `CONTAIN_V050_BETA1_OK` / `CONTAIN_DEMO_BUILD_OK_V1`（退出码 `0`），标准卸载后快捷方式与安装目录全部清除；<br>2. **实例 2（全新沙箱）**：断网安装 `Contain-Setup-x64.exe`（`9c862fb8...`），核实唯一卸载登记（`0.5.0-beta.1`），从开始菜单 `Contain.lnk` 启动 `Contain · 0.5.0-beta.1`，通过「打开外部记录库」加载随包 `samples\viewer-demo.db`，浏览 `synthetic-finished` 并读取事件 `event:synthetic-finished-event-0`（`C:\synthetic\observed\recorded.tmp`）右侧完整依据，验证随包 `contain-workflow.exe --version` 正常输出后正常关闭（退出码 `0`）并调用卸载程序：卸载条目归零、开始菜单快捷方式与 `Contain.Viewer.exe` 等全部已安装文件均已移除（直接在程序目录内打开 WAL 模式的 `samples\viewer-demo.db` 时，运行期生成的两个 SQLite 临时侧车文件 `samples\viewer-demo.db-shm` 与 `samples\viewer-demo.db-wal` 按 Inno Setup 不误删安装后新建文件的默认策略留在 `samples\` 子目录中）。 | **通过**（收据已导出保存） |
 | **持久干净 Windows x64 快照 A→B 链路** | 快照 A 空白持久环境安装工具前 `-Stage SourceMissing` 与同环境补齐工具后 `-Stage Source` 构建，以及在全新断网无工具沙箱对 A 新生成双 ZIP 与 `handoff.json` 执行 `-Stage Package`（含缺 `coreclr.dll` 坏包启动前拒绝） | **云端未收到最终收据** |
-
-若纳入 CLI 默认只读探测修复，以发布分支实际包含修复的完整提交 SHA 作为新候选的 `source_sha`，在新的输出目录重建桌面及独立 CLI ZIP、两份 package spec 和由桌面 ZIP 生成的 Setup。重新记录哈希，核验两处 `contain-workflow.exe` 的探测行为和随包选择器，复验双 ZIP、Setup 升级及离线安装、启动、卸载，并按新哈希核对 A/B 交接收据。上表的离线试装记录对应表内冻结哈希。

@@ -1,12 +1,8 @@
 # 第一阶段：本次源码 → 两份 Windows 交付包 → 独立接收机验证
 
-当前代码在 `feat/source-and-package-workflows` 上继续；上轮审阅基线
-`c0ea857efaa8d9cdf6fd6a735cb35f87cdcab9d8`。本轮结果见
-[第二轮验收记录](phase-one-round2-results.md)，上轮 [历史记录](phase-one-results.md) 保留。
+本页给出持久快照 A 的源码恢复与构建，以及独立快照 B 的接收验收步骤。本次产品的完整 `source_sha`、对应的 Windows 引导包和当前缺少的收据见[候选发布记录](beta05-release.md)。如原快照已有阶段收据，先核对源码、快照来源和已完成的检查，再接续剩余阶段。
 
-本轮补齐了组装入口和 A/B 复现脚本，但当前任务机器仍为 Linux：**没有生成或验收过
-本次提交的完整 Windows 桌面 ZIP，也没有可提供下载的本次 Windows 原生包**。
-以下命令在可信 Windows 构建机生成真实文件；不以旧 Beta 包或合成 ZIP 代替。
+此前开发分支的结果保存在[第二轮验收记录](phase-one-round2-results.md)和[第一轮历史记录](phase-one-results.md)。
 
 ## 构建前提与实际选择
 
@@ -41,7 +37,7 @@ powershell.exe -NoProfile -File scripts/build-workflow.ps1 -OutputDirectory C:\C
 干净接收机通过证明。将完整 CLI ZIP 解压到 A 的 `C:\Bootstrap`，保留
 `contain-workflow.exe` 旁的 `workflow\` 子目录，供默认环境检查选择 MSVC 和 Windows SDK。
 运行该 CLI 无需预装 Rust 或 .NET SDK。
-GitHub 分支是源码获取方式；本轮没有上传 Release 或伪造 Windows artifact 下载地址。
+已发布到 Actions 的引导包可从[候选发布记录](beta05-release.md)下载，解压前核对源码身份和 SHA-256。
 
 ## 快照 A：从真实缺项到本次构建的桌面/CLI ZIP
 
