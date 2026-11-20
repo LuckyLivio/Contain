@@ -586,7 +586,8 @@ fn cli_check_redacts_injected_environment_and_does_not_overwrite_reports() {
     use std::process::Command;
     let t = Temp::new();
     let mut m = manifest();
-    m.tools[0].program = "contain-absent-tool-fixture".into();
+    m.tools[0].program = "git".into();
+    m.tools[0].version = "0.0-contain-mismatch".into();
     let s = t.0.join("environment.json");
     fs::write(&s, serde_json::to_vec(&m).unwrap()).unwrap();
     let report = t.0.join("report");
@@ -784,6 +785,78 @@ fn safe_probes_skip_unsupported_commands_and_mark_needs_confirmation() {
     assert_eq!(skipped.status, Status::NeedsConfirmation);
     assert_eq!(skipped.outcome.as_deref(), Some("unsupported_probe"));
     assert!(!r.passed());
+}
+
+#[test]
+fn cli_check_requires_explicit_opt_in_for_custom_probes() {
+    use std::process::Command;
+    let project = Temp::new();
+    let workflow = env!("CARGO_BIN_EXE_contain-workflow");
+    let git = Command::new("git").arg("--version").output().unwrap();
+    assert!(git.status.success());
+    let git_output = std::str::from_utf8(&git.stdout).unwrap();
+    let git_version = git_output.split_whitespace().nth(2).unwrap();
+
+    let mut m = manifest();
+    m.required_variables.clear();
+    m.tools[0].program = "git".into();
+    m.tools[0].version = git_version.into();
+    // The custom probe only prints the workflow binary's version.
+    m.tools.push(Tool {
+        program: workflow.into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+        version_args: vec!["--version".into()],
+        remedy: "confirm manually".into(),
+        version_policy: None,
+    });
+    fs::write(
+        project.0.join("contain.environment.json"),
+        serde_json::to_vec(&m).unwrap(),
+    )
+    .unwrap();
+
+    let check = |flags: &[&str], report: &Path| {
+        Command::new(workflow)
+            .arg("check")
+            .args(flags)
+            .arg("--project")
+            .arg(&project.0)
+            .arg("--report")
+            .arg(report)
+            .output()
+            .unwrap()
+    };
+    for flag in [None, Some("--safe-probes"), Some("--allow-unsafe-probes")] {
+        let report = project.0.join(flag.unwrap_or("default"));
+        let result = check(flag.as_slice(), &report);
+        let r: Report =
+            serde_json::from_slice(&fs::read(report.join("report.json")).unwrap()).unwrap();
+        let (custom_status, outcome, windows_exit) = if flag == Some("--allow-unsafe-probes") {
+            (Status::Passed, "version_matched", 0)
+        } else {
+            (Status::NeedsConfirmation, "unsupported_probe", 2)
+        };
+        let expected_exit = if status(&r, "platform") == Status::Passed {
+            windows_exit
+        } else {
+            1
+        };
+        assert_eq!(result.status.code(), Some(expected_exit));
+        let custom = r
+            .checks
+            .iter()
+            .find(|c| c.name == format!("tool:{workflow}"))
+            .unwrap();
+        assert_eq!(custom.status, custom_status);
+        assert_eq!(custom.outcome.as_deref(), Some(outcome));
+        let supported = r.checks.iter().find(|c| c.name == "tool:git").unwrap();
+        assert_eq!(supported.status, Status::Passed);
+        assert_eq!(supported.observed.as_deref(), Some(git_version));
+    }
+    let report = project.0.join("conflict");
+    let result = check(&["--safe-probes", "--allow-unsafe-probes"], &report);
+    assert_eq!(result.status.code(), Some(2));
+    assert!(!report.exists());
 }
 
 #[test]

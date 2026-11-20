@@ -28,18 +28,19 @@ C 编译和 CLI 打包，并设置选中工具集的绝对 Rust linker/CC/CXX �
 
 ## 可信构建机：先准备可带到空白源码机的独立 CLI
 
-先安装上述工具，然后从干净、已提交的检出构建 bootstrap CLI；**不要在 A 上先安装
+先安装上述工具，将 `$sourceSha` 设为本次候选所用发布分支的完整提交 SHA，然后从干净检出构建 bootstrap CLI；**不要在 A 上先安装
 工具再补写缺项报告**。以下输出路径均必须尚不存在；失败输出和旧证据保留。
 
 ```powershell
-git switch feat/source-and-package-workflows
-git pull --ff-only
+git switch --detach $sourceSha
 powershell.exe -NoProfile -File scripts/build-workflow.ps1 -OutputDirectory C:\ContainRuns\bootstrap-01
 ```
 
 得到 `bootstrap-01\contain-workflow-windows-x64.zip`、`package-spec.json`、`identity.json`。
 脚本使用独立新构建目录、请求静态 CRT、收集实际依赖许可证；这是 bootstrap，不是
-干净接收机通过证明。解压其中 CLI 后复制到 A。不安装 Rust/.NET SDK 才能执行它。
+干净接收机通过证明。将完整 CLI ZIP 解压到 A 的 `C:\Bootstrap`，保留
+`contain-workflow.exe` 旁的 `workflow\` 子目录，供默认环境检查选择 MSVC 和 Windows SDK。
+运行该 CLI 无需预装 Rust 或 .NET SDK。
 GitHub 分支是源码获取方式；本轮没有上传 Release 或伪造 Windows artifact 下载地址。
 
 ## 快照 A：从真实缺项到本次构建的桌面/CLI ZIP

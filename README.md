@@ -4,16 +4,17 @@
 
 ## v0.5.0-beta.1 预发布候选概览
 
-本版面向在 Windows x64 上开发普通单项目 C# 控制台应用、希望把程序直接做成安装包发给别人使用的开发者，也适合收到软件包后做交付校验或查看安装记录的用户。安装并从开始菜单打开 `Contain` 后，进入「检查项目环境」选择只有 `.csproj` 和源码的项目文件夹，点击「使用此配置 → 开始检查 → 开始构建 → 生成安装包」，无需手写 JSON 或挑选 EXE 即可生成单文件 Windows 安装包（WPF 应用自动识别排在下一版）。当前候选（`source_sha = 887f119796311f475792a9d3a56a8f95159cc123`）已在 Windows 11 x64 开发机、GitHub Actions Windows CI 以及断网无开发工具的干净 Windows 11 x64 沙箱（`10.0.26100`）完成冻结 `Contain-Setup-x64.exe` 与演示项目安装包的离线安装、开始菜单启动、随包示例库事件依据读取与标准卸载验证；**待干净持久 Windows x64 环境完成完整 A→B（`-Stage SourceMissing` / `-Stage Source` → `-Stage Package`）链路实测后正式发布 GitHub Prerelease 并开放安装包与便携 ZIP 直链**；候选包当前未配置代码签名证书（`NotSigned`）。详见 [v0.5.0-beta.1 候选说明与哈希清单](docs/beta05-release.md)。
+本版面向在 Windows x64 上开发普通单项目 C# 控制台应用、希望把程序直接做成安装包发给别人使用的开发者，也适合收到软件包后做交付校验或查看安装记录的用户。安装并从开始菜单打开 `Contain` 后，进入「检查项目环境」选择只有 `.csproj` 和源码的项目文件夹，点击「使用此配置 → 开始检查 → 开始构建 → 生成安装包」，无需手写 JSON 或挑选 EXE 即可生成单文件 Windows 安装包（WPF 应用自动识别排在下一版）。当前候选（`source_sha = 887f119796311f475792a9d3a56a8f95159cc123`）已在 Windows 11 x64 开发机、GitHub Actions Windows CI 以及断网无开发工具的干净 Windows 11 x64 沙箱（`10.0.26100`）完成冻结 `Contain-Setup-x64.exe` 与演示项目安装包的离线安装、开始菜单启动、随包示例库事件依据读取与标准卸载验证；**Windows 本地 A/B 验收：云端未收到最终收据**；候选包当前未配置代码签名证书（`NotSigned`）。详见 [v0.5.0-beta.1 候选说明与哈希清单](docs/beta05-release.md)。
 
 本分支实施第一阶段重构：独立 Rust CLI `contain-workflow`，不依赖旧 ETW 采集链。源码恢复和交付验收是两条独立流程；桌面端通过随包附带的 `contain-workflow.exe` 提供“检查项目环境”（支持对尚未配置 `contain.environment.json` 的普通单项目 C# 控制台目录做只读 `.csproj` 识别与一键确认生成配置，随后衔接环境探测、步骤预览、受控项目构建、打开确认产物目录，以及面向已验证 Windows x64 `.NET` 自包含多文件发布的一键“生成安装包”）和只读“检查交付包”（静态核对 ZIP 身份与必需文件，不自动启动包内程序），需要带 `--run` 启动验证包内程序或自动化编排时仍通过 CLI 执行。
 
 ## 接手源码、恢复开发环境
 
-版本化 `contain.environment.json` 描述 Windows x64 工具链、必需变量名称、实际构建和验证命令。CLI 检查缺失项及版本差异，给出补齐步骤；补齐后显式运行项目构建。没有清单时，只从明确支持的项目文件提取已声明要求，缺少依据的项目列为待确认。
+版本化 `contain.environment.json` 描述 Windows x64 工具链、必需变量名称、实际构建和验证命令。普通 `check` 和 `check --safe-probes` 均只运行受支持的只读探测。自定义探测会标为 `needs_confirmation`。只有在审核并信任项目的探测命令和工具链脚本后，才应使用 `check --allow-unsafe-probes` 允许执行。没有清单时，只从明确支持的项目文件提取已声明要求，缺少依据的项目列为待确认。
 
 ```powershell
-cargo run -p contain-workflow --locked -- check --project . --report target/workflow/check-01
+# 将独立 CLI ZIP 完整解压到 C:\Bootstrap，以使用随包的 Windows 工具链选择器。
+C:\Bootstrap\contain-workflow.exe check --project . --report target/workflow/check-01
 cargo run -p contain-workflow --locked -- build --project . --execute --delivery-dir target/workflow/delivery-01 --report target/workflow/build-01
 ```
 
@@ -40,7 +41,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows-inst
 
 本分支第二轮已补齐本次 Rust/WPF 产物的桌面 ZIP 组装、独立 CLI 打包和 A/B 交接脚本，并记录实际选中的 MSVC/SDK。架构改用 IsWow64Process2，ARM64 仿真和未知状态单独记录。[完整命令与产物位置](docs/phase-one.md) · [本轮结果与合并阻塞](docs/phase-one-round2-results.md)。
 
-已在原生 Windows 11 x64 开发机使用锁定工具链（Rust `1.100.0`、.NET SDK `10.0.403`、Python `3.12.10`、MSVC `14.44.35207`、Windows SDK `10.0.26100.0`）产出 `v0.5.0-beta.1` 候选单文件安装包 `Contain-Setup-x64.exe`、完整桌面便携 ZIP 与独立 CLI ZIP，通过开发机本机 `verify --run`、原位升级、旧记录兼容读回、端到端 C# 项目打包安装验收及全量 GitHub Actions CI，并在两个独立的断网无开发工具干净 Windows 11 x64 沙箱实例中完成冻结 Setup 离线安装／启动／随包示例库读取／卸载验收；原仓库级 SQLite 安全公告（`RUSTSEC-2026-0459`）与 `chrono` 未维护公告（`RUSTSEC-2026-0543`）均已修复，全仓库 `cargo deny --locked check` 在保留原有严格规则下通过。**第一阶段完整快照 A→B（空白持久机 `-Stage SourceMissing` / `-Stage Source` 与基于 A 产物的 `-Stage Package`）独立验收仍待完成**。上轮实际 Beta.1 包检查及 PR #22 门禁的[历史证据](docs/phase-one-results.md)保留。
+已在原生 Windows 11 x64 开发机使用锁定工具链（Rust `1.100.0`、.NET SDK `10.0.403`、Python `3.12.10`、MSVC `14.44.35207`、Windows SDK `10.0.26100.0`）产出 `v0.5.0-beta.1` 候选单文件安装包 `Contain-Setup-x64.exe`、完整桌面便携 ZIP 与独立 CLI ZIP，通过开发机本机 `verify --run`、原位升级、旧记录兼容读回、端到端 C# 项目打包安装验收及全量 GitHub Actions CI，并在两个独立的断网无开发工具干净 Windows 11 x64 沙箱实例中完成冻结 Setup 离线安装／启动／随包示例库读取／卸载验收；原仓库级 SQLite 安全公告（`RUSTSEC-2026-0459`）与 `chrono` 未维护公告（`RUSTSEC-2026-0543`）均已修复，全仓库 `cargo deny --locked check` 在保留原有严格规则下通过。**第一阶段完整快照 A→B（空白持久机 `-Stage SourceMissing` / `-Stage Source` 与基于 A 产物的 `-Stage Package`）独立验收：云端未收到最终收据**。上轮实际 Beta.1 包检查及 PR #22 门禁的[历史证据](docs/phase-one-results.md)保留。
 
 ## 后续里程碑
 

@@ -39,8 +39,12 @@ enum Command {
         manifest: Option<PathBuf>,
         #[arg(long)]
         report: PathBuf,
-        #[arg(long)]
+        /// Use the supported read-only probes (the default for check).
+        #[arg(long, conflicts_with = "allow_unsafe_probes")]
         safe_probes: bool,
+        /// Allow a trusted project's custom probe commands and toolchain selector to run.
+        #[arg(long)]
+        allow_unsafe_probes: bool,
         #[arg(long)]
         infer_if_missing: bool,
     },
@@ -161,6 +165,7 @@ fn run() -> Result<i32> {
             manifest,
             report,
             safe_probes,
+            allow_unsafe_probes,
             infer_if_missing,
         } => {
             fresh(&report)?;
@@ -190,7 +195,7 @@ fn run() -> Result<i32> {
                     &m,
                     &project,
                     environment::CheckOptions {
-                        safe_probes,
+                        safe_probes: safe_probes || !allow_unsafe_probes,
                         manifest_source: Some(source),
                     },
                 ),
