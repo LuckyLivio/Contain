@@ -1,5 +1,7 @@
 # Contain v0.5.0-beta.2
 
+已发布为 GitHub Prerelease，标签指向 #26 合入 main 的提交 `0d56d7f7e9c7bf6c5fa3974e6e03aa85c5edbcf2`。18 个附件均已从公开入口匿名下载，字节数和 SHA-256 全部与验收原件一致。[下载安装包](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.2/Contain-Setup-x64.exe) · [发行页](https://github.com/LuckyLivio/Contain/releases/tag/v0.5.0-beta.2) · [WPF 实包收据](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.2/installed-wpf-workflow.json)
+
 ## 单项目 WPF 应用打包
 
 在 Windows x64 上打开 Contain，选择「检查项目环境 → 选择文件夹 → 使用此配置 → 开始检查 → 开始构建 → 生成安装包」，即可把受支持的 WPF 工程做成可安装的 Windows 应用。

@@ -4,21 +4,15 @@
 
 ## 下载 Windows 版
 
-**[下载 Contain v0.5.0-beta.1 安装包（Windows x64）](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.1/Contain-Setup-x64.exe)**
+**[下载 Contain v0.5.0-beta.2 安装包（Windows x64）](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.2/Contain-Setup-x64.exe)**
 
-运行安装包后，从开始菜单打开 **Contain**。你可以查看已有的安装记录，或选择单项目 C# 控制台应用，检查环境、构建并生成可分发的安装包。这个预发行版的安装器尚未签名。
+用 Contain 将受支持的单项目 WPF 或 C# 控制台工程构建为可以发给用户安装的 Windows 应用。
 
-[免安装桌面 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.1/contain-0.5.0-beta.1-windows-x64.zip) · [独立 CLI ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.1/contain-workflow-0.5.0-beta.1-windows-x64.zip) · [发行说明](https://github.com/LuckyLivio/Contain/releases/tag/v0.5.0-beta.1) · [SHA-256 校验文件](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.1/SHA256SUMS.txt)
+**最短路径**　从开始菜单打开 Contain → 检查项目环境 → 选择文件夹 → 使用此配置 → 开始检查 → 开始构建 → 生成安装包。
 
-本版已在 GitHub 托管 Windows Server 2022 x64 上实测安装、桌面启动、示例记录读取和卸载。无开发工具的干净机交接与完全断网试装列入稳定版前的兼容性验证。[验收记录](docs/beta05-release.md)
+[免安装桌面 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.2/contain-0.5.0-beta.2-windows-x64.zip) · [独立 CLI ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.2/contain-workflow-0.5.0-beta.2-windows-x64.zip) · [发行说明](https://github.com/LuckyLivio/Contain/releases/tag/v0.5.0-beta.2) · [SHA-256 校验文件](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.2/SHA256SUMS.txt)
 
-## v0.5.0-beta.2 候选验收
-
-在本分支的「检查项目环境」中选择单项目 WPF 应用目录，预览应用类型和入口 EXE。点击「使用此配置」后生成 `contain.environment.json`，随后可以检查环境、构建并生成该应用自己的安装包。首次预览只读取项目文件。
-
-支持使用 `Microsoft.NET.Sdk`、显式声明 `OutputType=WinExe` 与 `UseWPF=true` 的独立应用，目标框架为单个 `net8.0-windows` 或更高版本。入口默认采用项目文件名，也支持显式的 `AssemblyName`。项目引用、外部构建属性、混合 UI 框架和条件属性需要手动清单。
-
-已在 GitHub 托管 Windows x64 上从候选安装的 Contain 窗口完成整个打包流程，并验证 Beta.1 原位升级后能打开原有记录。[候选验收记录](docs/beta05-beta2-release.md)
+WPF 工程需使用 `Microsoft.NET.Sdk`，声明 `OutputType=WinExe`、`UseWPF=true` 和单个 `net8.0-windows` 或更高版本的 Windows 目标框架。构建机需要匹配的 .NET SDK 和 Inno Setup 6。安装器尚未签名。干净无工具机器与完全断网试装留待稳定版前验证。[WPF 实包验收](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.2/installed-wpf-workflow.json) · [升级和发布记录](docs/beta05-beta2-release.md)
 
 ## 接手源码、恢复开发环境
 
