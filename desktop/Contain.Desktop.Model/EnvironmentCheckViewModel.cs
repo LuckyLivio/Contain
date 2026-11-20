@@ -187,9 +187,15 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         && !applyingOnboarding
         && (IsOnboardingReadyToConfirm || IsOnboardingUnsupported);
 
-    public string OnboardingHeadline => onboardingPreview is { Status: "ready_to_confirm" } p
-        ? $"已识别 {p.AppName} · 控制台应用"
-        : "";
+    public string OnboardingHeadline
+    {
+        get
+        {
+            if (onboardingPreview is not { Status: "ready_to_confirm" } preview) return "";
+            var appType = preview.EvidenceFields.FirstOrDefault(row => row.Label == "应用类型")?.Value;
+            return string.IsNullOrWhiteSpace(appType) ? $"已识别 {preview.AppName}" : $"已识别 {preview.AppName} · {appType}";
+        }
+    }
     public string OnboardingSubtitle => onboardingPreview is { Status: "ready_to_confirm" }
         ? "将生成可独立安装的 Windows x64 版本（自包含、多文件发布，接收者无需安装 .NET）"
         : "";
@@ -476,8 +482,8 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
                 ApplyOnboardingPreview(onboarding, info.ProjectPath);
                 StartOnboardingDirectoryWatcher(info.ProjectPath);
                 statusMessage = onboarding.Status == "ready_to_confirm"
-                    ? $"已只读识别控制台应用“{onboarding.AppName}”，请核对下方配置并点击“使用此配置”。"
-                    : onboarding.UnsupportedTitle ?? "当前文件夹暂不能自动生成单项目控制台发布配置。";
+                    ? $"请核对“{onboarding.AppName}”的发布配置，然后点击“使用此配置”。"
+                    : onboarding.UnsupportedTitle ?? "当前文件夹暂不能自动生成发布配置。";
                 NotifyAll();
                 return true;
             }

@@ -45,9 +45,13 @@ internal static class EnvironmentChecks
                 using var temp = new TempDir();
                 var oldProject = temp.Sub("old");
                 var newProject = temp.Sub("new");
-                File.WriteAllText(Path.Combine(newProject, "contain.environment.json"), "{}");
                 var oldPreview = DotnetOnboardingParser.ParseInspection(
                     """{"schema_version":1,"protocol":"contain-dotnet-onboarding-1","status":"unsupported","unsupported_title":"old project"}""");
+                var wpfPreview = oldPreview with
+                {
+                    Status = "ready_to_confirm", AppName = "WindowApp",
+                    EvidenceFields = [new OnboardingFieldRow("应用类型", "WPF 桌面应用", "WindowApp.csproj")]
+                };
                 var service = new ControlledEnvironmentService { OnboardingInspectFactory = _ => oldPreview };
                 using var vm = new EnvironmentCheckViewModel(service);
                 if (refresh)
@@ -58,8 +62,9 @@ internal static class EnvironmentChecks
                 var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 using var release = new ManualResetEventSlim();
                 var timeout = TimeSpan.FromSeconds(5);
-                service.OnboardingInspectFactory = _ =>
+                service.OnboardingInspectFactory = dir =>
                 {
+                    if (dir == newProject) return wpfPreview;
                     started.SetResult();
                     if (!release.Wait(timeout + timeout)) throw new TimeoutException("inspection gate");
                     return oldPreview;
@@ -72,13 +77,15 @@ internal static class EnvironmentChecks
                     await started.Task.WaitAsync(timeout);
                     True(await ui.StartNew(() => vm.SelectProjectAsync(newProject)).Unwrap().WaitAsync(timeout),
                         "second project can be selected before releasing the slow inspection");
+                    Equal("已识别 WindowApp · WPF 桌面应用", vm.OnboardingHeadline, "new WPF type displayed before old inspection returns");
                     True(!slow.IsCompleted, "older inspection is still pending");
                 }
                 finally { release.Set(); }
 
                 True(!await slow.WaitAsync(timeout), "discard superseded inspection");
                 Equal(newProject, vm.ProjectPath, "current project after late completion");
-                True(vm.CanStartCheck && !vm.IsOnboardingUnsupported, "no old onboarding result");
+                Equal("已识别 WindowApp · WPF 桌面应用", vm.OnboardingHeadline, "late result cannot overwrite WPF classification");
+                True(vm.CanConfirmOnboarding && !vm.IsOnboardingUnsupported, "WPF preview still available");
             });
         }
 
@@ -1023,6 +1030,7 @@ internal static class EnvironmentChecks
                 "dotnet publish DeskStarter.Project.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o target/workflow/publish/win-x64",
                 [
                     new OnboardingFieldRow("项目文件", "DeskStarter.Project.csproj", ".csproj 根目录声明"),
+                    new OnboardingFieldRow("应用类型", "控制台应用 (OutputType=Exe)", "项目声明 OutputType=Exe"),
                     new OnboardingFieldRow("启动入口", "HelloDesk.exe", ".csproj <AssemblyName>")
                 ],
                 generatedManifestJson,
@@ -1048,7 +1056,7 @@ internal static class EnvironmentChecks
             True(await vm.SelectProjectAsync(projectDir), "select unconfigured C# project");
             True(vm.IsOnboardingReadyToConfirm && !vm.IsOnboardingUnsupported, "ready to confirm card visible");
             True(!vm.CanStartCheck && vm.CanConfirmOnboarding, "Start Check gated until onboarding confirmed");
-            Equal("已识别 HelloDesk · 控制台应用", vm.OnboardingHeadline, "concise onboarding headline");
+            Equal("已识别 HelloDesk · 控制台应用 (OutputType=Exe)", vm.OnboardingHeadline, "shows the console classification supplied by the CLI");
             True(vm.OnboardingProvenanceSummary.Contains("HelloDesk.exe", StringComparison.Ordinal)
                 && vm.OnboardingProvenanceSummary.Contains("AssemblyName=HelloDesk", StringComparison.Ordinal)
                 && vm.OnboardingProvenanceSummary.Contains("0.1.0", StringComparison.Ordinal),
@@ -1104,7 +1112,9 @@ internal static class EnvironmentChecks
                 SourceFingerprintSha256 = new string('2', 64),
                 AppName = "AppV2",
                 AssemblyName = "AppV2",
-                EntryExecutable = "AppV2.exe"
+                EntryExecutable = "AppV2.exe",
+                TargetFramework = "net10.0-windows",
+                EvidenceFields = [new OnboardingFieldRow("应用类型", "WPF 桌面应用", "App.csproj：UseWPF=true，OutputType=WinExe")]
             };
 
             var applyAttempt = 0;
@@ -1127,17 +1137,25 @@ internal static class EnvironmentChecks
 
             using var vm = new EnvironmentCheckViewModel(service);
             await vm.SelectProjectAsync(changingDir);
-            Equal("已识别 AppV1 · 控制台应用", vm.OnboardingHeadline, "initial preview V1");
+            Equal("已识别 AppV1", vm.OnboardingHeadline, "preview with no type evidence shows only the application name");
 
             // Confirm when source changed -> refreshes preview to V2 without writing
             True(!await vm.ConfirmOnboardingAsync(), "stale fingerprint requires re-confirmation");
             True(vm.IsOnboardingReadyToConfirm && vm.HasOnboardingChangeNotice, "shows refresh notice and keeps onboarding open");
-            Equal("已识别 AppV2 · 控制台应用", vm.OnboardingHeadline, "headline refreshed to AppV2");
+            Equal("已识别 AppV2 · WPF 桌面应用", vm.OnboardingHeadline, "refreshed preview uses the new WPF classification");
+            True(vm.OnboardingDetailsText.Contains("UseWPF=true", StringComparison.Ordinal), "WPF evidence source is readable in details");
             True(!File.Exists(Path.Combine(changingDir, "contain.environment.json")), "still zero manifest written");
 
             // Confirm when external manifest appeared -> preserves existing manifest cleanly
             True(await vm.ConfirmOnboardingAsync(), "preserved_existing_manifest transitions cleanly");
             True(!vm.IsOnboardingReadyToConfirm && vm.CanStartCheck && vm.HasOnboardingSavedNotice, "existing manifest preserved and usable");
+
+            var wpfDir = temp.Sub("WindowApp");
+            service.OnboardingInspectFactory = _ => updatedPreview;
+            True(await vm.SelectProjectAsync(wpfDir) && vm.CanConfirmOnboarding, "WPF preview is available on folder selection");
+            Equal("已识别 AppV2 · WPF 桌面应用", vm.OnboardingHeadline, "fresh selection shows WPF classification");
+            True(vm.StatusMessage.Contains("AppV2", StringComparison.Ordinal)
+                && !vm.StatusMessage.Contains("控制台", StringComparison.Ordinal), "selection status agrees with WPF preview");
 
             // Unsupported multi-project / class library folder -> clear reason + next step + zero files written
             var multiDir = temp.Sub("MultiProjectSolution");

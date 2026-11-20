@@ -89,6 +89,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Bounded external control diagnosis did not complete' }
           Copy-Item -LiteralPath "$env:MODERN_OUTPUT/public/control-probe/navigation-external-probe.json" -Destination "$env:MODERN_OUTPUT/public/navigation-external-probe.json"
           Copy-Item -LiteralPath "$env:MODERN_OUTPUT/public/control-probe/navigation-external-plan.json" -Destination "$env:MODERN_OUTPUT/public/navigation-external-plan.json"
+      - name: Package, install and launch a sample WPF project
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[wpf-project-smoke]')
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $iscc = Get-Command ISCC.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source
+          if (!$iscc) { $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe' }
+          if (!(Test-Path -LiteralPath $iscc -PathType Leaf)) { throw 'Inno Setup 6 compiler unavailable on this runner' }
+          $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP 'wpf-workflow-cli'
+          cargo build --locked -p contain-workflow
+          if ($LASTEXITCODE -ne 0) { throw 'Could not build contain-workflow' }
+          ./scripts/test-wpf-project-packaging.ps1 -Cli "$env:CARGO_TARGET_DIR/debug/contain-workflow.exe" -Iscc $iscc -OutputDirectory "$env:MODERN_OUTPUT/private/wpf-project"
+          Copy-Item -LiteralPath "$env:MODERN_OUTPUT/private/wpf-project/acceptance.json" -Destination "$env:MODERN_OUTPUT/public/wpf-project.json"
       - uses: dtolnay/rust-toolchain@stable
         if: steps.plan.outputs.native == 'true'
       - uses: Swatinem/rust-cache@v2

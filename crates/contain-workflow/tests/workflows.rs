@@ -1673,6 +1673,297 @@ fn dotnet_onboarding_reads_custom_assembly_name_without_writing_and_guards_apply
 }
 
 #[test]
+fn wpf_onboarding_previews_and_persists_the_project_publish_plan() {
+    use contain_workflow::dotnet_onboarding::{apply_onboarding, inspect_project};
+
+    for framework in ["net8.0-windows", "net10.0-windows10.0.19041.0"] {
+        let project = Temp::new();
+        let csproj = project.0.join("DesktopApp.csproj");
+        let xml = format!(
+            r#"<Project Sdk="Microsoft.NET.Sdk">
+                <PropertyGroup>
+                    <OutputType>WinExe</OutputType>
+                    <UseWPF>true</UseWPF>
+                    <TargetFramework>{framework}</TargetFramework>
+                    <AssemblyName>Greeting</AssemblyName>
+                </PropertyGroup>
+            </Project>"#
+        );
+        fs::write(&csproj, &xml).unwrap();
+
+        let preview = inspect_project(&project.0).unwrap();
+        assert_eq!(preview.status, "ready_to_confirm", "{framework}");
+        assert_eq!(preview.target_framework.as_deref(), Some(framework));
+        assert_eq!(preview.entry_executable.as_deref(), Some("Greeting.exe"));
+        assert!(
+            preview
+                .evidence_fields
+                .iter()
+                .any(|field| { field.label == "应用类型" && field.value.contains("WPF") })
+        );
+        assert_eq!(fs::read_dir(&project.0).unwrap().count(), 1);
+
+        let applied =
+            apply_onboarding(&project.0, Some(&preview.source_fingerprint_sha256)).unwrap();
+        assert_eq!(applied.status, "applied");
+        let saved = Manifest::read(&project.0.join("contain.environment.json")).unwrap();
+        assert_eq!(
+            serde_json::to_value(&saved).unwrap(),
+            serde_json::to_value(preview.proposed_manifest.unwrap()).unwrap()
+        );
+        assert_eq!(saved.build.len(), 1);
+        let build = &saved.build[0];
+        assert_eq!(build.program, "dotnet");
+        assert_eq!(&build.args[..2], ["publish", "DesktopApp.csproj"]);
+        assert!(build.args.windows(2).any(|p| p == ["-r", "win-x64"]));
+        assert!(
+            build
+                .args
+                .windows(2)
+                .any(|p| p == ["--self-contained", "true"])
+        );
+        assert!(
+            saved
+                .artifacts
+                .iter()
+                .any(|file| file == "PresentationFramework.dll")
+        );
+        assert_eq!(
+            saved.installer.unwrap().entry.as_deref(),
+            Some("Greeting.exe")
+        );
+        assert_eq!(
+            inspect_project(&project.0).unwrap().status,
+            "existing_manifest"
+        );
+        assert_eq!(fs::read_to_string(&csproj).unwrap(), xml);
+    }
+}
+
+#[test]
+fn wpf_onboarding_rejects_ambiguous_frameworks_and_unsupported_desktop_projects() {
+    use contain_workflow::dotnet_onboarding::{apply_onboarding, inspect_project};
+
+    let project = Temp::new();
+    let cases = [
+        ("WinExe", "net8.0-windows", ""),
+        (
+            "WinExe",
+            "net8.0-windows",
+            "<UseWindowsForms>true</UseWindowsForms>",
+        ),
+        (
+            "WinExe",
+            "net8.0-windows",
+            "<UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms>",
+        ),
+        (
+            "WinExe",
+            "net8.0-windows",
+            "<UseWPF>true</UseWPF><UseMaui>true</UseMaui>",
+        ),
+        (
+            "WinExe",
+            "net8.0-windows",
+            "<UseWPF>true</UseWPF><UseWinUI>true</UseWinUI>",
+        ),
+        ("WinExe", "net8.0-windows", "<UseWPF>$(UseGui)</UseWPF>"),
+        (
+            "WinExe",
+            "net8.0-windows",
+            r#"<UseWPF Condition="'$(Configuration)' == 'Release'">true</UseWPF>"#,
+        ),
+        (
+            "WinExe",
+            "net8.0-windows",
+            "<UseWPF>true</UseWPF><UseWPF>false</UseWPF>",
+        ),
+        ("Library", "net8.0-windows", "<UseWPF>true</UseWPF>"),
+        ("WinExe", "net8.0", "<UseWPF>true</UseWPF>"),
+        ("WinExe", "net8.0-windowsbogus", "<UseWPF>true</UseWPF>"),
+        ("WinExe", "net6.0-windows", "<UseWPF>true</UseWPF>"),
+        (
+            "WinExe",
+            "net8.0-windows",
+            "<UseWPF>true</UseWPF><TargetFrameworks>net8.0-windows;net9.0-windows</TargetFrameworks>",
+        ),
+    ];
+    for (output, framework, properties) in cases {
+        let xml = format!(
+            r#"<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>{output}</OutputType><TargetFramework>{framework}</TargetFramework>{properties}</PropertyGroup></Project>"#
+        );
+        fs::write(project.0.join("Desktop.csproj"), &xml).unwrap();
+        let preview = inspect_project(&project.0).unwrap();
+        assert_eq!(preview.status, "unsupported", "{xml}");
+        assert!(preview.proposed_manifest.is_none());
+        let applied =
+            apply_onboarding(&project.0, Some(&preview.source_fingerprint_sha256)).unwrap();
+        assert_eq!(applied.status, "unsupported");
+        assert!(!applied.wrote_file);
+        assert!(!project.0.join("contain.environment.json").exists());
+    }
+}
+
+#[test]
+fn wpf_onboarding_requires_top_level_unconditional_desktop_properties() {
+    use contain_workflow::dotnet_onboarding::inspect_project;
+
+    let project = Temp::new();
+    let properties = "<PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework></PropertyGroup>";
+    for scope in [
+        r#"<PropertyGroup Condition="'$(Configuration)' == 'Release'"><UseWPF>true</UseWPF></PropertyGroup>"#,
+        r#"<Choose><When Condition="'$(Configuration)' == 'Release'"><PropertyGroup><UseWPF>true</UseWPF></PropertyGroup></When></Choose>"#,
+        r#"<Target Name="Later"><PropertyGroup><UseWPF>true</UseWPF></PropertyGroup></Target>"#,
+    ] {
+        let xml = format!(r#"<Project Sdk="Microsoft.NET.Sdk">{properties}{scope}</Project>"#);
+        fs::write(project.0.join("Desktop.csproj"), xml).unwrap();
+        let preview = inspect_project(&project.0).unwrap();
+        assert_eq!(preview.status, "unsupported", "{scope}");
+        assert!(preview.proposed_manifest.is_none());
+    }
+}
+
+#[test]
+fn wpf_onboarding_refuses_inherited_build_overrides_at_preview_and_confirmation() {
+    use contain_workflow::dotnet_onboarding::{apply_onboarding, inspect_project};
+
+    for name in ["Directory.Build.props", "Directory.Build.targets"] {
+        let root = Temp::new();
+        let project = root.0.join("src").join("Desk");
+        fs::create_dir_all(&project).unwrap();
+        fs::write(
+            project.join("Desktop.csproj"),
+            r#"<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
+                <OutputType>WinExe</OutputType><UseWPF>true</UseWPF>
+                <TargetFramework>net8.0-windows</TargetFramework>
+            </PropertyGroup></Project>"#,
+        )
+        .unwrap();
+        let preview = inspect_project(&project).unwrap();
+        assert_eq!(preview.status, "ready_to_confirm");
+        assert_eq!(preview.entry_executable.as_deref(), Some("Desktop.exe"));
+
+        fs::write(
+            root.0.join(name),
+            "<Project><PropertyGroup><AssemblyName>Other</AssemblyName></PropertyGroup></Project>",
+        )
+        .unwrap();
+        let changed = inspect_project(&project).unwrap();
+        assert_eq!(changed.status, "unsupported", "{name}");
+        assert_ne!(
+            changed.source_fingerprint_sha256,
+            preview.source_fingerprint_sha256
+        );
+        assert!(changed.proposed_manifest.is_none());
+        assert_eq!(
+            changed.unsupported_code.as_deref(),
+            Some("directory_build_props_present")
+        );
+        let applied = apply_onboarding(&project, Some(&preview.source_fingerprint_sha256)).unwrap();
+        assert_eq!(applied.status, "source_changed_refresh_required");
+        assert_eq!(applied.inspection.status, "unsupported");
+        assert!(!applied.wrote_file);
+        assert!(!project.join("contain.environment.json").exists());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn wpf_onboarding_checks_the_physical_parent_of_a_linked_project() {
+    use contain_workflow::dotnet_onboarding::{apply_onboarding, inspect_project};
+
+    let workspace = Temp::new();
+    let parent = workspace.0.join("physical");
+    let project = parent.join("Desk");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(
+        project.join("Desk.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
+            <OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework>
+            <UseWPF>true</UseWPF>
+        </PropertyGroup></Project>"#,
+    )
+    .unwrap();
+    let linked_project = workspace.0.join("linked");
+    std::os::unix::fs::symlink(&project, &linked_project).unwrap();
+    let preview = inspect_project(&linked_project).unwrap();
+    assert_eq!(preview.status, "ready_to_confirm");
+
+    fs::write(
+        parent.join("Directory.Build.props"),
+        "<Project><PropertyGroup><AssemblyName>Other</AssemblyName></PropertyGroup></Project>",
+    )
+    .unwrap();
+    let stale =
+        apply_onboarding(&linked_project, Some(&preview.source_fingerprint_sha256)).unwrap();
+    assert_eq!(stale.status, "source_changed_refresh_required");
+    assert_eq!(
+        stale.inspection.unsupported_code.as_deref(),
+        Some("directory_build_props_present")
+    );
+    assert!(!stale.wrote_file);
+    assert!(!project.join("contain.environment.json").exists());
+}
+
+#[test]
+fn wpf_onboarding_distinguishes_project_and_package_references() {
+    use contain_workflow::dotnet_onboarding::inspect_project;
+
+    let project = Temp::new();
+    for (reference, expected) in [
+        (
+            r#"<PackageReference Include="Example.Ui" Version="1.0.0" />"#,
+            "ready_to_confirm",
+        ),
+        (
+            r#"<ProjectReference Include="../Library/Library.csproj" />"#,
+            "unsupported",
+        ),
+    ] {
+        let xml = format!(
+            r#"<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
+            <OutputType>WinExe</OutputType><UseWPF>true</UseWPF>
+            <TargetFramework>net8.0-windows</TargetFramework></PropertyGroup>
+            <ItemGroup>{reference}</ItemGroup></Project>"#
+        );
+        fs::write(project.0.join("Desktop.csproj"), xml).unwrap();
+        assert_eq!(inspect_project(&project.0).unwrap().status, expected);
+        assert_eq!(fs::read_dir(&project.0).unwrap().count(), 1);
+    }
+}
+
+#[test]
+fn windows_targeted_console_project_keeps_its_console_publish_contract() {
+    use contain_workflow::dotnet_onboarding::inspect_project;
+
+    let project = Temp::new();
+    fs::write(
+        project.0.join("ConsoleApp.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
+            <OutputType>Exe</OutputType><TargetFramework>net8.0-windows</TargetFramework>
+            <UseWPF>false</UseWPF><UseWindowsForms>false</UseWindowsForms>
+        </PropertyGroup></Project>"#,
+    )
+    .unwrap();
+    let preview = inspect_project(&project.0).unwrap();
+    assert_eq!(preview.status, "ready_to_confirm");
+    assert!(
+        preview
+            .evidence_fields
+            .iter()
+            .any(|field| { field.label == "应用类型" && field.value.contains("控制台") })
+    );
+    let saved = preview.proposed_manifest.unwrap();
+    assert!(saved.artifacts.iter().any(|file| file == "ConsoleApp.exe"));
+    assert!(
+        saved
+            .artifacts
+            .iter()
+            .all(|file| file != "PresentationFramework.dll")
+    );
+}
+
+#[test]
 fn dotnet_onboarding_rechecks_inherited_props_and_targets_before_apply() {
     use contain_workflow::dotnet_onboarding::{apply_onboarding, inspect_project};
 

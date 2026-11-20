@@ -28,6 +28,13 @@ internal static class Program
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("This harness requires native Windows.");
         System.Windows.Forms.Application.SetHighDpiMode(System.Windows.Forms.HighDpiMode.PerMonitorV2);
+        if (args is ["--upgrade-records", var install, var root, "seed" or "read-default"])
+        {
+            UpgradeRecords.VerifyAsync(install, root, seed: args[3] == "seed").GetAwaiter().GetResult();
+            return 0;
+        }
+        if (args.Length > 0 && args[0] == "--installed-wpf")
+            return InstalledWpfWorkflow.RunAsync(args[1..]).GetAwaiter().GetResult();
         return new NativeSuite(Options.Parse(args)).RunAsync().GetAwaiter().GetResult();
     }
 }

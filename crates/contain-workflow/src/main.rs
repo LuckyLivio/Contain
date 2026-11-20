@@ -106,7 +106,7 @@ enum Command {
         #[arg(long)]
         report: PathBuf,
     },
-    /// Read-only C# console project inspection, or write contain.environment.json upon explicit confirmation.
+    /// Inspect a C# console or WPF project, or write contain.environment.json upon explicit confirmation.
     OnboardDotnet {
         #[arg(long)]
         project: PathBuf,
