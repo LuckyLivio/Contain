@@ -1,6 +1,6 @@
 # v0.5.0-beta.1：普通 C# 控制台项目零配置打包与桌面工作流
 
-**发布状态**　#24 已合入发布分支，三项审查意见已处理。产品源码冻结于 `aac52e52cbe9395cb845be2d31c09ec117f86d06`。该提交的 Windows 引导 CLI 已核验。预发行候选等待 GitHub 托管 Windows x64 对同批 Setup 和双 ZIP 的验收收据。干净离线 A/B 交接留待稳定版。当前公开版为 v0.4.0-beta.1。[修复 PR](https://github.com/LuckyLivio/Contain/pull/24) · [当前公开版](https://github.com/LuckyLivio/Contain/releases/tag/v0.4.0-beta.1)
+**发布状态**　#24 已合入发布分支，三项审查意见已处理。产品源码冻结于 `aac52e52cbe9395cb845be2d31c09ec117f86d06`。该提交的 Windows 引导 CLI 已核验。预发行候选的同批 Setup 和双 ZIP 已通过 GitHub 托管 Windows x64 验收。干净离线 A/B 交接留待稳定版。当前公开版为 v0.4.0-beta.1。[修复 PR](https://github.com/LuckyLivio/Contain/pull/24) · [当前公开版](https://github.com/LuckyLivio/Contain/releases/tag/v0.4.0-beta.1)
 
 本版面向在 Windows x64 上开发单项目 C# 控制台应用、希望把程序直接打包发给普通用户安装的开发者，同时也适合需要校验交付 ZIP 或查看既有安装记录的用户。双击运行 `Contain-Setup-x64.exe` 完成当前用户安装后，从开始菜单打开 `Contain`，进入「检查项目环境」选择只有 `.csproj` 和源码的项目文件夹，依次点击「使用此配置 → 开始检查 → 开始构建 → 生成安装包」，即可得到可独立分发的 `<应用名>-Setup-x64.exe`。历史冻结候选（`887f119`）已在 Windows 11 x64（`10.0.26300`）开发机、GitHub Actions `windows-latest` CI 与断网无开发工具的干净 Windows 11 x64 沙箱（`10.0.26100`）完成构建、离线安装启动、随包示例记录读取及卸载验证；完整快照 A→B（空白源码机缺项恢复构建并交接至干净接收机 `-Stage Package`）的最终收据尚未送达云端。历史冻结安装包的签名状态为 `NotSigned`，首次运行可能出现 Windows SmartScreen 提示。新安装包的签名状态以本次收据为准。
 
@@ -16,11 +16,25 @@
 
 ## 预发行验收
 
-从固定产品提交 `aac52e52cbe9395cb845be2d31c09ec117f86d06` 构建候选，在 GitHub 托管 Windows x64 上执行以下检查。收据分别记录产品源码 SHA、实际运行的工作流提交 SHA 和候选文件的 SHA-256，以便核对交付的是同一次实测的字节。
+产品源码为 `aac52e52cbe9395cb845be2d31c09ec117f86d06`，包含 #24 合入的 CLI 默认只读探测、继承 MSBuild 配置识别和桌面项目选择修复。工作流提交为 `581715e9a270f0bd98464d9ababe6c3bc10f9b03`。[产品源码](https://github.com/LuckyLivio/Contain/commit/aac52e52cbe9395cb845be2d31c09ec117f86d06) · [工作流源码](https://github.com/LuckyLivio/Contain/commit/581715e9a270f0bd98464d9ababe6c3bc10f9b03) · [修复 PR #24](https://github.com/LuckyLivio/Contain/pull/24)
 
-- 用桌面 ZIP 生成 `Contain-Setup-x64.exe`，按当前用户安装，核对版本，启动已安装的桌面程序，读取随包示例记录。标准卸载后核对卸载登记和程序文件。
-- 用桌面 ZIP 与独立 CLI ZIP 各自的 package spec 校验包内容，并执行约定的启动和自检。发布前再次核对 Setup、双 ZIP、两份规格与 `SHA256SUMS.txt`。
-- 本轮托管验收结果待收。稳定版另行验证持久快照 A 的工具缺项恢复、构建和独立断网快照 B 的接收及离线试装。
+GitHub 托管 Windows x64，系统版本 `10.0.20348.0`，镜像 `win22` `20261112.366.7`。运行编号 `44690323749`，第 1 次执行。[Windows 验收记录](https://github.com/LuckyLivio/Contain/actions/runs/44690323749/attempts/1)
+
+自包含桌面程序使用 .NET SDK `10.0.403` 和运行时 `10.0.14`，MSVC `14.44.35207`，Windows SDK `10.0.26100.0`。Setup 使用 Inno Setup `6.7.3`，文件版本 `0.5.0.1`。安装器 Authenticode 状态为 `NotSigned`。Windows SmartScreen 首次运行时可能显示提示。
+
+两份 ZIP 均通过各自规格中的文件和运行检查。桌面 ZIP 启动了指定版本的窗口，独立 CLI 通过版本与帮助输出检查。两份 ZIP 内的 CLI 都在普通和显式安全模式下跳过自定义探测，并读取到 Git 版本。Setup 通过当前用户安装、注册版本及已安装二进制校验。已安装的窗口正常启动和关闭，随包示例库的会话及事件依据可读取，标准卸载后程序目录、快捷方式和卸载登记均已清除。
+
+| 文件 | 字节 | SHA-256 |
+| --- | ---: | --- |
+| `Contain-Setup-x64.exe` | 51,338,242 | `dc110d6615705aced0ae71cb46cab835cbc0f2986dcf1b58b29cb5708892d55b` |
+| `contain-0.5.0-beta.1-windows-x64.zip` | 71,198,001 | `0c71e8e1ea34ba9a3d27364d3204dc3feee4810af7b95dff465933526f288412` |
+| `contain-workflow-0.5.0-beta.1-windows-x64.zip` | 1,727,791 | `1cac6934194e4477c542c30da0e7f607d6822f7880e411411d19b4431d261aac` |
+| `desktop-package-spec.json` | 34,413 | `b6888f624a17905793bf19ef50d1c073493dc74bafec23aec28d1a088d2daca2` |
+| `cli-package-spec.json` | 1,600 | `b1d08ee0df2f8e29a8bea228cab747891211a8140ce7beffb4228f28210ace31` |
+| `SHA256SUMS.txt` | 1,303 | `83ba025a53ca5bd8f22efe9fefe7529fa53ac980bef54846262972f459152328` |
+| `prerelease-smoke.json` | 2,885 | `8042b28a12ebae8275fc06282ff17e33d8d638aaaeebb73d3eb0c8ad5a3670be` |
+
+稳定版另行验收干净 Windows 源码机的缺项恢复与构建、独立断网接收机的安装与交接。Windows 本地 A/B 验收当前状态为“云端未收到最终收据”。
 
 ## 冻结源码与稳定版 A/B 交接
 

@@ -10,7 +10,7 @@
 
 ## 即将发布的 v0.5.0-beta.1
 
-这一版提供当前用户安装的 Setup，支持将单项目 C# 控制台应用打成可分发的安装包。预发行候选的产品源码固定为 `aac52e52`。发布前需在 GitHub 托管 Windows x64 上用同一批候选实测 Setup 安装、版本、桌面启动、随包示例读取和卸载，并按各自的包规格核验桌面 ZIP、独立 CLI ZIP 及发布文件的 SHA-256。当前等待本轮验收收据。[候选进度与历史试装记录](docs/beta05-release.md)
+这一版提供当前用户安装的 Setup，支持将单项目 C# 控制台应用打成可分发的安装包。预发行候选的产品源码固定为 `aac52e52`。同一批 Setup 和双 ZIP 已通过 GitHub 托管 Windows x64 验收。收据记录了安装、版本、桌面启动、随包示例读取、卸载与包规格检查。[Windows 验收记录](https://github.com/LuckyLivio/Contain/actions/runs/44690323749/attempts/1) · [候选进度与历史试装记录](docs/beta05-release.md)
 
 干净 Windows 上的缺项恢复构建和断网接收机 A/B 验收保留在稳定版发布前完成。Windows 本地 A/B 验收：云端未收到最终收据。
 
