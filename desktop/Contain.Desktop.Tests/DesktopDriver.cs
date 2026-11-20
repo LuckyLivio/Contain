@@ -27,6 +27,7 @@ internal sealed record CloseDiagnostic(long RequestElapsedMs, long WaitElapsedMs
 internal sealed class DesktopDriver : IDisposable
 {
     private readonly Process process;
+    private readonly bool beta2ProjectPicker;
     private readonly List<Probe> probes = [];
     private readonly List<ActionProbe> actions = [];
     private readonly List<RowSelectionProbe> rowSelections = [];
@@ -68,8 +69,9 @@ internal sealed class DesktopDriver : IDisposable
         _ = process.Handle;
     }
 
-    internal DesktopDriver(int installedProcessId, string expectedExecutable)
+    internal DesktopDriver(int installedProcessId, string expectedExecutable, bool beta2ProjectPicker = false)
     {
+        this.beta2ProjectPicker = beta2ProjectPicker;
         process = Process.GetProcessById(installedProcessId);
         if (!string.Equals(process.MainModule?.FileName, Path.GetFullPath(expectedExecutable), StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Shortcut process is not the installed viewer.");
@@ -435,7 +437,7 @@ internal sealed class DesktopDriver : IDisposable
             throw new IOException("Picker test target violates isolated existing/new-file precondition.");
         var expectedTitle = action switch
         {
-            "PickProjectFolder" => "选择要检查的本地项目文件夹",
+            "PickProjectFolder" => beta2ProjectPicker ? "选择要检查的本地项目文件夹" : "选择包含项目文件的文件夹",
             "PickInstaller" => "选择要记录的安装器", "OpenDatabase" => "打开外部记录库（只读）",
             "ExportMatches" => "导出全部匹配结果", "ExportPage" => "导出本页报告",
             _ => throw new InvalidOperationException("No fixed native picker title contract for this action.")

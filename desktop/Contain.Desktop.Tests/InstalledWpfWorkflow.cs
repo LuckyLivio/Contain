@@ -28,7 +28,7 @@ internal static class InstalledWpfWorkflow
         FirstPackageMeasurement? measure = null;
         try
         {
-            using var ui = driver = new DesktopDriver(installedPid, Path.Combine(install, "Contain.Viewer.exe"));
+            using var ui = driver = new DesktopDriver(installedPid, Path.Combine(install, "Contain.Viewer.exe"), beta2ProjectPicker: true);
             productPid = ui.ProcessId;
             await ui.ReadyAsync();
             if (args.Length == 6)
