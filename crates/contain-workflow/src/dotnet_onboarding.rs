@@ -142,7 +142,7 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
     let mut root_csprojs: Vec<(String, PathBuf)> = Vec::new();
     let mut root_other_dotnet_projs: Vec<String> = Vec::new();
     let mut root_slns: Vec<String> = Vec::new();
-    let mut has_dir_build_props = false;
+    let mut build_files = Vec::new();
 
     for entry in fs::read_dir(project_root)? {
         let entry = entry?;
@@ -155,7 +155,7 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
         };
         let lower = name.to_ascii_lowercase();
         if lower == "directory.build.props" || lower == "directory.build.targets" {
-            has_dir_build_props = true;
+            build_files.push((0, path));
         } else if lower.ends_with(".csproj") {
             root_csprojs.push((name.to_string(), path));
         } else if lower.ends_with(".fsproj") || lower.ends_with(".vbproj") {
@@ -167,13 +167,15 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
     root_csprojs.sort_by(|a, b| a.0.cmp(&b.0));
     root_other_dotnet_projs.sort();
     root_slns.sort();
+    collect_inherited_build_files(project_root, &mut build_files)?;
+    build_files.sort();
 
     let fingerprint = compute_source_fingerprint(
         project_root,
         &root_csprojs,
         &root_other_dotnet_projs,
         &root_slns,
-        has_dir_build_props,
+        &build_files,
     )?;
 
     if root_csprojs.len() > 1 {
@@ -276,12 +278,12 @@ pub fn inspect_project(project_root: &Path) -> Result<DotnetOnboardingInspection
         ));
     }
 
-    if has_dir_build_props {
+    if !build_files.is_empty() {
         return Ok(unsupported(
             &fingerprint,
             existing_id,
             "directory_build_props_present",
-            "项目包含 Directory.Build.props / targets 外部构建属性".into(),
+            "项目目录或上级目录包含 Directory.Build.props / targets 外部构建属性".into(),
             "在不执行 MSBuild 的前提下，无法静态保证外部构建属性未改写目标框架、输出类型或程序集入口名。".into(),
             "请为该项目手动提供 contain.environment.json，或使用无外部属性注入的独立控制台项目目录。",
         ));
@@ -970,15 +972,50 @@ fn unsupported(
     }
 }
 
+fn collect_inherited_build_files(root: &Path, files: &mut Vec<(usize, PathBuf)>) -> Result<()> {
+    let root = std::path::absolute(root)?;
+    // MSBuild searches upward independently for the nearest props and targets.
+    for name in ["Directory.Build.props", "Directory.Build.targets"] {
+        if files.iter().any(|(_, path)| {
+            path.file_name()
+                .is_some_and(|file| file.eq_ignore_ascii_case(name))
+        }) {
+            continue;
+        }
+        for (depth, ancestor) in root.ancestors().enumerate().skip(1) {
+            let path = ancestor.join(name);
+            match fs::metadata(&path) {
+                Ok(metadata) if metadata.is_file() => {
+                    files.push((depth, path));
+                    break;
+                }
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+                _ => {}
+            }
+        }
+    }
+    Ok(())
+}
+
 fn compute_source_fingerprint(
     project_root: &Path,
     root_csprojs: &[(String, PathBuf)],
     other_projs: &[String],
     slns: &[String],
-    has_dir_build_props: bool,
+    build_files: &[(usize, PathBuf)],
 ) -> Result<String> {
     let mut hasher = Sha256::new();
-    hasher.update(format!("dir_build={has_dir_build_props}\n").as_bytes());
+    hasher.update(format!("dir_build={}\n", !build_files.is_empty()).as_bytes());
+    for (depth, path) in build_files {
+        let name = path
+            .file_name()
+            .expect("named build file")
+            .to_string_lossy();
+        hasher.update(format!("build={depth}/{name}\n").as_bytes());
+        let mut contents = Sha256::new();
+        std::io::copy(&mut fs::File::open(path)?, &mut contents)?;
+        hasher.update(contents.finalize());
+    }
     for o in other_projs {
         hasher.update(format!("other={o}\n").as_bytes());
     }

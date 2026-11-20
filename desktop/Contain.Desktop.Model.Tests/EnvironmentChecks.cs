@@ -21,7 +21,7 @@ internal static class EnvironmentChecks
             using var vm = new EnvironmentCheckViewModel(service);
             True(!vm.HasProject && !vm.CanStartCheck && !vm.HasOutcome, "initial empty state");
 
-            True(vm.SelectProject(projectA), "select valid project");
+            True(await vm.SelectProjectAsync(projectA), "select valid project");
             Equal("project-a", vm.ProjectName, "project name extracted");
             Equal(projectA, vm.ProjectPath, "normalized project path");
             Equal(0, service.CheckCalls, "selecting a folder must not execute CLI checks");
@@ -36,6 +36,51 @@ internal static class EnvironmentChecks
             Equal(EnvironmentOutcomeKind.Ready, vm.Outcome, "cancel preserves existing result");
             Equal(1, service.CheckCalls, "cancel runs nothing");
         });
+
+        foreach (var refresh in new[] { false, true })
+        {
+            var operation = refresh ? "watcher refresh" : "folder selection";
+            await Check($"slow {operation} leaves the UI queue responsive and cannot replace a newer project", async () =>
+            {
+                using var temp = new TempDir();
+                var oldProject = temp.Sub("old");
+                var newProject = temp.Sub("new");
+                File.WriteAllText(Path.Combine(newProject, "contain.environment.json"), "{}");
+                var oldPreview = DotnetOnboardingParser.ParseInspection(
+                    """{"schema_version":1,"protocol":"contain-dotnet-onboarding-1","status":"unsupported","unsupported_title":"old project"}""");
+                var service = new ControlledEnvironmentService { OnboardingInspectFactory = _ => oldPreview };
+                using var vm = new EnvironmentCheckViewModel(service);
+                if (refresh)
+                    True(await vm.SelectProjectAsync(oldProject), "establish the watched project");
+
+                // Model the dispatcher's single queue. A blocking inspection would hold up the second selection.
+                var ui = new TaskFactory(new ConcurrentExclusiveSchedulerPair().ExclusiveScheduler);
+                var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                using var release = new ManualResetEventSlim();
+                var timeout = TimeSpan.FromSeconds(5);
+                service.OnboardingInspectFactory = _ =>
+                {
+                    started.SetResult();
+                    if (!release.Wait(timeout + timeout)) throw new TimeoutException("inspection gate");
+                    return oldPreview;
+                };
+                var slow = ui.StartNew(() => refresh
+                    ? vm.RefreshOnboardingPreviewFromDiskAsync()
+                    : vm.SelectProjectAsync(oldProject)).Unwrap();
+                try
+                {
+                    await started.Task.WaitAsync(timeout);
+                    True(await ui.StartNew(() => vm.SelectProjectAsync(newProject)).Unwrap().WaitAsync(timeout),
+                        "second project can be selected before releasing the slow inspection");
+                    True(!slow.IsCompleted, "older inspection is still pending");
+                }
+                finally { release.Set(); }
+
+                True(!await slow.WaitAsync(timeout), "discard superseded inspection");
+                Equal(newProject, vm.ProjectPath, "current project after late completion");
+                True(vm.CanStartCheck && !vm.IsOnboardingUnsupported, "no old onboarding result");
+            });
+        }
 
         await Check("version mismatch prioritizes actionable summary, labels provenance, and warns on synthetic 10.0.999", async () =>
         {
@@ -58,7 +103,7 @@ internal static class EnvironmentChecks
             };
 
             using var vm = new EnvironmentCheckViewModel(service);
-            vm.SelectProject(project);
+            await vm.SelectProjectAsync(project);
             True(await vm.CheckAsync(), "mismatch check completed with report");
             Equal(EnvironmentOutcomeKind.ActionRequired, vm.Outcome, "classified as action required");
             True(vm.IsActionRequired && !vm.IsCheckerError && !vm.IsInsufficientInfo, "distinct outcome flags");
@@ -150,7 +195,7 @@ internal static class EnvironmentChecks
             };
 
             using var vm = new EnvironmentCheckViewModel(service);
-            vm.SelectProject(project);
+            await vm.SelectProjectAsync(project);
 
             True(await vm.CheckAsync(), "initial check with 2 missing items");
             Equal(2, vm.ActionItems.Count, "two missing items initially");
@@ -241,7 +286,7 @@ internal static class EnvironmentChecks
             };
 
             using var vm = new EnvironmentCheckViewModel(service);
-            vm.SelectProject(projectA);
+            await vm.SelectProjectAsync(projectA);
             await vm.CheckAsync();
             await vm.CheckAsync();
             Equal(0, vm.ResolvedItems.Count, "failed -> needs_confirmation must not mark resolved");
@@ -253,7 +298,7 @@ internal static class EnvironmentChecks
             True(vm.ComparisonNote.Contains("要求已变更", StringComparison.Ordinal), "comparison reset note shown when manifest changes");
             True(!vm.Headline.Contains("已解决", StringComparison.Ordinal), "headline does not claim resolved when manifest changed");
 
-            vm.SelectProject(projectB);
+            await vm.SelectProjectAsync(projectB);
             await vm.CheckAsync();
             Equal(0, vm.ResolvedItems.Count, "switching projects starts fresh comparison");
             Equal("", vm.ComparisonNote, "project switch has clean comparison note");
@@ -306,7 +351,7 @@ internal static class EnvironmentChecks
             };
 
             using var vm = new EnvironmentCheckViewModel(service, () => timestamps.Dequeue());
-            vm.SelectProject(project);
+            await vm.SelectProjectAsync(project);
             True(await vm.CheckAsync(), "attempt 1 succeeds with missing SDK");
             True(vm.LastCheckedText.Contains("09:00:00", StringComparison.Ordinal), "initial timestamp displayed");
 
@@ -350,7 +395,7 @@ internal static class EnvironmentChecks
             };
 
             using var vm = new EnvironmentCheckViewModel(service);
-            vm.SelectProject(project);
+            await vm.SelectProjectAsync(project);
             True(vm.SelectionScopeNote.Contains("infer", StringComparison.Ordinal), "pre-check scope note mentions infer");
             True(await vm.CheckAsync(), "inferred check completed");
             Equal(EnvironmentOutcomeKind.InsufficientInfo, vm.Outcome, "classified as insufficient info");
@@ -372,7 +417,7 @@ internal static class EnvironmentChecks
             };
 
             using var vm = new EnvironmentCheckViewModel(service);
-            vm.SelectProject(project);
+            await vm.SelectProjectAsync(project);
             True(!await vm.CheckAsync(), "checker error returns false");
             Equal(EnvironmentOutcomeKind.CheckerError, vm.Outcome, "classified as checker error");
             True(vm.IsCheckerError && !vm.IsActionRequired && !vm.IsInsufficientInfo, "not reported as missing SDK");
@@ -396,11 +441,11 @@ internal static class EnvironmentChecks
             };
 
             using var vm = new EnvironmentCheckViewModel(service);
-            vm.SelectProject(projectA);
+            await vm.SelectProjectAsync(projectA);
             var firstTask = vm.CheckAsync();
             True(vm.IsChecking, "first check active");
 
-            vm.SelectProject(projectB);
+            await vm.SelectProjectAsync(projectB);
             Equal("fast-project-b", vm.ProjectName, "switched to project B immediately");
             True(!vm.HasOutcome && !vm.IsChecking, "project A state cleared upon switching");
 
@@ -451,7 +496,7 @@ internal static class EnvironmentChecks
             return Task.CompletedTask;
         });
 
-        await Check("direct manifest reader builds preview without CLI call and rejects invalid schemas or unsafe paths", () =>
+        await Check("direct manifest reader builds preview without CLI call and rejects invalid schemas or unsafe paths", async () =>
         {
             using var temp = new TempDir();
             var project = temp.Sub("console-preview");
@@ -459,7 +504,7 @@ internal static class EnvironmentChecks
 
             var service = new ControlledEnvironmentService();
             using var vm = new EnvironmentCheckViewModel(service);
-            vm.SelectProject(project);
+            await vm.SelectProjectAsync(project);
             Equal(0, service.CheckCalls, "selection never calls check");
             Equal(0, service.BuildCalls, "preview never calls build");
             Equal(2, vm.BuildPreviewSteps.Count, "1 build + 1 verify step parsed in-process");
@@ -473,7 +518,6 @@ internal static class EnvironmentChecks
 
             var badArtifact = WorkflowManifestReader.ParsePreviewJson("p", project, """{"schema_version":1,"target":"windows-x64","tools":[],"required_variables":[],"build":[],"verify":[],"artifact_dir":"../outside"}""", "abc");
             Equal(ManifestPreviewStatus.Invalid, badArtifact.Status, "unsafe relative artifact_dir rejected");
-            return Task.CompletedTask;
         });
 
         await Check("start build appears only when ready with explicit manifest and blocks preserved green result after failed recheck", async () =>
@@ -510,12 +554,12 @@ internal static class EnvironmentChecks
             };
 
             using var vm = new EnvironmentCheckViewModel(service);
-            vm.SelectProject(inferredProj);
+            await vm.SelectProjectAsync(inferredProj);
             await vm.CheckAsync();
             True(!vm.CanShowStartBuild && vm.HasBuildPrerequisiteBlocker, "inferred-only manifest cannot start build");
             True(vm.BuildPrerequisiteMessage.Contains("contain.environment.json", StringComparison.Ordinal), "explains explicit manifest needed");
 
-            vm.SelectProject(explicitProj);
+            await vm.SelectProjectAsync(explicitProj);
             True(await vm.CheckAsync(), "first check passes");
             True(vm.CanShowStartBuild && vm.CanStartBuild, "explicit ready project exposes Start Build");
             Equal("explicit-proj", vm.BuildPreviewProjectName, "preview project name shown");
@@ -537,7 +581,7 @@ internal static class EnvironmentChecks
 
             var service = new ControlledEnvironmentService();
             using var vm = new EnvironmentCheckViewModel(service);
-            vm.SelectProject(project);
+            await vm.SelectProjectAsync(project);
             True(await vm.CheckAsync(), "environment check passes on v1");
             True(vm.CanStartBuild, "ready to build v1");
 
@@ -613,7 +657,7 @@ internal static class EnvironmentChecks
                     progressSeen.Add(vm.BuildProgressText);
             };
 
-            vm.SelectProject(project);
+            await vm.SelectProjectAsync(project);
             await vm.CheckAsync();
 
             // Start Build #1 (in-flight) -> duplicate StartBuildAsync must be blocked
@@ -753,7 +797,7 @@ internal static class EnvironmentChecks
             };
 
             using var vm = new EnvironmentCheckViewModel(service);
-            vm.SelectProject(project);
+            await vm.SelectProjectAsync(project);
             await vm.CheckAsync();
             True(await vm.StartBuildAsync(), "framework-dependent build passes");
             Equal(BuildOutcomeKind.Succeeded, vm.BuildOutcome, "BuildOutcome is Succeeded");
@@ -879,7 +923,7 @@ internal static class EnvironmentChecks
 
             string? openedFolder = null;
             using var vm = new EnvironmentCheckViewModel(service, artifactFolderOpener: dir => openedFolder = dir);
-            vm.SelectProject(projectA);
+            await vm.SelectProjectAsync(projectA);
             await vm.CheckAsync();
             True(await vm.StartBuildAsync(), "build #1 succeeds");
 
@@ -911,7 +955,7 @@ internal static class EnvironmentChecks
             True(!await vm.GenerateInstallerAsync(), "packaging fails again");
             True(vm.HasValidInstaller, "previous valid installer for project A still preserved");
 
-            vm.SelectProject(projectB);
+            await vm.SelectProjectAsync(projectB);
             True(!vm.HasValidInstaller && !vm.HasInstallerFailure && string.IsNullOrEmpty(vm.GeneratedInstallerFileName),
                 "switching to project B completely clears project A installer results");
         });
@@ -1001,7 +1045,7 @@ internal static class EnvironmentChecks
             using var vm = new EnvironmentCheckViewModel(service);
 
             // 1) Select -> preview only, zero files written, Start Check disabled until confirmed
-            True(vm.SelectProject(projectDir), "select unconfigured C# project");
+            True(await vm.SelectProjectAsync(projectDir), "select unconfigured C# project");
             True(vm.IsOnboardingReadyToConfirm && !vm.IsOnboardingUnsupported, "ready to confirm card visible");
             True(!vm.CanStartCheck && vm.CanConfirmOnboarding, "Start Check gated until onboarding confirmed");
             Equal("已识别 HelloDesk · 控制台应用", vm.OnboardingHeadline, "concise onboarding headline");
@@ -1018,7 +1062,7 @@ internal static class EnvironmentChecks
             Equal(1, Directory.GetFiles(projectDir).Length, "cancel leaves only original .csproj");
 
             // 3) Select again -> Confirm -> writes contain.environment.json and enables Check -> Build
-            True(vm.SelectProject(projectDir), "re-select unconfigured C# project");
+            True(await vm.SelectProjectAsync(projectDir), "re-select unconfigured C# project");
             True(await vm.ConfirmOnboardingAsync(), "explicit confirmation succeeds");
             True(File.Exists(Path.Combine(projectDir, "contain.environment.json")), "contain.environment.json written after confirmation");
             True(!vm.IsOnboardingReadyToConfirm && vm.CanStartCheck, "transitions directly to Start Check");
@@ -1034,7 +1078,7 @@ internal static class EnvironmentChecks
 
             // 4) Reopening same project with contain.installer.json reuses both config and AppId without onboarding card
             File.WriteAllText(Path.Combine(projectDir, "contain.installer.json"), "{\"schema_version\":1,\"app_id\":\"12345678-1234-4234-8234-123456789abc\"}");
-            True(vm.SelectProject(projectDir), "reopen configured project");
+            True(await vm.SelectProjectAsync(projectDir), "reopen configured project");
             True(!vm.IsOnboardingReadyToConfirm && vm.CanStartCheck, "reuses existing contain.environment.json directly");
             True(vm.SelectionScopeNote.Contains("12345678-1234-4234-8234-123456789abc", StringComparison.Ordinal),
                 "notes reused persistent installer identity");
@@ -1082,7 +1126,7 @@ internal static class EnvironmentChecks
             };
 
             using var vm = new EnvironmentCheckViewModel(service);
-            vm.SelectProject(changingDir);
+            await vm.SelectProjectAsync(changingDir);
             Equal("已识别 AppV1 · 控制台应用", vm.OnboardingHeadline, "initial preview V1");
 
             // Confirm when source changed -> refreshes preview to V2 without writing
@@ -1104,7 +1148,7 @@ internal static class EnvironmentChecks
                 "当前文件夹包含 One.csproj、Two.csproj。",
                 "下一步：请重新点击“选择文件夹”，直接选中要发布的单个控制台应用所在的子目录。");
 
-            vm.SelectProject(multiDir);
+            await vm.SelectProjectAsync(multiDir);
             True(vm.IsOnboardingUnsupported && !vm.IsOnboardingReadyToConfirm && !vm.CanStartCheck,
                 "unsupported project blocks Start Check and shows guidance");
             True(vm.OnboardingUnsupportedNextStep.Contains("单个控制台应用", StringComparison.Ordinal),
@@ -1209,8 +1253,8 @@ internal static class EnvironmentChecks
         public BuildManifestPreview InspectBuildPreview(string projectPath) =>
             WorkflowManifestReader.ReadPreview(projectPath);
 
-        public DotnetOnboardingPreviewData? InspectDotnetOnboarding(string projectPath) =>
-            OnboardingInspectFactory(WorkflowCliEnvironmentService.NormalizeDirectoryPath(projectPath));
+        public Task<DotnetOnboardingPreviewData?> InspectDotnetOnboardingAsync(string projectPath, CancellationToken cancellationToken) =>
+            Task.FromResult(OnboardingInspectFactory(WorkflowCliEnvironmentService.NormalizeDirectoryPath(projectPath)));
 
         public Task<DotnetOnboardingApplyOutcome> ApplyDotnetOnboardingAsync(
             string projectPath,

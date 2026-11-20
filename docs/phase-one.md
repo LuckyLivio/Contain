@@ -28,18 +28,19 @@ C 编译和 CLI 打包，并设置选中工具集的绝对 Rust linker/CC/CXX �
 
 ## 可信构建机：先准备可带到空白源码机的独立 CLI
 
-先安装上述工具，然后从干净、已提交的检出构建 bootstrap CLI；**不要在 A 上先安装
+先安装上述工具，将 `$sourceSha` 设为本次候选所用发布分支的完整提交 SHA，然后从干净检出构建 bootstrap CLI；**不要在 A 上先安装
 工具再补写缺项报告**。以下输出路径均必须尚不存在；失败输出和旧证据保留。
 
 ```powershell
-git switch feat/source-and-package-workflows
-git pull --ff-only
+git switch --detach $sourceSha
 powershell.exe -NoProfile -File scripts/build-workflow.ps1 -OutputDirectory C:\ContainRuns\bootstrap-01
 ```
 
 得到 `bootstrap-01\contain-workflow-windows-x64.zip`、`package-spec.json`、`identity.json`。
 脚本使用独立新构建目录、请求静态 CRT、收集实际依赖许可证；这是 bootstrap，不是
-干净接收机通过证明。解压其中 CLI 后复制到 A。不安装 Rust/.NET SDK 才能执行它。
+干净接收机通过证明。将完整 CLI ZIP 解压到 A 的 `C:\Bootstrap`，保留
+`contain-workflow.exe` 旁的 `workflow\` 子目录，供默认环境检查选择 MSVC 和 Windows SDK。
+运行该 CLI 无需预装 Rust 或 .NET SDK。
 GitHub 分支是源码获取方式；本轮没有上传 Release 或伪造 Windows artifact 下载地址。
 
 ## 快照 A：从真实缺项到本次构建的桌面/CLI ZIP
@@ -98,21 +99,31 @@ CONTENTS 精确成员/尺寸/SHA-256 契约。`reused_core_binary=false`，core_
 source_sha 均为本次检出。外部 identity 另绑定最终 ZIP（避免 ZIP 自包含哈希循环）。
 旧 Beta.1/Beta.10 打包脚本及固定核心规则原样保留；新包不继承旧验收。
 
-## 快照 B：同一份 ZIP，开发工具缺失，独立验收
-
-从**另一套从未安装开发工具**的干净 Windows x64 快照开始，只复制 A 输出的两份 ZIP、
-两份 spec、handoff.json，以及本仓库的两个接收机脚本（acceptance 与 receiver-evidence）。
-解压 A 的 CLI ZIP 为 bootstrap verifier；接收步骤会核对该 EXE 与 A handoff 的哈希。
-操作者应通过独立可靠方式保存/传递 A 的 handoff 身份；哈希绑定不是签名或来源认证。
-在有交互桌面的会话执行：
+发布分支集成后，在快照 A 使用生成这份 delivery 的干净检出组装候选。将
+`$sourceSha` 设为本轮确认的完整 40 位发布源码提交，安装 Inno Setup 6 后执行：
 
 ```powershell
-powershell.exe -NoProfile -File scripts/workflow-windows-acceptance.ps1 `
-  -Stage Package -SnapshotLabel B-clean -Cli C:\Receive\verifier\contain-workflow.exe `
-  -Zip C:\Receive\desktop\contain-source-windows-x64.zip -Spec C:\Receive\desktop\package-spec.json `
-  -CliZip C:\Receive\cli\contain-workflow-windows-x64.zip -CliSpec C:\Receive\cli\package-spec.json `
-  -Handoff C:\Receive\handoff.json -OutputDirectory C:\ContainRuns\B-01
+python scripts/assemble-release-candidate.py --source-sha $sourceSha --delivery C:\ContainRuns\A-restored\delivery --output C:\ContainRuns\candidate-01
 ```
+
+入口校验 A 的交接身份、双 ZIP、清单和选择器，在开发机用两份包内 CLI 各运行普通
+`check` 与 `--safe-probes`，再从已核对的桌面 ZIP 构建 Setup。新目录包含版本化双 ZIP、
+两份清单及身份、Setup 及其收据、A 的原始 `handoff.json`、`candidate-identity.json` 与
+`SHA256SUMS.txt`。保留 B 的独立收据及新 Setup 的离线试装记录。
+
+## 快照 B：同一份 ZIP，开发工具缺失，独立验收
+
+对组装后的候选，将整个候选目录传至已断网、无开发工具的 B。单独保存 A 打印的
+`SHA256SUMS.txt` 摘要，核对该摘要及清单中 `receive-release-candidate.ps1`
+的文件哈希，再在 B 的交互桌面执行下例（`$expectedSha` 为独立传递的摘要）：
+
+```powershell
+& C:\Receive\candidate-01\receive-release-candidate.ps1 -ExpectedChecksumsSha256 $expectedSha -SnapshotLabel B-clean -OutputDirectory C:\ContainRuns\B-01
+```
+
+入口校验整套候选及其操作脚本，提取经过哈希核对的工作流 CLI，运行 Package 阶段，并在
+执行前后分别检查包括虚拟网卡在内的接口状态。请在关闭 B 前导出
+`C:\ContainRuns\B-01\B-receipt.json`，同时保存快照来源和断网配置。Setup 离线试装另行记录。
 
 B 阶段只需要 Windows PowerShell 和独立 CLI，不调用 Python/Rust/MSVC 或 .NET SDK
 完成包验证。开发工具缺失探测仅在发现 dotnet 主机时枚举 SDK；不会把仅安装运行时
