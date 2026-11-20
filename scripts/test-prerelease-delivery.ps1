@@ -20,6 +20,7 @@ function Require($condition, $message) {
 function Run-Installer($path) {
     $proc = Start-Process -FilePath $path -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-' -PassThru
     try {
+        $null = $proc.Handle
         Require ($proc.WaitForExit(180000)) 'Installer did not exit in time'
         Require ($proc.ExitCode -eq 0) 'Installer returned a nonzero exit code'
     } finally { $proc.Dispose() }
@@ -139,6 +140,7 @@ try {
     $gate = 'installed_window'
     $ui = Start-Process -FilePath $viewer -WorkingDirectory $install -PassThru
     try {
+        $null = $ui.Handle
         $timer = [Diagnostics.Stopwatch]::StartNew()
         do {
             $ui.Refresh()

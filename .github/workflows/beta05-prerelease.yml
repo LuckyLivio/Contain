@@ -85,8 +85,10 @@ jobs:
           }
       - name: Assemble the release assets from the same delivery
         working-directory: product
-        shell: pwsh
+        # The assembler launches Windows PowerShell 5.1. Inherit its matching module path.
+        shell: powershell
         run: |
+          $null = Get-Command Get-FileHash -ErrorAction Stop
           python scripts/assemble-release-candidate.py --source-sha $env:CANDIDATE_SOURCE_SHA --delivery "$env:RUNNER_TEMP/delivery" --output "$env:RUNNER_TEMP/candidate"
       - name: Smoke-test the assembled assets on Windows
         id: smoke
