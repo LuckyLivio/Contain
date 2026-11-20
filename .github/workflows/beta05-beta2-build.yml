@@ -1,0 +1,127 @@
+name: Build the Beta 2 Windows candidate
+
+on:
+  push:
+    branches: [feat/wpf-project-onboarding]
+    paths:
+      - '.github/workflows/beta05-beta2-build.yml'
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SOURCE_SHA: 18782fc4e8cfd91df4d60fa339b77070236f130a
+  PYTHONUTF8: '1'
+
+jobs:
+  candidate:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - name: Check out the frozen product source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
+          path: product
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+          architecture: x64
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: product/global.json
+      - name: Prepare the frozen source toolchain
+        working-directory: product
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.100.0 --profile minimal --target x86_64-pc-windows-msvc --component rustfmt,clippy,rust-docs
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install the pinned Rust toolchain' }
+          if ((rustc --version) -notlike 'rustc 1.100.0 *' -or (dotnet --version) -ne '10.0.403' -or
+              (python --version) -ne 'Python 3.12.10') { throw 'Build tool version mismatch' }
+          $installer = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
+          $inno = Join-Path $env:RUNNER_TEMP 'inno-6.7.3'
+          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $installer
+          if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne '9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732') {
+              throw 'Inno Setup installer hash mismatch'
+          }
+          $install = Start-Process $installer -ArgumentList "/CURRENTUSER /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=`"$inno`"" -Wait -PassThru
+          if ($install.ExitCode -ne 0 -or !(Test-Path -LiteralPath "$inno/ISCC.exe")) { throw 'Inno Setup installation failed' }
+          $inno >> $env:GITHUB_PATH
+      - name: Build and test the frozen Windows x64 delivery
+        id: build
+        working-directory: product
+        shell: powershell
+        run: |
+          if ((git rev-parse HEAD) -ne $env:CANDIDATE_SOURCE_SHA) { throw 'Frozen product source mismatch' }
+          ./scripts/build-source-delivery.ps1 -OutputDirectory "$env:RUNNER_TEMP/delivery"
+      - name: Identify failed build stages and tests
+        if: ${{ failure() && steps.build.outcome == 'failure' }}
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'delivery'
+          if (!(Test-Path -LiteralPath $out)) { return }
+          foreach ($file in Get-ChildItem -LiteralPath $out -Filter '*.json' -File) {
+              $stage = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
+              if ($stage.status -ne 'failed' -or $file.BaseName -cnotmatch '^[a-z][a-z-]{0,40}$') { continue }
+              Write-Output "Failed stage $($file.BaseName) (exit $([int]$stage.exit_code))"
+              $log = Join-Path $out ($file.BaseName + '.local.log')
+              if (!(Test-Path -LiteralPath $log)) { continue }
+              # Extract identifiers only. Diagnostic lines may include local paths or fixture values.
+              $patterns = @('\b(?:E|CS|MSB|NU|NETSDK|LNK|C)\d{4,5}\b',
+                            '(?m)^test [a-zA-Z0-9_:]{1,180} \.\.\. FAILED',
+                            '\b(?:assertion(?: `(?:left == right|left != right)`)? failed|panicked at)\b',
+                            '\bSystem\.(?:[A-Za-z]+\.)*[A-Za-z]+Exception\b',
+                            '\bContain\.Desktop\.Model\.Tests\.[A-Za-z0-9_+.<>]{1,140}')
+              $text = Get-Content -LiteralPath $log -Raw
+              $codes = foreach ($pattern in $patterns) { [regex]::Matches($text, $pattern).Value }
+              $codes | Sort-Object -Unique | Select-Object -First 24
+          }
+      - name: Assemble the release assets from the same delivery
+        working-directory: product
+        # The assembler launches Windows PowerShell 5.1. Inherit its matching module path.
+        shell: powershell
+        run: |
+          $null = Get-Command Get-FileHash -ErrorAction Stop
+          python scripts/assemble-release-candidate.py --source-sha $env:CANDIDATE_SOURCE_SHA --delivery "$env:RUNNER_TEMP/delivery" --output "$env:RUNNER_TEMP/candidate"
+      - name: Verify the staged file list and hashes
+        working-directory: product
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "candidate"
+          expected = {
+              "contain-0.5.0-beta.2-windows-x64.zip", "contain-workflow-0.5.0-beta.2-windows-x64.zip",
+              "Contain-Setup-x64.exe", "desktop-identity.json", "cli-identity.json",
+              "desktop-package-spec.json", "cli-package-spec.json", "candidate-identity.json",
+              "installer-receipt.json", "handoff.json", "receive-release-candidate.ps1",
+              "workflow-windows-acceptance.ps1", "workflow-receiver-evidence.ps1", "inspect-receiver-environment.ps1",
+          }
+          manifest = root / "SHA256SUMS.txt"
+          entries = list(root.iterdir())
+          if {p.name for p in entries} != expected | {manifest.name} or any(
+                  p.is_symlink() or not p.is_file() for p in entries):
+              raise SystemExit("Unexpected candidate files")
+          hashes = {}
+          for path in entries:
+              with path.open("rb") as file:
+                  hashes[path.name] = hashlib.file_digest(file, "sha256").hexdigest()
+          if sorted(manifest.read_text().splitlines()) != sorted(f"{hashes[n]}  {n}" for n in expected):
+              raise SystemExit("Candidate file digest mismatch")
+          identity = json.loads((root / "candidate-identity.json").read_bytes())
+          if identity["source_sha"] != os.environ["CANDIDATE_SOURCE_SHA"] or identity["version"] != "0.5.0-beta.2":
+              raise SystemExit("Incorrect Beta 2 product identity")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              print(f"Product source `{identity['source_sha']}`", file=summary)
+              print(f"\nSHA256SUMS.txt `{hashes[manifest.name]}`", file=summary)
+      - name: Stage the candidate for Windows acceptance
+        uses: actions/upload-artifact@v4
+        with:
+          name: contain-beta2-staged-${{ env.CANDIDATE_SOURCE_SHA }}
+          path: ${{ runner.temp }}/candidate/
+          if-no-files-found: error
+          compression-level: 0
