@@ -4,7 +4,8 @@ param(
     [Parameter(Mandatory)][string]$HarnessPath,
     [Parameter(Mandatory)][string]$EvidenceDirectory,
     [string]$ExpectedVersion='0.5.0-beta.2',
-    [switch]$MeasureFirstPackage
+    [switch]$MeasureFirstPackage,
+    [ValidateSet('Wpf','MissingInno')][string]$FirstPackageScenario
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -34,6 +35,17 @@ $r = [ordered]@{schema_version=1; protocol='contain-installed-wpf-workflow-1'; s
     run_id=$env:GITHUB_RUN_ID; attempt=$env:GITHUB_RUN_ATTEMPT; windows_version=[Environment]::OSVersion.Version.ToString()
     image_os=$env:ImageOS; image_version=$env:ImageVersion; setup_sha256=$null; viewer_sha256=$null; workflow_cli_sha256=$null
     project_name=$null; assembly_name=$null; product_pid=$null; window_title=$null; chooser_count=0; generated_project=$null; checks=$checks}
+$receiptName = 'installed-wpf-workflow.json'
+$missingInno = $FirstPackageScenario -ceq 'MissingInno'
+if ($FirstPackageScenario) {
+    $receiptName = 'first-package-candidate.json'
+    $r.protocol = 'contain-first-package-candidate-1'
+    $r.scenario = $FirstPackageScenario
+    if ($missingInno) {
+        $checks.Remove('install_launch_uninstall_project')
+        $checks['verify_console_setup'] = 'not_run'
+    }
+}
 $gate = 'authenticate_candidate'
 try {
     Require ($IsWindows -and $env:GITHUB_ACTIONS -ceq 'true' -and $env:RUNNER_ENVIRONMENT -ceq 'github-hosted' -and
@@ -66,25 +78,31 @@ try {
     $r.workflow_cli_sha256 = $desktop.workflow_cli_sha256
     $checks[$gate] = 'passed'
 
+    # The existing stock UI gate keeps its receipt contract across the Beta 3 redesign.
+    $guidedScenario = if ($FirstPackageScenario) { $FirstPackageScenario } elseif ($meta.version -ceq '0.5.0-beta.3') { 'Wpf' }
+    $guided = ![string]::IsNullOrEmpty($guidedScenario)
     $gate = 'install_product'
     $scratch = (New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP ('contain-installed-ui-' + [guid]::NewGuid().ToString('N')))).FullName
-    $projectName = if ($MeasureFirstPackage) { 'HelloWpf' } else { 'WpfUi' + [guid]::NewGuid().ToString('N').Substring(0,10) }
+    $projectName = if ($missingInno) { 'HelloConsole' } elseif ($MeasureFirstPackage) { 'HelloWpf' } else { 'WpfUi' + [guid]::NewGuid().ToString('N').Substring(0,10) }
     $assemblyName = "${projectName}Desktop"
     $r.project_name = $projectName; $r.assembly_name = $assemblyName
-    $project = if ($MeasureFirstPackage) { 'C:\ContainDemo\HelloWpf' } else { Join-Path $scratch $projectName }
+    $project = if ($MeasureFirstPackage) { Join-Path 'C:\ContainDemo' $projectName } else { Join-Path $scratch $projectName }
     Require (!(Test-Path -LiteralPath $project)) 'fixture_already_exists'
-    & dotnet new wpf --name $projectName --output $project --framework net10.0 --no-restore > (Join-Path $scratch 'template.log') 2>&1
-    Require ($LASTEXITCODE -eq 0) 'wpf_template'
+    $template = if ($missingInno) { 'console' } else { 'wpf' }
+    & dotnet new $template --name $projectName --output $project --framework net10.0 --no-restore > (Join-Path $scratch 'template.log') 2>&1
+    Require ($LASTEXITCODE -eq 0) 'project_template'
     $csproj = Join-Path $project "$projectName.csproj"
     [xml]$xml = Get-Content -LiteralPath $csproj -Raw
     $assembly = $xml.CreateElement('AssemblyName')
     $assembly.InnerText = $assemblyName
-    [void]$xml.SelectSingleNode('/Project/PropertyGroup[UseWPF]').AppendChild($assembly)
+    [void]$xml.SelectSingleNode('/Project/PropertyGroup[OutputType]').AppendChild($assembly)
     $xml.Save($csproj)
     $csprojHash = Sha $csproj
-    [xml]$xaml = Get-Content -LiteralPath (Join-Path $project 'MainWindow.xaml') -Raw
-    $expectedTitle = $xaml.DocumentElement.GetAttribute('Title')
-    Require ($expectedTitle -ceq 'MainWindow') 'fixture_window_title'
+    if (!$missingInno) {
+        [xml]$xaml = Get-Content -LiteralPath (Join-Path $project 'MainWindow.xaml') -Raw
+        $expectedTitle = $xaml.DocumentElement.GetAttribute('Title')
+        Require ($expectedTitle -ceq 'MainWindow') 'fixture_window_title'
+    }
     $install = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs/Contain'))
     $reg = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F4E2D91-5C3A-4B7E-9A16-2D8C4E7F1035}_is1'
     $link = Join-Path ([Environment]::GetFolderPath('Programs')) 'Contain.lnk'
@@ -103,11 +121,22 @@ try {
     Require ((Test-Path -LiteralPath $link -PathType Leaf) -and $shortcut.TargetPath -eq $viewer -and !$shortcut.Arguments) 'product_shortcut'
     Require (!@(Get-Process -Name 'Contain.Viewer' -ErrorAction SilentlyContinue).Count) 'unexpected_running_viewer'
     $priorModulePath = $env:PSModulePath
+    $priorCompiler = $env:CONTAIN_ISCC_PATH
     try {
         # The packaged workflow invokes Windows PowerShell 5.1 for signing/toolchain metadata.
         $env:PSModulePath = $env:CONTAIN_WINDOWS_POWERSHELL_MODULE_PATH
+        if ($missingInno) {
+            # The product treats an explicit ISCC path as authoritative. Restore the real distribution there
+            # only after this same GUI session has observed and reported the absent compiler.
+            $env:CONTAIN_ISCC_PATH = Join-Path $scratch 'isolated-inno/ISCC.exe'
+            Require (!(Test-Path -LiteralPath $env:CONTAIN_ISCC_PATH) -and
+                (Test-Path -LiteralPath $env:CONTAIN_TEST_ISCC_PATH -PathType Leaf)) 'isolated_compiler_precondition'
+        }
         Start-Process -FilePath $link
-    } finally { $env:PSModulePath = $priorModulePath }
+    } finally {
+        $env:PSModulePath = $priorModulePath
+        $env:CONTAIN_ISCC_PATH = $priorCompiler
+    }
     $timer = [Diagnostics.Stopwatch]::StartNew()
     do {
         $owned = @(Get-Process -Name 'Contain.Viewer' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $viewer })
@@ -119,9 +148,16 @@ try {
     } while ($true)
     $r.product_pid = $owned[0].Id; $r.window_title = $owned[0].MainWindowTitle
     $uiFile = Join-Path $scratch 'ui.json'
-    $measurementArgs = @()
-    if ($MeasureFirstPackage) { $measurementArgs += $out }
-    & $harness --installed-wpf $install $project $assemblyName $r.product_pid $uiFile @measurementArgs > (Join-Path $scratch 'ui.log') 2>&1
+    if ($guided) {
+        $screenEvidence = if ($FirstPackageScenario) { $out } else {
+            (New-Item -ItemType Directory -Path (Join-Path $scratch 'screens')).FullName
+        }
+        & $harness --first-package $install $project $assemblyName $r.product_pid $uiFile $screenEvidence $guidedScenario $scratch > (Join-Path $scratch 'ui.log') 2>&1
+    } else {
+        $measurementArgs = @()
+        if ($MeasureFirstPackage) { $measurementArgs += $out }
+        & $harness --installed-wpf $install $project $assemblyName $r.product_pid $uiFile @measurementArgs > (Join-Path $scratch 'ui.log') 2>&1
+    }
     $uiCode = $LASTEXITCODE
     Require (Test-Path -LiteralPath $uiFile -PathType Leaf) 'ui_receipt_missing'
     $ui = Read-Json $uiFile
@@ -135,11 +171,28 @@ try {
         (Sha $csproj) -ceq $csprojHash) 'ui_identity_or_source_changed'
     $r.chooser_count = $ui.chooser_count
 
-    $gate = 'install_launch_uninstall_project'
+    if ($FirstPackageScenario) {
+        Require ($ui.explorer_opened_exact_folder -eq $true -and $ui.missing_inno_recovered -eq $missingInno) 'candidate_ui_completion'
+        $r.explorer_opened_exact_folder = $ui.explorer_opened_exact_folder
+        $r.missing_inno_recovered = $ui.missing_inno_recovered
+        $r.restored_compiler_sha256 = $ui.restored_compiler_sha256
+        $r.project_type = $ui.project_type
+    }
+    $gate = if ($missingInno) { 'verify_console_setup' } else { 'install_launch_uninstall_project' }
     $generated = Join-Path $project $ui.installer_relative
     Require ((Get-Item -LiteralPath $generated).Name -ceq "$assemblyName-Setup-x64.exe") 'displayed_setup_name'
     $generatedReceipt = Join-Path (Split-Path $generated) 'installer-receipt.json'
-    $r.generated_project = Test-GeneratedWpfSetup -ProjectDirectory $project -AssemblyName $assemblyName -ReceiptPath $generatedReceipt -WorkDirectory $scratch -ExpectedWindowTitle $expectedTitle
+    if ($missingInno) {
+        $generatedId = Read-Json $generatedReceipt
+        $published = Join-Path $project "target/workflow/publish/win-x64/$assemblyName.exe"
+        Require ($generatedId.entry -ceq "$assemblyName.exe" -and $generatedId.installer_file -ceq "$assemblyName-Setup-x64.exe" -and
+            $generatedId.entry_sha256 -ceq (Sha $published) -and $generatedId.installer_sha256 -ceq (Sha $generated) -and
+            $ui.restored_compiler_sha256 -ceq (Sha $env:CONTAIN_TEST_ISCC_PATH)) 'console_setup_identity'
+        $r.generated_project = @{status='passed'; entry=$generatedId.entry; app_id=$generatedId.app_id
+            entry_sha256=$generatedId.entry_sha256; installer_sha256=$generatedId.installer_sha256}
+    } else {
+        $r.generated_project = Test-GeneratedWpfSetup -ProjectDirectory $project -AssemblyName $assemblyName -ReceiptPath $generatedReceipt -WorkDirectory $scratch -ExpectedWindowTitle $expectedTitle
+    }
     Require ($r.generated_project.status -ceq 'passed') 'generated_setup_acceptance'
     $checks[$gate] = 'passed'
 
@@ -163,6 +216,6 @@ try {
     }
     Write-Warning ("Installed UI test failed: " + ($r.failure | ConvertTo-Json -Compress))
 } finally {
-    [IO.File]::WriteAllText((Join-Path $out 'installed-wpf-workflow.json'), ($r | ConvertTo-Json -Depth 8) + "`n", [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $out $receiptName), ($r | ConvertTo-Json -Depth 8) + "`n", [Text.UTF8Encoding]::new($false))
 }
 if ($r.status -ne 'passed') { exit 1 }
