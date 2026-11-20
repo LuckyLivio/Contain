@@ -547,6 +547,11 @@ internal sealed class DesktopDriver : IDisposable
     {
         if (!SetWindowPos(MainWindow(), IntPtr.Zero, 30, 30, width, height, 0x0004)) throw new IOException("Resize failed.");
     });
+    internal Task<(int Width, int Height)> WindowSizeAsync() => Ui("window", () =>
+    {
+        if (!GetWindowRect(MainWindow(), out var bounds)) throw new IOException("Owned window bounds unavailable.");
+        return (bounds.Right - bounds.Left, bounds.Bottom - bounds.Top);
+    });
     internal Task RequestCloseAsync() => Ui("window", () => PostMessage(MainWindow(), 0x0010, IntPtr.Zero, IntPtr.Zero));
     internal async Task CloseAsync()
     {
@@ -567,11 +572,13 @@ internal sealed class DesktopDriver : IDisposable
             Record("normal_close", "window", request.ElapsedMilliseconds + wait.ElapsedMilliseconds, errorType);
         }
     }
-    internal Task<Screenshot> CaptureAsync(string output, string name, string kind, bool maskHostPaths = false) => Ui("window", () =>
+    internal Task<Screenshot> CaptureAsync(string output, string name, string kind, bool maskHostPaths = false,
+        Action<string>? progress = null) => Ui("window", () =>
     {
         var window = MainWindow();
         if (!GetWindowRect(window, out var bounds) || bounds.Right <= bounds.Left || bounds.Bottom <= bounds.Top)
             throw new IOException("Actual window bounds unavailable.");
+        progress?.Invoke("print_owned_window");
         SetForegroundWindow(window);
         using var bitmap = new Bitmap(bounds.Right - bounds.Left, bounds.Bottom - bounds.Top);
         using (var graphics = Graphics.FromImage(bitmap))
@@ -582,6 +589,7 @@ internal sealed class DesktopDriver : IDisposable
         }
         if (maskHostPaths)
         {
+            progress?.Invoke("mask_host_paths");
             using var overlay = Graphics.FromImage(bitmap);
             var root = AutomationElement.FromHandle(window);
             var nodes = root.FindAll(TreeScope.Descendants, new OrCondition(
@@ -591,14 +599,17 @@ internal sealed class DesktopDriver : IDisposable
             {
                 if (node.Current.IsOffscreen) continue;
                 var text = node.Current.Name ?? "";
-                if (node.TryGetCurrentPattern(ValuePattern.Pattern, out var value)) text += " " + ((ValuePattern)value).Current.Value;
-                if (!System.Text.RegularExpressions.Regex.IsMatch(text, @"(?i)[A-Z]:[\\/](?!ContainDemo[\\/])")) continue;
+                var unreadable = false;
+                try { if (node.TryGetCurrentPattern(ValuePattern.Pattern, out var value)) text += " " + ((ValuePattern)value).Current.Value; }
+                catch (InvalidOperationException) { unreadable = true; }
+                if (!unreadable && !System.Text.RegularExpressions.Regex.IsMatch(text, @"(?i)[A-Z]:[\\/](?!ContainDemo[\\/])")) continue;
                 var rect = node.Current.BoundingRectangle;
                 if (!rect.IsEmpty)
                     overlay.FillRectangle(Brushes.DarkGray, (float)(rect.X - bounds.Left), (float)(rect.Y - bounds.Top),
                         (float)rect.Width, (float)rect.Height);
             }
         }
+        progress?.Invoke("write_png");
         Directory.CreateDirectory(output); var path = Path.Combine(output, name); bitmap.Save(path, ImageFormat.Png);
         return new Screenshot(name, Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant(), bitmap.Width, bitmap.Height, GetDpiForWindow(window), kind);
     });

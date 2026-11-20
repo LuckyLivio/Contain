@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -112,15 +111,10 @@ internal static class FirstPackageCandidate
                 Path.GetFileName(installer) == setupName, "displayed_installer_mismatch");
             setupRelative = Path.GetRelativePath(project, installer);
             await measure.ShotAsync("package-complete", "FirstPackageResultName");
-            await measure.SaveAsync("passed");
 
             // Folder opening is verified after the timed path has produced its first installer.
-            var outputFolder = Path.GetDirectoryName(installer)!;
-            Require(!ExplorerShows(outputFolder), "folder_already_open");
             control = "FirstPackageAction";
-            await ui.InvokeAsync(control);
-            await ui.UntilAsync(stage, "explorer_output_folder", () => Task.FromResult(ExplorerShows(outputFolder)),
-                TimeSpan.FromSeconds(40));
+            await measure.VerifyOutputFolderAsync(control, Path.GetDirectoryName(installer)!);
             openFolder = true;
             control = "FirstPackageDetails";
             await ui.ExpandAsync(control);
@@ -154,8 +148,8 @@ internal static class FirstPackageCandidate
         {
             reason = e is AssertionException ? e.Message : e.GetType().Name;
             checks[stage] = "failed";
-            if (measure is not null) await measure.SaveAsync("failed");
         }
+        if (measure != null) await measure.SaveAsync(status);
         await File.WriteAllTextAsync(receipt, JsonSerializer.Serialize(new
         {
             status, stage, control, reason, driver_stage = driver?.Stage, checks, product_pid = pid,
@@ -186,28 +180,6 @@ internal static class FirstPackageCandidate
         var digest = SHA256.HashData(File.ReadAllBytes(real));
         Require(SHA256.HashData(File.ReadAllBytes(Path.Combine(dest, "ISCC.exe"))).SequenceEqual(digest), "restored_compiler_digest");
         return Convert.ToHexString(digest).ToLowerInvariant();
-    }
-
-    private static bool ExplorerShows(string folder)
-    {
-        var shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application", throwOnError: true)!)!;
-        try
-        {
-            foreach (dynamic window in ((dynamic)shell).Windows())
-            {
-                try
-                {
-                    if (Path.GetFileName((string)window.FullName).Equals("explorer.exe", StringComparison.OrdinalIgnoreCase)
-                        && Uri.TryCreate((string)window.LocationURL, UriKind.Absolute, out Uri? uri) && uri.IsFile
-                        && Path.GetFullPath(uri.LocalPath).TrimEnd(Path.DirectorySeparatorChar).Equals(folder, StringComparison.OrdinalIgnoreCase))
-                        return true;
-                }
-                catch (COMException) { /* Explorer can be navigating between locations. */ }
-                finally { Marshal.ReleaseComObject(window); }
-            }
-            return false;
-        }
-        finally { Marshal.ReleaseComObject(shell); }
     }
 
     private static void Require(bool value, string reason)

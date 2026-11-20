@@ -2,7 +2,9 @@ name: Measure the published Beta 2 first package experience
 on:
   push:
     branches: [feat/first-package-experience]
-    paths: ['.github/workflows/first-package-baseline.yml']
+    paths:
+      - '.github/workflows/first-package-baseline.yml'
+      - 'desktop/Contain.Desktop.Tests/FirstPackageMeasurement.cs'
 permissions:
   contents: read
 jobs:

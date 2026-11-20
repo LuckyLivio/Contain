@@ -81,7 +81,12 @@ internal static class InstalledWpfWorkflow
             Require(installer.StartsWith(outputRoot, StringComparison.OrdinalIgnoreCase) &&
                 Path.GetFileName(installer) == setupName && File.Exists(installer), "displayed_installer_mismatch");
             setupRelative = Path.GetRelativePath(project, installer);
-            if (measure != null) await measure.ShotAsync("package-complete", "GeneratedInstallerFileName");
+            if (measure != null)
+            {
+                await measure.ShotAsync("package-complete", "GeneratedInstallerFileName");
+                control = "OpenInstallerFolderButton";
+                await measure.VerifyOutputFolderAsync(control, Path.GetDirectoryName(installer)!);
+            }
             control = "window_close";
             await ui.CloseAsync();
             Require(ui.HasExited && ui.ExitCode == 0, "installed_product_close_failed");
