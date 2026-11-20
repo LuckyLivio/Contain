@@ -1,0 +1,125 @@
+name: Attach verified Beta 0.5 assets to the draft
+
+on:
+  push:
+    branches: [release/v0.5.0-beta.1]
+    paths: ['.github/workflows/beta05-release-assets.yml']
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: beta05-draft-assets-452380213
+  cancel-in-progress: false
+
+jobs:
+  attach:
+    if: github.repository == 'LuckyLivio/Contain'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: LuckyLivio/Contain
+    steps:
+      - name: Retrieve the two accepted Windows artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api repos/LuckyLivio/Contain/actions/runs/44690323749 | jq -e '
+            .conclusion == "success" and .status == "completed" and .event == "push" and
+            .head_branch == "release/v0.5.0-beta.1" and .run_attempt == 1 and
+            .path == ".github/workflows/beta05-prerelease.yml" and
+            .head_sha == "581715e9a270f0bd98464d9ababe6c3bc10f9b03"' >/dev/null
+          gh api repos/LuckyLivio/Contain/actions/runs/44690323749/artifacts | jq -e '
+            ([.artifacts[] | select(.expired == false) | .id] | sort) == [14608732312, 14608767338]' >/dev/null
+          gh api repos/LuckyLivio/Contain/actions/artifacts/14608767338/zip > candidate.zip
+          gh api repos/LuckyLivio/Contain/actions/artifacts/14608732312/zip > smoke.zip
+          sha256sum --check --strict <<'SUMS'
+          ee6a6b336803c3d8432d4656ef17a9c5902eed59d62e79fd90df08f8804c84c7  candidate.zip
+          8a18d0c00c61f3428908a4994b74176c6ab672be0a68438b0660376dbab42dcc  smoke.zip
+          SUMS
+      - name: Verify the exact flat release files and Windows receipt
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import shutil
+          import zipfile
+          from pathlib import Path
+
+          candidate = {
+              "candidate-identity.json", "cli-identity.json", "cli-package-spec.json",
+              "contain-0.5.0-beta.1-windows-x64.zip", "Contain-Setup-x64.exe",
+              "contain-workflow-0.5.0-beta.1-windows-x64.zip",
+              "desktop-identity.json", "desktop-package-spec.json", "handoff.json",
+              "inspect-receiver-environment.ps1", "installer-receipt.json",
+              "receive-release-candidate.ps1", "workflow-receiver-evidence.ps1",
+              "workflow-windows-acceptance.ps1",
+          }
+          sums = "SHA256SUMS.txt"
+          receipt = "prerelease-smoke.json"
+          assets = Path("assets")
+          assets.mkdir()
+          for archive, names in [("candidate.zip", candidate | {sums}), ("smoke.zip", {receipt})]:
+              with zipfile.ZipFile(archive) as z:
+                  if sorted(z.namelist()) != sorted(names):
+                      raise SystemExit(f"Unexpected file list in {archive}")
+                  for name in sorted(names):
+                      with z.open(name) as src, (assets / name).open("xb") as dst:
+                          shutil.copyfileobj(src, dst)
+          digests = {}
+          for p in assets.iterdir():
+              with p.open("rb") as f:
+                  digests[p.name] = hashlib.file_digest(f, "sha256").hexdigest()
+          if digests[sums] != "83ba025a53ca5bd8f22efe9fefe7529fa53ac980bef54846262972f459152328":
+              raise SystemExit("Checksum manifest differs from the accepted run")
+          if digests[receipt] != "8042b28a12ebae8275fc06282ff17e33d8d638aaaeebb73d3eb0c8ad5a3670be":
+              raise SystemExit("Smoke receipt digest mismatch")
+          expected_lines = sorted(f"{digests[n]}  {n}" for n in candidate)
+          if sorted((assets / sums).read_text().splitlines()) != expected_lines:
+              raise SystemExit("Candidate file checksum mismatch")
+          report = json.loads((assets / receipt).read_bytes())
+          expected = {
+              "source_sha": "aac52e52cbe9395cb845be2d31c09ec117f86d06",
+              "workflow_sha": "581715e9a270f0bd98464d9ababe6c3bc10f9b03",
+              "run_id": "44690323749", "attempt": "1", "status": "passed",
+              "version": "0.5.0-beta.1", "checksums_sha256": digests[sums],
+              "artifacts": {n: digests[n] for n in candidate},
+          }
+          if any(report[k] != v for k, v in expected.items()):
+              raise SystemExit("Receipt does not bind this source, workflow and candidate")
+          Path("expected.json").write_text(json.dumps(digests))
+      - name: Attach missing files to the identified draft and verify remote digests
+        shell: python
+        run: |
+          import json
+          import subprocess
+          from pathlib import Path
+
+          expected = json.loads(Path("expected.json").read_text())
+          tag = "v0.5.0-beta.1"
+          draft_id = 452380213
+          def existing():
+              release = json.loads(subprocess.check_output([
+                  "gh", "api", f"repos/LuckyLivio/Contain/releases/{draft_id}",
+              ]))
+              if (release["id"] != draft_id or not release["draft"] or not release["prerelease"]
+                      or release["tag_name"] != tag or release["author"]["login"] != "LuckyLivio"
+                      or release["target_commitish"] != "8f3c068671b87485ae24d9e57b96a90fe0b473b3"):
+                  raise SystemExit("Draft release identity or state changed")
+              names = set()
+              for asset in release["assets"]:
+                  name = asset["name"]
+                  if (name in names or name not in expected or asset["state"] != "uploaded"
+                          or asset["digest"] != "sha256:" + expected[name]):
+                      raise SystemExit("Draft contains an unexpected or mismatched asset")
+                  names.add(name)
+              return names
+
+          for name in sorted(expected.keys() - existing()):
+              if name not in existing():
+                  subprocess.run(["gh", "release", "upload", tag, str(Path("assets") / name)], check=True)
+          if existing() != set(expected):
+              raise SystemExit("Draft asset inventory is incomplete")
+          print(f"Verified {len(expected)} release asset digests on draft {draft_id}.")

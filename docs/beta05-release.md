@@ -1,8 +1,8 @@
 # v0.5.0-beta.1：普通 C# 控制台项目零配置打包与桌面工作流
 
-**发布状态**　#24 已合入发布分支，三项审查意见已处理。产品源码冻结于 `aac52e52cbe9395cb845be2d31c09ec117f86d06`。该提交的 Windows 引导 CLI 已核验。预发行候选的同批 Setup 和双 ZIP 已通过 GitHub 托管 Windows x64 验收。干净离线 A/B 交接留待稳定版。当前公开版为 v0.4.0-beta.1。[修复 PR](https://github.com/LuckyLivio/Contain/pull/24) · [当前公开版](https://github.com/LuckyLivio/Contain/releases/tag/v0.4.0-beta.1)
+**发布状态**　v0.5.0-beta.1 已发布为 GitHub Prerelease。产品源码冻结于 `aac52e52cbe9395cb845be2d31c09ec117f86d06`，发布标签指向 #23 合入 main 的提交 `8f3c068671b87485ae24d9e57b96a90fe0b473b3`。本次公开上传并匿名回下载了 Windows 验收过的同一套文件。16 个附件的 SHA-256 全部与核验记录一致。[下载安装包](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.1/Contain-Setup-x64.exe) · [发行说明](https://github.com/LuckyLivio/Contain/releases/tag/v0.5.0-beta.1) · [验收收据](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.1/prerelease-smoke.json)
 
-本版面向在 Windows x64 上开发单项目 C# 控制台应用、希望把程序直接打包发给普通用户安装的开发者，同时也适合需要校验交付 ZIP 或查看既有安装记录的用户。双击运行 `Contain-Setup-x64.exe` 完成当前用户安装后，从开始菜单打开 `Contain`，进入「检查项目环境」选择只有 `.csproj` 和源码的项目文件夹，依次点击「使用此配置 → 开始检查 → 开始构建 → 生成安装包」，即可得到可独立分发的 `<应用名>-Setup-x64.exe`。历史冻结候选（`887f119`）已在 Windows 11 x64（`10.0.26300`）开发机、GitHub Actions `windows-latest` CI 与断网无开发工具的干净 Windows 11 x64 沙箱（`10.0.26100`）完成构建、离线安装启动、随包示例记录读取及卸载验证；完整快照 A→B（空白源码机缺项恢复构建并交接至干净接收机 `-Stage Package`）的最终收据尚未送达云端。历史冻结安装包的签名状态为 `NotSigned`，首次运行可能出现 Windows SmartScreen 提示。新安装包的签名状态以本次收据为准。
+本版面向在 Windows x64 上开发单项目 C# 控制台应用、希望把程序直接打包发给普通用户安装的开发者，同时也适合需要校验交付 ZIP 或查看既有安装记录的用户。双击运行 `Contain-Setup-x64.exe` 完成当前用户安装后，从开始菜单打开 `Contain`，进入「检查项目环境」选择只有 `.csproj` 和源码的项目文件夹，依次点击「使用此配置 → 开始检查 → 开始构建 → 生成安装包」，即可得到可独立分发的 `<应用名>-Setup-x64.exe`。历史冻结候选（`887f119`）已在 Windows 11 x64（`10.0.26300`）开发机、GitHub Actions `windows-latest` CI 与断网无开发工具的干净 Windows 11 x64 沙箱（`10.0.26100`）完成构建、离线安装启动、随包示例记录读取及卸载验证；完整快照 A→B（空白源码机缺项恢复构建并交接至干净接收机 `-Stage Package`）的最终收据尚未送达云端。历史冻结安装包的签名状态为 `NotSigned`，首次运行可能出现 Windows SmartScreen 提示。本次公开安装包的签名状态和摘要见下方预发行验收。
 
 ---
 
