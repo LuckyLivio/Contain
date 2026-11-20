@@ -1,16 +1,17 @@
-name: Build the Beta 2 Windows candidate
+name: Build the Windows prerelease candidate
 
 on:
   push:
-    branches: [feat/wpf-project-onboarding]
+    branches: [feat/first-package-experience]
     paths:
-      - '.github/workflows/beta05-beta2-build.yml'
+      - '.github/workflows/beta05-candidate-build.yml'
 
 permissions:
   contents: read
 
 env:
-  CANDIDATE_SOURCE_SHA: 18782fc4e8cfd91df4d60fa339b77070236f130a
+  CANDIDATE_SOURCE_SHA: e85128c99caacf3180415819c7eb6668112942aa
+  CANDIDATE_VERSION: 0.5.0-beta.3
   PYTHONUTF8: '1'
 
 jobs:
@@ -94,8 +95,9 @@ jobs:
           from pathlib import Path
 
           root = Path(os.environ["RUNNER_TEMP"]) / "candidate"
+          version = os.environ["CANDIDATE_VERSION"]
           expected = {
-              "contain-0.5.0-beta.2-windows-x64.zip", "contain-workflow-0.5.0-beta.2-windows-x64.zip",
+              f"contain-{version}-windows-x64.zip", f"contain-workflow-{version}-windows-x64.zip",
               "Contain-Setup-x64.exe", "desktop-identity.json", "cli-identity.json",
               "desktop-package-spec.json", "cli-package-spec.json", "candidate-identity.json",
               "installer-receipt.json", "handoff.json", "receive-release-candidate.ps1",
@@ -113,15 +115,15 @@ jobs:
           if sorted(manifest.read_text().splitlines()) != sorted(f"{hashes[n]}  {n}" for n in expected):
               raise SystemExit("Candidate file digest mismatch")
           identity = json.loads((root / "candidate-identity.json").read_bytes())
-          if identity["source_sha"] != os.environ["CANDIDATE_SOURCE_SHA"] or identity["version"] != "0.5.0-beta.2":
-              raise SystemExit("Incorrect Beta 2 product identity")
+          if identity["source_sha"] != os.environ["CANDIDATE_SOURCE_SHA"] or identity["version"] != version:
+              raise SystemExit("Incorrect prerelease product identity")
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
               print(f"Product source `{identity['source_sha']}`", file=summary)
               print(f"\nSHA256SUMS.txt `{hashes[manifest.name]}`", file=summary)
       - name: Stage the candidate for Windows acceptance
         uses: actions/upload-artifact@v4
         with:
-          name: contain-beta2-staged-${{ env.CANDIDATE_SOURCE_SHA }}
+          name: contain-${{ env.CANDIDATE_VERSION }}-staged-${{ env.CANDIDATE_SOURCE_SHA }}
           path: ${{ runner.temp }}/candidate/
           if-no-files-found: error
           compression-level: 0
