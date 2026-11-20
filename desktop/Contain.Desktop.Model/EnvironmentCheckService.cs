@@ -61,7 +61,7 @@ public interface IEnvironmentCheckService
 {
     ProjectFolderInfo InspectProject(string projectPath);
     BuildManifestPreview InspectBuildPreview(string projectPath);
-    DotnetOnboardingPreviewData? InspectDotnetOnboarding(string projectPath);
+    Task<DotnetOnboardingPreviewData?> InspectDotnetOnboardingAsync(string projectPath, CancellationToken cancellationToken);
     Task<DotnetOnboardingApplyOutcome> ApplyDotnetOnboardingAsync(
         string projectPath,
         string expectedFingerprintSha256,
@@ -110,7 +110,7 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
 
     public BuildManifestPreview InspectBuildPreview(string projectPath) => WorkflowManifestReader.ReadPreview(projectPath);
 
-    public DotnetOnboardingPreviewData? InspectDotnetOnboarding(string projectPath)
+    public async Task<DotnetOnboardingPreviewData?> InspectDotnetOnboardingAsync(string projectPath, CancellationToken cancellationToken)
     {
         var full = NormalizeDirectoryPath(projectPath);
         if (!HasDotnetOnboardingCandidate(full))
@@ -119,10 +119,10 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
         var tempFile = Path.Combine(Path.GetTempPath(), "Contain-OnboardInspect-" + Guid.NewGuid().ToString("N") + ".json");
         try
         {
-            var (_, _, stderr) = RunProcessAsync(
+            var (_, _, stderr) = await RunProcessAsync(
                 ["onboard-dotnet", "--project", full, "--output-json", tempFile],
                 TimeSpan.FromSeconds(15),
-                CancellationToken.None).GetAwaiter().GetResult();
+                cancellationToken).ConfigureAwait(false);
 
             if (!File.Exists(tempFile))
             {
@@ -132,7 +132,7 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
                     stderr.Trim());
             }
 
-            var rawJson = File.ReadAllText(tempFile, StrictUtf8);
+            var rawJson = await File.ReadAllTextAsync(tempFile, StrictUtf8, cancellationToken).ConfigureAwait(false);
             return DotnetOnboardingParser.ParseInspection(rawJson);
         }
         finally
@@ -986,6 +986,7 @@ public sealed class WorkflowCliEnvironmentService : IEnvironmentCheckService
         deadline.CancelAfter(timeout);
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!process.Start())
                 throw new EnvironmentCheckException("cli_start", "无法启动 contain-workflow.exe。");
 

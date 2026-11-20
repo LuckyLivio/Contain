@@ -206,11 +206,12 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         if (dialog.ShowDialog(this) == true) Install.WatchRoot = dialog.FolderName;
     }
 
-    public void PickProjectFolder()
+    public async Task PickProjectFolderAsync()
     {
         if (!EnvironmentCheck.CanEditProjectSelection) return;
         var dialog = new OpenFolderDialog { Title = "选择要检查的本地项目文件夹", Multiselect = false };
-        if (dialog.ShowDialog(this) == true) EnvironmentCheck.SelectProject(dialog.FolderName);
+        if (dialog.ShowDialog(this) == true)
+            await RunUiAsync(() => EnvironmentCheck.SelectProjectAsync(dialog.FolderName));
         else EnvironmentCheck.CancelSelection();
     }
 
