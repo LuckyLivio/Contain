@@ -194,12 +194,14 @@ jobs:
         run: |
           $source = Join-Path $env:RUNNER_TEMP $env:GATE
           $share = New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/first-package-public"
-          $names = @('first-package-candidate.json')
-          if ($env:SUCCEEDED -eq 'true') {
-              $names += 'first-package-measurement.json', 'first-launch.png', 'project-preview.png', 'package-complete.png'
-              if ($env:GATE -eq 'experience-missing-inno') { $names += 'missing-inno.png' }
+          $names = @('first-package-candidate.json', 'first-package-measurement.json', 'first-launch.png', 'project-preview.png', 'package-complete.png')
+          if ($env:GATE -eq 'experience-missing-inno') { $names += 'missing-inno.png' }
+          foreach ($name in $names) {
+              $file = Join-Path $source $name
+              if ($env:SUCCEEDED -eq 'true' -or (Test-Path -LiteralPath $file -PathType Leaf)) {
+                  Copy-Item -LiteralPath $file -Destination $share
+              }
           }
-          foreach ($name in $names) { Copy-Item -LiteralPath (Join-Path $source $name) -Destination $share }
       - name: Upload the first-package evidence
         if: ${{ !cancelled() && steps.experience.outcome != 'skipped' }}
         uses: actions/upload-artifact@v4

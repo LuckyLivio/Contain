@@ -272,7 +272,7 @@ internal sealed class DesktopDriver : IDisposable
     internal Task<bool> CheckedAsync(string id) => Ui(id, () =>
         ((TogglePattern)Required(id).GetCurrentPattern(TogglePattern.Pattern)).Current.ToggleState == ToggleState.On);
 
-    private async Task ClickAsync(string id, Stopwatch sharedClock, TimeSpan deadline)
+    private async Task ClickAsync(string id, Stopwatch sharedClock, TimeSpan deadline, bool restorePointer = true)
     {
         Stage = "native_click_readiness"; LastControl = id;
         var attempts = 0; var clicked = false;
@@ -311,14 +311,8 @@ internal sealed class DesktopDriver : IDisposable
                 if (owner != process.Id) throw new ClickTargetUnavailableException(id);
                 if (NativeDialog() != IntPtr.Zero) throw new UnexpectedNativeDialogException();
                 if (sharedClock.Elapsed >= deadline) throw new TimeoutException("Native click exceeded the shared picker deadline.");
-                GetCursorPos(out var old);
-                try
-                {
-                    SetCursorPos(ready.Point.X, ready.Point.Y);
-                    mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero); mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
-                    clicked = true;
-                }
-                finally { SetCursorPos(old.X, old.Y); }
+                SendClick(ready.Point.X, ready.Point.Y, restorePointer);
+                clicked = true;
             }), EnsureAlive, deadline, () => sharedClock.Elapsed, Task.Delay);
         }
         catch (Exception error) { errorType = error.GetType().Name; throw; }
@@ -500,10 +494,13 @@ internal sealed class DesktopDriver : IDisposable
         GetWindowThreadProcessId(WindowFromPoint(new Point { X = x, Y = y }), out var owner);
         if (owner != process.Id || NativeDialog() != IntPtr.Zero)
             throw new InvalidOperationException("Measured target is not on the owned window.");
-        SendClick(x, y);
+        SendClick(x, y, restorePointer: false);
     });
 
-    private static void SendClick(int x, int y)
+    internal Task ClickVisibleButtonAsync(string id) =>
+        ClickAsync(id, Stopwatch.StartNew(), TimeSpan.FromSeconds(12), restorePointer: false);
+
+    private static void SendClick(int x, int y, bool restorePointer = true)
     {
         GetCursorPos(out var old);
         try
@@ -512,7 +509,7 @@ internal sealed class DesktopDriver : IDisposable
             mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
             mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
         }
-        finally { SetCursorPos(old.X, old.Y); }
+        finally { if (restorePointer) SetCursorPos(old.X, old.Y); }
     }
 
     private static void ClickPickerChild(IntPtr child)
@@ -524,18 +521,23 @@ internal sealed class DesktopDriver : IDisposable
         SendClick(x, y);
     }
 
-    internal Task<bool> ScrollTowardAsync(string id) => Ui(id, () =>
+    internal Task<bool> ScrollTowardAsync(string id, bool fullyVisible = false) => Ui(id, () =>
     {
         var element = Required(id);
         var bounds = element.Current.BoundingRectangle;
+        var clip = System.Windows.Rect.Empty;
         for (var parent = TreeWalker.RawViewWalker.GetParent(element); parent != null; parent = TreeWalker.RawViewWalker.GetParent(parent))
         {
+            if (fullyVisible && parent.Current.ClassName == "ScrollContentPresenter")
+                clip = parent.Current.BoundingRectangle;
             if (!parent.TryGetCurrentPattern(ScrollPattern.Pattern, out var pattern)) continue;
             var scroll = (ScrollPattern)pattern;
             if (!scroll.Current.VerticallyScrollable) continue;
             var viewport = parent.Current.BoundingRectangle;
-            if (!bounds.IsEmpty && !viewport.IsEmpty && bounds.Y + bounds.Height / 2 >= viewport.Top &&
-                bounds.Y + bounds.Height / 2 <= viewport.Bottom && !element.Current.IsOffscreen) continue;
+            if (!clip.IsEmpty) viewport.Intersect(clip);
+            var within = fullyVisible ? viewport.Contains(bounds)
+                : bounds.Y + bounds.Height / 2 >= viewport.Top && bounds.Y + bounds.Height / 2 <= viewport.Bottom;
+            if (!bounds.IsEmpty && !viewport.IsEmpty && within && !element.Current.IsOffscreen) continue;
             var up = !bounds.IsEmpty && bounds.Y < viewport.Y;
             var percent = scroll.Current.VerticalScrollPercent;
             if ((up && percent <= 0) || (!up && percent >= 100)) continue;

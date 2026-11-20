@@ -11,7 +11,8 @@ internal sealed class FirstPackageMeasurement(DesktopDriver ui, string output)
     private readonly List<string> pages = [];
     private readonly List<object> shots = [];
     private string page = "unknown";
-    private bool verifiedFolder;
+    private bool folderButtonClicked, folderReported, verifiedFolder;
+    private string? folderControl;
     private string operation = "start";
     private int observedWidth, observedHeight;
 
@@ -34,11 +35,11 @@ internal sealed class FirstPackageMeasurement(DesktopDriver ui, string output)
         if (pages.Count == 0 || pages[^1] != page) pages.Add(page);
     }
 
-    private async Task RevealAsync(string id, bool countInput = true)
+    private async Task RevealAsync(string id, bool countInput = true, bool fullyVisible = false)
     {
         for (int step = 0; step < 30; step++)
         {
-            if (!await ui.ScrollTowardAsync(id)) return;
+            if (!await ui.ScrollTowardAsync(id, fullyVisible)) return;
             if (countInput) inputs.Add(("scroll_page", id, page));
             await Task.Delay(120);
         }
@@ -82,9 +83,15 @@ internal sealed class FirstPackageMeasurement(DesktopDriver ui, string output)
     internal async Task VerifyOutputFolderAsync(string control, string folder)
     {
         operation = "verify_output_folder";
+        folderControl = control;
         if (ExplorerShows(folder)) throw new AssertionException("folder_already_open");
-        await RevealAsync(control, countInput: false);
-        await ui.MeasuredClickAsync(control);
+        await RevealAsync(control, countInput: false, fullyVisible: true);
+        await ui.ClickVisibleButtonAsync(control);
+        folderButtonClicked = true;
+        await ui.UntilAsync("verify_folder_action", "ShellStatus", async () =>
+            string.Equals((await ui.TryTextAsync("ShellStatus"))?.Trim(), "已打开安装包所在文件夹：" + folder,
+                StringComparison.OrdinalIgnoreCase), TimeSpan.FromSeconds(12));
+        folderReported = true;
         await ui.UntilAsync("verify_output_folder", "explorer_output_folder", () => Task.FromResult(ExplorerShows(folder)),
             TimeSpan.FromSeconds(40));
         verifiedFolder = true;
@@ -99,10 +106,13 @@ internal sealed class FirstPackageMeasurement(DesktopDriver ui, string output)
             {
                 try
                 {
-                    if (Path.GetFileName((string)window.FullName).Equals("explorer.exe", StringComparison.OrdinalIgnoreCase)
-                        && Uri.TryCreate((string)window.LocationURL, UriKind.Absolute, out Uri? uri) && uri.IsFile
-                        && Path.GetFullPath(uri.LocalPath).TrimEnd(Path.DirectorySeparatorChar).Equals(folder, StringComparison.OrdinalIgnoreCase))
+                    if (!Path.GetFileName((string)window.FullName).Equals("explorer.exe", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (Uri.TryCreate((string)window.LocationURL, UriKind.Absolute, out Uri? uri) && uri.IsFile
+                        && IsExpectedDirectory(uri.LocalPath))
                         return true;
+                    // Explorer can expose its filesystem view before LocationURL is populated.
+                    if (IsExpectedDirectory((string?)window.Document?.Folder?.Self?.Path)) return true;
                 }
                 catch (COMException) { /* Explorer can be navigating between locations. */ }
                 finally { Marshal.ReleaseComObject(window); }
@@ -110,6 +120,9 @@ internal sealed class FirstPackageMeasurement(DesktopDriver ui, string output)
             return false;
         }
         finally { Marshal.ReleaseComObject(shell); }
+
+        bool IsExpectedDirectory(string? path) => !string.IsNullOrEmpty(path) && Path.IsPathFullyQualified(path)
+            && Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)).Equals(folder, StringComparison.OrdinalIgnoreCase);
     }
 
     internal async Task SaveAsync(string status)
@@ -128,7 +141,9 @@ internal sealed class FirstPackageMeasurement(DesktopDriver ui, string output)
             keyboard_operations = inputs.Count(i => i.Kind is "key_chord_select_all" or "type_folder_path" or "key_tab"),
             scroll_pages = inputs.Count(i => i.Kind == "scroll_page"),
             inputs = inputs.Select((i, index) => new { ordinal = index + 1, kind = i.Kind, control = i.Control, page = i.Page }),
-            after_setup = new { explorer_opened_exact_folder = verifiedFolder }, screenshots = shots
+            after_setup = new { folder_button_clicked = folderButtonClicked, viewer_reported_exact_folder = folderReported,
+                explorer_opened_exact_folder = verifiedFolder,
+                button_geometry = ui.Clicks.LastOrDefault(click => click.Control == folderControl)?.Last?.Result }, screenshots = shots
         };
         Directory.CreateDirectory(output);
         await File.WriteAllTextAsync(Path.Combine(output, "first-package-measurement.json"), JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
