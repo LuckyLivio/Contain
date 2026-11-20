@@ -30,6 +30,7 @@ public sealed partial class EnvironmentCheckViewModel
     }
 
     public bool ShowFirstPackageFlow => FirstPackagePlan is not null;
+    public bool ShowFirstPackageResult => NextFirstPackageStep == FirstPackageStep.OpenFolder;
     public bool CanRunFirstPackageAction => ShowFirstPackageFlow && !disposed && !firstPackageBusy
         && !checking && !applyingOnboarding && !building && !packaging;
     public string FirstPackageProjectName
@@ -88,7 +89,7 @@ public sealed partial class EnvironmentCheckViewModel
                     : HasRecheckFailure ? RecheckFailureText : OutcomeNote,
                 FirstPackageStep.Build when IsBuildFailed => BuildFailureErrorSummary.Length > 0 ? BuildFailureErrorSummary : BuildNote,
                 FirstPackageStep.Build when installerNeedsRebuild => InstallerFailureRemedy,
-                FirstPackageStep.Build => "确认后将执行项目的 dotnet publish 并生成 Windows x64 安装包。构建期间会执行项目代码，请确认信任此项目。",
+                FirstPackageStep.Build => "确认后将构建此项目并生成 Windows x64 安装包。构建会执行项目代码，请确认信任此项目。",
                 FirstPackageStep.Package when savedPackagePlan?.PackagerDetected == false =>
                     "请从 https://jrsoftware.org/isdl.php 安装 Inno Setup 6，然后点击“重试生成安装包”。将复用已验证的构建产物。",
                 FirstPackageStep.Package => HasInstallerFailure ? $"{InstallerFailureTitle}\n{InstallerFailureRemedy}" : "将使用已验证的构建产物生成安装包。",
@@ -141,6 +142,7 @@ public sealed partial class EnvironmentCheckViewModel
     private void NotifyFirstPackage()
     {
         OnPropertyChanged(nameof(ShowFirstPackageFlow));
+        OnPropertyChanged(nameof(ShowFirstPackageResult));
         OnPropertyChanged(nameof(CanRunFirstPackageAction));
         OnPropertyChanged(nameof(FirstPackageProjectName));
         OnPropertyChanged(nameof(FirstPackageProjectType));

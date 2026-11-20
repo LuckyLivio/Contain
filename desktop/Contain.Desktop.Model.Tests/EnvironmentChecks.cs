@@ -1189,11 +1189,14 @@ internal static class EnvironmentChecks
                 Equal(type, vm.FirstPackageProjectType, "project type");
                 Equal("Greeting.exe", vm.FirstPackageEntry, "packaged entry");
                 Equal("保存配置并检查", vm.FirstPackageActionText, "configuration consent");
+                True(!vm.ShowFirstPackageResult, "project selection does not show a setup result");
                 True(!File.Exists(Path.Combine(project, "contain.environment.json")), "selection does not create the manifest");
                 Equal((0, 0, 0, 0), service.OperationCounts, "selection only inspects");
                 True(await vm.RunFirstPackageActionAsync(), "explicitly save and check");
                 Equal((1, 1, 0, 0), service.OperationCounts, "check does not start a build");
                 Equal("构建并生成安装包", vm.FirstPackageActionText, "separate execution consent");
+                True(vm.FirstPackageNextStep.Contains("构建会执行项目代码，请确认信任此项目", StringComparison.Ordinal),
+                    "execution consent explains project trust in plain language");
                 var build = service.BuildFactory;
                 var releaseBuild = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 service.BuildFactory = async (dir, preview, progress, token) =>
@@ -1208,10 +1211,25 @@ internal static class EnvironmentChecks
                 True(await first, "one action builds and then packages");
                 Equal((1, 1, 1, 1), service.OperationCounts, "each stage ran once");
                 Equal("Greeting-Setup-x64.exe", vm.GeneratedInstallerFileName, "actual filename from receipt");
+                True(vm.ShowFirstPackageResult && vm.CanOpenInstallerFolder, "show the current setup and its folder action");
                 Equal("打开安装包文件夹", vm.FirstPackageActionText, "open folder offered as final action");
                 True(await vm.RunFirstPackageActionAsync(), "open resulting folder");
                 Equal(Path.GetDirectoryName(vm.GeneratedInstallerFullPath), opened, "opened the receipt directory");
                 Equal((1, 1, 1, 1), service.OperationCounts, "opening the folder never rebuilds");
+                File.Delete(vm.GeneratedInstallerFullPath);
+                opened = null;
+                var resultChanges = new List<bool>();
+                vm.PropertyChanged += (_, change) =>
+                {
+                    if (change.PropertyName == nameof(vm.ShowFirstPackageResult)) resultChanges.Add(vm.ShowFirstPackageResult);
+                };
+                True(!vm.OpenInstallerFolder() && opened is null, "the result button checks the file again before opening");
+                True(resultChanges.Contains(false) && !vm.CanOpenInstallerFolder, "removing the setup hides the result");
+                Equal("重试生成安装包", vm.FirstPackageActionText, "a removed setup can be regenerated");
+                True(await vm.RunFirstPackageActionAsync() && resultChanges.Contains(true), "retry restores the result view");
+                Equal((1, 1, 1, 2), service.OperationCounts, "regeneration reuses the verified build");
+                True(vm.OpenInstallerFolder(), "the result button opens the newly generated setup folder");
+                Equal(Path.GetDirectoryName(vm.GeneratedInstallerFullPath), opened, "the result button opens the current receipt directory");
             }
         });
 
@@ -1249,12 +1267,17 @@ internal static class EnvironmentChecks
                     new WorkflowCheckItem("inno_setup_compiler", "failed", "Inno Setup not found", "inno_setup_missing",
                         "Inno Setup 6", null, "Install Inno Setup 6")] }, "", "{}", null));
             True(!await vm.RunFirstPackageActionAsync(), "compiler removed after inspection prevents setup");
+            True(!vm.ShowFirstPackageResult, "a failed package offers recovery");
             Equal((1, 2, 1, 1), service.OperationCounts, "one verified build and one failed package");
             True(vm.FirstPackageNextStep.Contains("Inno Setup", StringComparison.Ordinal), "packager recovery guidance");
             Equal("重试生成安装包", vm.FirstPackageActionText, "only package again");
+            var missingCompiler = service.InstallerFactory;
             service.InstallerFactory = package;
             True(await vm.RunFirstPackageActionAsync(), "package from same verified build");
             Equal((1, 2, 1, 2), service.OperationCounts, "package retry avoids redundant check, write and build");
+            service.InstallerFactory = missingCompiler;
+            True(!await vm.GenerateInstallerAsync(), "another packaging attempt can fail while the previous file exists");
+            True(vm.HasValidInstaller && !vm.ShowFirstPackageResult, "a retained historical setup does not show the current completion view");
         });
 
         await Check("first package rejects a replaced manifest and an untrusted write receipt", async () =>

@@ -46,7 +46,26 @@
             </Border>
 
             <StackPanel Visibility="{Binding EnvironmentCheck.ShowFirstPackageFlow, Converter={StaticResource BoolVisibility}}">
-                <Border Style="{StaticResource Surface}">
+                <Border Style="{StaticResource Surface}" Visibility="{Binding EnvironmentCheck.ShowFirstPackageResult, Converter={StaticResource BoolVisibility}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                            <TextBlock Text="安装包已生成" Foreground="{StaticResource AccentBrush}" />
+                            <TextBlock Text="{Binding EnvironmentCheck.GeneratedInstallerFileName}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="FirstPackageResultName" />
+                        </StackPanel>
+                        <ui:Button Grid.Column="1" Content="打开安装包文件夹" Appearance="Primary" Padding="16,9" VerticalAlignment="Center" Click="OnOpenInstallerFolder" IsEnabled="{Binding EnvironmentCheck.CanOpenInstallerFolder}" AutomationProperties.AutomationId="FirstPackageOpenFolder">
+                            <ui:Button.Icon><ui:SymbolIcon Symbol="FolderOpen24" /></ui:Button.Icon>
+                        </ui:Button>
+                    </Grid>
+                </Border>
+                <Border>
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource Surface}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding EnvironmentCheck.ShowFirstPackageResult}" Value="True"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
                     <StackPanel>
                         <TextBlock Text="{Binding EnvironmentCheck.FirstPackageProjectName}" FontSize="21" FontWeight="SemiBold" AutomationProperties.AutomationId="FirstPackageProjectName" />
                         <WrapPanel Margin="0,4,0,12">
@@ -60,11 +79,6 @@
                         <TextBlock Text="{Binding EnvironmentCheck.OnboardingChangeNotice}" Foreground="#7A5200" Margin="0,8,0,0" Visibility="{Binding EnvironmentCheck.HasOnboardingChangeNotice, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="FirstPackageChangeNotice" />
                         <Border BorderThickness="0,1,0,0" BorderBrush="{StaticResource HairlineBrush}" Margin="0,14,0,0" Padding="0,14,0,0">
                             <StackPanel>
-                                <StackPanel Visibility="{Binding EnvironmentCheck.HasValidInstaller, Converter={StaticResource BoolVisibility}}" Margin="0,0,0,10">
-                                    <TextBlock Text="{Binding EnvironmentCheck.GeneratedInstallerBadge}" Foreground="{StaticResource AccentBrush}" />
-                                    <TextBlock Text="{Binding EnvironmentCheck.GeneratedInstallerFileName}" FontSize="18" FontWeight="SemiBold" AutomationProperties.AutomationId="FirstPackageResultName" />
-                                    <TextBox Text="{Binding EnvironmentCheck.GeneratedInstallerFullPath, Mode=OneWay}" Style="{StaticResource SelectableText}" AutomationProperties.AutomationId="FirstPackageResultPath" />
-                                </StackPanel>
                                 <TextBlock Text="{Binding EnvironmentCheck.FirstPackageNextStep}" FontSize="15" AutomationProperties.AutomationId="FirstPackageNextStep" />
                                 <TextBlock Text="{Binding EnvironmentCheck.BuildProgressText}" Style="{StaticResource MutedText}" Visibility="{Binding EnvironmentCheck.IsBuilding, Converter={StaticResource BoolVisibility}}" Margin="0,5,0,0" AutomationProperties.AutomationId="FirstPackageProgress" />
                                 <WrapPanel Margin="0,12,0,0">
@@ -77,12 +91,16 @@
                 </Border>
                 <Expander Header="查看技术详情" Margin="0,0,0,16" AutomationProperties.AutomationId="FirstPackageDetails">
                     <StackPanel Margin="0,8,0,0">
+                        <StackPanel Visibility="{Binding EnvironmentCheck.ShowFirstPackageResult, Converter={StaticResource BoolVisibility}}">
+                            <TextBlock Text="{Binding EnvironmentCheck.GeneratedInstallerBadge}" Style="{StaticResource MutedText}" />
+                            <TextBox Text="{Binding EnvironmentCheck.GeneratedInstallerFullPath, Mode=OneWay}" Style="{StaticResource SelectableText}" AutomationProperties.AutomationId="FirstPackageResultPath" AutomationProperties.Name="安装包完整路径" />
+                        </StackPanel>
                         <TextBox Text="{Binding EnvironmentCheck.OnboardingProvenanceSummary, Mode=OneWay}" Style="{StaticResource SelectableText}" Visibility="{Binding EnvironmentCheck.IsOnboardingReadyToConfirm, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="FirstPackageProvenance" />
                         <TextBox Text="{Binding EnvironmentCheck.OnboardingDetailsText, Mode=OneWay}" Style="{StaticResource SelectableText}" Visibility="{Binding EnvironmentCheck.OnboardingDetailsText, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="FirstPackageProposedCommand" />
                         <TextBox Text="{Binding EnvironmentCheck.BuildFullCommandsText, Mode=OneWay}" Style="{StaticResource SelectableText}" Visibility="{Binding EnvironmentCheck.BuildFullCommandsText, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="FirstPackageBuildCommand" />
                         <TextBox Text="{Binding EnvironmentCheck.DetailedReportText, Mode=OneWay}" Style="{StaticResource SelectableText}" MaxHeight="240" Visibility="{Binding EnvironmentCheck.DetailedReportText, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="FirstPackageReport" />
                         <TextBox Text="{Binding EnvironmentCheck.BuildLogText, Mode=OneWay}" Style="{StaticResource SelectableText}" MaxHeight="240" Visibility="{Binding EnvironmentCheck.BuildLogText, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="FirstPackageLog" />
-                        <TextBox Text="{Binding EnvironmentCheck.GeneratedInstallerReceiptText, Mode=OneWay}" Style="{StaticResource SelectableText}" Visibility="{Binding EnvironmentCheck.HasValidInstaller, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="FirstPackageReceipt" />
+                        <TextBox Text="{Binding EnvironmentCheck.GeneratedInstallerReceiptText, Mode=OneWay}" Style="{StaticResource SelectableText}" Visibility="{Binding EnvironmentCheck.ShowFirstPackageResult, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="FirstPackageReceipt" />
                     </StackPanel>
                 </Expander>
             </StackPanel>
