@@ -1673,6 +1673,57 @@ fn dotnet_onboarding_reads_custom_assembly_name_without_writing_and_guards_apply
 }
 
 #[test]
+fn dotnet_onboarding_rechecks_inherited_props_and_targets_before_apply() {
+    use contain_workflow::dotnet_onboarding::{apply_onboarding, inspect_project};
+
+    for name in ["Directory.Build.props", "Directory.Build.targets"] {
+        let workspace = Temp::new();
+        let project = workspace.0.join("src").join("App");
+        fs::create_dir_all(&project).unwrap();
+        fs::write(
+            project.join("App.csproj"),
+            r#"<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>"#,
+        )
+        .unwrap();
+        let preview = inspect_project(&project).unwrap();
+        assert_eq!(preview.entry_executable.as_deref(), Some("App.exe"));
+
+        let config = workspace.0.join(name);
+        let override_name = "<Project><PropertyGroup><AssemblyName>InheritedName</AssemblyName></PropertyGroup></Project>";
+        fs::write(&config, override_name).unwrap();
+        let stale = apply_onboarding(&project, Some(&preview.source_fingerprint_sha256)).unwrap();
+        assert_eq!(stale.status, "source_changed_refresh_required");
+        assert!(!stale.wrote_file);
+        assert_eq!(
+            stale.inspection.unsupported_code.as_deref(),
+            Some("directory_build_props_present")
+        );
+        assert!(stale.inspection.proposed_manifest.is_none());
+        assert!(!project.join("contain.environment.json").exists());
+
+        fs::write(&config, override_name.replace("InheritedName", "NewName")).unwrap();
+        let changed = inspect_project(&project).unwrap();
+        assert_ne!(
+            changed.source_fingerprint_sha256,
+            stale.inspection.source_fingerprint_sha256
+        );
+
+        let nearer = workspace.0.join("src").join(name);
+        fs::write(&nearer, override_name).unwrap();
+        let nearest = inspect_project(&project).unwrap();
+        assert_ne!(
+            nearest.source_fingerprint_sha256,
+            stale.inspection.source_fingerprint_sha256
+        );
+        fs::write(&config, "<Project />").unwrap();
+        assert_eq!(
+            inspect_project(&project).unwrap().source_fingerprint_sha256,
+            nearest.source_fingerprint_sha256
+        );
+    }
+}
+
+#[test]
 fn dotnet_onboarding_rejects_multi_project_library_multi_tfm_and_dynamic_entry() {
     use contain_workflow::dotnet_onboarding::inspect_project;
 
