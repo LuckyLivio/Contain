@@ -2,24 +2,29 @@
 
 让 Windows 项目换一台电脑也能构建，让发出去的包在别人电脑上也能运行，并能核实具体哪些检查通过。
 
-## 开发分支中的 WPF 项目支持
+## 下载 Windows 版
 
-在「检查项目环境」选择单项目 WPF 应用目录，核对预览中的应用类型和入口 EXE，然后点击「使用此配置」。后续沿用「开始检查 → 开始构建 → 生成安装包」。首次预览只读取项目，确认后才生成 `contain.environment.json`。
+**[下载 Contain v0.5.0-beta.1 安装包（Windows x64）](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.1/Contain-Setup-x64.exe)**
 
-支持 `Microsoft.NET.Sdk` 项目中明确声明 `OutputType=WinExe`、`UseWPF=true` 和单个 `net8.0-windows` 或更高 Windows 目标框架的独立应用。入口名取自 `AssemblyName`，省略时使用项目文件名。引用其他项目、继承外部构建属性、混合使用 UI 框架或需要条件求值时，可使用手动清单。此功能在独立开发分支上验证。
+运行安装包后，从开始菜单打开 **Contain**。你可以查看已有的安装记录，或选择单项目 C# 控制台应用，检查环境、构建并生成可分发的安装包。这个预发行版的安装器尚未签名。
 
-## v0.5.0-beta.1 预发布候选概览
+[免安装桌面 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.1/contain-0.5.0-beta.1-windows-x64.zip) · [独立 CLI ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.1/contain-workflow-0.5.0-beta.1-windows-x64.zip) · [发行说明](https://github.com/LuckyLivio/Contain/releases/tag/v0.5.0-beta.1) · [SHA-256 校验文件](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.1/SHA256SUMS.txt)
 
-本版面向在 Windows x64 上开发普通单项目 C# 控制台应用、希望把程序直接做成安装包发给别人使用的开发者，也适合收到软件包后做交付校验或查看安装记录的用户。安装并从开始菜单打开 `Contain` 后，进入「检查项目环境」选择只有 `.csproj` 和源码的项目文件夹，点击「使用此配置 → 开始检查 → 开始构建 → 生成安装包」，无需手写 JSON 或挑选 EXE 即可生成单文件 Windows 安装包（WPF 应用自动识别排在下一版）。当前候选（`source_sha = 887f119796311f475792a9d3a56a8f95159cc123`）已在 Windows 11 x64 开发机与 GitHub Actions Windows CI 完成构建、原位升级、旧记录读回及端到端打包验证，**待干净 Windows x64 独立环境（快照 A 空白机缺项恢复与快照 B 免开发工具接收机离线安装／包验收）实测通过后正式发布 GitHub Prerelease 并开放安装包与便携 ZIP 直链**；候选包当前未配置代码签名证书（`NotSigned`）。详见 [v0.5.0-beta.1 候选说明与哈希清单](docs/beta05-release.md)。
+本版已在 GitHub 托管 Windows Server 2022 x64 上实测安装、桌面启动、示例记录读取和卸载。无开发工具的干净机交接与完全断网试装列入稳定版前的兼容性验证。[验收记录](docs/beta05-release.md)
 
-本分支实施第一阶段重构：独立 Rust CLI `contain-workflow`，不依赖旧 ETW 采集链。源码恢复和交付验收是两条独立流程；桌面端通过随包附带的 `contain-workflow.exe` 提供“检查项目环境”（支持对尚未配置 `contain.environment.json` 的普通单项目 C# 控制台目录做只读 `.csproj` 识别与一键确认生成配置，随后衔接环境探测、步骤预览、受控项目构建、打开确认产物目录，以及面向已验证 Windows x64 `.NET` 自包含多文件发布的一键“生成安装包”）和只读“检查交付包”（静态核对 ZIP 身份与必需文件，不自动启动包内程序），需要带 `--run` 启动验证包内程序或自动化编排时仍通过 CLI 执行。
+## Beta.2 开发进度：单项目 WPF 应用
+
+在本分支的「检查项目环境」中选择单项目 WPF 应用目录，预览应用类型和入口 EXE。点击「使用此配置」后生成 `contain.environment.json`，随后可以检查环境、构建并生成该应用自己的安装包。首次预览只读取项目文件。
+
+支持使用 `Microsoft.NET.Sdk`、显式声明 `OutputType=WinExe` 与 `UseWPF=true` 的独立应用，目标框架为单个 `net8.0-windows` 或更高版本。入口默认采用项目文件名，也支持显式的 `AssemblyName`。项目引用、外部构建属性、混合 UI 框架和条件属性需要手动清单。
 
 ## 接手源码、恢复开发环境
 
-版本化 `contain.environment.json` 描述 Windows x64 工具链、必需变量名称、实际构建和验证命令。CLI 检查缺失项及版本差异，给出补齐步骤；补齐后显式运行项目构建。没有清单时，只从明确支持的项目文件提取已声明要求，缺少依据的项目列为待确认。
+版本化 `contain.environment.json` 描述 Windows x64 工具链、必需变量名称、实际构建和验证命令。普通 `check` 和 `check --safe-probes` 均只运行受支持的只读探测。自定义探测会标为 `needs_confirmation`。只有在审核并信任项目的探测命令和工具链脚本后，才应使用 `check --allow-unsafe-probes` 允许执行。没有清单时，只从明确支持的项目文件提取已声明要求，缺少依据的项目列为待确认。
 
 ```powershell
-cargo run -p contain-workflow --locked -- check --project . --report target/workflow/check-01
+# 将独立 CLI ZIP 完整解压到 C:\Bootstrap，以使用随包的 Windows 工具链选择器。
+C:\Bootstrap\contain-workflow.exe check --project . --report target/workflow/check-01
 cargo run -p contain-workflow --locked -- build --project . --execute --delivery-dir target/workflow/delivery-01 --report target/workflow/build-01
 ```
 
@@ -37,16 +42,14 @@ cargo run -p contain-workflow --locked -- verify --zip .\contain.zip --spec .\pa
 
 本分支同时提供参数化安装器构建入口 `scripts/build-windows-installer.ps1`（基于 Inno Setup 6），两类交付形态职责明确：
 
-- **单文件安装候选包（`Contain-Setup-x64.exe`）**：面向普通桌面接收者。基于已冻结校验的 `contain-source-windows-x64.zip` 原样组包，默认以当前用户最低权限安装到 `%LOCALAPPDATA%\Programs\Contain`（终端用户无需联网安装 Rust、Python、Visual Studio 或 .NET SDK），自动创建开始菜单入口（桌面快捷方式可选且默认关闭），支持在 Windows“已安装的应用”中标准卸载。安装器仅管理程序目录、快捷方式与卸载登记，不改动已有便携版目录，卸载或升级时完整保留 `%LOCALAPPDATA%\Contain` 个人记录库及程序目录外的数据库与导出报告。当前候选包未配置代码签名证书（`NotSigned`）。
+- **单文件安装候选包（`Contain-Setup-x64.exe`）**：面向普通桌面接收者。基于已冻结校验的 `contain-source-windows-x64.zip` 原样组包，默认以当前用户最低权限安装到 `%LOCALAPPDATA%\Programs\Contain`（终端用户无需联网安装 Rust、Python、Visual Studio 或 .NET SDK），自动创建开始菜单入口（桌面快捷方式可选且默认关闭），支持在 Windows“已安装的应用”中标准卸载。安装器仅管理程序目录、快捷方式与卸载登记，不改动已有便携版目录，卸载或升级时完整保留 `%LOCALAPPDATA%\Contain` 个人记录库及程序目录外的数据库与导出报告。安装包的签名状态见对应安装器收据。
 - **便携桌面包（`contain-source-windows-x64.zip`）与独立 CLI 包（`contain-workflow-windows-x64.zip`）**：面向免安装解压即用、基于 `package-spec.json` 的静态／运行态交付契约校验与快照 A/B 交接验收；其中桌面 ZIP 同时作为构建 `Contain-Setup-x64.exe` 的受控载荷输入。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows-installer.ps1 -Zip <path-to>\contain-source-windows-x64.zip -Spec <path-to>\package-spec.json -OutputDirectory <new-output-dir>
 ```
 
-本分支第二轮已补齐本次 Rust/WPF 产物的桌面 ZIP 组装、独立 CLI 打包和 A/B 交接脚本，并记录实际选中的 MSVC/SDK。架构改用 IsWow64Process2，ARM64 仿真和未知状态单独记录。[完整命令与产物位置](docs/phase-one.md) · [本轮结果与合并阻塞](docs/phase-one-round2-results.md)。
-
-已在原生 Windows 11 x64 开发机使用锁定工具链（Rust `1.100.0`、.NET SDK `10.0.403`、Python `3.12.10`、MSVC `14.44.35207`、Windows SDK `10.0.26100.0`）产出 `v0.5.0-beta.1` 候选单文件安装包 `Contain-Setup-x64.exe`、完整桌面便携 ZIP 与独立 CLI ZIP，并通过开发机本机 `verify --run`、原位升级、旧记录兼容读回、端到端 C# 项目打包安装验收及全量 GitHub Actions CI；原仓库级 SQLite 安全公告（`RUSTSEC-2026-0459`）与 `chrono` 未维护公告（`RUSTSEC-2026-0543`）均已修复，全仓库 `cargo deny --locked check` 在保留原有严格规则下通过。**从未安装开发工具的干净 Windows x64 接收机（快照 B / 免工具离线安装启动）独立验收仍待完成**，不能将开发机或普通 CI 运行结果等同于免开发工具验收。上轮实际 Beta.1 包检查及 PR #22 门禁的[历史证据](docs/phase-one-results.md)保留。
+本分支第二轮已补齐本次 Rust/WPF 产物的桌面 ZIP 组装、独立 CLI 打包和 A/B 交接脚本，并记录实际选中的 MSVC/SDK。架构改用 IsWow64Process2，ARM64 仿真和未知状态单独记录。[完整命令与产物位置](docs/phase-one.md) · [历史阶段记录](docs/phase-one-round2-results.md)。
 
 ## 后续里程碑
 

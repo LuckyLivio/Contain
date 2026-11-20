@@ -445,36 +445,50 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
     /// <summary>Cancelling the folder picker leaves the current project, results, and any active check untouched.</summary>
     public void CancelSelection() { }
 
-    public bool SelectProject(string path)
+    private Task<(ProjectFolderInfo Project, DotnetOnboardingPreviewData? Onboarding, BuildManifestPreview? Manifest)>
+        InspectSelectionAsync(string path, CancellationToken token) => Task.Run(async () =>
+        {
+            var info = service.InspectProject(path);
+            var onboarding = info.ManifestKind == ProjectManifestKind.EnvironmentManifest ? null
+                : await service.InspectDotnetOnboardingAsync(info.ProjectPath, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            var manifest = onboarding is null ? service.InspectBuildPreview(info.ProjectPath) : null;
+            return (info, onboarding, manifest);
+        }, token);
+
+    public Task<bool> SelectProjectAsync(string path) => Track(() => SelectProjectCoreAsync(path));
+
+    private async Task<bool> SelectProjectCoreAsync(string path, bool fromTextInput = false)
     {
         if (disposed || building || packaging || applyingOnboarding) return false;
-        requests.Invalidate();
+        var ticket = requests.Begin();
         checking = false;
         DisposeManifestWatcher();
+        currentProject = null;
+        if (!fromTextInput) folderInput = path;
         ResetProjectSession();
+        statusMessage = "正在读取所选项目文件夹…";
+        NotifyAll();
 
         try
         {
-            var info = service.InspectProject(path);
+            var (info, onboarding, manifest) = await InspectSelectionAsync(path, ticket.Token);
+            if (!requests.IsCurrent(ticket)) return false;
+
             currentProject = info;
             folderInput = info.ProjectPath;
-
-            if (info.ManifestKind != ProjectManifestKind.EnvironmentManifest)
+            if (onboarding is not null)
             {
-                var onboarding = service.InspectDotnetOnboarding(info.ProjectPath);
-                if (onboarding is not null)
-                {
-                    ApplyOnboardingPreview(onboarding, info.ProjectPath);
-                    StartOnboardingDirectoryWatcher(info.ProjectPath);
-                    statusMessage = onboarding.Status == "ready_to_confirm"
-                        ? $"请核对“{onboarding.AppName}”的发布配置，然后点击“使用此配置”。"
-                        : onboarding.UnsupportedTitle ?? "当前文件夹暂不能自动生成发布配置。";
-                    NotifyAll();
-                    return true;
-                }
+                ApplyOnboardingPreview(onboarding, info.ProjectPath);
+                StartOnboardingDirectoryWatcher(info.ProjectPath);
+                statusMessage = onboarding.Status == "ready_to_confirm"
+                    ? $"请核对“{onboarding.AppName}”的发布配置，然后点击“使用此配置”。"
+                    : onboarding.UnsupportedTitle ?? "当前文件夹暂不能自动生成发布配置。";
+                NotifyAll();
+                return true;
             }
 
-            ApplyManifestPreview(service.InspectBuildPreview(info.ProjectPath));
+            ApplyManifestPreview(manifest!);
             StartManifestWatcher(info.ProjectPath);
             statusMessage = !string.IsNullOrWhiteSpace(info.ExistingInstallerAppId)
                 ? $"已选择项目“{info.ProjectName}”（已复用现有配置与安装身份），点击“开始检查”运行探测。"
@@ -482,14 +496,22 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
             NotifyAll();
             return true;
         }
-        catch (EnvironmentCheckException error)
+        catch (Exception) when (!requests.IsCurrent(ticket))
         {
-            currentProject = null;
-            folderInput = path;
+            return false;
+        }
+        catch (Exception error)
+        {
+            if (fromTextInput && error is EnvironmentCheckException { Code: "project_missing" or "invalid_project_path" })
+            {
+                statusMessage = "输入的文件夹路径尚不存在；可继续输入完整路径或点击“选择文件夹”。";
+                NotifyAll();
+                return false;
+            }
             outcome = EnvironmentOutcomeKind.CheckerError;
             headline = "无法打开所选项目文件夹";
             outcomeNote = error.Message;
-            errorDetail = error.Diagnostic;
+            errorDetail = error is EnvironmentCheckException failure ? failure.Diagnostic : error.Message;
             detailedReportText = "";
             statusMessage = error.Message;
             NotifyAll();
@@ -628,37 +650,35 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
         }
     }
 
-    public void RefreshOnboardingPreviewFromDisk()
+    public Task<bool> RefreshOnboardingPreviewFromDiskAsync() => Track(RefreshOnboardingPreviewCoreAsync);
+
+    private async Task<bool> RefreshOnboardingPreviewCoreAsync()
     {
         if (disposed || applyingOnboarding || currentProject is null || onboardingPreview is null)
-            return;
+            return false;
 
         var projectDir = currentProject.ProjectPath;
-        var manifestPath = Path.Combine(projectDir, "contain.environment.json");
-        if (File.Exists(manifestPath))
-        {
-            DisposeOnboardingWatcher();
-            ClearOnboardingStateCore();
-            currentProject = service.InspectProject(projectDir);
-            ApplyManifestPreview(service.InspectBuildPreview(projectDir));
-            StartManifestWatcher(projectDir);
-            onboardingSavedNotice = $"检测到项目目录中新建了 {manifestPath}，已直接保留并使用该配置文件（未覆盖原文件）。";
-            statusMessage = "检测到新建的 contain.environment.json，已保留并加载现有配置。";
-            NotifyAll();
-            return;
-        }
-
+        var ticket = requests.Begin();
         try
         {
-            var fresh = service.InspectDotnetOnboarding(projectDir);
+            var (info, fresh, manifest) = await InspectSelectionAsync(projectDir, ticket.Token);
+            if (!IsStillCurrent(ticket, projectDir) || onboardingPreview is null)
+                return false;
             if (fresh is null)
             {
                 DisposeOnboardingWatcher();
                 ClearOnboardingStateCore();
-                currentProject = service.InspectProject(projectDir);
-                ApplyManifestPreview(service.InspectBuildPreview(projectDir));
+                currentProject = info;
+                ApplyManifestPreview(manifest!);
+                if (info.ManifestKind == ProjectManifestKind.EnvironmentManifest)
+                {
+                    StartManifestWatcher(projectDir);
+                    var manifestPath = Path.Combine(projectDir, "contain.environment.json");
+                    onboardingSavedNotice = $"检测到项目目录中新建了 {manifestPath}，已直接保留并使用该配置文件（未覆盖原文件）。";
+                    statusMessage = "检测到新建的 contain.environment.json，已保留并加载现有配置。";
+                }
                 NotifyAll();
-                return;
+                return true;
             }
 
             if (!string.Equals(fresh.Status, onboardingPreview.Status, StringComparison.Ordinal)
@@ -677,10 +697,16 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
                 NotifyAll();
             }
         }
-        catch (EnvironmentCheckException)
+        catch (Exception) when (!requests.IsCurrent(ticket))
         {
-            // Transient file write in progress; next file event or confirmation re-validates deterministically.
+            return false;
         }
+        catch (Exception ex) when (ex is EnvironmentCheckException or IOException or UnauthorizedAccessException)
+        {
+            // A later file event or confirmation revalidates a transient read failure.
+            return false;
+        }
+        return true;
     }
 
     public void RefreshBuildPreview()
@@ -719,19 +745,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (Directory.Exists(trimmed))
-        {
-            SelectProject(trimmed);
-            return;
-        }
-
-        requests.Invalidate();
-        checking = false;
-        DisposeManifestWatcher();
-        currentProject = null;
-        ResetProjectSession();
-        statusMessage = "输入的文件夹路径尚不存在；可继续输入完整路径或点击“选择文件夹”。";
-        NotifyAll();
+        _ = Track(() => SelectProjectCoreAsync(trimmed, fromTextInput: true));
     }
 
     public Task<bool> CheckAsync() => Track(() => CheckCoreAsync());
@@ -1632,7 +1646,7 @@ public sealed class EnvironmentCheckViewModel : ObservableObject, IDisposable
             if (disposed || currentProject is null || onboardingPreview is null) return;
             if (!string.Equals(currentProject.ProjectPath, watchedDir, StringComparison.OrdinalIgnoreCase))
                 return;
-            RefreshOnboardingPreviewFromDisk();
+            _ = RefreshOnboardingPreviewFromDiskAsync();
         });
     }
 

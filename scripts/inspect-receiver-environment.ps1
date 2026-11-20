@@ -1,5 +1,19 @@
 Set-StrictMode -Version Latest
 
+function Get-ReceiverNetworkState {
+    # The staged B gate includes virtual interfaces visible to the guest.
+    try {
+        $unknown = $false
+        foreach ($adapter in [Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()) {
+            if ($adapter.NetworkInterfaceType -eq 'Loopback') { continue }
+            if ($adapter.OperationalStatus -eq 'Up') { return 'online' }
+            if ($adapter.OperationalStatus -notin @('Down', 'NotPresent', 'LowerLayerDown')) { $unknown = $true }
+        }
+        if ($unknown) { return 'unknown' }
+        return 'offline'
+    } catch { return 'unknown' }
+}
+
 function Get-ReceiverEnvironmentSummary {
     $osCaption = ''
     $osVersion = [Environment]::OSVersion.Version.ToString()

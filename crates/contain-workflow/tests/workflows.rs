@@ -586,7 +586,8 @@ fn cli_check_redacts_injected_environment_and_does_not_overwrite_reports() {
     use std::process::Command;
     let t = Temp::new();
     let mut m = manifest();
-    m.tools[0].program = "contain-absent-tool-fixture".into();
+    m.tools[0].program = "git".into();
+    m.tools[0].version = "0.0-contain-mismatch".into();
     let s = t.0.join("environment.json");
     fs::write(&s, serde_json::to_vec(&m).unwrap()).unwrap();
     let report = t.0.join("report");
@@ -784,6 +785,78 @@ fn safe_probes_skip_unsupported_commands_and_mark_needs_confirmation() {
     assert_eq!(skipped.status, Status::NeedsConfirmation);
     assert_eq!(skipped.outcome.as_deref(), Some("unsupported_probe"));
     assert!(!r.passed());
+}
+
+#[test]
+fn cli_check_requires_explicit_opt_in_for_custom_probes() {
+    use std::process::Command;
+    let project = Temp::new();
+    let workflow = env!("CARGO_BIN_EXE_contain-workflow");
+    let git = Command::new("git").arg("--version").output().unwrap();
+    assert!(git.status.success());
+    let git_output = std::str::from_utf8(&git.stdout).unwrap();
+    let git_version = git_output.split_whitespace().nth(2).unwrap();
+
+    let mut m = manifest();
+    m.required_variables.clear();
+    m.tools[0].program = "git".into();
+    m.tools[0].version = git_version.into();
+    // The custom probe only prints the workflow binary's version.
+    m.tools.push(Tool {
+        program: workflow.into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+        version_args: vec!["--version".into()],
+        remedy: "confirm manually".into(),
+        version_policy: None,
+    });
+    fs::write(
+        project.0.join("contain.environment.json"),
+        serde_json::to_vec(&m).unwrap(),
+    )
+    .unwrap();
+
+    let check = |flags: &[&str], report: &Path| {
+        Command::new(workflow)
+            .arg("check")
+            .args(flags)
+            .arg("--project")
+            .arg(&project.0)
+            .arg("--report")
+            .arg(report)
+            .output()
+            .unwrap()
+    };
+    for flag in [None, Some("--safe-probes"), Some("--allow-unsafe-probes")] {
+        let report = project.0.join(flag.unwrap_or("default"));
+        let result = check(flag.as_slice(), &report);
+        let r: Report =
+            serde_json::from_slice(&fs::read(report.join("report.json")).unwrap()).unwrap();
+        let (custom_status, outcome, windows_exit) = if flag == Some("--allow-unsafe-probes") {
+            (Status::Passed, "version_matched", 0)
+        } else {
+            (Status::NeedsConfirmation, "unsupported_probe", 2)
+        };
+        let expected_exit = if status(&r, "platform") == Status::Passed {
+            windows_exit
+        } else {
+            1
+        };
+        assert_eq!(result.status.code(), Some(expected_exit));
+        let custom = r
+            .checks
+            .iter()
+            .find(|c| c.name == format!("tool:{workflow}"))
+            .unwrap();
+        assert_eq!(custom.status, custom_status);
+        assert_eq!(custom.outcome.as_deref(), Some(outcome));
+        let supported = r.checks.iter().find(|c| c.name == "tool:git").unwrap();
+        assert_eq!(supported.status, Status::Passed);
+        assert_eq!(supported.observed.as_deref(), Some(git_version));
+    }
+    let report = project.0.join("conflict");
+    let result = check(&["--safe-probes", "--allow-unsafe-probes"], &report);
+    assert_eq!(result.status.code(), Some(2));
+    assert!(!report.exists());
 }
 
 #[test]
@@ -1768,6 +1841,7 @@ fn wpf_onboarding_refuses_inherited_build_overrides_at_preview_and_confirmation(
         .unwrap();
         let preview = inspect_project(&project).unwrap();
         assert_eq!(preview.status, "ready_to_confirm");
+        assert_eq!(preview.entry_executable.as_deref(), Some("Desktop.exe"));
 
         fs::write(
             root.0.join(name),
@@ -1776,15 +1850,59 @@ fn wpf_onboarding_refuses_inherited_build_overrides_at_preview_and_confirmation(
         .unwrap();
         let changed = inspect_project(&project).unwrap();
         assert_eq!(changed.status, "unsupported", "{name}");
+        assert_ne!(
+            changed.source_fingerprint_sha256,
+            preview.source_fingerprint_sha256
+        );
+        assert!(changed.proposed_manifest.is_none());
         assert_eq!(
             changed.unsupported_code.as_deref(),
             Some("directory_build_props_present")
         );
         let applied = apply_onboarding(&project, Some(&preview.source_fingerprint_sha256)).unwrap();
+        assert_eq!(applied.status, "source_changed_refresh_required");
         assert_eq!(applied.inspection.status, "unsupported");
         assert!(!applied.wrote_file);
         assert!(!project.join("contain.environment.json").exists());
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn wpf_onboarding_checks_the_physical_parent_of_a_linked_project() {
+    use contain_workflow::dotnet_onboarding::{apply_onboarding, inspect_project};
+
+    let workspace = Temp::new();
+    let parent = workspace.0.join("physical");
+    let project = parent.join("Desk");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(
+        project.join("Desk.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
+            <OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework>
+            <UseWPF>true</UseWPF>
+        </PropertyGroup></Project>"#,
+    )
+    .unwrap();
+    let linked_project = workspace.0.join("linked");
+    std::os::unix::fs::symlink(&project, &linked_project).unwrap();
+    let preview = inspect_project(&linked_project).unwrap();
+    assert_eq!(preview.status, "ready_to_confirm");
+
+    fs::write(
+        parent.join("Directory.Build.props"),
+        "<Project><PropertyGroup><AssemblyName>Other</AssemblyName></PropertyGroup></Project>",
+    )
+    .unwrap();
+    let stale =
+        apply_onboarding(&linked_project, Some(&preview.source_fingerprint_sha256)).unwrap();
+    assert_eq!(stale.status, "source_changed_refresh_required");
+    assert_eq!(
+        stale.inspection.unsupported_code.as_deref(),
+        Some("directory_build_props_present")
+    );
+    assert!(!stale.wrote_file);
+    assert!(!project.join("contain.environment.json").exists());
 }
 
 #[test]
@@ -1843,6 +1961,57 @@ fn windows_targeted_console_project_keeps_its_console_publish_contract() {
             .iter()
             .all(|file| file != "PresentationFramework.dll")
     );
+}
+
+#[test]
+fn dotnet_onboarding_rechecks_inherited_props_and_targets_before_apply() {
+    use contain_workflow::dotnet_onboarding::{apply_onboarding, inspect_project};
+
+    for name in ["Directory.Build.props", "Directory.Build.targets"] {
+        let workspace = Temp::new();
+        let project = workspace.0.join("src").join("App");
+        fs::create_dir_all(&project).unwrap();
+        fs::write(
+            project.join("App.csproj"),
+            r#"<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>"#,
+        )
+        .unwrap();
+        let preview = inspect_project(&project).unwrap();
+        assert_eq!(preview.entry_executable.as_deref(), Some("App.exe"));
+
+        let config = workspace.0.join(name);
+        let override_name = "<Project><PropertyGroup><AssemblyName>InheritedName</AssemblyName></PropertyGroup></Project>";
+        fs::write(&config, override_name).unwrap();
+        let stale = apply_onboarding(&project, Some(&preview.source_fingerprint_sha256)).unwrap();
+        assert_eq!(stale.status, "source_changed_refresh_required");
+        assert!(!stale.wrote_file);
+        assert_eq!(
+            stale.inspection.unsupported_code.as_deref(),
+            Some("directory_build_props_present")
+        );
+        assert!(stale.inspection.proposed_manifest.is_none());
+        assert!(!project.join("contain.environment.json").exists());
+
+        fs::write(&config, override_name.replace("InheritedName", "NewName")).unwrap();
+        let changed = inspect_project(&project).unwrap();
+        assert_ne!(
+            changed.source_fingerprint_sha256,
+            stale.inspection.source_fingerprint_sha256
+        );
+
+        let nearer = workspace.0.join("src").join(name);
+        fs::write(&nearer, override_name).unwrap();
+        let nearest = inspect_project(&project).unwrap();
+        assert_ne!(
+            nearest.source_fingerprint_sha256,
+            stale.inspection.source_fingerprint_sha256
+        );
+        fs::write(&config, "<Project />").unwrap();
+        assert_eq!(
+            inspect_project(&project).unwrap().source_fingerprint_sha256,
+            nearest.source_fingerprint_sha256
+        );
+    }
 }
 
 #[test]

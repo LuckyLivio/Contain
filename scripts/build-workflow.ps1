@@ -26,6 +26,12 @@ try {
     Copy-Item -LiteralPath (Join-Path $env:CARGO_TARGET_DIR 'x86_64-pc-windows-msvc/release/contain-workflow.exe') -Destination $files
     Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination $files
     Copy-Item -LiteralPath (Join-Path $root 'THIRD-PARTY-NOTICES.md') -Destination $files
+    $workflowDir = (New-Item -ItemType Directory -Path (Join-Path $files 'workflow')).FullName
+    $requiredFiles = @('LICENSE', 'THIRD-PARTY-NOTICES.md')
+    foreach ($name in @('select-workflow-toolchain.ps1', 'workflow-toolchain.ps1')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $workflowDir
+        $requiredFiles += "workflow/$name"
+    }
     . (Join-Path $PSScriptRoot 'workflow-rust-notices.ps1')
     Copy-WorkflowRustNotices 'contain-workflow' $files
     $zip = Join-Path $out 'contain-workflow-windows-x64.zip'
@@ -45,7 +51,7 @@ try {
     $probe.StandardOutput.BaseStream.CopyTo($bytes)
     $versionSha=[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($bytes.ToArray())).Replace('-','').ToLowerInvariant()
     $spec = [ordered]@{
-        schema_version=1; target='windows-x64'; sha256=$sha; entry='contain-workflow.exe'; required_files=@('LICENSE','THIRD-PARTY-NOTICES.md')
+        schema_version=1; target='windows-x64'; sha256=$sha; entry='contain-workflow.exe'; required_files=$requiredFiles
         launch=@{args=@('--version');timeout_ms=10000;expected_exit=0;window_title=$null}
         tests=@(@{name='CLI exact version output';program='contain-workflow.exe';args=@('--version');expected_exit=0;timeout_ms=10000;stdout_sha256=$versionSha},@{name='CLI --help exits 0';program='contain-workflow.exe';args=@('--help');expected_exit=0;timeout_ms=10000})
     }
