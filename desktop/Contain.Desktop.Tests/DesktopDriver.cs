@@ -419,10 +419,10 @@ internal sealed class DesktopDriver : IDisposable
     internal Task ChooseFileAsync(string action, string? path, bool save = false, bool existingRefusal = false) =>
         ChoosePathAsync(action, path, save, existingRefusal);
 
-    internal Task ChooseProjectFolderAsync(string path) =>
-        ChoosePathAsync("PickProjectFolder", path, save: false, existingRefusal: false);
+    internal Task ChooseProjectFolderAsync(string path, Action<string>? observe = null) =>
+        ChoosePathAsync("PickProjectFolder", path, save: false, existingRefusal: false, observe);
 
-    private async Task ChoosePathAsync(string action, string? path, bool save, bool existingRefusal)
+    private async Task ChoosePathAsync(string action, string? path, bool save, bool existingRefusal, Action<string>? observe = null)
     {
         Stage = "native_picker_" + action;
         if (existingRefusal && (!save || path is null || !File.Exists(path)))
@@ -441,7 +441,8 @@ internal sealed class DesktopDriver : IDisposable
             _ => throw new InvalidOperationException("No fixed native picker title contract for this action.")
         };
         var pickerClock = Stopwatch.StartNew(); var pickerDeadline = TimeSpan.FromSeconds(15);
-        await ClickAsync(action, pickerClock, pickerDeadline); // Modal InvokePattern can synchronously block.
+        await ClickAsync(action, pickerClock, pickerDeadline);
+        observe?.Invoke("mouse_click_open_picker"); // Modal InvokePattern can synchronously block.
         IntPtr dialog = IntPtr.Zero;
         var remaining = pickerDeadline - pickerClock.Elapsed;
         if (remaining <= TimeSpan.Zero) throw new TimeoutException("Native picker readiness exhausted the original discovery deadline.");
@@ -462,9 +463,11 @@ internal sealed class DesktopDriver : IDisposable
                 if (path is null) { Forms.SendKeys.SendWait("{ESC}"); return; }
                 var edits = NativeChildren(dialog).Where(item => item.Id is 1001 or 1148 or 1152 && item.Class == "Edit" && IsWindowVisible(item.Window)).ToArray();
                 if (edits.Length != 1) throw new InvalidOperationException("Native file picker has no unique filename entry.");
-                AutomationElement.FromHandle(edits[0].Window).SetFocus();
-                Forms.SendKeys.SendWait("^a"); Forms.SendKeys.SendWait(KeysLiteral(Path.GetFullPath(path)));
-                Forms.SendKeys.SendWait("{TAB}");
+                if (observe == null) AutomationElement.FromHandle(edits[0].Window).SetFocus();
+                else { ClickPickerChild(edits[0].Window); observe("mouse_click_path_edit"); }
+                Forms.SendKeys.SendWait("^a"); observe?.Invoke("key_chord_select_all");
+                Forms.SendKeys.SendWait(KeysLiteral(Path.GetFullPath(path))); observe?.Invoke("type_folder_path");
+                Forms.SendKeys.SendWait("{TAB}"); observe?.Invoke("key_tab");
             });
             if (path is not null)
             {
@@ -474,13 +477,71 @@ internal sealed class DesktopDriver : IDisposable
                 await Ui(action, () =>
                 {
                     var accept = NativeChildren(dialog).Single(item => item.Id == 1 && item.Class == "Button" && IsWindowVisible(item.Window));
-                    ((InvokePattern)AutomationElement.FromHandle(accept.Window).GetCurrentPattern(InvokePattern.Pattern)).Invoke();
+                    if (observe == null) ((InvokePattern)AutomationElement.FromHandle(accept.Window).GetCurrentPattern(InvokePattern.Pattern)).Invoke();
+                    else { ClickPickerChild(accept.Window); observe("mouse_click_accept_folder"); }
                 });
             }
             await UntilAsync("native_picker_closed", action, () => Task.FromResult(!IsWindowVisible(dialog)), TimeSpan.FromSeconds(15));
         }
         catch { if (dialog != IntPtr.Zero) PostMessage(dialog, 0x0010, IntPtr.Zero, IntPtr.Zero); throw; }
     }
+
+    internal Task MeasuredClickAsync(string id) => Ui(id, () =>
+    {
+        var target = Required(id);
+        var bounds = target.Current.BoundingRectangle;
+        if (bounds.IsEmpty || !target.Current.IsEnabled || target.Current.IsOffscreen)
+            throw new InvalidOperationException("Measured target is not visible and enabled.");
+        SetForegroundWindow(MainWindow());
+        var x = (int)(bounds.X + bounds.Width / 2);
+        var y = (int)(bounds.Y + bounds.Height / 2);
+        GetWindowThreadProcessId(WindowFromPoint(new Point { X = x, Y = y }), out var owner);
+        if (owner != process.Id || NativeDialog() != IntPtr.Zero)
+            throw new InvalidOperationException("Measured target is not on the owned window.");
+        SendClick(x, y);
+    });
+
+    private static void SendClick(int x, int y)
+    {
+        GetCursorPos(out var old);
+        try
+        {
+            SetCursorPos(x, y);
+            mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
+            mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+        }
+        finally { SetCursorPos(old.X, old.Y); }
+    }
+
+    private static void ClickPickerChild(IntPtr child)
+    {
+        if (!GetWindowRect(child, out var bounds)) throw new IOException("Picker child bounds unavailable.");
+        var x = (bounds.Left + bounds.Right) / 2;
+        var y = (bounds.Top + bounds.Bottom) / 2;
+        if (WindowFromPoint(new Point { X = x, Y = y }) != child) throw new IOException("Picker child is covered.");
+        SendClick(x, y);
+    }
+
+    internal Task<bool> ScrollTowardAsync(string id) => Ui(id, () =>
+    {
+        var element = Required(id);
+        var bounds = element.Current.BoundingRectangle;
+        for (var parent = TreeWalker.RawViewWalker.GetParent(element); parent != null; parent = TreeWalker.RawViewWalker.GetParent(parent))
+        {
+            if (!parent.TryGetCurrentPattern(ScrollPattern.Pattern, out var pattern)) continue;
+            var scroll = (ScrollPattern)pattern;
+            if (!scroll.Current.VerticallyScrollable) continue;
+            var viewport = parent.Current.BoundingRectangle;
+            if (!bounds.IsEmpty && !viewport.IsEmpty && bounds.Y + bounds.Height / 2 >= viewport.Top &&
+                bounds.Y + bounds.Height / 2 <= viewport.Bottom && !element.Current.IsOffscreen) continue;
+            var up = !bounds.IsEmpty && bounds.Y < viewport.Y;
+            var percent = scroll.Current.VerticalScrollPercent;
+            if ((up && percent <= 0) || (!up && percent >= 100)) continue;
+            scroll.Scroll(ScrollAmount.NoAmount, up ? ScrollAmount.LargeDecrement : ScrollAmount.LargeIncrement);
+            return true;
+        }
+        return false;
+    });
 
     internal Task ResizeAsync(int width, int height) => Ui("window", () =>
     {
@@ -506,7 +567,7 @@ internal sealed class DesktopDriver : IDisposable
             Record("normal_close", "window", request.ElapsedMilliseconds + wait.ElapsedMilliseconds, errorType);
         }
     }
-    internal Task<Screenshot> CaptureAsync(string output, string name, string kind) => Ui("window", () =>
+    internal Task<Screenshot> CaptureAsync(string output, string name, string kind, bool maskHostPaths = false) => Ui("window", () =>
     {
         var window = MainWindow();
         if (!GetWindowRect(window, out var bounds) || bounds.Right <= bounds.Left || bounds.Bottom <= bounds.Top)
@@ -518,6 +579,25 @@ internal sealed class DesktopDriver : IDisposable
             var dc = graphics.GetHdc();
             try { if (!PrintWindow(window, dc, 2)) throw new IOException("Native screenshot failed."); }
             finally { graphics.ReleaseHdc(dc); }
+        }
+        if (maskHostPaths)
+        {
+            using var overlay = Graphics.FromImage(bitmap);
+            var root = AutomationElement.FromHandle(window);
+            var nodes = root.FindAll(TreeScope.Descendants, new OrCondition(
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit),
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Text)));
+            foreach (AutomationElement node in nodes)
+            {
+                if (node.Current.IsOffscreen) continue;
+                var text = node.Current.Name ?? "";
+                if (node.TryGetCurrentPattern(ValuePattern.Pattern, out var value)) text += " " + ((ValuePattern)value).Current.Value;
+                if (!System.Text.RegularExpressions.Regex.IsMatch(text, @"(?i)[A-Z]:[\\/](?!ContainDemo[\\/])")) continue;
+                var rect = node.Current.BoundingRectangle;
+                if (!rect.IsEmpty)
+                    overlay.FillRectangle(Brushes.DarkGray, (float)(rect.X - bounds.Left), (float)(rect.Y - bounds.Top),
+                        (float)rect.Width, (float)rect.Height);
+            }
         }
         Directory.CreateDirectory(output); var path = Path.Combine(output, name); bitmap.Save(path, ImageFormat.Png);
         return new Screenshot(name, Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant(), bitmap.Width, bitmap.Height, GetDpiForWindow(window), kind);

@@ -6,7 +6,7 @@ internal static class InstalledWpfWorkflow
 {
     internal static async Task<int> RunAsync(string[] args)
     {
-        if (args.Length != 5) throw new ArgumentException("Expected install, project, assembly, installed PID and receipt.");
+        if (args.Length is not (5 or 6)) throw new ArgumentException("Expected install, project, assembly, installed PID and receipt.");
         var install = Path.GetFullPath(args[0]);
         var project = Path.GetFullPath(args[1]);
         var assembly = args[2];
@@ -25,23 +25,32 @@ internal static class InstalledWpfWorkflow
         var productPid = 0;
         var chooserCount = 0;
         DesktopDriver? driver = null;
+        FirstPackageMeasurement? measure = null;
         try
         {
             using var ui = driver = new DesktopDriver(installedPid, Path.Combine(install, "Contain.Viewer.exe"));
             productPid = ui.ProcessId;
             await ui.ReadyAsync();
+            if (args.Length == 6)
+            {
+                measure = new FirstPackageMeasurement(ui, Path.GetFullPath(args[5]));
+                await measure.StartAsync();
+                await measure.ShotAsync("first-launch");
+            }
             checks[stage] = "passed";
 
             stage = "select_project";
             await Invoke("CheckProjectEnvironment");
             control = "PickProjectFolder";
-            await ui.ChooseProjectFolderAsync(project);
+            if (measure != null) await measure.ChooseFolderAsync(control, project);
+            else await ui.ChooseProjectFolderAsync(project);
             chooserCount = ui.ChooserInteractions;
             await TextEquals("OnboardingHeadline", $"已识别 {assembly} · WPF 桌面应用", 60);
             Require(chooserCount == 1 && Path.GetFullPath((await ui.TextAsync("ProjectPathInput")).Trim()) == project,
                 "project_selection_mismatch");
             var manifestFile = Path.Combine(project, "contain.environment.json");
             Require(!File.Exists(manifestFile), "preview_wrote_manifest");
+            if (measure != null) await measure.ShotAsync("project-preview");
             checks[stage] = "passed";
 
             stage = "confirm_configuration";
@@ -72,6 +81,7 @@ internal static class InstalledWpfWorkflow
             Require(installer.StartsWith(outputRoot, StringComparison.OrdinalIgnoreCase) &&
                 Path.GetFileName(installer) == setupName && File.Exists(installer), "displayed_installer_mismatch");
             setupRelative = Path.GetRelativePath(project, installer);
+            if (measure != null) await measure.ShotAsync("package-complete", "GeneratedInstallerFileName");
             control = "window_close";
             await ui.CloseAsync();
             Require(ui.HasExited && ui.ExitCode == 0, "installed_product_close_failed");
@@ -81,7 +91,8 @@ internal static class InstalledWpfWorkflow
             async Task Invoke(string id)
             {
                 await Enabled(id, 40);
-                await ui.InvokeAsync(id);
+                if (measure != null) await measure.InvokeAsync(id);
+                else await ui.InvokeAsync(id);
             }
             async Task Enabled(string id, int seconds)
             {
@@ -109,6 +120,7 @@ internal static class InstalledWpfWorkflow
             reason = error is AssertionException ? error.Message : error.GetType().Name;
             checks[stage] = "failed";
         }
+        if (measure != null) await measure.SaveAsync(status);
         await File.WriteAllTextAsync(receipt, JsonSerializer.Serialize(new
         {
             status, stage, control, reason, driver_stage = driver?.Stage, checks, product_pid = productPid, chooser_count = chooserCount,

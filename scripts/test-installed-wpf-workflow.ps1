@@ -2,7 +2,9 @@
 param(
     [Parameter(Mandatory)][string]$CandidateDirectory,
     [Parameter(Mandatory)][string]$HarnessPath,
-    [Parameter(Mandatory)][string]$EvidenceDirectory
+    [Parameter(Mandatory)][string]$EvidenceDirectory,
+    [string]$ExpectedVersion='0.5.0-beta.2',
+    [switch]$MeasureFirstPackage
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -54,7 +56,7 @@ try {
     $meta = Read-Json (Join-Path $bundle 'candidate-identity.json')
     $desktop = Read-Json (Join-Path $bundle 'desktop-identity.json')
     $installer = Read-Json (Join-Path $bundle 'installer-receipt.json')
-    Require ($meta.version -ceq '0.5.0-beta.2' -and $installer.app_version -ceq $meta.version -and
+    Require ($meta.version -ceq $ExpectedVersion -and $installer.app_version -ceq $meta.version -and
         $meta.source_sha -ceq $r.source_sha -and $installer.source_sha -ceq $r.source_sha -and $desktop.source_sha -ceq $r.source_sha -and
         $installer.installer_sha256 -ceq $sums['Contain-Setup-x64.exe'] -and
         $installer.source_zip_sha256 -ceq $desktop.zip_sha256 -and $desktop.zip_sha256 -ceq $sums["contain-$($meta.version)-windows-x64.zip"]) 'candidate_binding'
@@ -66,10 +68,11 @@ try {
 
     $gate = 'install_product'
     $scratch = (New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP ('contain-installed-ui-' + [guid]::NewGuid().ToString('N')))).FullName
-    $projectName = 'WpfUi' + [guid]::NewGuid().ToString('N').Substring(0,10)
+    $projectName = if ($MeasureFirstPackage) { 'HelloWpf' } else { 'WpfUi' + [guid]::NewGuid().ToString('N').Substring(0,10) }
     $assemblyName = "${projectName}Desktop"
     $r.project_name = $projectName; $r.assembly_name = $assemblyName
-    $project = Join-Path $scratch $projectName
+    $project = if ($MeasureFirstPackage) { 'C:\ContainDemo\HelloWpf' } else { Join-Path $scratch $projectName }
+    Require (!(Test-Path -LiteralPath $project)) 'fixture_already_exists'
     & dotnet new wpf --name $projectName --output $project --framework net10.0 --no-restore > (Join-Path $scratch 'template.log') 2>&1
     Require ($LASTEXITCODE -eq 0) 'wpf_template'
     $csproj = Join-Path $project "$projectName.csproj"
@@ -116,7 +119,9 @@ try {
     } while ($true)
     $r.product_pid = $owned[0].Id; $r.window_title = $owned[0].MainWindowTitle
     $uiFile = Join-Path $scratch 'ui.json'
-    & $harness --installed-wpf $install $project $assemblyName $r.product_pid $uiFile > (Join-Path $scratch 'ui.log') 2>&1
+    $measurementArgs = @()
+    if ($MeasureFirstPackage) { $measurementArgs += $out }
+    & $harness --installed-wpf $install $project $assemblyName $r.product_pid $uiFile @measurementArgs > (Join-Path $scratch 'ui.log') 2>&1
     $uiCode = $LASTEXITCODE
     Require (Test-Path -LiteralPath $uiFile -PathType Leaf) 'ui_receipt_missing'
     $ui = Read-Json $uiFile

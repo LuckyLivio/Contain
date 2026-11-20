@@ -26,6 +26,7 @@ function Test-GeneratedWpfSetup {
     function Invoke-FixtureSetup([string]$program, [string]$arguments) {
         $proc = Start-Process -FilePath $program -ArgumentList $arguments -PassThru
         try {
+            $null = $proc.Handle
             Assert-ProjectSetup ($proc.WaitForExit(180000)) 'installer_timeout'
             Assert-ProjectSetup ($proc.ExitCode -eq 0) 'installer_exit'
         } finally { $proc.Dispose() }
@@ -35,7 +36,9 @@ function Test-GeneratedWpfSetup {
             $env:RUNNER_OS -ceq 'Windows' -and $env:OS -eq 'Windows_NT' -and [Environment]::Is64BitProcess) 'runner'
         $project = (Get-Item -LiteralPath $ProjectDirectory).FullName
         $work = (Get-Item -LiteralPath $WorkDirectory).FullName
+        $fixedWpfFixture = $project -ceq 'C:\ContainDemo\HelloWpf' -and $AssemblyName -ceq 'HelloWpfDesktop'
         foreach ($path in $project,$work) {
+            if ($path -ceq $project -and $path -cne $work -and $fixedWpfFixture) { continue }
             $tempRoots = @([IO.Path]::GetTempPath(),$env:RUNNER_TEMP)
             Assert-ProjectSetup (@($tempRoots | Where-Object {
                 $_ -and $path.StartsWith(([IO.Path]::GetFullPath($_).TrimEnd('\') + '\'), [StringComparison]::OrdinalIgnoreCase)
