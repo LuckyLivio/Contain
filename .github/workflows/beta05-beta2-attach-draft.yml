@@ -1,0 +1,164 @@
+name: Attach verified Beta 2 assets to the draft
+
+on:
+  push:
+    branches: [feat/wpf-project-onboarding]
+    paths: ['.github/workflows/beta05-beta2-attach-draft.yml']
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: beta05-beta2-draft-452503520
+  cancel-in-progress: false
+
+jobs:
+  attach:
+    if: github.repository == 'LuckyLivio/Contain'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: LuckyLivio/Contain
+    steps:
+      - name: Reverify pinned archives and attach matching files to the Beta 2 draft
+        shell: python
+        run: |
+          pins = {'repo': 'LuckyLivio/Contain',
+           'tag': 'v0.5.0-beta.2',
+           'source_sha': '18782fc4e8cfd91df4d60fa339b77070236f130a',
+           'build': {'id': 44708424263,
+                     'workflow_sha': '2eebc6b93c1dcce0dd027a5290ab35676011a1e7',
+                     'path': '.github/workflows/beta05-beta2-build.yml',
+                     'attempt': 1,
+                     'branch': 'feat/wpf-project-onboarding'},
+           'acceptance': {'id': 44709811837,
+                          'workflow_sha': 'b4645ce3f47c747eeffcc66ad42a360c06a01279',
+                          'path': '.github/workflows/beta05-beta2-acceptance.yml',
+                          'attempt': 1,
+                          'branch': 'feat/wpf-project-onboarding'},
+           'wrappers': {'candidate': {'id': 14617205538,
+                                      'name': 'contain-beta2-staged-18782fc4e8cfd91df4d60fa339b77070236f130a',
+                                      'sha256': '8b07c29e044e90f60dc0674e41c5668f2c8dcf974911cdbba127a069557c21bc',
+                                      'bytes': 124354854},
+                        'stock': {'id': 14616726706,
+                                  'name': 'contain-beta2-windows-stock-18782fc4e8cfd91df4d60fa339b77070236f130a-44709811837-1',
+                                  'sha256': '5e6cac0534771547739f58622c29ac57ba768fb63bb98c445a71d94c03414e47',
+                                  'bytes': 1451},
+                        'upgrade': {'id': 14617430554,
+                                    'name': 'contain-beta2-windows-upgrade-18782fc4e8cfd91df4d60fa339b77070236f130a-44709811837-1',
+                                    'sha256': 'a02dcfc83ccd80e87c004925be06f1dec083a593883e26ed5c07cf0d33438f4c',
+                                    'bytes': 787},
+                        'wpf': {'id': 14617550385,
+                                'name': 'contain-beta2-windows-wpf-18782fc4e8cfd91df4d60fa339b77070236f130a-44709811837-1',
+                                'sha256': '445686cdf2cdf7351ba360d8f2e91c876ec87ab2af5ccf01d4b1fce246582e8b',
+                                'bytes': 1008}},
+           'sha256': {'desktop-identity.json': 'ffd18a2f67d75f65435bfbc761276a2bd1d4b2ee9f96e810f5335f3ca248a618',
+                      'inspect-receiver-environment.ps1': '3af35d21f704dfcac5a39468ac42aaf3338417318cacd992435c3bb2304c10cc',
+                      'workflow-receiver-evidence.ps1': 'e4221c51ee12e8b8fc1e917549e6d23e6dcc4c4e4cbf1550991225da34360d59',
+                      'contain-0.5.0-beta.2-windows-x64.zip': '48ccde60800bc1fb4d5fcc2660dcef0ceda0dee3b976667d7e28796e025df81a',
+                      'cli-package-spec.json': 'a57fef7595b4667c1b881e5a90606235cafc528021776ca4698d91558daf625f',
+                      'contain-workflow-0.5.0-beta.2-windows-x64.zip': 'b70ffa69ee05f1f74b12c26e41619ce3c5d09e485888b3491b91e69a066a4446',
+                      'candidate-identity.json': 'eb687eb1469730d92c582954ad1e9286745f666f6c117a377bdfd7fcac71197f',
+                      'receive-release-candidate.ps1': 'bc959d6cc401341cad597a2e717240ec9884a078c0b0876e931bab1575860cbb',
+                      'SHA256SUMS.txt': '0b2c308f631a8ea028a24c82e71b14bd8064048df2057389916550c3f0b5726a',
+                      'installer-receipt.json': '607c433dc6b73a7d2b56623f64f40fe5ae953cef94d385207933184781e7a274',
+                      'desktop-package-spec.json': 'a3bd3a0ed328c61cd434dff6b40a6f854aa81c825fc89a2a084aed508bb0b183',
+                      'Contain-Setup-x64.exe': '4f0bd9aa89507f69e90ded3356e1c7531a4025a85b4ffbb7a662fb6ff58e7c6f',
+                      'workflow-windows-acceptance.ps1': '5d9b837b918520c091b9b162f5452503c0ebeecc85e855decb9b6105d4ec2e41',
+                      'cli-identity.json': 'fffaa9e0fe5d3bbaaa9a0f5dddda969f3ffb176aa70cd41cac74121b01a18e5a',
+                      'handoff.json': '972d6cf2c08eaadfb2f3d684e51e3dc9912d9e6b883be5cee6a879472a5bb1b4',
+                      'installed-wpf-workflow.json': '408bbfe4c6656e0f19b5660b57f7083abacf805e174fbd9b5abfe82e283349ae',
+                      'beta2-upgrade.json': '2020d222a577576dde588441af0d6269584353a8c72061f26c214d47b8c94ba0',
+                      'prerelease-smoke.json': '3c40a3276a38334a088029cc46ad3292abe6420e75b329c536890ac8f9bad14d'},
+           'draft_id': 452503520,
+           'tag_sha': '0d56d7f7e9c7bf6c5fa3974e6e03aa85c5edbcf2'}
+          # Insert verified PASSED-run pins during rendering. This script executes only in the staged Actions workflow.
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          from shutil import copyfileobj
+          import subprocess
+          from urllib.parse import quote
+          from zipfile import ZipFile
+
+          REPO = "LuckyLivio/Contain"
+          TAG = "v0.5.0-beta.2"
+          BRANCH = "feat/wpf-project-onboarding"
+
+
+          def require(ok, reason):
+              if not ok:
+                  raise SystemExit(reason)
+
+
+          def get(path):
+              return json.loads(subprocess.check_output(["gh", "api", f"repos/{REPO}/{path}"]))
+
+
+          def digest(path):
+              with path.open("rb") as f:
+                  return hashlib.file_digest(f, "sha256").hexdigest()
+
+
+          def find_draft():
+              release = get(f"releases/{pins['draft_id']}")
+              require(release["id"] == pins["draft_id"] and release["draft"] and release["prerelease"] and
+                      release["tag_name"] == TAG and release["target_commitish"] == pins["tag_sha"] and
+                      release["author"]["login"] == "LuckyLivio", "Beta 2 draft or target changed")
+              ref = get(f"git/ref/tags/{TAG}")["object"]
+              while ref["type"] == "tag":
+                  ref = get(f"git/tags/{ref['sha']}")["object"]
+              require(ref["type"] == "commit" and ref["sha"] == pins["tag_sha"], "Beta 2 tag target changed")
+              existing = set()
+              for entry in release["assets"]:
+                  name = entry["name"]
+                  require(name in expected and name not in existing and entry["state"] == "uploaded" and
+                          entry["digest"] == "sha256:" + expected[name], "Unexpected or conflicting Beta 2 draft upload")
+                  existing.add(name)
+              return existing
+
+
+          require(os.environ["GITHUB_REPOSITORY"] == REPO and os.environ["GITHUB_REF"] == "refs/heads/" + BRANCH,
+                  "Repository/branch mismatch")
+          expected = pins["sha256"]
+          require(pins["tag"] == TAG and len(expected) == 18, "Invalid release inventory")
+          assets = Path("assets")
+          assets.mkdir()
+          for kind, wrapper in pins["wrappers"].items():
+              run = pins["build" if kind == "candidate" else "acceptance"]
+              details = get(f"actions/runs/{run['id']}")
+              require(details["head_sha"] == run["workflow_sha"] and details["path"] == run["path"] and
+                      details["head_branch"] == BRANCH and details["run_attempt"] == run["attempt"] and
+                      details["event"] == "push" and details["conclusion"] == "success", "Pinned producer run changed")
+              artifact = get(f"actions/artifacts/{wrapper['id']}")
+              require(artifact["workflow_run"]["id"] == run["id"] and artifact["workflow_run"]["head_sha"] == run["workflow_sha"] and
+                      artifact["name"] == wrapper["name"] and not artifact["expired"] and
+                      artifact["digest"] == "sha256:" + wrapper["sha256"], "Pinned artifact metadata changed")
+              archive = Path(f"{kind}.zip")
+              with archive.open("xb") as f:
+                  subprocess.run(["gh","api",f"repos/{REPO}/actions/artifacts/{wrapper['id']}/zip"],stdout=f,check=True)
+              require(digest(archive) == wrapper["sha256"], "Downloaded Actions artifact hash differs")
+              with ZipFile(archive) as z:
+                  for name in z.namelist():
+                      require(name in expected and name == Path(name).name, "Unexpected artifact member")
+                      with z.open(name) as src, (assets/name).open("xb") as dst:
+                          copyfileobj(src, dst)
+          require({p.name: digest(p) for p in assets.iterdir()} == expected, "Flat asset set differs from independently verified bytes")
+
+          # Send new files only to this numeric draft ID; conflicting/partial published assets are never replaced.
+          for name in sorted(set(expected) - find_draft()):
+              if name in find_draft():
+                  continue
+              url = f"https://uploads.github.com/repos/{REPO}/releases/{pins['draft_id']}/assets?name={quote(name, safe='')}"
+              response = subprocess.run(["curl", "-q", "--fail", "--silent", "--show-error", "--request", "POST",
+                                         "--header", "@-", "--data-binary", "@" + str(assets / name), url],
+                                        input=("Authorization: Bearer " + os.environ["GH_TOKEN"] +
+                                               "\nContent-Type: application/octet-stream\nAccept: application/vnd.github+json\n").encode(),
+                                        stdout=subprocess.PIPE, check=True)
+              uploaded = json.loads(response.stdout)
+              require(uploaded["name"] == name and uploaded["digest"] == "sha256:" + expected[name], "Fresh upload digest differs")
+          require(set(expected) == find_draft(), "Beta 2 draft asset set incomplete")
+          print(f"Verified all {len(expected)} uploaded files on Beta 2 draft {pins['draft_id']}")
