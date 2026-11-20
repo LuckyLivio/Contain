@@ -1,106 +1,64 @@
 # Contain
 
-Windows 安装记录与证据查看工具。选择 EXE，记录安装行为，找回记录，查看文件操作及其依据。
+让 Windows 项目换一台电脑也能构建，让发出去的包在别人电脑上也能运行，并能核实具体哪些检查通过。
 
-**v0.4.0-beta.1** 采用 WPF + WPF UI + MVVM 新桌面，接入原 Rust 核心与 CLI。
-实际 Windows 包已完成 M13 全流程验收；[发布说明与准确身份](docs/beta04-release.md) · [全部尝试记录](docs/beta04-validation-attempts.md) · [两分钟演示](docs/beta04-design-and-migration.md#两分钟展示顺序)。
+## 下载 Windows 版
 
-## 下载与使用
+当前公开版是 **v0.4.0-beta.1**。下载 Windows x64 便携 ZIP，完整解压后运行 `Contain.Viewer.exe`，即可记录安装行为、浏览记录并导出报告。
 
-**[直接下载 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/contain-0.4.0-beta.1-windows-x64.zip)** · [Beta.1 Prerelease](https://github.com/LuckyLivio/Contain/releases/tag/v0.4.0-beta.1) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/SHA256SUMS.txt) · [最终验收文件](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/FINAL-ACCEPTANCE.json)
+[下载 Windows x64 便携 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/contain-0.4.0-beta.1-windows-x64.zip) · [发行说明](https://github.com/LuckyLivio/Contain/releases/tag/v0.4.0-beta.1) · [SHA-256 校验文件](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/SHA256SUMS.txt)
 
-1. 完整解压 ZIP，运行 **`Contain.Viewer.exe`**，无需另装 .NET 或开发工具。
-2. 进入“新建记录”，**选择 EXE → 明确点击“开始记录”**。默认跟随安装器及已验证直接子进程，名称自动建议，保存到“我的记录”；无需猜安装目录或选择数据库。选择文件本身不会启动安装器。
-3. 按安装器要求操作，保持窗口打开至整理保存结束。程序按准确会话打开结果，可搜索文件操作、查看解释、复制事件 ID 或导出报告。以后从“我的记录”找回。
+## 即将发布的 v0.5.0-beta.1
 
-名称可直接修改；高级设置保留手动观察已有目录、自定义保存位置、逐行字面参数、注册表、快照模式和等待参数。
-“打开外部记录库”只读查看；`samples/viewer-demo.db` 明确是合成演示数据。
+这一版提供当前用户安装的 Setup，支持将单项目 C# 控制台应用打成可分发的安装包。预发行候选的产品源码固定为 `aac52e52`。同一批 Setup 和双 ZIP 已通过 GitHub 托管 Windows x64 验收。收据记录了安装、版本、桌面启动、随包示例读取、卸载与包规格检查。[Windows 验收记录](https://github.com/LuckyLivio/Contain/actions/runs/44690323749/attempts/1) · [候选进度与历史试装记录](docs/beta05-release.md)
 
-## 新界面截图
+干净 Windows 上的缺项恢复构建和断网接收机 A/B 验收保留在稳定版发布前完成。Windows 本地 A/B 验收：云端未收到最终收据。
 
-以下来自最终包在 **Windows Server 2025 x64 / 10.0.26100 / 实际 96 DPI** 的原生运行，原图均为 **1024 × 720 像素**。合成样例与真实采集分别标注。
+## 接手源码、恢复开发环境
 
-| 我的记录 · 隔离合成样例 | 新建配置 · 尚未开始安装 |
-| --- | --- |
-| [![我的记录，隔离合成样例](docs/images/beta04/records-sample.png)](docs/images/beta04/records-sample.png) | [![新建记录，受控安装器配置](docs/images/beta04/new-record-configured.png)](docs/images/beta04/new-record-configured.png) |
+版本化 `contain.environment.json` 描述 Windows x64 工具链、必需变量名称、实际构建和验证命令。普通 `check` 和 `check --safe-probes` 均只运行受支持的只读探测。自定义探测会标为 `needs_confirmation`。只有在审核并信任项目的探测命令和工具链脚本后，才应使用 `check --allow-unsafe-probes` 允许执行。没有清单时，只从明确支持的项目文件提取已声明要求，缺少依据的项目列为待确认。
 
-真实安装后，查看所选目标事件的解释：
-
-![真实 ETW 采集保存后的事件解释](docs/images/beta04/real-event-explanation.png)
-
-[全部实际截图、空态、任务与前后对照](docs/beta04-screenshots.md)还包含 **820 × 640 像素**紧凑窗口；均为实际 96 DPI，不冒充高 DPI 或 Parallels 验证。
-
-[原 WinForms Beta.10 独立回退下载](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.10/contain-0.3.2-beta.10-windows-x64.zip)继续保留，Beta.10 及更早标签与附件不变；它不是新 WPF 包。
-
-个人库沿用 Windows LocalApplicationData 下的 `Contain\Records\contain.db`，通常为
-`%LOCALAPPDATA%\Contain\Records\contain.db`，不随启动目录变化。首次空启动不建库；
-同名记录按 UUID 区分。损坏、不兼容或保存位置冲突时保留原文件，既有库只读兼容查询不迁移原文件。
-
-UI 为 `0.4.0-beta.1`，核心保持 `0.3.2-beta.10` / [源码 b0d2510](https://github.com/LuckyLivio/Contain/tree/b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4)。
-新包 `START-HERE.txt`、`BUILD.json`、`CONTENTS.json` 及独立最终验收文件分别说明使用、
-产品与核心身份、文件哈希和实际验收对象；[完整版本与核心哈希](docs/beta04-release.md)。
-构建未签名；ETW 受当前令牌权限限制。程序不自动提权、不修改安全设置，也不静默切换快照模式。
-
-## 证据与使用边界
-
-- 安装器退出、采集完成、数据保存及覆盖质量分别显示。非零退出不统一解释为用户取消，
-  保存记录也不等于软件安装成功。未结束历史不证明进程仍在运行；缺少测量、无基线与零值分别表达。
-  实际进展与界面计时分开，未知总量不显示百分比；失败可查看原文、复制摘要并重开准确会话。
-- High 表示有证据支持的执行进程关联；Unknown 表示证据不足。两者都不是最终文件归属
-  或安全删除许可。Degraded 表示覆盖受限，不表示已发现恶意行为。
-- 跟随模式限定明确启动的 EXE 与已验证直接子进程，不扫描目录或全盘，也没有安装前基线；状态差异零项不表示没有操作。
-  历史路径不表示当前路径。手动目录模式保留指定范围的前后对比，均不替用户创建软件安装目标。
-  注册表配置当前为一个选定 HKCU Software 键；未请求时显示 `not_requested`。
-- 事件搜索限定当前数据库和当前会话；ASCII 字母忽略大小写，中文、空格、`%`、`_` 按普通文本包含匹配。
-  搜索成功后可导出全部匹配事件，与当前页码或是否选中事件无关；报告列出搜索词、准确会话和全部事件。
-  读取期间内容变化、超出限制或失败时拒绝提交，不覆盖已有文件。普通浏览的“导出本页报告”
-  仍包含本会话状态变化、当前事件页及所选 explain。
-  报告保留本地路径与证据，分享前请自行审阅。
-- 本轮不提供安全卸载、回滚、自动清理、完整软件足迹或最终所有权结论。没有会强杀
-  安装器的“取消”按钮；异常退出后的未完成证据应保留并重新查看。
-
-## 已知问题与证据来源
-
-Beta.10 的首次空库 C1 Ready 超时、D5 结果观察控件缺失、用户 Parallels 原会话
-57,767 条应用丢失的原因仍未确认，分别跟踪于 [#16](https://github.com/LuckyLivio/Contain/issues/16)、
-[#17](https://github.com/LuckyLivio/Contain/issues/17)、[#18](https://github.com/LuckyLivio/Contain/issues/18)。
-界面迁移不追认其根因，也不将它们写成已修复。Beta.10 的 D4 采集对照与 D6 WinForms
-验收保留在[旧版发布记录](docs/beta10-release.md)，只有未改变核心的证据适用于本次复用。
-
-用户曾在 Parallels / Windows 11 中手工试用 7-Zip，截图显示在专用目标/观察目录下
-安装退出 0、107 项文件变化及可解释的 High 源事件。未取得用户数据库或报告，
-不将其写成独立复现；来宾架构和实际 DPI 未确认，不能据此声称 ARM64 已验证。
-
-另一次观察整个 Program Files 的记录停留在 finalizing / Incomplete。缺少原始数据库
-和错误日志，根因尚未确认；小范围成功不证明已修复。该问题保留为 Beta 已知限制，
-没有通过禁止目录或全盘性能实验掩盖它；继续跟踪于 [Issue #5](https://github.com/LuckyLivio/Contain/issues/5)。
-
-M13 [Windows 运行 42344602567](https://github.com/LuckyLivio/Contain/actions/runs/42344602567)完成 **14/14 项原生检查、997 项断言**，模型 **34/34**、导航控件 **12/12** 和独立夹具 **24/24** 谓词通过。真实新 GUI 完成安装、准确会话保存、所选子事件的解释与复制，以及不同工作目录冷启动；父子目标的身份和成功完成依据另经独立 CLI / 夹具核验。六次 Viewer 启动均正常退出 0，接收、候选、交付、原始保存、ETW 与解码损失均为 0。范围是一台受控 runner 的一次完整安装，不推导为所有安装器或负载保证。
-
-M11 的独立控件键盘检查曾超时，原因未确认；M12 仅完成带分阶段诊断的检查，未复现不等于修复证明。M13 的完整通过不改写这些原始结果。[全部尝试](docs/beta04-validation-attempts.md)与[历史交付索引](docs/delivery-history.md)继续保留。
-
-未验证 Windows 10/11、Parallels、实际 144/192 DPI、多显示器切换或第三方安装器矩阵。发布沿用 M13 验收的原 ZIP，产品与原生测试源码均为 `5a6ce89867e4c8c9d428de0a80b67b421bbd9717`，ZIP SHA-256 为：
-
-```text
-953b243bb3dd8ea32e61dcf5fdeaf143b9e697ea4a57021fb85ffd961ef907e3
+```powershell
+# 将独立 CLI ZIP 完整解压到 C:\Bootstrap，以使用随包的 Windows 工具链选择器。
+C:\Bootstrap\contain-workflow.exe check --project . --report target/workflow/check-01
+cargo run -p contain-workflow --locked -- build --project . --execute --delivery-dir target/workflow/delivery-01 --report target/workflow/build-01
 ```
 
-main 检查、标签、上传及公开回下载属于单独发布步骤；准确状态与源码关系以 [Release](https://github.com/LuckyLivio/Contain/releases/tag/v0.4.0-beta.1)、[发布说明](docs/beta04-release.md)及 `FINAL-ACCEPTANCE.json` 为准，不把产品源码冒充合并后的 main 或标签提交。
+## 发包前验证
 
-## 开发与参考
+对实际 Windows x64 ZIP 固定 SHA-256、启动入口和预期结果。报告分别列出包身份、静态检查、启动检查及指定测试。Windows 上可显式运行窗口或自检检查；其他平台只做静态检查，运行项记为 **未实测**。比较不同构建时，先检查两个包内实际 EXE；字节相同则拒绝开跑。
 
-[Contributing](CONTRIBUTING.md) · [Architecture](docs/architecture.md) ·
-[CLI / JSON contract](docs/json-contract.md) · [Desktop](desktop/README.md) ·
-[Security](SECURITY.md) · [Measured limits](docs/performance.md)
+命令、清单格式与本分支验收状态见 [第一阶段说明](docs/phase-one.md)。本分支不代表已通过干净 Windows 验收。
 
-新桌面锁定 .NET SDK `10.0.403`、自包含运行时 `10.0.14`、WPF UI `4.3.0` 与
-CommunityToolkit.Mvvm `8.4.2`。WPF UI 是第三方开源组件，不是 Microsoft 官方产品；
-Contain 负责真实业务接入与证据呈现。见[依赖许可与版权](THIRD-PARTY-NOTICES.md)。
+```powershell
+cargo run -p contain-workflow --locked -- verify --zip .\contain.zip --spec .\package-spec.json --report target/workflow/package-01
+```
 
-开发验证使用现有 `scripts/quality.ps1` 与 Windows CI。合成测试、交叉编译及跳过的
-检查不计作原生 ETW 或实际系统高 DPI 验证。正式 32 次、规模化和多安装器矩阵不属于
-本轮 Beta 收尾；它们不会因界面工作流通过而自动被宣布完成。
+## Windows 安装候选包与便携压缩包分工
 
-## License
+本分支同时提供参数化安装器构建入口 `scripts/build-windows-installer.ps1`（基于 Inno Setup 6），两类交付形态职责明确：
 
-Apache-2.0. See [LICENSE](LICENSE).
+- **单文件安装候选包（`Contain-Setup-x64.exe`）**：面向普通桌面接收者。基于已冻结校验的 `contain-source-windows-x64.zip` 原样组包，默认以当前用户最低权限安装到 `%LOCALAPPDATA%\Programs\Contain`（终端用户无需联网安装 Rust、Python、Visual Studio 或 .NET SDK），自动创建开始菜单入口（桌面快捷方式可选且默认关闭），支持在 Windows“已安装的应用”中标准卸载。安装器仅管理程序目录、快捷方式与卸载登记，不改动已有便携版目录，卸载或升级时完整保留 `%LOCALAPPDATA%\Contain` 个人记录库及程序目录外的数据库与导出报告。安装包的签名状态见对应安装器收据。
+- **便携桌面包（`contain-source-windows-x64.zip`）与独立 CLI 包（`contain-workflow-windows-x64.zip`）**：面向免安装解压即用、基于 `package-spec.json` 的静态／运行态交付契约校验与快照 A/B 交接验收；其中桌面 ZIP 同时作为构建 `Contain-Setup-x64.exe` 的受控载荷输入。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows-installer.ps1 -Zip <path-to>\contain-source-windows-x64.zip -Spec <path-to>\package-spec.json -OutputDirectory <new-output-dir>
+```
+
+本分支第二轮已补齐本次 Rust/WPF 产物的桌面 ZIP 组装、独立 CLI 打包和 A/B 交接脚本，并记录实际选中的 MSVC/SDK。架构改用 IsWow64Process2，ARM64 仿真和未知状态单独记录。[完整命令与产物位置](docs/phase-one.md) · [历史阶段记录](docs/phase-one-round2-results.md)。
+
+## 后续里程碑
+
+- **陌生软件隔离试用**：后续设计隔离执行、权限和试用证据；第一阶段不提供隔离保护。
+- **配置回退**：后续设计配置备份、差异和可验证恢复；第一阶段不修改系统配置或提供回滚。
+- **WPF 渐进接入**：桌面包已自带本次构建的 `contain-workflow.exe`，并在界面接入“检查项目环境”（含普通单项目 C# 控制台应用首次使用只读识别与一次确认生成配置、同窗口复查对比、受控项目构建、产物目录打开，以及对已验证 Windows x64 `.NET` 自包含多文件发布生成 `<应用名>-Setup-x64.exe` 安装包）与只读“检查交付包”（静态校验 ZIP 与 `package-spec.json`）；桌面端不自动安装依赖、不修改用户 `.csproj` 或系统配置，也不在文件夹选择、预览或检查交付包时自动运行项目代码或包内程序。
+
+## 旧版安装记录工具与历史证据
+
+**[Beta.1 Windows x64 自包含 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/contain-0.4.0-beta.1-windows-x64.zip)** · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/SHA256SUMS.txt) · [最终验收](https://github.com/LuckyLivio/Contain/releases/download/v0.4.0-beta.1/FINAL-ACCEPTANCE.json)
+
+完整解压后运行 `Contain.Viewer.exe`。旧版用于选择安装器、记录安装行为、查看及导出证据；不等于软件所有权或安全删除许可。
+
+Beta.1 已有一轮 Windows 发布验收通过：[发布说明](docs/beta04-release.md)、[全部尝试](docs/beta04-validation-attempts.md)、[桌面使用说明](desktop/README.md)、[实际截图](docs/beta04-screenshots.md)。Beta.2 的候选包能运行，但指定验收没有全部通过；其他分支的结果不作为本分支验收。
+
+[Beta.10 WinForms 回退下载](https://github.com/LuckyLivio/Contain/releases/download/v0.3.2-beta.10/contain-0.3.2-beta.10-windows-x64.zip) · [交付历史](docs/delivery-history.md) · [旧架构](docs/architecture.md) · [只读工作流](docs/read-only-workflow.md) · [贡献规范](CONTRIBUTING.md)

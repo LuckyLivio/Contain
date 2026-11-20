@@ -88,7 +88,7 @@ def verify_manifest(archive):
     return manifest
 
 
-def runtime_data_contract(config, dependencies, names):
+def runtime_data_contract(config, dependencies, names, expected_version=VERSION):
     opts = config["runtimeOptions"]
     frameworks = opts.get("includedFrameworks", [])
     require(opts.get("tfm") == "net10.0" and "framework" not in opts and "frameworks" not in opts,
@@ -100,7 +100,7 @@ def runtime_data_contract(config, dependencies, names):
     require(dependencies.get("runtimeTarget", {}).get("name") == target, "desktop runtime target differs")
     libraries = dependencies["libraries"]
     target_libraries = dependencies.get("targets", {}).get(target, {})
-    expected = {"Contain.Viewer": VERSION, "Contain.Desktop.Model": VERSION, **DEPENDENCIES}
+    expected = {"Contain.Viewer": expected_version, "Contain.Desktop.Model": expected_version, **DEPENDENCIES}
     for name, version in expected.items():
         key = name + "/" + version
         require({item for item in libraries if item.split("/")[0] == name} == {key}
@@ -143,11 +143,11 @@ def member_policy(names, prefix, published=False):
                 "database outside labelled synthetic sample")
 
 
-def runtime_contract(directory):
+def runtime_contract(directory, expected_version=VERSION):
     files = tree_files(directory)
     config = json.loads((directory / "Contain.Viewer.runtimeconfig.json").read_text(encoding="utf-8"))
     dependencies = json.loads((directory / "Contain.Viewer.deps.json").read_text(encoding="utf-8"))
-    return runtime_data_contract(config, dependencies, files)
+    return runtime_data_contract(config, dependencies, files, expected_version=expected_version)
 
 
 def prepare(args):

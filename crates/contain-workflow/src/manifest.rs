@@ -1,0 +1,318 @@
+use crate::runner::Step;
+use anyhow::{Result, ensure};
+use serde::{Deserialize, Serialize};
+use std::{fs, path::Path};
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Tool {
+    pub program: String,
+    pub version: String,
+    pub version_args: Vec<String>,
+    pub remedy: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version_policy: Option<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindowsToolchain {
+    pub msvc_family: String,
+    pub sdk_version: String,
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct InstallerSpec {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publisher: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publish_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publish_kind: Option<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Manifest {
+    pub schema_version: u32,
+    pub target: String,
+    #[serde(default)]
+    pub windows_toolchain: Option<WindowsToolchain>,
+    pub tools: Vec<Tool>,
+    /// Names only. Secret values must never be serialized.
+    pub required_variables: Vec<String>,
+    pub build: Vec<Step>,
+    pub verify: Vec<Step>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub artifacts: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installer: Option<InstallerSpec>,
+    #[serde(default)]
+    pub pending: Vec<String>,
+}
+impl Manifest {
+    pub fn read(path: &Path) -> Result<Self> {
+        let m: Self = serde_json::from_slice(&fs::read(path)?)?;
+        m.validate()?;
+        Ok(m)
+    }
+    pub fn validate(&self) -> Result<()> {
+        ensure!(
+            self.schema_version == 1 && self.target == "windows-x64",
+            "only schema 1 / windows-x64 supported"
+        );
+        if let Some(t) = &self.windows_toolchain {
+            ensure!(
+                t.msvc_family.split('.').count() == 2
+                    && t.sdk_version.split('.').count() == 4
+                    && t.msvc_family
+                        .chars()
+                        .chain(t.sdk_version.chars())
+                        .all(|c| c.is_ascii_digit() || c == '.'),
+                "invalid Windows toolchain versions"
+            );
+        }
+        if let Some(t) = &self.windows_toolchain {
+            ensure!(
+                t.msvc_family
+                    .split('.')
+                    .chain(t.sdk_version.split('.'))
+                    .all(|v| !v.is_empty() && v.bytes().all(|c| c.is_ascii_digit())),
+                "invalid Windows toolchain numeric components"
+            );
+        }
+        for v in &self.required_variables {
+            ensure!(
+                valid_variable(v),
+                "required_variables must contain names only"
+            );
+        }
+        for t in &self.tools {
+            ensure!(
+                !t.program.is_empty() && !t.version.is_empty() && !t.remedy.is_empty(),
+                "incomplete tool requirement"
+            );
+            ensure!(
+                t.version
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "._-+".contains(c)),
+                "version must be a literal token"
+            );
+            if let Some(policy) = &t.version_policy {
+                match policy.as_str() {
+                    "exact" => {}
+                    "dotnet_major_or_newer" => {
+                        let valid_major = t
+                            .version
+                            .strip_suffix(".0")
+                            .and_then(|m| m.parse::<u32>().ok())
+                            .is_some_and(|m| (6..=99).contains(&m));
+                        ensure!(
+                            t.program == "dotnet"
+                                && t.version_args.iter().map(String::as_str).eq(["--version"])
+                                && valid_major,
+                            "dotnet_major_or_newer requires program=dotnet, version_args=[\"--version\"], and version=<major>.0"
+                        );
+                    }
+                    _ => anyhow::bail!("unsupported tool version_policy"),
+                }
+            }
+        }
+        for s in self.build.iter().chain(&self.verify) {
+            validate_step(s)?;
+        }
+        if let Some(dir) = &self.artifact_dir {
+            ensure!(
+                crate::artifact::safe_name(dir),
+                "artifact_dir must be a safe relative path"
+            );
+        }
+        for item in &self.artifacts {
+            ensure!(
+                crate::artifact::safe_name(item),
+                "artifacts must contain safe relative paths"
+            );
+        }
+        if let Some(inst) = &self.installer {
+            if let Some(dir) = &inst.publish_dir {
+                ensure!(
+                    crate::artifact::safe_name(dir),
+                    "installer.publish_dir must be a safe relative subdirectory"
+                );
+            }
+            if let Some(entry) = &inst.entry {
+                ensure!(
+                    crate::artifact::safe_name(entry)
+                        && entry.len() > 4
+                        && entry.to_ascii_lowercase().ends_with(".exe"),
+                    "installer.entry must be a safe relative .exe path"
+                );
+            }
+            if let Some(ver) = &inst.version {
+                ensure!(
+                    !ver.is_empty()
+                        && ver.len() <= 64
+                        && ver
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || "._-+".contains(c)),
+                    "installer.version must be a literal version token"
+                );
+            }
+            if let Some(name) = &inst.app_name {
+                ensure!(
+                    !name.trim().is_empty()
+                        && name.chars().count() <= 80
+                        && !name.chars().any(char::is_control),
+                    "installer.app_name must be non-empty without control characters"
+                );
+            }
+            if let Some(publisher) = &inst.publisher {
+                ensure!(
+                    !publisher.trim().is_empty()
+                        && publisher.chars().count() <= 120
+                        && !publisher.chars().any(char::is_control),
+                    "installer.publisher must be non-empty without control characters"
+                );
+            }
+            if let Some(kind) = &inst.publish_kind {
+                ensure!(
+                    !kind.is_empty()
+                        && kind.len() <= 64
+                        && kind
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c)),
+                    "installer.publish_kind must be a valid identifier"
+                );
+            }
+            if let Some(app_id) = &inst.app_id {
+                ensure!(
+                    !app_id.trim().is_empty()
+                        && app_id.len() <= 64
+                        && !app_id.chars().any(char::is_control),
+                    "installer.app_id must be non-empty without control characters"
+                );
+            }
+        }
+        Ok(())
+    }
+}
+pub fn validate_step(s: &Step) -> Result<()> {
+    ensure!(
+        s.stdout_sha256
+            .as_ref()
+            .is_none_or(|v| v.len() == 64 && v.bytes().all(|b| b.is_ascii_hexdigit())),
+        "invalid stdout SHA-256"
+    );
+    ensure!(
+        !s.name.is_empty() && !s.program.is_empty() && (1..=3_600_000).contains(&s.timeout_ms),
+        "invalid command or timeout (1..3600000 ms)"
+    );
+    Ok(())
+}
+fn valid_variable(s: &str) -> bool {
+    let mut chars = s.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+/// Intentionally bounded discovery: only root Cargo.toml, rust-toolchain.toml and global.json.
+/// A draft cannot execute until every unknown has been explicitly resolved.
+pub fn infer(root: &Path) -> Result<Manifest> {
+    let mut m = Manifest { schema_version:1, target:"windows-x64".into(), windows_toolchain:None, tools:vec![], required_variables:vec![], build:vec![], verify:vec![], artifact_dir:None, artifacts:vec![], installer:None,
+        pending:vec!["Confirm Windows x64 target, native SDK/MSVC prerequisites and required variable names; these cannot be inferred from supported files".into()] };
+    let cargo = root.join("Cargo.toml");
+    if cargo.exists() {
+        let value: toml::Value = toml::from_str(&fs::read_to_string(cargo)?)?;
+        if let Some(version) = value.get("package").and_then(|p| p.get("rust-version")) {
+            m.pending.push(format!(
+                "Cargo rust-version {version:?} is a minimum, not an exact installed toolchain"
+            ));
+        }
+        m.build.push(step(
+            "Rust workspace",
+            "cargo",
+            &["build", "--workspace", "--locked"],
+        ));
+        m.verify.push(step(
+            "Rust tests",
+            "cargo",
+            &["test", "--workspace", "--locked"],
+        ));
+        m.pending
+            .push("Confirm workspace build targets/features and system dependencies".into());
+    }
+    let rust = root.join("rust-toolchain.toml");
+    if rust.exists() {
+        let value: toml::Value = toml::from_str(&fs::read_to_string(rust)?)?;
+        let t = value.get("toolchain");
+        if let Some(channel) = t.and_then(|t| t.get("channel")).and_then(|c| c.as_str()) {
+            if channel.split('.').count() == 3
+                && channel.chars().all(|c| c.is_ascii_digit() || c == '.')
+            {
+                m.tools.push(Tool {
+                    program: "rustc".into(),
+                    version: channel.into(),
+                    version_args: vec!["--version".into()],
+                    remedy: format!(
+                        "rustup toolchain install {channel}; select this toolchain in the project"
+                    ),
+                    version_policy: None,
+                });
+            } else {
+                m.pending.push(format!("rust-toolchain.toml channel {channel} is not an exact version; choose and verify a pin"));
+            }
+        } else {
+            m.pending
+                .push("rust-toolchain.toml has no declared channel".into());
+        }
+        if let Some(t) = t {
+            for field in ["components", "targets"] {
+                if let Some(v) = t.get(field) {
+                    m.pending
+                        .push(format!("Confirm rust-toolchain {field}: {v:?}"));
+                }
+            }
+        }
+    } else if root.join("Cargo.toml").exists() {
+        m.pending.push("No exact Rust toolchain declaration".into());
+    }
+    let global = root.join("global.json");
+    if global.exists() {
+        let value: serde_json::Value = serde_json::from_slice(&fs::read(global)?)?;
+        if let Some(v) = value.pointer("/sdk/version").and_then(|v| v.as_str()) {
+            m.tools.push(Tool {
+                program: "dotnet".into(),
+                version: v.into(),
+                version_args: vec!["--version".into()],
+                remedy: format!("Install .NET SDK {v} from https://dotnet.microsoft.com/download"),
+                version_policy: None,
+            });
+            m.pending.push("Confirm .NET project path, runtime/Windows Desktop versions, restore and publish commands; global.json only declares the SDK".into());
+        } else {
+            m.pending.push("global.json has no sdk.version".into());
+        }
+    }
+    if m.tools.is_empty() && m.build.is_empty() {
+        m.pending.push("No supported declared build requirements found; other project formats are unsupported in phase one".into());
+    }
+    m.validate()?;
+    Ok(m)
+}
+fn step(name: &str, program: &str, args: &[&str]) -> Step {
+    Step {
+        name: name.into(),
+        program: program.into(),
+        args: args.iter().map(|s| (*s).into()).collect(),
+        expected_exit: 0,
+        stdout_sha256: None,
+        timeout_ms: 600000,
+    }
+}

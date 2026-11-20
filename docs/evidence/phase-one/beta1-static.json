@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "workflow": "package",
+  "host_os": "linux",
+  "host_arch": "x86_64",
+  "process_arch": "x86_64",
+  "os_version": null,
+  "checks": [
+    {
+      "name": "package_identity",
+      "status": "passed",
+      "detail": "actual ZIP SHA-256 953b243bb3dd8ea32e61dcf5fdeaf143b9e697ea4a57021fb85ffd961ef907e3; expected 953b243bb3dd8ea32e61dcf5fdeaf143b9e697ea4a57021fb85ffd961ef907e3"
+    },
+    {
+      "name": "static_entry",
+      "status": "passed",
+      "detail": "Contain.Viewer.exe; EXE SHA-256 2d0c0af61f2fcda3bdb599e9d94cb84da143c9133f9a32922f9c6f7443fe0eb2; Windows x64 PE header checked (not a loader test)"
+    },
+    {
+      "name": "static_file:Contain.Viewer.dll",
+      "status": "passed",
+      "detail": "required package member"
+    },
+    {
+      "name": "static_file:Contain.Desktop.Model.dll",
+      "status": "passed",
+      "detail": "required package member"
+    },
+    {
+      "name": "static_file:contain.exe",
+      "status": "passed",
+      "detail": "required package member"
+    },
+    {
+      "name": "static_file:Wpf.Ui.dll",
+      "status": "passed",
+      "detail": "required package member"
+    },
+    {
+      "name": "static_file:Wpf.Ui.Abstractions.dll",
+      "status": "passed",
+      "detail": "required package member"
+    },
+    {
+      "name": "static_file:CommunityToolkit.Mvvm.dll",
+      "status": "passed",
+      "detail": "required package member"
+    },
+    {
+      "name": "static_file:coreclr.dll",
+      "status": "passed",
+      "detail": "required package member"
+    },
+    {
+      "name": "static_file:hostfxr.dll",
+      "status": "passed",
+      "detail": "required package member"
+    },
+    {
+      "name": "static_file:hostpolicy.dll",
+      "status": "passed",
+      "detail": "required package member"
+    },
+    {
+      "name": "static_file:PresentationFramework.dll",
+      "status": "passed",
+      "detail": "required package member"
+    },
+    {
+      "name": "static_file:Contain.Viewer.deps.json",
+      "status": "passed",
+      "detail": "required package member"
+    },
+    {
+      "name": "static_file:Contain.Viewer.runtimeconfig.json",
+      "status": "passed",
+      "detail": "required package member"
+    },
+    {
+      "name": "static_file:BUILD.json",
+      "status": "passed",
+      "detail": "required package member"
+    },
+    {
+      "name": "static_file:CONTENTS.json",
+      "status": "passed",
+      "detail": "required package member"
+    },
+    {
+      "name": "static_test:Core --version exits 0 (no output assertion)",
+      "status": "passed",
+      "detail": "test executable must be present in package"
+    },
+    {
+      "name": "static_contents",
+      "status": "passed",
+      "detail": "existing Contain CONTENTS.json membership, size and SHA-256 contract"
+    },
+    {
+      "name": "launch",
+      "status": "not_run",
+      "detail": "--run not requested"
+    },
+    {
+      "name": "Core --version exits 0 (no output assertion)",
+      "status": "not_run",
+      "detail": "--run not requested"
+    }
+  ]
+}

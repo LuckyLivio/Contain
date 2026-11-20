@@ -14,10 +14,15 @@ namespace Contain.Desktop;
 
 public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 {
+    private enum ActiveSection { Records, NewRecord, EnvironmentCheck, PackageCheck }
+
     private readonly MyRecordsView recordsView = new();
     private readonly NewRecordView newRecordView = new();
     private readonly RecordDetailsView detailsView = new();
+    private readonly EnvironmentCheckView environmentView = new();
+    private readonly PackageCheckView packageView = new();
     private readonly DispatcherTimer timer;
+    private ActiveSection activeSection = ActiveSection.Records;
     private string localError = "";
     private string localStatus = "";
     private long navigationVersion;
@@ -29,12 +34,19 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     public MainWindow(PersonalRecords personalRecords)
     {
         var executable = Path.Combine(AppContext.BaseDirectory, "contain.exe");
+        var workflowExecutable = Path.Combine(AppContext.BaseDirectory, "contain-workflow.exe");
         Records = new RecordsViewModel(new CoreRecordService(new CoreClient(executable)),
             personalRecords.DatabasePath, () => personalRecords.IsMissing);
         Install = new InstallViewModel(new InstallService(new InstallClient(executable), personalRecords),
             action => Dispatcher.BeginInvoke(action), OpenCapturedSessionAsync);
+        EnvironmentCheck = new EnvironmentCheckViewModel(
+            new WorkflowCliEnvironmentService(workflowExecutable),
+            dispatcher: action => Dispatcher.BeginInvoke(action));
+        PackageCheck = new PackageCheckViewModel(new WorkflowCliPackageService(workflowExecutable));
         Records.PropertyChanged += OnModelChanged;
         Install.PropertyChanged += OnModelChanged;
+        EnvironmentCheck.PropertyChanged += OnModelChanged;
+        PackageCheck.PropertyChanged += OnModelChanged;
         InitializeComponent();
         Controls.ActionNavigationItem.ConfigureNavigation(Navigation);
         DataContext = this;
@@ -49,9 +61,18 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 
     public RecordsViewModel Records { get; }
     public InstallViewModel Install { get; }
+    public EnvironmentCheckViewModel EnvironmentCheck { get; }
+    public PackageCheckViewModel PackageCheck { get; }
     public string WindowTitle => "Contain · " + ProductVersion.Version;
-    public string ErrorMessage => localError.Length > 0 ? localError : Records.ErrorMessage;
-    public string StatusMessage => localStatus.Length > 0 ? localStatus : Records.StatusMessage;
+    public string ErrorMessage => localError.Length > 0 ? localError : activeSection is ActiveSection.EnvironmentCheck or ActiveSection.PackageCheck ? "" : Records.ErrorMessage;
+    public string StatusMessage => localStatus.Length > 0
+        ? localStatus
+        : activeSection switch
+        {
+            ActiveSection.EnvironmentCheck => EnvironmentCheck.StatusMessage,
+            ActiveSection.PackageCheck => PackageCheck.StatusMessage,
+            _ => Records.StatusMessage
+        };
     public event PropertyChangedEventHandler? PropertyChanged;
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -64,7 +85,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(Records.ErrorMessage) or nameof(Records.StatusMessage))
+        if (e.PropertyName is nameof(Records.ErrorMessage) or nameof(Records.StatusMessage) or nameof(EnvironmentCheck.StatusMessage) or nameof(PackageCheck.StatusMessage))
         {
             localError = "";
             localStatus = "";
@@ -73,18 +94,23 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         Changed(nameof(StatusMessage));
     }
 
-    private void SetPage(UIElement page, bool recordNavigation)
+    private void SetPage(UIElement page, ActiveSection section)
     {
         navigationVersion++;
+        activeSection = section;
         Navigation.ReplaceContent(page, this);
-        RecordsNavigation.IsActive = recordNavigation;
-        NewNavigation.IsActive = !recordNavigation;
+        RecordsNavigation.IsActive = section == ActiveSection.Records;
+        NewNavigation.IsActive = section == ActiveSection.NewRecord;
+        EnvironmentNavigation.IsActive = section == ActiveSection.EnvironmentCheck;
+        PackageNavigation.IsActive = section == ActiveSection.PackageCheck;
+        Changed(nameof(ErrorMessage));
+        Changed(nameof(StatusMessage));
     }
 
     private bool GuardTaskNavigation()
     {
         if (!Install.Busy) return false;
-        SetPage(newRecordView, false);
+        SetPage(newRecordView, ActiveSection.NewRecord);
         localStatus = "本次记录仍在进行。请等待采集与保存结束，再切换记录库。";
         Changed(nameof(StatusMessage));
         return true;
@@ -94,14 +120,17 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     {
         if (GuardTaskNavigation()) return;
         recordsView.PrepareForShow();
-        SetPage(recordsView, true);
+        SetPage(recordsView, ActiveSection.Records);
     }
 
     public void ShowNewRecord()
     {
-        SetPage(newRecordView, false);
+        SetPage(newRecordView, ActiveSection.NewRecord);
         if (!Install.Busy && !Install.ConfigurationEnabled) Install.Reset();
     }
+
+    public void ShowEnvironmentCheck() => SetPage(environmentView, ActiveSection.EnvironmentCheck);
+    public void ShowPackageCheck() => SetPage(packageView, ActiveSection.PackageCheck);
 
     public async Task RefreshRecordsAsync()
     {
@@ -112,7 +141,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     public async Task OpenRecordAsync(string id)
     {
         if (GuardTaskNavigation()) return;
-        SetPage(detailsView, true);
+        SetPage(detailsView, ActiveSection.Records);
         detailsView.ShowOverview();
         await RunUiAsync(() => Records.OpenSessionAsync(id));
     }
@@ -122,7 +151,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         await Records.OpenCapturedSessionAsync(database, id);
         if (Records.ActiveRecordId != id)
             throw new InvalidDataException("已保存记录的会话身份与本次任务不一致。未选择其他记录代替。");
-        SetPage(detailsView, true);
+        SetPage(detailsView, ActiveSection.Records);
         detailsView.ShowOverview();
         localStatus = Install.Result?.Succeeded == true
             ? "记录已保存，可以查看文件操作。"
@@ -138,9 +167,11 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     }
 
     private void OnNewRecord(object sender, RoutedEventArgs e) => ShowNewRecord();
+    private void OnEnvironmentCheck(object sender, RoutedEventArgs e) => ShowEnvironmentCheck();
+    private void OnPackageCheck(object sender, RoutedEventArgs e) => ShowPackageCheck();
     private void OnCurrentTask(object sender, RoutedEventArgs e)
     {
-        SetPage(newRecordView, false);
+        SetPage(newRecordView, ActiveSection.NewRecord);
         newRecordView.ShowTask();
     }
 
@@ -173,6 +204,72 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         if (!Install.ConfigurationEnabled) return;
         var dialog = new OpenFolderDialog { Title = "选择已有的观察文件夹", Multiselect = false };
         if (dialog.ShowDialog(this) == true) Install.WatchRoot = dialog.FolderName;
+    }
+
+    public async Task PickProjectFolderAsync()
+    {
+        if (!EnvironmentCheck.CanEditProjectSelection) return;
+        var dialog = new OpenFolderDialog { Title = "选择要检查的本地项目文件夹", Multiselect = false };
+        if (dialog.ShowDialog(this) == true)
+            await RunUiAsync(() => EnvironmentCheck.SelectProjectAsync(dialog.FolderName));
+        else EnvironmentCheck.CancelSelection();
+    }
+
+    public Task RunEnvironmentCheckAsync() => RunUiAsync(() => EnvironmentCheck.CheckAsync());
+
+    public Task RunConfirmOnboardingAsync() => RunUiAsync(() => EnvironmentCheck.ConfirmOnboardingAsync());
+
+    public void CancelProjectOnboarding() => RunUiOperation(() => EnvironmentCheck.CancelOnboarding());
+
+    public Task RunProjectBuildAsync() => RunUiAsync(() => EnvironmentCheck.StartBuildAsync());
+
+    public void OpenProjectArtifactFolder() => RunUiOperation(() => { EnvironmentCheck.OpenArtifactFolder(); });
+
+    public Task RunGenerateProjectInstallerAsync() => RunUiAsync(() => EnvironmentCheck.GenerateInstallerAsync());
+
+    public void OpenProjectInstallerFolder() => RunUiOperation(() => { EnvironmentCheck.OpenInstallerFolder(); });
+
+    public async Task PickPackageZipAsync()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "选择要检查的 Windows 交付包 (.zip)",
+            Filter = "ZIP 压缩包|*.zip",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+        if (dialog.ShowDialog(this) == true)
+            await RunUiAsync(() => PackageCheck.SelectZipAsync(dialog.FileName));
+        else
+            PackageCheck.CancelSelection();
+    }
+
+    public async Task PickPackageSpecAsync()
+    {
+        if (!PackageCheck.CanPickSpec) return;
+        var dialog = new OpenFileDialog
+        {
+            Title = "选择随包提供的校验清单 (package-spec.json)",
+            Filter = "交付包校验清单|package-spec.json;*.json",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+        if (dialog.ShowDialog(this) == true)
+            await RunUiAsync(() => PackageCheck.SelectSpecAsync(dialog.FileName));
+        else
+            PackageCheck.CancelSelection();
+    }
+
+    public Task RecheckPackageAsync() => RunUiAsync(() => PackageCheck.RecheckAsync());
+
+    private void RunUiOperation(Action operation)
+    {
+        localError = "";
+        localStatus = "";
+        Changed(nameof(ErrorMessage));
+        Changed(nameof(StatusMessage));
+        try { operation(); }
+        catch (Exception error) { ReportUiError(error); }
     }
 
     public void PickSaveDatabase()
@@ -267,7 +364,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         if (Install.Busy)
         {
             Install.RefuseClose();
-            SetPage(newRecordView, false);
+            SetPage(newRecordView, ActiveSection.NewRecord);
             newRecordView.ShowTask();
             return;
         }
@@ -278,7 +375,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         Changed(nameof(StatusMessage));
         try
         {
-            await Records.CloseAsync();
+            await Task.WhenAll(Records.CloseAsync(), EnvironmentCheck.CloseAsync(), PackageCheck.CloseAsync());
             // Empty-library cleanup can complete synchronously inside Closing.
             // Commit the second Close only after this cancelled event unwinds.
             _ = Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
@@ -300,7 +397,11 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         timer.Stop();
         Records.PropertyChanged -= OnModelChanged;
         Install.PropertyChanged -= OnModelChanged;
+        EnvironmentCheck.PropertyChanged -= OnModelChanged;
+        PackageCheck.PropertyChanged -= OnModelChanged;
         Records.Dispose();
+        EnvironmentCheck.Dispose();
+        PackageCheck.Dispose();
     }
 
     private void OnSizeChanged(object sender, SizeChangedEventArgs e)

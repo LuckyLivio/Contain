@@ -1,0 +1,53 @@
+name: Windows bootstrap CLI
+
+on:
+  push:
+    branches:
+      - release/v0.5.0-beta.1
+      - fix/default-safe-environment-check
+    paths:
+      - '.github/workflows/workflow-bootstrap.yml'
+      - 'crates/contain-workflow/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'scripts/build-workflow.ps1'
+      - 'scripts/select-workflow-toolchain.ps1'
+      - 'scripts/workflow-toolchain.ps1'
+      - 'scripts/workflow-rust-notices.ps1'
+      - 'LICENSE'
+      - 'THIRD-PARTY-NOTICES.md'
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Package the bootstrap CLI for machine A
+        shell: powershell
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'contain-bootstrap'
+          ./scripts/build-workflow.ps1 -OutputDirectory $out
+          $identity = Get-Content -Raw -LiteralPath "$out/identity.json" | ConvertFrom-Json
+          if ($identity.source_sha -ne $env:GITHUB_SHA) { throw 'Bootstrap source SHA mismatch' }
+          $files = 'contain-workflow-windows-x64.zip', 'package-spec.json', 'identity.json'
+          $sums = foreach ($name in $files) {
+              $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $out $name)).Hash.ToLowerInvariant()
+              "$sha  $name"
+          }
+          Set-Content -LiteralPath "$out/SHA256SUMS.txt" -Value $sums -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: contain-bootstrap-windows-x64-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/contain-bootstrap/contain-workflow-windows-x64.zip
+            ${{ runner.temp }}/contain-bootstrap/package-spec.json
+            ${{ runner.temp }}/contain-bootstrap/identity.json
+            ${{ runner.temp }}/contain-bootstrap/SHA256SUMS.txt
+          if-no-files-found: error

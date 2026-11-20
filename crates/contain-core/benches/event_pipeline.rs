@@ -274,7 +274,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "arch": std::env::consts::ARCH,
         "processor_identifier": std::env::var("PROCESSOR_IDENTIFIER").ok(),
         "logical_processors": std::thread::available_parallelism().ok().map(|count| count.get()),
-        "recorded_at_utc": chrono::Utc::now().to_rfc3339(),
+        "recorded_at_utc": contain_core::windows::native::timestamp(contain_core::windows::native::now_ticks()),
         "process_id": std::process::id(),
         "fixture_generation_timed": false,
         "assertions_timed": true,

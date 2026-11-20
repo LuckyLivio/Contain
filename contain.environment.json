@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "target": "windows-x64",
+  "tools": [
+    {
+      "program": "rustc",
+      "version": "1.100.0",
+      "version_args": [
+        "--version"
+      ],
+      "remedy": "rustup toolchain install 1.100.0 --component rustfmt --component clippy"
+    },
+    {
+      "program": "rustup",
+      "version": "x86_64-pc-windows-msvc",
+      "version_args": [
+        "target",
+        "list",
+        "--installed"
+      ],
+      "remedy": "rustup target add --toolchain 1.100.0 x86_64-pc-windows-msvc"
+    },
+    {
+      "program": "dotnet",
+      "version": "10.0.403",
+      "version_args": [
+        "--version"
+      ],
+      "remedy": "Install .NET SDK 10.0.403 x64 from https://dotnet.microsoft.com/download; global.json disables roll-forward"
+    },
+    {
+      "program": "python",
+      "version": "3.12.10",
+      "version_args": [
+        "--version"
+      ],
+      "remedy": "Install Python 3.12.10 x64 from python.org and enable its executable on PATH (build machine only)"
+    }
+  ],
+  "required_variables": [],
+  "pending": [],
+  "build": [
+    {
+      "name": "Current-source desktop and CLI deliveries with regressions",
+      "program": "powershell.exe",
+      "args": [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-File",
+        "scripts/build-source-delivery.ps1"
+      ],
+      "expected_exit": 0,
+      "timeout_ms": 3600000
+    }
+  ],
+  "verify": [],
+  "windows_toolchain": {
+    "msvc_family": "14.44",
+    "sdk_version": "10.0.26100.0"
+  }
+}

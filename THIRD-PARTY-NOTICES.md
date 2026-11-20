@@ -1,5 +1,29 @@
 # Third-party notices
 
+## Current-source desktop deliveries
+
+The `contain-source-desktop-package-1` path rebuilds both the Rust core and WPF
+from the recorded checkout. Its `BUILD.json` and external identity receipt name
+the current source commit and actual EXE hashes; it does not reuse the historically
+accepted Beta.10 core. The new builder includes the actual core dependency closure's
+notices under `licenses/rust/`. The historical migration/provenance statements below
+continue to describe the old Beta packages, not this new source-build path.
+
+## Independent workflow CLI (phase one)
+
+`contain-workflow` is a native Rust CLI, without WPF or ETW dependencies. Its
+locked graph includes `anyhow`, `clap`, `serde`, `serde_json`, `sha2`, `toml`
+1.2.1 and `zip` 9.6.0 (DEFLATE through pure-Rust `zlib-rs`), plus their locked
+transitive dependencies and Windows bindings. `Cargo.lock` records exact
+versions; `cargo deny` checks their licenses and sources without new exceptions.
+`scripts/build-workflow.ps1` collects the actual Windows CLI dependency closure's
+license files, a name/version/license inventory, and Rust standard-library
+notices under `licenses/` in the standalone CLI ZIP. It requests static CRT
+linking; successful execution on a clean Windows machine remains a separate gate.
+
+The desktop-specific notices below describe the historical WPF package, not
+additional dependencies of the independent CLI.
+
 Contain is distributed under its own [license](LICENSE). The modern desktop uses
 the components below. Their licenses and required notices are retained under
 `licenses/` and must accompany the Windows self-contained distribution.

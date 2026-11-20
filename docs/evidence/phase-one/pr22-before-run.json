@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "workflow": "package",
+  "host_os": "linux",
+  "host_arch": "x86_64",
+  "process_arch": "x86_64",
+  "os_version": null,
+  "checks": [
+    {
+      "name": "package_identity",
+      "status": "passed",
+      "detail": "actual ZIP SHA-256 3654437da063c1642adadfcab9572eac0550822161b08912671d23e4b7baf21d; expected 3654437da063c1642adadfcab9572eac0550822161b08912671d23e4b7baf21d"
+    },
+    {
+      "name": "static_entry",
+      "status": "passed",
+      "detail": "app.exe; EXE SHA-256 db619c3e023ecffd5aa56dfe0fc344b9cc7251d2f1eb7c3e4010bb2b9bda0e1e; Windows x64 PE header checked (not a loader test)"
+    },
+    {
+      "name": "static_file:critical.dll",
+      "status": "passed",
+      "detail": "required package member"
+    },
+    {
+      "name": "static_test:synthetic self-test NOT EXECUTABLE",
+      "status": "passed",
+      "detail": "test executable must be present in package"
+    },
+    {
+      "name": "comparison_identity",
+      "status": "failed",
+      "detail": "entry app.exe; baseline EXE SHA-256 db619c3e023ecffd5aa56dfe0fc344b9cc7251d2f1eb7c3e4010bb2b9bda0e1e; candidate EXE SHA-256 db619c3e023ecffd5aa56dfe0fc344b9cc7251d2f1eb7c3e4010bb2b9bda0e1e; identical bytes; different-build comparison rejected before execution"
+    },
+    {
+      "name": "launch",
+      "status": "not_run",
+      "detail": "static/identity gate failed; execution blocked"
+    },
+    {
+      "name": "synthetic self-test NOT EXECUTABLE",
+      "status": "not_run",
+      "detail": "static/identity gate failed; execution blocked"
+    }
+  ]
+}

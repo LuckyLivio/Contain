@@ -1,0 +1,114 @@
+name: Beta 0.5 Windows prerelease
+
+on:
+  push:
+    branches: [release/v0.5.0-beta.1]
+    paths:
+      - '.github/workflows/beta05-prerelease.yml'
+      - 'scripts/test-prerelease-delivery.ps1'
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SOURCE_SHA: aac52e52cbe9395cb845be2d31c09ec117f86d06
+  PYTHONUTF8: '1'
+
+jobs:
+  candidate:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - name: Check out the acceptance workflow revision
+        uses: actions/checkout@v4
+        with:
+          path: orchestration
+          persist-credentials: false
+      - name: Check out the frozen product source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
+          path: product
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+          architecture: x64
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: product/global.json
+      - name: Prepare the frozen source toolchain
+        working-directory: product
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.100.0 --profile minimal --target x86_64-pc-windows-msvc --component rustfmt,clippy,rust-docs
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install the pinned Rust toolchain' }
+          if ((rustc --version) -notlike 'rustc 1.100.0 *' -or (dotnet --version) -ne '10.0.403' -or
+              (python --version) -ne 'Python 3.12.10') { throw 'Build tool version mismatch' }
+          $installer = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
+          $inno = Join-Path $env:RUNNER_TEMP 'inno-6.7.3'
+          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $installer
+          if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne '9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732') {
+              throw 'Inno Setup installer hash mismatch'
+          }
+          $install = Start-Process $installer -ArgumentList "/CURRENTUSER /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=`"$inno`"" -Wait -PassThru
+          if ($install.ExitCode -ne 0 -or !(Test-Path -LiteralPath "$inno/ISCC.exe")) { throw 'Inno Setup installation failed' }
+          $inno >> $env:GITHUB_PATH
+      - name: Build and test the frozen Windows x64 delivery
+        id: build
+        working-directory: product
+        shell: powershell
+        run: |
+          if ((git rev-parse HEAD) -ne $env:CANDIDATE_SOURCE_SHA) { throw 'Frozen product source mismatch' }
+          ./scripts/build-source-delivery.ps1 -OutputDirectory "$env:RUNNER_TEMP/delivery"
+      - name: Identify failed build stages and tests
+        if: ${{ failure() && steps.build.outcome == 'failure' }}
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'delivery'
+          if (!(Test-Path -LiteralPath $out)) { return }
+          foreach ($file in Get-ChildItem -LiteralPath $out -Filter '*.json' -File) {
+              $stage = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
+              if ($stage.status -ne 'failed' -or $file.BaseName -cnotmatch '^[a-z][a-z-]{0,40}$') { continue }
+              Write-Output "Failed stage $($file.BaseName) (exit $([int]$stage.exit_code))"
+              $log = Join-Path $out ($file.BaseName + '.local.log')
+              if (!(Test-Path -LiteralPath $log)) { continue }
+              # Extract identifiers only. Diagnostic lines may include local paths or fixture values.
+              $patterns = @('\b(?:E|CS|MSB|NU|NETSDK|LNK|C)\d{4,5}\b',
+                            '(?m)^test [a-zA-Z0-9_:]{1,180} \.\.\. FAILED',
+                            '\b(?:assertion(?: `(?:left == right|left != right)`)? failed|panicked at)\b',
+                            '\bSystem\.(?:[A-Za-z]+\.)*[A-Za-z]+Exception\b',
+                            '\bContain\.Desktop\.Model\.Tests\.[A-Za-z0-9_+.<>]{1,140}')
+              $text = Get-Content -LiteralPath $log -Raw
+              $codes = foreach ($pattern in $patterns) { [regex]::Matches($text, $pattern).Value }
+              $codes | Sort-Object -Unique | Select-Object -First 24
+          }
+      - name: Assemble the release assets from the same delivery
+        working-directory: product
+        # The assembler launches Windows PowerShell 5.1. Inherit its matching module path.
+        shell: powershell
+        run: |
+          $null = Get-Command Get-FileHash -ErrorAction Stop
+          python scripts/assemble-release-candidate.py --source-sha $env:CANDIDATE_SOURCE_SHA --delivery "$env:RUNNER_TEMP/delivery" --output "$env:RUNNER_TEMP/candidate"
+      - name: Smoke-test the assembled assets on Windows
+        id: smoke
+        working-directory: orchestration
+        env:
+          ACCEPTANCE_WORKFLOW_SHA: ${{ github.workflow_sha || github.sha }}
+        shell: pwsh
+        run: |
+          ./scripts/test-prerelease-delivery.ps1 -CandidateDirectory "$env:RUNNER_TEMP/candidate" -EvidenceDirectory "$env:RUNNER_TEMP/acceptance"
+      - name: Upload the checked release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: contain-beta05-candidate-${{ env.CANDIDATE_SOURCE_SHA }}
+          path: ${{ runner.temp }}/candidate/
+          if-no-files-found: error
+          compression-level: 0
+      - name: Upload the Windows smoke-test receipt
+        if: ${{ !cancelled() && steps.smoke.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: contain-beta05-windows-smoke-${{ env.CANDIDATE_SOURCE_SHA }}
+          path: ${{ runner.temp }}/acceptance/prerelease-smoke.json
+          if-no-files-found: error
