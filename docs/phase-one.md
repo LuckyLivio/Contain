@@ -113,19 +113,17 @@ python scripts/assemble-release-candidate.py --source-sha $sourceSha --delivery 
 
 ## 快照 B：同一份 ZIP，开发工具缺失，独立验收
 
-从**另一套从未安装开发工具**的干净 Windows x64 快照开始，只复制 A 输出的两份 ZIP、
-两份 spec、handoff.json，以及本仓库的两个接收机脚本（acceptance 与 receiver-evidence）。
-解压 A 的 CLI ZIP 为 bootstrap verifier；接收步骤会核对该 EXE 与 A handoff 的哈希。
-操作者应通过独立可靠方式保存/传递 A 的 handoff 身份；哈希绑定不是签名或来源认证。
-在有交互桌面的会话执行：
+对组装后的候选，将整个候选目录传至已断网、无开发工具的 B。单独保存 A 打印的
+`SHA256SUMS.txt` 摘要，核对该摘要及清单中 `receive-release-candidate.ps1`
+的文件哈希，再在 B 的交互桌面执行下例（`$expectedSha` 为独立传递的摘要）：
 
 ```powershell
-powershell.exe -NoProfile -File scripts/workflow-windows-acceptance.ps1 `
-  -Stage Package -SnapshotLabel B-clean -Cli C:\Receive\verifier\contain-workflow.exe `
-  -Zip C:\Receive\desktop\contain-source-windows-x64.zip -Spec C:\Receive\desktop\package-spec.json `
-  -CliZip C:\Receive\cli\contain-workflow-windows-x64.zip -CliSpec C:\Receive\cli\package-spec.json `
-  -Handoff C:\Receive\handoff.json -OutputDirectory C:\ContainRuns\B-01
+& C:\Receive\candidate-01\receive-release-candidate.ps1 -ExpectedChecksumsSha256 $expectedSha -SnapshotLabel B-clean -OutputDirectory C:\ContainRuns\B-01
 ```
+
+入口校验整套候选及其操作脚本，提取经过哈希核对的工作流 CLI，运行 Package 阶段，并在
+执行前后分别检查包括虚拟网卡在内的接口状态。请在关闭 B 前导出
+`C:\ContainRuns\B-01\B-receipt.json`，同时保存快照来源和断网配置。Setup 离线试装另行记录。
 
 B 阶段只需要 Windows PowerShell 和独立 CLI，不调用 Python/Rust/MSVC 或 .NET SDK
 完成包验证。开发工具缺失探测仅在发现 dotnet 主机时枚举 SDK；不会把仅安装运行时

@@ -166,11 +166,15 @@ def assemble(source, delivery, output):
         "a_handoff_sha256": hashlib.sha256(handoff_bytes).hexdigest(),
         "packaged_cli_probes": {"desktop": desktop_probe, "cli": cli_probe},
     }, indent=2) + "\n", encoding="utf-8")
+    for script in ("receive-release-candidate.ps1", "workflow-windows-acceptance.ps1",
+                   "workflow-receiver-evidence.ps1", "inspect-receiver-environment.ps1"):
+        shutil.copyfile(ROOT / "scripts" / script, assets / script)
     sums = "".join(f"{digest(path)}  {path.name}\n" for path in sorted(assets.iterdir()))
     (assets / "SHA256SUMS.txt").write_text(sums, encoding="utf-8", newline="\n")
     assets.rename(output)
     shutil.rmtree(work)
     print(f"Assembled candidate {source} in {output}")
+    print(f"SHA256SUMS.txt SHA-256 for independent handoff: {digest(output / 'SHA256SUMS.txt')}")
 
 
 if __name__ == "__main__":
