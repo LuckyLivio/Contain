@@ -1,0 +1,164 @@
+name: Accept the staged Beta 2 Windows candidate
+
+on:
+  push:
+    branches: [feat/wpf-project-onboarding]
+    paths:
+      - '.github/workflows/beta05-beta2-acceptance.yml'
+      - 'scripts/test-prerelease-delivery.ps1'
+      - 'scripts/test-beta2-upgrade.ps1'
+      - 'scripts/test-installed-wpf-*.ps1'
+      - 'desktop/Contain.Desktop.Tests/**'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  CANDIDATE_SOURCE_SHA: 18782fc4e8cfd91df4d60fa339b77070236f130a
+  BUILD_WORKFLOW_SHA: 2eebc6b93c1dcce0dd027a5290ab35676011a1e7
+  BUILD_RUN_ID: '44708424263'
+  CANDIDATE_ARTIFACT_ID: '14617205538'
+  CANDIDATE_ARCHIVE_SHA256: 8b07c29e044e90f60dc0674e41c5668f2c8dcf974911cdbba127a069557c21bc
+  CANDIDATE_MANIFEST_SHA256: 0b2c308f631a8ea028a24c82e71b14bd8064048df2057389916550c3f0b5726a
+
+jobs:
+  acceptance:
+    runs-on: windows-2022
+    name: Windows ${{ matrix.gate }} acceptance
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - gate: stock
+            receipt: prerelease-smoke.json
+          - gate: upgrade
+            receipt: beta2-upgrade.json
+          - gate: wpf
+            receipt: installed-wpf-workflow.json
+    env:
+      ACCEPTANCE_WORKFLOW_SHA: ${{ github.workflow_sha || github.sha }}
+    steps:
+      - name: Check out the acceptance harness
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+          architecture: x64
+      - name: Retrieve the exact staged Windows candidate
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import hashlib
+          import json
+          import os
+          import shutil
+          import subprocess
+          import zipfile
+          from pathlib import Path
+
+          api = "repos/LuckyLivio/Contain/actions"
+          env = os.environ
+          run = json.loads(subprocess.check_output(["gh", "api", f"{api}/runs/{env['BUILD_RUN_ID']}"]))
+          if (run["status"] != "completed" or run["conclusion"] != "success" or run["event"] != "push"
+                  or run["head_branch"] != "feat/wpf-project-onboarding" or run["head_sha"] != env["BUILD_WORKFLOW_SHA"]
+                  or run["path"] != ".github/workflows/beta05-beta2-build.yml"):
+              raise SystemExit("Unexpected candidate build run")
+          url = f"{api}/artifacts/{env['CANDIDATE_ARTIFACT_ID']}"
+          artifact = json.loads(subprocess.check_output(["gh", "api", url]))
+          if (artifact["expired"] or artifact["workflow_run"]["id"] != run["id"]
+                  or artifact["name"] != "contain-beta2-staged-" + env["CANDIDATE_SOURCE_SHA"]
+                  or artifact["digest"] != "sha256:" + env["CANDIDATE_ARCHIVE_SHA256"]):
+              raise SystemExit("Incorrect staged artifact identity")
+          temp = Path(env["RUNNER_TEMP"])
+          archive = temp / "staged-beta2.zip"
+          with archive.open("xb") as f:
+              subprocess.run(["gh", "api", url + "/zip"], stdout=f, check=True)
+          with archive.open("rb") as f:
+              if hashlib.file_digest(f, "sha256").hexdigest() != env["CANDIDATE_ARCHIVE_SHA256"]:
+                  raise SystemExit("Downloaded artifact digest mismatch")
+          candidate = temp / "candidate"
+          candidate.mkdir()
+          with zipfile.ZipFile(archive) as z:
+              contents = z.read("SHA256SUMS.txt")
+              if hashlib.sha256(contents).hexdigest() != env["CANDIDATE_MANIFEST_SHA256"]:
+                  raise SystemExit("Unexpected checksum manifest")
+              inventory = {n: h for h, n in (line.split("  ") for line in contents.decode("ascii").splitlines())}
+              names = set(inventory) | {"SHA256SUMS.txt"}
+              if (sorted(names) != sorted(z.namelist())
+                      or any(Path(n).name != n or n in (".", "..") for n in names)):
+                  raise SystemExit("Unexpected archive file list")
+              for name in names:
+                  with z.open(name) as src, (candidate / name).open("xb") as dst:
+                      shutil.copyfileobj(src, dst)
+          for name, expected in inventory.items():
+              with (candidate / name).open("rb") as f:
+                  if hashlib.file_digest(f, "sha256").hexdigest() != expected:
+                      raise SystemExit(f"Digest mismatch for {name}")
+          identity = json.loads((candidate / "candidate-identity.json").read_bytes())
+          if identity["source_sha"] != env["CANDIDATE_SOURCE_SHA"] or identity["version"] != "0.5.0-beta.2":
+              raise SystemExit("Candidate source or version mismatch")
+      - uses: actions/setup-dotnet@v4
+        if: matrix.gate != 'stock'
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/acceptance-dotnet
+        with:
+          global-json-file: global.json
+      - name: Capture the native Windows PowerShell module path for the installed app
+        if: matrix.gate == 'wpf'
+        shell: powershell
+        run: |
+          $null = Get-Command Get-FileHash -ErrorAction Stop
+          "CONTAIN_WINDOWS_POWERSHELL_MODULE_PATH=$env:PSModulePath" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Install the compiler for the generated WPF installer
+        if: matrix.gate == 'wpf'
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
+          $inno = Join-Path $env:RUNNER_TEMP 'inno-6.7.3'
+          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $installer
+          if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne '9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732') {
+              throw 'Inno Setup installer hash mismatch'
+          }
+          $install = Start-Process $installer -ArgumentList "/CURRENTUSER /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=`"$inno`"" -Wait -PassThru
+          if ($install.ExitCode -ne 0 -or !(Test-Path -LiteralPath "$inno/ISCC.exe")) { throw 'Inno Setup installation failed' }
+          $inno >> $env:GITHUB_PATH
+          "CONTAIN_ISCC_PATH=$inno/ISCC.exe" >> $env:GITHUB_ENV
+      - name: Publish the independent UI harness
+        if: matrix.gate != 'stock'
+        shell: pwsh
+        run: |
+          if ((dotnet --version) -ne '10.0.403') { throw 'Incorrect harness SDK' }
+          dotnet restore desktop/Contain.Desktop.Tests -r win-x64 --locked-mode -p:RuntimeIdentifiers=win-x64 -p:SelfContained=true
+          if ($LASTEXITCODE -ne 0) { throw 'Locked UI harness restore failed' }
+          dotnet publish desktop/Contain.Desktop.Tests -c Release -r win-x64 --self-contained true --no-restore -o "$env:RUNNER_TEMP/acceptance-harness"
+          if ($LASTEXITCODE -ne 0) { throw 'UI harness publish failed' }
+      - name: Verify both ZIPs and the installed desktop
+        if: matrix.gate == 'stock'
+        id: stock
+        shell: pwsh
+        run: |
+          ./scripts/test-prerelease-delivery.ps1 -CandidateDirectory "$env:RUNNER_TEMP/candidate" -EvidenceDirectory "$env:RUNNER_TEMP/stock"
+      - name: Verify the published Beta 1 to Beta 2 upgrade
+        if: matrix.gate == 'upgrade'
+        id: upgrade
+        shell: pwsh
+        run: |
+          ./scripts/test-beta2-upgrade.ps1 -CandidateDirectory "$env:RUNNER_TEMP/candidate" -EvidenceDirectory "$env:RUNNER_TEMP/upgrade" -HarnessPath "$env:RUNNER_TEMP/acceptance-harness/Contain.Desktop.Tests.exe"
+      - name: Exercise the installed WPF project workflow
+        if: matrix.gate == 'wpf'
+        id: wpf
+        shell: pwsh
+        run: |
+          ./scripts/test-installed-wpf-workflow.ps1 -CandidateDirectory "$env:RUNNER_TEMP/candidate" -EvidenceDirectory "$env:RUNNER_TEMP/wpf" -HarnessPath "$env:RUNNER_TEMP/acceptance-harness/Contain.Desktop.Tests.exe"
+      - name: Upload this Windows acceptance receipt
+        if: ${{ !cancelled() && (steps.stock.outcome != 'skipped' || steps.upgrade.outcome != 'skipped' || steps.wpf.outcome != 'skipped') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: contain-beta2-windows-${{ matrix.gate }}-${{ env.CANDIDATE_SOURCE_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/${{ matrix.gate }}/${{ matrix.receipt }}
+          if-no-files-found: error
