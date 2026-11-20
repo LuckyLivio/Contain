@@ -1,8 +1,8 @@
 # v0.5.0-beta.1：普通 C# 控制台项目零配置打包与桌面工作流
 
-**发布状态**　#24 已合入发布分支，三项审查意见已处理。产品源码冻结于 `aac52e52cbe9395cb845be2d31c09ec117f86d06`。该提交的 Windows 引导 CLI 已核验；新候选的 A 构建、B 接收、Setup 升级及离线试装待收据。当前公开版为 v0.4.0-beta.1。[修复 PR](https://github.com/LuckyLivio/Contain/pull/24) · [当前公开版](https://github.com/LuckyLivio/Contain/releases/tag/v0.4.0-beta.1)
+**发布状态**　#24 已合入发布分支，三项审查意见已处理。产品源码冻结于 `aac52e52cbe9395cb845be2d31c09ec117f86d06`。该提交的 Windows 引导 CLI 已核验。预发行候选等待 GitHub 托管 Windows x64 对同批 Setup 和双 ZIP 的验收收据。干净离线 A/B 交接留待稳定版。当前公开版为 v0.4.0-beta.1。[修复 PR](https://github.com/LuckyLivio/Contain/pull/24) · [当前公开版](https://github.com/LuckyLivio/Contain/releases/tag/v0.4.0-beta.1)
 
-本版面向在 Windows x64 上开发单项目 C# 控制台应用、希望把程序直接打包发给普通用户安装的开发者，同时也适合需要校验交付 ZIP 或查看既有安装记录的用户。双击运行 `Contain-Setup-x64.exe` 完成当前用户安装后，从开始菜单打开 `Contain`，进入「检查项目环境」选择只有 `.csproj` 和源码的项目文件夹，依次点击「使用此配置 → 开始检查 → 开始构建 → 生成安装包」，即可得到可独立分发的 `<应用名>-Setup-x64.exe`。历史冻结候选（`887f119`）已在 Windows 11 x64（`10.0.26300`）开发机、GitHub Actions `windows-latest` CI 与断网无开发工具的干净 Windows 11 x64 沙箱（`10.0.26100`）完成构建、离线安装启动、随包示例记录读取及卸载验证；完整快照 A→B（空白源码机缺项恢复构建并交接至干净接收机 `-Stage Package`）的最终收据尚未送达云端。所有候选安装包均未配置代码签名证书（`NotSigned`），首次运行可能出现 Windows SmartScreen 提示。
+本版面向在 Windows x64 上开发单项目 C# 控制台应用、希望把程序直接打包发给普通用户安装的开发者，同时也适合需要校验交付 ZIP 或查看既有安装记录的用户。双击运行 `Contain-Setup-x64.exe` 完成当前用户安装后，从开始菜单打开 `Contain`，进入「检查项目环境」选择只有 `.csproj` 和源码的项目文件夹，依次点击「使用此配置 → 开始检查 → 开始构建 → 生成安装包」，即可得到可独立分发的 `<应用名>-Setup-x64.exe`。历史冻结候选（`887f119`）已在 Windows 11 x64（`10.0.26300`）开发机、GitHub Actions `windows-latest` CI 与断网无开发工具的干净 Windows 11 x64 沙箱（`10.0.26100`）完成构建、离线安装启动、随包示例记录读取及卸载验证；完整快照 A→B（空白源码机缺项恢复构建并交接至干净接收机 `-Stage Package`）的最终收据尚未送达云端。历史冻结安装包的签名状态为 `NotSigned`，首次运行可能出现 Windows SmartScreen 提示。新安装包的签名状态以本次收据为准。
 
 ---
 
@@ -14,7 +14,15 @@
 | 上级目录构建配置 | [`44fd575`](https://github.com/LuckyLivio/Contain/commit/44fd575f3d7ce6a083b2cdb6e81bb1a88c4122a0) 识别继承的 MSBuild 属性和目标，重新核对确认指纹。两种父目录样例均实际改变了子项目输出名。 |
 | 项目选择响应 | [`3f564a8`](https://github.com/LuckyLivio/Contain/commit/3f564a8f2ef23783beeca1683519c73ad4b3360a) 将选择与刷新移出界面线程并丢弃过期结果。桌面模型测试 59/59 通过。 |
 
-## 冻结源码与 Windows 验收
+## 预发行验收
+
+从固定产品提交 `aac52e52cbe9395cb845be2d31c09ec117f86d06` 构建候选，在 GitHub 托管 Windows x64 上执行以下检查。收据分别记录产品源码 SHA、实际运行的工作流提交 SHA 和候选文件的 SHA-256，以便核对交付的是同一次实测的字节。
+
+- 用桌面 ZIP 生成 `Contain-Setup-x64.exe`，按当前用户安装，核对版本，启动已安装的桌面程序，读取随包示例记录。标准卸载后核对卸载登记和程序文件。
+- 用桌面 ZIP 与独立 CLI ZIP 各自的 package spec 校验包内容，并执行约定的启动和自检。发布前再次核对 Setup、双 ZIP、两份规格与 `SHA256SUMS.txt`。
+- 本轮托管验收结果待收。稳定版另行验证持久快照 A 的工具缺项恢复、构建和独立断网快照 B 的接收及离线试装。
+
+## 冻结源码与稳定版 A/B 交接
 
 | 项目 | 已核验的身份或待收材料 |
 | --- | --- |
@@ -23,11 +31,11 @@
 | SHA-256 | Actions 外层归档 `402a34f1f345d79e921ef88771529bf98ae32a42588b9e5ed7e2fd60cc5d3fee`；内层 CLI ZIP `dba49cb3690558bc2ada2b44420583f7ab3854cf0b15f7fe29bb7a5525655d0e`；其中的 `contain-workflow.exe` 为 `02f23ef1d5310ab91e71265f5cc75caf2058ba4e69cb79cd238503541d8bfad0`。 |
 | 持久快照 A | 旧源码 `887f119` 的补工具前收据已报告写回宿主机，待核对。新源码的 `Source` 成功收据、实际双 ZIP 和 `handoff.json` 待回传。 |
 | 独立断网快照 B | Windows 本地 A/B 验收：云端未收到最终收据。用 A 的同一批候选验证，在 B 导出 `B-receipt.json`。 |
-| 新 Setup | 由 A 的桌面 ZIP 组装；待核对同一 Setup 哈希的原位升级、旧记录读取及离线安装、启动、卸载记录。 |
+| 离线 Setup 验收 | 稳定版按实际候选 Setup 的哈希核对离线安装、启动与卸载记录。历史候选的原位升级、旧记录读取和试装结果见下文。 |
 
-**先取回 A 的既有收据。** 在宿主机保存旧 `A-before` 的目录中取 `acceptance.json` 和 `before-install/report.json`。前者记录快照标签、阶段和退出状态，后者记录工具缺项及可用的 Git 源码证据。本次工具清单、Rust 与 .NET 版本文件、工具链选择脚本及 A 阶段脚本与 `887f119` 内容一致；CLI 默认探测策略已有修复。结合收据和同一持久快照的状态，确定可接续的首个阶段。已有 SDK 安装进度单独保留。
+**接续稳定版 A/B 时先取回既有收据。** 在宿主机保存旧 `A-before` 的目录中取 `acceptance.json` 和 `before-install/report.json`。前者记录快照标签、阶段和退出状态，后者记录工具缺项及可用的 Git 源码证据。本次工具清单、Rust 与 .NET 版本文件、工具链选择脚本及 A 阶段脚本与 `887f119` 内容一致；CLI 默认探测策略已有修复。结合收据和同一持久快照的状态，确定可接续的首个阶段。已有 SDK 安装进度单独保留。
 
-后续在干净检出上固定上表的产品 SHA。将引导包的外层归档与内层 CLI ZIP 依次解压，保留 EXE 旁的 `workflow/`。按阶段记录执行 A 的 `Source`、从其 `delivery` 组装 Setup，再把完整候选及独立传递的清单摘要送至 B。保留候选目录的原始字节，供通过验收后发布。[Windows 分阶段命令与回传文件](phase-one.md)
+后续在干净检出上固定上表的产品 SHA。将引导包的外层归档与内层 CLI ZIP 依次解压，保留 EXE 旁的 `workflow/`。按阶段记录执行 A 的 `Source`、从其 `delivery` 组装 Setup，再把完整候选及独立传递的清单摘要送至 B。保留候选目录的原始字节供稳定版复核。[Windows 分阶段命令与回传文件](phase-one.md)
 
 此前的 [引导 CLI 试构建](https://github.com/LuckyLivio/Contain/actions/runs/44681314014) 来自 `2f9f09a`。下文旧 Setup、桌面和 CLI ZIP 的哈希及试装收据属于 `887f119`。
 

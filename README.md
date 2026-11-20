@@ -10,7 +10,9 @@
 
 ## 即将发布的 v0.5.0-beta.1
 
-这一版将提供当前用户安装的 Setup，并支持将单项目 C# 控制台应用打成可分发的安装包。环境探测和项目识别的三项修复已合入发布分支，Windows 引导 CLI 已构建并校验。公开 Setup 仍待同批双包、升级、旧记录读取和离线试装验收。Windows 本地 A/B 验收：云端未收到最终收据。[候选进度与历史试装记录](docs/beta05-release.md)
+这一版提供当前用户安装的 Setup，支持将单项目 C# 控制台应用打成可分发的安装包。预发行候选的产品源码固定为 `aac52e52`。发布前需在 GitHub 托管 Windows x64 上用同一批候选实测 Setup 安装、版本、桌面启动、随包示例读取和卸载，并按各自的包规格核验桌面 ZIP、独立 CLI ZIP 及发布文件的 SHA-256。当前等待本轮验收收据。[候选进度与历史试装记录](docs/beta05-release.md)
+
+干净 Windows 上的缺项恢复构建和断网接收机 A/B 验收保留在稳定版发布前完成。Windows 本地 A/B 验收：云端未收到最终收据。
 
 ## 接手源码、恢复开发环境
 
@@ -36,14 +38,14 @@ cargo run -p contain-workflow --locked -- verify --zip .\contain.zip --spec .\pa
 
 本分支同时提供参数化安装器构建入口 `scripts/build-windows-installer.ps1`（基于 Inno Setup 6），两类交付形态职责明确：
 
-- **单文件安装候选包（`Contain-Setup-x64.exe`）**：面向普通桌面接收者。基于已冻结校验的 `contain-source-windows-x64.zip` 原样组包，默认以当前用户最低权限安装到 `%LOCALAPPDATA%\Programs\Contain`（终端用户无需联网安装 Rust、Python、Visual Studio 或 .NET SDK），自动创建开始菜单入口（桌面快捷方式可选且默认关闭），支持在 Windows“已安装的应用”中标准卸载。安装器仅管理程序目录、快捷方式与卸载登记，不改动已有便携版目录，卸载或升级时完整保留 `%LOCALAPPDATA%\Contain` 个人记录库及程序目录外的数据库与导出报告。当前候选包未配置代码签名证书（`NotSigned`）。
+- **单文件安装候选包（`Contain-Setup-x64.exe`）**：面向普通桌面接收者。基于已冻结校验的 `contain-source-windows-x64.zip` 原样组包，默认以当前用户最低权限安装到 `%LOCALAPPDATA%\Programs\Contain`（终端用户无需联网安装 Rust、Python、Visual Studio 或 .NET SDK），自动创建开始菜单入口（桌面快捷方式可选且默认关闭），支持在 Windows“已安装的应用”中标准卸载。安装器仅管理程序目录、快捷方式与卸载登记，不改动已有便携版目录，卸载或升级时完整保留 `%LOCALAPPDATA%\Contain` 个人记录库及程序目录外的数据库与导出报告。安装包的签名状态见对应安装器收据。
 - **便携桌面包（`contain-source-windows-x64.zip`）与独立 CLI 包（`contain-workflow-windows-x64.zip`）**：面向免安装解压即用、基于 `package-spec.json` 的静态／运行态交付契约校验与快照 A/B 交接验收；其中桌面 ZIP 同时作为构建 `Contain-Setup-x64.exe` 的受控载荷输入。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows-installer.ps1 -Zip <path-to>\contain-source-windows-x64.zip -Spec <path-to>\package-spec.json -OutputDirectory <new-output-dir>
 ```
 
-本分支第二轮已补齐本次 Rust/WPF 产物的桌面 ZIP 组装、独立 CLI 打包和 A/B 交接脚本，并记录实际选中的 MSVC/SDK。架构改用 IsWow64Process2，ARM64 仿真和未知状态单独记录。[完整命令与产物位置](docs/phase-one.md) · [本轮结果与合并阻塞](docs/phase-one-round2-results.md)。
+本分支第二轮已补齐本次 Rust/WPF 产物的桌面 ZIP 组装、独立 CLI 打包和 A/B 交接脚本，并记录实际选中的 MSVC/SDK。架构改用 IsWow64Process2，ARM64 仿真和未知状态单独记录。[完整命令与产物位置](docs/phase-one.md) · [历史阶段记录](docs/phase-one-round2-results.md)。
 
 ## 后续里程碑
 
