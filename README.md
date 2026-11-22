@@ -1,14 +1,14 @@
 # Contain
 
-**[下载 Contain v0.5.0-beta.3 安装包（Windows x64）](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.3/Contain-Setup-x64.exe)**
+**[下载 Contain v0.5.0 正式版安装包（Windows x64）](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0/Contain-Setup-x64.exe)**
 
 把单项目 C# 控制台或 WPF 工程做成可以发给用户安装的 Windows 应用。首次打开 Contain 会直接进入“打包项目”。
 
 **最短路径**　选择项目文件夹 → 保存配置并检查 → 构建并生成安装包 → 打开安装包文件夹。
 
-[便携桌面 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.3/contain-0.5.0-beta.3-windows-x64.zip) · [独立 CLI ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.3/contain-workflow-0.5.0-beta.3-windows-x64.zip) · [发行说明](https://github.com/LuckyLivio/Contain/releases/tag/v0.5.0-beta.3) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.3/SHA256SUMS.txt) · [上一个版本 v0.5.0-beta.2](https://github.com/LuckyLivio/Contain/releases/tag/v0.5.0-beta.2)
+[便携桌面 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0/contain-0.5.0-windows-x64.zip) · [独立 CLI ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0/contain-workflow-0.5.0-windows-x64.zip) · [发行说明](https://github.com/LuckyLivio/Contain/releases/tag/v0.5.0) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0/SHA256SUMS.txt) · [上一预发行版 v0.5.0-beta.3](https://github.com/LuckyLivio/Contain/releases/tag/v0.5.0-beta.3)
 
-选择文件夹后可预览项目名、应用类型和入口 EXE。制作安装包的电脑需要匹配的 .NET SDK 和 Inno Setup 6。安装器尚未签名。v0.5.0-beta.3 安装包本身及其生成的 WPF 应用均已通过干净无开发工具、完全断网 Windows 11 x64 沙箱接收试装；完整的“干净源码机 A → 第二台干净接收机 B”链路仍单列待测。[改前／改后截图、Windows 实测与断网接收收据](docs/beta05-beta3-release.md)
+选择文件夹后可预览项目名、应用类型和入口 EXE。制作安装包的电脑需要匹配的 .NET SDK 和 Inno Setup 6。安装器尚未签名。v0.5.0 正式版已完成干净 Windows 11 x64 源码机 A → 独立断网无开发工具接收机 B 全链路验收、离线安装试装以及从公开 v0.5.0-beta.3 原位升级保留个人记录库实测。[v0.5.0 正式版验收说明与脱敏收据](docs/v050-release.md) · [首次打包对比与 Beta 3 实测](docs/beta05-beta3-release.md)
 
 ## 接手源码、恢复开发环境
 
@@ -24,7 +24,7 @@ cargo run -p contain-workflow --locked -- build --project . --execute --delivery
 
 对实际 Windows x64 ZIP 固定 SHA-256、启动入口和预期结果。报告分别列出包身份、静态检查、启动检查及指定测试。Windows 上可显式运行窗口或自检检查；其他平台只做静态检查，运行项记为 **未实测**。比较不同构建时，先检查两个包内实际 EXE；字节相同则拒绝开跑。
 
-命令、清单格式与本分支验收状态见 [第一阶段说明](docs/phase-one.md)。本分支不代表已通过干净 Windows 验收。
+命令、清单格式与阶段说明见 [第一阶段说明](docs/phase-one.md)；`v0.5.0` 正式版干净 A→B 验收结果与脱敏收据见 [v0.5.0 发布说明](docs/v050-release.md)。
 
 ```powershell
 cargo run -p contain-workflow --locked -- verify --zip .\contain.zip --spec .\package-spec.json --report target/workflow/package-01
