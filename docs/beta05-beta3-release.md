@@ -41,7 +41,22 @@ v0.5.0-beta.3 产品源码 `d898f31b39ac333a1f973bb08ab70610bc35c4ad`，Setup `5
 
 ## 安装与升级
 
-常规安装作业使用 GitHub 托管 Windows Server 2022 x64，系统版本 `10.0.20348.0`，镜像 `20261112.366.7`。使用准备发布的同一个 Contain Setup 安装、核对版本、打开窗口、读取合成记录并标准卸载。便携版和独立 CLI 的包规格、入口和校验值均经验证。从公开 v0.5.0-beta.2 原位升级后可继续读取原有记录。干净无开发工具机器和完全断网试装留待稳定版前验证。[验收任务](https://github.com/LuckyLivio/Contain/actions/runs/44735848240) · [升级收据](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.3/prerelease-upgrade.json)
+常规安装作业使用 GitHub 托管 Windows Server 2022 x64，系统版本 `10.0.20348.0`，镜像 `20261112.366.7`。使用准备发布的同一个 Contain Setup 安装、核对版本、打开窗口、读取合成记录并标准卸载。便携版和独立 CLI 的包规格、入口和校验值均经验证。从公开 v0.5.0-beta.2 原位升级后可继续读取原有记录。[验收任务](https://github.com/LuckyLivio/Contain/actions/runs/44735848240) · [升级收据](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.3/prerelease-upgrade.json)
+
+## 干净无开发工具、完全断网接收机实测（Windows 11 x64 沙箱）
+
+以下两项实测均在独立的 **Windows 11 企业版 x64（`10.0.26100`）禁网沙箱**中完成（`<Networking>Disable</Networking>`，`network_offline = true`，活跃物理网卡 `0`；未安装现代 `.NET` 运行时／SDK、Rust、Cargo、Python、Git、Visual Studio 与 Inno Setup，系统自带 `.NET Framework 4.8.09032` 单列），原始本机运行日志留在本地，以下链接为脱敏公开收据：
+
+1. **Contain 本身可离线安装（通过）** — [断网接收收据](first-package-v0.5.0-beta.3/offline-contain-setup-receiver.json)
+   - **受测版本与对象**：从公开 GitHub Release `v0.5.0-beta.3`（产品源码 `d898f31b39ac333a1f973bb08ab70610bc35c4ad`）下载并对照 `SHA256SUMS.txt` 复核的 `Contain-Setup-x64.exe`（`51,349,435` 字节，SHA-256 `5f78f3ae3fcb20861b3e062fec997a332ad95fa1ef99f474b8f750bd9ba4cfce`）。
+   - **实测路径**：单文件拷入沙箱安装（退出码 `0`），HKCU 卸载登记唯一 `Contain` 条目（`0.5.0-beta.3`）；从开始菜单 `Contain.lnk` 启动主窗口 `Contain · 0.5.0-beta.3`，首次打开默认进入 **`打包项目`** 页（「选择项目文件夹」按钮可用）；通过「打开外部记录库」加载随包 `samples\viewer-demo.db`，浏览 `synthetic-finished` 并选中 `event:synthetic-finished-event-0`（`C:\synthetic\observed\recorded.tmp`），右侧完整读出精确 FILETIME `134350000000000001` 与关联依据；随包 `contain-workflow.exe --version`（`0.5.0-beta.3`）与 `contain.exe --version`（`0.3.2-beta.10`）均正常退出 `0`；随后正常关闭（退出码 `0`）并执行标准卸载（退出码 `0`）。
+   - **卸载与残留核实**：卸载登记归零（`0`）、开始菜单 `Contain.lnk` 已删除、`Contain.Viewer.exe` 等全部已安装文件已删除、`%LOCALAPPDATA%\Contain` 未创建。因直接在 `{app}\samples\` 目录内打开 WAL 模式的 `viewer-demo.db`，运行期生成的 2 个 SQLite 侧车文件 `samples\viewer-demo.db-shm` 与 `samples\viewer-demo.db-wal` 按 Inno Setup 不删除安装后新建文件的安全策略留在 `samples\` 子目录中。
+
+2. **Contain 生成的 WPF 应用可离线交付（通过）** — [生成应用断网接收收据](first-package-v0.5.0-beta.3/offline-wpf-app-receiver.json)
+   - **制作过程（公开 Beta.3 桌面端）**：在 Windows 11 x64 开发机安装上述公开 `v0.5.0-beta.3` 安装包（核实安装后 `Contain.Viewer.exe` SHA-256 `9c270f48de45b76d3ef27f714111eb15d361b79171e278651a45d146202d02af`、`contain-workflow.exe` SHA-256 `b0e148f28f9d42521b7790aa097892ff5f1a029aede85a7670a85d2d5cc18726`），对带自定义 `<AssemblyName>HelloWpfDesktop</AssemblyName>` 且包含可交互按钮的 .NET 10 单项目 WPF 样例 `HelloWpf`，完整走完「选择项目文件夹 → 保存配置并检查 → 构建并生成安装包 → 打开安装包文件夹」（原 `HelloWpf.csproj` 全程未改动），生成 `HelloWpfDesktop-Setup-x64.exe`（`46,158,147` 字节，未签名 `NotSigned`，`AppId {346fc570-f5e8-4b6b-b6cb-f9f99ece8302}`，SHA-256 `f539ecd22eeb0aff59547a7db3a3253aabe2ac73612e5f43c742e64424f65045`，入口 `HelloWpfDesktop.exe` SHA-256 `26b7eef494f505e34c5b30791824e528832efda8fe4ab48877d450bbbcb8be5a`）。因历史 CI 未归档其临时生成的演示 EXE，本次生成物按自身独立哈希验收。
+   - **单文件离线接收验证**：仅将 `HelloWpfDesktop-Setup-x64.exe` 单文件（不带项目源码、发布目录或开发机运行库）只读映射入全新禁网无工具沙箱（未安装 Contain，也无任何现代 `.NET` 目录或命令），核对复制前后 SHA-256 均为 `f539ecd22eeb0aff59547a7db3a3253aabe2ac73612e5f43c742e64424f65045`。静默安装（退出码 `0`）后核实 HKCU 卸载登记 `HelloWpfDesktop (346fc570)`（`0.1.0`）、开始菜单快捷方式 `HelloWpfDesktop (346fc570).lnk` 指向已核验的 `HelloWpfDesktop.exe` 且包含自包含 `PresentationFramework.dll`；从开始菜单启动后显示 `HelloWpfDesktop` 主窗口，点击交互按钮 `VerifyActionButton` 后状态文本由 `Ready` 实时更新为 `Verified click #1`，随后正常关闭（退出码 `0`）并执行标准卸载（退出码 `0`），卸载登记、开始菜单快捷方式与安装目录全部清除（`remaining_items = []`，零残留）。
+
+3. **单独记账范围**：上述两项验证证明了公开 `v0.5.0-beta.3` 的单文件安装包本身及其生成的自包含 WPF 安装包均可在干净无开发工具的断网 Windows x64 接收机独立安装、运行与卸载；按 [第一阶段说明](phase-one.md) 要求的完整 **“干净源码机 A（`-Stage SourceMissing` → 补齐工具 → `-Stage Source`）→ 第二台干净接收机 B（`-Stage Package`）”** 链路仍单列记账，尚未对 `d898f31b` 执行。
 
 | 交付 | SHA-256 |
 | --- | --- |
