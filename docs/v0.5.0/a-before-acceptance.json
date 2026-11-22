@@ -1,0 +1,21 @@
+{
+    "snapshot_provenance":  "operator-supplied; tool cannot prove image cleanliness",
+    "stage":  "SourceMissing",
+    "schema_version":  1,
+    "snapshot_label":  "A-before",
+    "checks":  [
+                   {
+                       "expected_exit":  0,
+                       "status":  "passed",
+                       "name":  "native-platform",
+                       "actual_exit":  0
+                   },
+                   {
+                       "expected_exit":  1,
+                       "status":  "passed",
+                       "name":  "actual-source-before-install",
+                       "actual_exit":  1
+                   }
+               ],
+    "status":  "passed"
+}

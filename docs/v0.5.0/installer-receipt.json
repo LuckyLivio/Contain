@@ -1,0 +1,21 @@
+{
+    "schema_version":  1,
+    "protocol":  "contain-windows-installer-receipt-1",
+    "installer_file":  "Contain-Setup-x64.exe",
+    "installer_bytes":  51346821,
+    "installer_sha256":  "8d7df61f0e5ce42a9e513088feb259394a11de105863669659790922c577a8e0",
+    "authenticode_status":  "NotSigned",
+    "signed":  false,
+    "upgrade_rehearsal_only":  false,
+    "app_id":  "{8F4E2D91-5C3A-4B7E-9A16-2D8C4E7F1035}",
+    "app_name":  "Contain",
+    "app_version":  "0.5.0",
+    "version_info_version":  "0.5.0.0",
+    "install_scope":  "current_user_lowest_privilege",
+    "default_install_dir":  "%LOCALAPPDATA%\\Programs\\Contain",
+    "source_sha":  "ddca87a1926d128821618fc9799aef09d834a6cd",
+    "source_zip_sha256":  "725c97e11a90f47c575e35186406078df72edbc179baf58856e00ea1e2ac3d51",
+    "source_spec_sha256":  "7fb1b833143fc57a1050afd710aaa096520add6e6bb37b78e73dc163ac186c97",
+    "payload_file_count":  723,
+    "inno_setup_version":  "6.7.3"
+}

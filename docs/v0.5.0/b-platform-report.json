@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "workflow": "platform",
+  "host_os": "windows",
+  "host_arch": "x86_64",
+  "process_arch": "x86_64",
+  "os_version": "Microsoft Windows [Version 10.0.26100.9974]",
+  "architecture": {
+    "native": "x86_64",
+    "process": "x86_64",
+    "emulated": false,
+    "probe": "is_wow64_process2"
+  },
+  "checks": [
+    {
+      "name": "native_windows_x64",
+      "status": "passed",
+      "detail": "requires confirmed native x64 and x64 process; emulated/unknown architectures do not pass"
+    }
+  ]
+}
