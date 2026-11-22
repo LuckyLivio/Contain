@@ -20,4 +20,6 @@ function Fake-SDKList { Write-Output '10.0.403 [PRIVATE_PATH_NOT_FOR_REPORT]';$g
 function Get-Command {param($Name,$CommandType,$ErrorAction) if ($Name -eq 'dotnet') {return @{Source='Fake-SDKList'}} }
 $present=Get-WorkflowReceiverEvidence
 if ($present.status -ne 'failed' -or !$present.probes.dotnet_sdk -or ($present | ConvertTo-Json -Depth 10) -like '*PRIVATE_PATH*') {throw 'Installed SDK evidence incorrect or leaked'}
-Write-Output 'Acceptance policy fixtures: 3 passed (synthetic; no clean snapshot claim)'
+$scriptText = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'workflow-windows-acceptance.ps1'), [Text.Encoding]::UTF8)
+if ($scriptText -notmatch 'Add-Type\s+-AssemblyName\s+System\.IO\.Compression\b') { throw 'Package stage must load System.IO.Compression for ZipArchiveMode on Windows PowerShell 5.1' }
+Write-Output 'Acceptance policy fixtures: 4 passed (synthetic; no clean snapshot claim)'
