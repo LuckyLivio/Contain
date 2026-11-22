@@ -1,0 +1,41 @@
+{
+    "snapshot_provenance":  "operator-supplied; tool cannot prove image cleanliness",
+    "stage":  "Package",
+    "schema_version":  1,
+    "snapshot_label":  "B-clean",
+    "checks":  [
+                   {
+                       "expected_exit":  0,
+                       "status":  "passed",
+                       "name":  "native-platform",
+                       "actual_exit":  0
+                   },
+                   {
+                       "name":  "development-tools-absent",
+                       "status":  "passed"
+                   },
+                   {
+                       "name":  "A-B-same-artifacts",
+                       "status":  "passed"
+                   },
+                   {
+                       "expected_exit":  0,
+                       "status":  "passed",
+                       "name":  "independent-cli",
+                       "actual_exit":  0
+                   },
+                   {
+                       "expected_exit":  0,
+                       "status":  "passed",
+                       "name":  "desktop-launch-and-tests",
+                       "actual_exit":  0
+                   },
+                   {
+                       "expected_exit":  1,
+                       "status":  "passed",
+                       "name":  "missing-coreclr-rejected",
+                       "actual_exit":  1
+                   }
+               ],
+    "status":  "passed"
+}

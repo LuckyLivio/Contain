@@ -59,16 +59,18 @@ try {
         [void]$results.Add(@{name='A-B-same-artifacts';status='passed'})
         [void](Record-CLI 'independent-cli' @('verify','--zip',$CliZip,'--spec',$CliSpec,'--run','--work-dir',(Join-Path $out 'cli-package'),'--report',(Join-Path $out 'cli')) 0)
         [void](Record-CLI 'desktop-launch-and-tests' @('verify','--zip',$Zip,'--spec',$Spec,'--run','--work-dir',(Join-Path $out 'desktop-package'),'--report',(Join-Path $out 'desktop')) 0)
+        Add-Type -AssemblyName System.IO.Compression
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $broken=Join-Path $out 'missing-coreclr.zip'
         Copy-Item -LiteralPath $Zip -Destination $broken
+        (Get-Item -LiteralPath $broken).IsReadOnly=$false
         $archive=[IO.Compression.ZipFile]::Open($broken,[IO.Compression.ZipArchiveMode]::Update)
         try { $entry=$archive.GetEntry('coreclr.dll');if (!$entry) {throw 'Original WPF package lacks coreclr.dll'};$entry.Delete() } finally {$archive.Dispose()}
-        $s=Get-Content -LiteralPath $Spec -Raw | ConvertFrom-Json
+        $s=Get-Content -LiteralPath $Spec -Raw -Encoding UTF8 | ConvertFrom-Json
         $s.sha256=(Get-FileHash $broken -Algorithm SHA256).Hash.ToLowerInvariant()
         $brokenSpec=Join-Path $out 'broken-spec.json';Save-Json $brokenSpec $s
         [void](Record-CLI 'missing-coreclr-rejected' @('verify','--zip',$broken,'--spec',$brokenSpec,'--run','--work-dir',(Join-Path $out 'must-not-launch'),'--report',(Join-Path $out 'broken')) 1)
-        $r=Get-Content (Join-Path $out 'broken/report.json') -Raw | ConvertFrom-Json
+        $r=Get-Content (Join-Path $out 'broken/report.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         if (!($r.checks | Where-Object {$_.name -eq 'static_file:coreclr.dll' -and $_.status -eq 'failed'}) -or ($r.checks | Where-Object {$_.name -eq 'launch'}).status -ne 'not_run' -or (Test-Path (Join-Path $out 'must-not-launch'))) {throw 'Broken package did not fail before execution'}
     }
 } catch {

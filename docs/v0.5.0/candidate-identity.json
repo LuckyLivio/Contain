@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "source_sha": "ddca87a1926d128821618fc9799aef09d834a6cd",
+  "version": "0.5.0",
+  "a_handoff_sha256": "a1a40c777f9646d5f3a668748ac62d2a173e1849a4471089116cef787e0506ff",
+  "packaged_cli_probes": {
+    "desktop": {
+      "default": "passed",
+      "safe_probes": "passed",
+      "git_version_observed": "2.52.0.windows.1"
+    },
+    "cli": {
+      "default": "passed",
+      "safe_probes": "passed",
+      "git_version_observed": "2.52.0.windows.1"
+    }
+  }
+}

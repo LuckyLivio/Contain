@@ -79,7 +79,7 @@ try {
     $checks[$gate] = 'passed'
 
     # The existing stock UI gate keeps its receipt contract across the Beta 3 redesign.
-    $guidedScenario = if ($FirstPackageScenario) { $FirstPackageScenario } elseif ($meta.version -ceq '0.5.0-beta.3') { 'Wpf' }
+    $guidedScenario = if ($FirstPackageScenario) { $FirstPackageScenario } elseif ($meta.version -ceq '0.5.0-beta.3' -or $meta.version -ceq '0.5.0') { 'Wpf' }
     $guided = ![string]::IsNullOrEmpty($guidedScenario)
     $gate = 'install_product'
     $scratch = (New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP ('contain-installed-ui-' + [guid]::NewGuid().ToString('N')))).FullName

@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "workflow": "source",
+  "host_os": "windows",
+  "host_arch": "x86_64",
+  "process_arch": "x86_64",
+  "os_version": "Microsoft Windows [Version 10.0.26100.9974]",
+  "architecture": {
+    "native": "x86_64",
+    "process": "x86_64",
+    "emulated": false,
+    "probe": "is_wow64_process2"
+  },
+  "manifest_source": "contain.environment.json",
+  "checks": [
+    {
+      "name": "platform",
+      "status": "passed",
+      "detail": "requires Windows x64",
+      "outcome": "matched",
+      "required": "windows / x86_64",
+      "observed": "windows / x86_64"
+    },
+    {
+      "name": "tool:rustc",
+      "status": "failed",
+      "detail": "tool unavailable or version probe failed; required 1.100.0; remedy: rustup toolchain install 1.100.0 --component rustfmt --component clippy",
+      "outcome": "unavailable",
+      "required": "1.100.0",
+      "remedy": "rustup toolchain install 1.100.0 --component rustfmt --component clippy"
+    },
+    {
+      "name": "tool:rustup",
+      "status": "failed",
+      "detail": "tool unavailable or version probe failed; required x86_64-pc-windows-msvc; remedy: rustup target add --toolchain 1.100.0 x86_64-pc-windows-msvc",
+      "outcome": "unavailable",
+      "required": "x86_64-pc-windows-msvc",
+      "remedy": "rustup target add --toolchain 1.100.0 x86_64-pc-windows-msvc"
+    },
+    {
+      "name": "tool:dotnet",
+      "status": "failed",
+      "detail": "tool unavailable or version probe failed; required 10.0.403; remedy: Install .NET SDK 10.0.403 x64 from https://dotnet.microsoft.com/download; global.json disables roll-forward",
+      "outcome": "unavailable",
+      "required": "10.0.403",
+      "remedy": "Install .NET SDK 10.0.403 x64 from https://dotnet.microsoft.com/download; global.json disables roll-forward"
+    },
+    {
+      "name": "tool:python",
+      "status": "failed",
+      "detail": "tool unavailable or version probe failed; required 3.12.10; remedy: Install Python 3.12.10 x64 from python.org and enable its executable on PATH (build machine only)",
+      "outcome": "unavailable",
+      "required": "3.12.10",
+      "remedy": "Install Python 3.12.10 x64 from python.org and enable its executable on PATH (build machine only)"
+    },
+    {
+      "name": "environment_manifest",
+      "status": "passed",
+      "detail": "canonical JSON SHA-256 f3d083606db8b62ad84234004959350af1a72d91743c3425e49b7db23a76b02c"
+    },
+    {
+      "name": "selected_windows_toolchain",
+      "status": "failed",
+      "detail": "vswhere_missing; install required MSVC/SDK or use a fresh shell to resolve active-version conflicts",
+      "outcome": "vswhere_missing",
+      "required": "MSVC 14.44.*, Windows SDK 10.0.26100.0",
+      "remedy": "Install MSVC 14.44 x64 build tools and Windows SDK 10.0.26100.0; open a fresh shell if active versions conflict"
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+    "native_acceptance":  "not_run",
+    "schema_version":  1,
+    "clean_snapshot":  "not_asserted_by_build",
+    "source_sha":  "ddca87a1926d128821618fc9799aef09d834a6cd",
+    "cli":  {
+                "schema_version":  1,
+                "zip_sha256":  "d9c939cd61bd05b236b4c0a8f447f0ff6df9324223c2906a6d398d51800c94cc",
+                "spec_sha256":  "8a48240d508673db79722bb00d8c72bc04a506aa549bb86d6a0c3d670624a951",
+                "entry_sha256":  "5bcc1470d815bc1b089912978dba1ef4787d00f616dbd7ed1692d129c19d7498",
+                "crt":  "static requested; clean-machine execution still requires validation",
+                "acceptance":  "not_run",
+                "source_sha":  "ddca87a1926d128821618fc9799aef09d834a6cd",
+                "toolchain":  {
+                                  "msvc":  "14.44.35207",
+                                  "sdk":  "10.0.26100.0"
+                              }
+            },
+    "desktop":  {
+                    "schema_version":  1,
+                    "source_sha":  "ddca87a1926d128821618fc9799aef09d834a6cd",
+                    "core_sha256":  "b5a6efb07732167b0385bb30d93a1858b3d9ab67c77a694194a880707d4e4649",
+                    "workflow_cli_sha256":  "702c96b4d96d83e0700daacbf98d0a8809070e803cad23cee315d4a462f4f7df",
+                    "entry_sha256":  "d85db785a540efef1a10550919211924fc36c410b486c26ec8f75340a5b29020",
+                    "zip_sha256":  "725c97e11a90f47c575e35186406078df72edbc179baf58856e00ea1e2ac3d51",
+                    "spec_sha256":  "7fb1b833143fc57a1050afd710aaa096520add6e6bb37b78e73dc163ac186c97",
+                    "toolchain":  {
+                                      "status":  "passed",
+                                      "msvc":  "14.44.35207",
+                                      "sdk":  "10.0.26100.0"
+                                  },
+                    "native_acceptance":  "not_run"
+                }
+}

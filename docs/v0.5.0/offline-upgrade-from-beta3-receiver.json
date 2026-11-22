@@ -1,0 +1,97 @@
+{
+    "schema_version":  1,
+    "protocol":  "contain-sandbox-upgrade-receiver-1",
+    "baseline_version":  "0.5.0-beta.3",
+    "baseline_setup_sha256":  "5f78f3ae3fcb20861b3e062fec997a332ad95fa1ef99f474b8f750bd9ba4cfce",
+    "target_version":  "0.5.0",
+    "target_setup_sha256":  "8d7df61f0e5ce42a9e513088feb259394a11de105863669659790922c577a8e0",
+    "source_sha":  "ddca87a1926d128821618fc9799aef09d834a6cd",
+    "started_utc":  "2026-11-22T23:27:31.2283965Z",
+    "status":  "passed",
+    "checks":  {
+                   "baseline_beta3_install":  {
+                                                  "status":  "passed",
+                                                  "install_exit_code":  0,
+                                                  "uninstall_entry_count":  1,
+                                                  "display_version":  "0.5.0-beta.3",
+                                                  "workflow_cli_version":  "contain-workflow 0.5.0-beta.3"
+                                              },
+                   "baseline_personal_records":  {
+                                                     "status":  "passed",
+                                                     "records_sha256_before":  "b2af4630d4c4ee395d3d7f2af3db1dc01c599bcc64200ba96643925f63eb6e2d",
+                                                     "records_loaded_in_gui":  [
+                                                                                   "synthetic-finished",
+                                                                                   "synthetic-historical",
+                                                                                   "synthetic-interrupted"
+                                                                               ]
+                                                 },
+                   "in_place_upgrade_to_v050":  {
+                                                    "status":  "passed",
+                                                    "upgrade_exit_code":  0,
+                                                    "uninstall_entry_count":  1,
+                                                    "display_version":  "0.5.0",
+                                                    "workflow_cli_version":  "contain-workflow 0.5.0",
+                                                    "installed_versions":  {
+                                                                               "Contain.Viewer.exe":  {
+                                                                                                          "file_version":  "0.5.0.0",
+                                                                                                          "product_version":  "0.5.0+ddca87a1926d128821618fc9799aef09d834a6cd"
+                                                                                                      },
+                                                                               "Contain.Viewer.dll":  {
+                                                                                                          "file_version":  "0.5.0.0",
+                                                                                                          "product_version":  "0.5.0+ddca87a1926d128821618fc9799aef09d834a6cd",
+                                                                                                          "assembly_version":  "0.5.0.0"
+                                                                                                      },
+                                                                               "Contain.Desktop.Model.dll":  {
+                                                                                                                 "file_version":  "0.5.0.0",
+                                                                                                                 "product_version":  "0.5.0+ddca87a1926d128821618fc9799aef09d834a6cd",
+                                                                                                                 "assembly_version":  "0.5.0.0"
+                                                                                                             }
+                                                                           },
+                                                    "personal_db_sha256_preserved":  true
+                                                },
+                   "upgraded_records_readback":  {
+                                                     "status":  "passed",
+                                                     "window_title":  "Contain · 0.5.0",
+                                                     "viewer_exit_code":  0,
+                                                     "records_loaded_in_gui":  [
+                                                                                   "synthetic-finished",
+                                                                                   "synthetic-historical",
+                                                                                   "synthetic-interrupted"
+                                                                               ],
+                                                     "selected_event_id":  "event:synthetic-finished-event-0",
+                                                     "selected_event_resource":  "C:\\synthetic\\observed\\recorded.tmp",
+                                                     "event_evidence_text":  "写入请求\r\n有依据的执行进程关联；不等于最终文件所有权。\r\n请求完成结果：成功。请求成功不自动证明文件前后状态。\r\n资源：C:\\synthetic\\observed\\recorded.tmp\r\n执行进程：未提供\r\nPID：100 · 创建时间（精确 FILETIME）：134350000000000001\r\n依据 / 未知原因：Synthetic source request linked to the installer instance; no ownership claim\r\n事件 ID：synthetic-finished-event-0\r\n原始操作：write_requested · 来源：EtwFile\r\n观测时间：2026-10-01T00:00:01.123400+00:00\r\n名称来源：supplied_FileName\r\n保留所记录名称，不能推导现在的路径或最终归属。\r\n名称观察时间（精确 FILETIME）：134350000000000011\r\nwrite_requested [High]：Provider supplied this event\u0027s recorded name; this is not a handle query of the current path or physical file identity, an explicit application call, or final state ownership.\r\nobserved_actor [High]：Synthetic source request linked to the installer instance; no ownership claim\r\nprocess_ancestry [Certain]：Synthetic owned installer identity\r\n完整请求完成依据、原始字段与关联规则可展开原始 JSON 查看。High 不是删除许可。",
+                                                     "records_sha256_after":  "b2af4630d4c4ee395d3d7f2af3db1dc01c599bcc64200ba96643925f63eb6e2d"
+                                                 },
+                   "uninstall_preserves_personal_records":  {
+                                                                "status":  "passed",
+                                                                "uninstall_exit_code":  0,
+                                                                "entries_after_uninstall":  0,
+                                                                "install_dir_removed":  true,
+                                                                "shortcut_removed":  true,
+                                                                "personal_db_preserved":  true,
+                                                                "personal_db_sha256_preserved":  true,
+                                                                "records_sha256_final":  "b2af4630d4c4ee395d3d7f2af3db1dc01c599bcc64200ba96643925f63eb6e2d"
+                                                            }
+               },
+    "environment":  {
+                        "os_caption":  "Microsoft Windows 11 企业版",
+                        "os_version":  "10.0.26100",
+                        "os_build":  "26100",
+                        "os_architecture":  "x86_64",
+                        "process_architecture":  "x86_64",
+                        "network_offline":  true,
+                        "non_loopback_adapters_up":  0,
+                        "physical_adapters_up":  0,
+                        "builtin_net_framework":  "4.8.09032",
+                        "modern_dotnet_present":  false,
+                        "rustc_present":  false,
+                        "python_present":  false,
+                        "git_present":  false,
+                        "visual_studio_present":  false,
+                        "inno_setup_present":  false,
+                        "contain_installed_initially":  false,
+                        "personal_records_initially":  false
+                    },
+    "completed_utc":  "2026-11-22T23:27:49.0197275Z"
+}

@@ -1,0 +1,13 @@
+{
+    "scope":  "PATH, standard install directories, SDK enumeration, registration; clean snapshot provenance must be supplied independently",
+    "status":  "passed",
+    "probes":  {
+                   "dotnet_sdk":  false,
+                   "cargo":  false,
+                   "msbuild":  false,
+                   "python":  false,
+                   "cl":  false,
+                   "rustc":  false,
+                   "git":  false
+               }
+}
