@@ -8,7 +8,7 @@
 
 [便携桌面 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.3/contain-0.5.0-beta.3-windows-x64.zip) · [独立 CLI ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.3/contain-workflow-0.5.0-beta.3-windows-x64.zip) · [发行说明](https://github.com/LuckyLivio/Contain/releases/tag/v0.5.0-beta.3) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0-beta.3/SHA256SUMS.txt) · [上一个版本 v0.5.0-beta.2](https://github.com/LuckyLivio/Contain/releases/tag/v0.5.0-beta.2)
 
-选择文件夹后可预览项目名、应用类型和入口 EXE。制作安装包的电脑需要匹配的 .NET SDK 和 Inno Setup 6。安装器尚未签名。干净无工具机器和完全断网试装留待稳定版前验证。[改前／改后截图及 Windows 实测](docs/beta05-beta3-release.md)
+选择文件夹后可预览项目名、应用类型和入口 EXE。制作安装包的电脑需要匹配的 .NET SDK 和 Inno Setup 6。安装器尚未签名。v0.5.0-beta.3 安装包本身及其生成的 WPF 应用均已通过干净无开发工具、完全断网 Windows 11 x64 沙箱接收试装；完整的“干净源码机 A → 第二台干净接收机 B”链路仍单列待测。[改前／改后截图、Windows 实测与断网接收收据](docs/beta05-beta3-release.md)
 
 ## 接手源码、恢复开发环境
 

@@ -1,0 +1,66 @@
+{
+    "schema_version":  1,
+    "protocol":  "contain-generated-wpf-app-offline-receiver-1",
+    "generator_version":  "0.5.0-beta.3",
+    "started_utc":  "2026-11-22T15:04:36.0125166Z",
+    "status":  "passed",
+    "checks":  {
+                   "handoff_and_hash":  {
+                                            "status":  "passed",
+                                            "handoff_file_count":  1,
+                                            "setup_file_name":  "HelloWpfDesktop-Setup-x64.exe",
+                                            "setup_bytes":  46158147,
+                                            "sha256_before_copy":  "f539ecd22eeb0aff59547a7db3a3253aabe2ac73612e5f43c742e64424f65045",
+                                            "sha256_after_copy":  "f539ecd22eeb0aff59547a7db3a3253aabe2ac73612e5f43c742e64424f65045"
+                                        },
+                   "install_and_registration":  {
+                                                    "status":  "passed",
+                                                    "install_exit_code":  0,
+                                                    "uninstall_display_name":  "HelloWpfDesktop (346fc570)",
+                                                    "uninstall_version":  "0.1.0",
+                                                    "shortcut_name":  "HelloWpfDesktop (346fc570).lnk",
+                                                    "entry_leaf":  "HelloWpfDesktop.exe",
+                                                    "entry_sha256":  "26b7eef494f505e34c5b30791824e528832efda8fe4ab48877d450bbbcb8be5a",
+                                                    "wpf_runtime_present":  true
+                                                },
+                   "launch_and_interaction":  {
+                                                  "status":  "passed",
+                                                  "launched_via_start_menu":  true,
+                                                  "window_title":  "HelloWpfDesktop",
+                                                  "interaction_control":  "VerifyActionButton",
+                                                  "status_text_before":  "Ready",
+                                                  "status_text_after":  "Verified click #1",
+                                                  "close_exit_code":  0
+                                              },
+                   "uninstall":  {
+                                     "status":  "passed",
+                                     "uninstall_exit_code":  0,
+                                     "registry_entry_removed":  true,
+                                     "shortcut_removed":  true,
+                                     "install_dir_completely_gone":  true,
+                                     "remaining_items":  [
+
+                                                         ]
+                                 }
+               },
+    "environment":  {
+                        "os_caption":  "Microsoft Windows 11 企业版",
+                        "os_version":  "10.0.26100",
+                        "os_build":  "26100",
+                        "os_architecture":  "x86_64",
+                        "process_architecture":  "x86_64",
+                        "network_offline":  true,
+                        "physical_adapters_up":  0,
+                        "builtin_net_framework":  "4.8.09032",
+                        "modern_dotnet_cmd_present":  false,
+                        "modern_dotnet_dirs_present":  false,
+                        "rustc_present":  false,
+                        "cargo_present":  false,
+                        "python_present":  false,
+                        "git_present":  false,
+                        "visual_studio_present":  false,
+                        "inno_setup_present":  false,
+                        "contain_installed":  false
+                    },
+    "completed_utc":  "2026-11-22T15:04:45.8893627Z"
+}
