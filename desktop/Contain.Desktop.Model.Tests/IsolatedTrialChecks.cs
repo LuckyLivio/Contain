@@ -89,6 +89,10 @@ internal static class IsolatedTrialChecks
                 $"WindowsSandboxRemoteSession.exe --id {InstanceB}", InstanceA), "never matches another sandbox ID");
             True(!WindowsSandboxTrialService.CommandLineMatchesInstanceId(
                 "WindowsSandboxRemoteSession.exe", InstanceA), "never matches generic process without ID");
+
+            True(WindowsSandboxTrialService.IsAnotherSandboxRunningError(unchecked((int)0x800401F6), ""), "detects CO_E_APPSINGLEUSE exit code");
+            True(WindowsSandboxTrialService.IsAnotherSandboxRunningError(1, "error 0x800401F6 (CO_E_APPSINGLEUSE)"), "detects CO_E_APPSINGLEUSE stderr");
+            True(!WindowsSandboxTrialService.IsAnotherSandboxRunningError(1, "other error"), "ignores unrelated errors");
             return Task.CompletedTask;
         });
 

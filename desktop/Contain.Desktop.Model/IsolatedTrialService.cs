@@ -448,6 +448,15 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
             }
             if (startRes.ExitCode != 0)
             {
+                if (IsAnotherSandboxRunningError(startRes.ExitCode, startRes.Stderr))
+                {
+                    throw new IsolatedTrialException(
+                        "sandbox_already_running",
+                        "本机已有另一个正在运行的 Windows 沙箱实例。",
+                        "Windows 沙盒当前仅允许同时运行一个实例；Contain 不会自动关闭你自行打开的其他沙箱。请先自行关闭另一个 Windows 沙箱后，再重新点击“开始隔离试用”。",
+                        CombineDiagnostic(startRes));
+                }
+
                 throw new IsolatedTrialException(
                     "wsb_start_failed",
                     $"创建 Windows 沙箱实例失败（退出码 {startRes.ExitCode}）。",
@@ -906,6 +915,15 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         {
             foreach (var p in procs) p.Dispose();
         }
+    }
+
+    public static bool IsAnotherSandboxRunningError(int exitCode, string? stderr)
+    {
+        const int CoEAppSingleUse = unchecked((int)0x800401F6);
+        if (exitCode == CoEAppSingleUse) return true;
+        if (string.IsNullOrWhiteSpace(stderr)) return false;
+        return stderr.Contains("0x800401F6", StringComparison.OrdinalIgnoreCase)
+            || stderr.Contains("CO_E_APPSINGLEUSE", StringComparison.OrdinalIgnoreCase);
     }
 
     public static bool CommandLineMatchesInstanceId(string commandLine, string instanceId)
