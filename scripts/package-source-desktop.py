@@ -17,7 +17,7 @@ def load(name):
 MODERN = load('package-modern-desktop')
 LEGACY = load('package-viewer')
 require, sha, write = MODERN.require, MODERN.sha, MODERN.write
-SOURCE_VERSION = '0.5.0'
+SOURCE_VERSION = '0.6.0-beta.1'
 WORKFLOW_CLI_VERSION = SOURCE_VERSION
 
 def freeze(args):

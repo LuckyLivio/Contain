@@ -1,0 +1,204 @@
+<UserControl x:Class="Contain.Desktop.Views.IsolatedTrialView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    xmlns:model="clr-namespace:Contain.Desktop.Model;assembly=Contain.Desktop.Model">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24,16,24,24">
+        <StackPanel MaxWidth="920" HorizontalAlignment="Stretch">
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <TextBlock Text="隔离试用" Style="{StaticResource PageTitle}" Margin="0" AutomationProperties.AutomationId="IsolatedTrialPageTitle" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border CornerRadius="6" Padding="10,4" Margin="0,0,8,0">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="#EAF5F1" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsolatedTrial.IsCapabilityBlocked}" Value="True">
+                                        <Setter Property="Background" Value="#FDE3DC" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsolatedTrial.IsCheckingCapability}" Value="True">
+                                        <Setter Property="Background" Value="#E4EFF9" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="{Binding IsolatedTrial.CapabilityBadgeText}" FontSize="12" FontWeight="SemiBold" AutomationProperties.AutomationId="TrialCapabilityBadge" />
+                    </Border>
+                    <ui:Button Content="重新检测" Appearance="Transparent" Padding="10,6" Click="OnRecheckCapability" IsEnabled="{Binding IsolatedTrial.CanRecheckCapability}" AutomationProperties.AutomationId="RecheckSandboxCapabilityButton">
+                        <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowClockwise24" /></ui:Button.Icon>
+                    </ui:Button>
+                </StackPanel>
+            </Grid>
+            <TextBlock Text="在独立的 Windows 沙箱中试运行单个离线 Windows x64 程序（含自带全部载荷的安装器）；关闭后丢弃来宾内所有改动，不改动宿主机文件。" Style="{StaticResource MutedText}" Margin="0,0,0,16" AutomationProperties.AutomationId="IsolatedTrialPurposeText" />
+
+            <!-- Capability blocked warning card -->
+            <Border CornerRadius="10" Padding="20" Margin="0,0,0,16" Background="#FFF0ED" BorderBrush="#B84A39" BorderThickness="1" Visibility="{Binding IsolatedTrial.IsCapabilityBlocked, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TrialCapabilityBlockedCard">
+                <StackPanel>
+                    <TextBlock Text="本机当前无法使用隔离试用" FontSize="12" FontWeight="SemiBold" Foreground="#8F2D1E" Margin="0,0,0,6" />
+                    <TextBlock Text="{Binding IsolatedTrial.Capability.Headline}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,6" AutomationProperties.AutomationId="TrialCapabilityBlockedHeadline" />
+                    <TextBlock Text="{Binding IsolatedTrial.Capability.Detail}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                    <TextBlock Text="{Binding IsolatedTrial.Capability.NextStep}" Style="{StaticResource MutedText}" TextWrapping="Wrap" AutomationProperties.AutomationId="TrialCapabilityNextStep" />
+                </StackPanel>
+            </Border>
+
+            <!-- Target executable picker + isolation policy card -->
+            <Border Style="{StaticResource Surface}">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="要试用的本地程序 (.exe)" Style="{StaticResource SectionTitle}" />
+                            <TextBlock Text="{Binding IsolatedTrial.ExecutableFileName}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" AutomationProperties.AutomationId="SelectedTrialExeName" />
+                        </StackPanel>
+                        <ui:Button Grid.Column="1" Content="选择 .exe 文件" Padding="18,10" Margin="16,0,0,0" VerticalAlignment="Center" Click="OnPickExe" IsEnabled="{Binding IsolatedTrial.CanSelectExecutable}" AutomationProperties.AutomationId="PickTrialExeButton">
+                            <ui:Button.Icon><ui:SymbolIcon Symbol="FolderOpen24" /></ui:Button.Icon>
+                        </ui:Button>
+                    </Grid>
+
+                    <ui:TextBox Margin="0,12,0,0" Text="{Binding IsolatedTrial.ExecutablePathInput, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsolatedTrial.CanSelectExecutable}" PlaceholderText="点击右侧“选择 .exe 文件”，或直接粘贴本地 .exe 文件路径" AutomationProperties.AutomationId="TrialExePathInput" AutomationProperties.Name="待试用的本地程序路径" />
+
+                    <Border Background="#FFF0ED" CornerRadius="6" Padding="10,8" Margin="0,10,0,0" Visibility="{Binding IsolatedTrial.SelectionError, Converter={StaticResource TextVisibility}}">
+                        <TextBlock Text="{Binding IsolatedTrial.SelectionError}" Foreground="#963D2E" TextWrapping="Wrap" AutomationProperties.AutomationId="TrialSelectionErrorText" />
+                    </Border>
+
+                    <!-- Selected file metadata -->
+                    <StackPanel Margin="0,12,0,0" Visibility="{Binding IsolatedTrial.HasExecutable, Converter={StaticResource BoolVisibility}}">
+                        <WrapPanel>
+                            <TextBlock Text="{Binding IsolatedTrial.ExecutableSizeText}" FontWeight="SemiBold" Margin="0,0,18,4" AutomationProperties.AutomationId="SelectedTrialExeSize" />
+                            <TextBlock Text="{Binding IsolatedTrial.ExecutableArchitectureText}" Style="{StaticResource MutedText}" Margin="0,0,0,4" AutomationProperties.AutomationId="SelectedTrialExeArch" />
+                        </WrapPanel>
+                        <Border Background="#FFF8EB" BorderBrush="#D99B26" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,8,0,0" Visibility="{Binding IsolatedTrial.HasSiblingFilesNotice, Converter={StaticResource BoolVisibility}}">
+                            <TextBlock Text="{Binding IsolatedTrial.SiblingFilesNoticeText}" Foreground="#7A4F00" FontSize="13" TextWrapping="Wrap" AutomationProperties.AutomationId="TrialSiblingFilesNotice" />
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Explicit isolation policy & limitation summary -->
+                    <Border Background="#F4F8F7" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="8" Padding="14,12" Margin="0,14,0,0" AutomationProperties.AutomationId="TrialIsolationPolicyCard">
+                        <StackPanel>
+                            <TextBlock Text="本次试用将启用的隔离边界" FontWeight="SemiBold" Margin="0,0,0,8" />
+                            <WrapPanel Margin="0,0,0,8">
+                                <Border Background="#E4F1ED" CornerRadius="6" Padding="10,4" Margin="0,0,8,6">
+                                    <TextBlock Text="关闭网络（离线沙箱）" Foreground="#0E5A53" FontSize="12" FontWeight="SemiBold" />
+                                </Border>
+                                <Border Background="#E4F1ED" CornerRadius="6" Padding="10,4" Margin="0,0,8,6">
+                                    <TextBlock Text="关闭剪贴板共享" Foreground="#0E5A53" FontSize="12" FontWeight="SemiBold" />
+                                </Border>
+                                <Border Background="#E4F1ED" CornerRadius="6" Padding="10,4" Margin="0,0,8,6">
+                                    <TextBlock Text="仅只读传入所选 EXE" Foreground="#0E5A53" FontSize="12" FontWeight="SemiBold" />
+                                </Border>
+                                <Border Background="#E4F1ED" CornerRadius="6" Padding="10,4" Margin="0,0,8,6">
+                                    <TextBlock Text="关闭后丢弃来宾改动" Foreground="#0E5A53" FontSize="12" FontWeight="SemiBold" />
+                                </Border>
+                            </WrapPanel>
+                            <TextBlock Text="适用限制：当前仅支持单文件、可离线运行的 Windows x64 EXE（包括自带全部载荷的安装器）。若程序需要联网下载组件或依赖原目录中的其他文件，在离线沙箱中可能无法运行。所选文件仅在沙箱内部复制后运行，不会在宿主机上执行。" Style="{StaticResource MutedText}" FontSize="13" TextWrapping="Wrap" AutomationProperties.AutomationId="TrialScopeLimitationText" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Action row -->
+                    <WrapPanel Margin="0,16,0,0">
+                        <ui:Button Content="开始隔离试用" Appearance="Primary" Padding="20,10" Margin="0,0,12,0" Click="OnStartTrial" IsEnabled="{Binding IsolatedTrial.CanStartTrial}" AutomationProperties.AutomationId="StartIsolatedTrialButton">
+                            <ui:Button.Icon><ui:SymbolIcon Symbol="Play24" /></ui:Button.Icon>
+                        </ui:Button>
+                        <ui:Button Content="结束试用" Appearance="Danger" Padding="18,10" Click="OnEndTrial" IsEnabled="{Binding IsolatedTrial.CanEndTrial}" Visibility="{Binding IsolatedTrial.IsSessionActive, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="EndIsolatedTrialButton">
+                            <ui:Button.Icon><ui:SymbolIcon Symbol="Stop24" /></ui:Button.Icon>
+                        </ui:Button>
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Live session & observable state card -->
+            <Border CornerRadius="10" Padding="20" Margin="0,0,0,16" BorderThickness="1" Visibility="{Binding IsolatedTrial.HasSessionCard, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TrialSessionCard">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="White" />
+                        <Setter Property="BorderBrush" Value="{StaticResource HairlineBrush}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsolatedTrial.Phase}" Value="{x:Static model:IsolatedTrialPhase.ProgramStarted}">
+                                <Setter Property="Background" Value="#EAF5F1" />
+                                <Setter Property="BorderBrush" Value="#137D74" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsolatedTrial.Phase}" Value="{x:Static model:IsolatedTrialPhase.SandboxOpened}">
+                                <Setter Property="Background" Value="#EEF5FB" />
+                                <Setter Property="BorderBrush" Value="#4B7AA8" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsolatedTrial.Phase}" Value="{x:Static model:IsolatedTrialPhase.Ended}">
+                                <Setter Property="Background" Value="#F5F7F7" />
+                                <Setter Property="BorderBrush" Value="#7A8C87" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsolatedTrial.Phase}" Value="{x:Static model:IsolatedTrialPhase.Failed}">
+                                <Setter Property="Background" Value="#FFF0ED" />
+                                <Setter Property="BorderBrush" Value="#B84A39" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel>
+                    <ProgressBar IsIndeterminate="True" Height="4" Margin="0,0,0,12" Visibility="{Binding IsolatedTrial.IsStarting, Converter={StaticResource BoolVisibility}}" />
+                    <ProgressBar IsIndeterminate="True" Height="4" Margin="0,0,0,12" Visibility="{Binding IsolatedTrial.IsStopping, Converter={StaticResource BoolVisibility}}" />
+
+                    <!-- Separate observable badges for Sandbox state vs Program state -->
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <WrapPanel VerticalAlignment="Center">
+                            <Border Background="#D4EFE7" CornerRadius="6" Padding="10,4" Margin="0,0,8,4">
+                                <TextBlock FontSize="12" FontWeight="SemiBold">
+                                    <Run Text="沙箱状态：" /><Run Text="{Binding IsolatedTrial.SandboxStageBadge, Mode=OneWay}" />
+                                </TextBlock>
+                            </Border>
+                            <Border Background="#E4EFF9" CornerRadius="6" Padding="10,4" Margin="0,0,8,4">
+                                <TextBlock Foreground="#24527A" FontSize="12" FontWeight="SemiBold">
+                                    <Run Text="程序状态：" /><Run Text="{Binding IsolatedTrial.ProgramStageBadge, Mode=OneWay}" />
+                                </TextBlock>
+                            </Border>
+                        </WrapPanel>
+                        <TextBlock Grid.Column="1" Text="{Binding IsolatedTrial.ActiveInstanceIdText}" Style="{StaticResource MutedText}" FontSize="12" FontFamily="Consolas, Microsoft YaHei UI" VerticalAlignment="Center" Visibility="{Binding IsolatedTrial.ActiveInstanceIdText, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="TrialInstanceIdText" />
+                    </Grid>
+
+                    <!-- Machine-readable single-property badges for UIA -->
+                    <TextBlock Text="{Binding IsolatedTrial.SandboxStageBadge}" Visibility="Collapsed" AutomationProperties.AutomationId="TrialSandboxStageValue" />
+                    <TextBlock Text="{Binding IsolatedTrial.ProgramStageBadge}" Visibility="Collapsed" AutomationProperties.AutomationId="TrialProgramStageValue" />
+
+                    <TextBlock Text="{Binding IsolatedTrial.SessionHeadline}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,6" AutomationProperties.AutomationId="TrialSessionHeadline" />
+                    <TextBlock Text="{Binding IsolatedTrial.SessionSummary}" TextWrapping="Wrap" AutomationProperties.AutomationId="TrialSessionSummary" />
+
+                    <TextBlock Text="{Binding IsolatedTrial.FailureNextStep}" Style="{StaticResource MutedText}" Margin="0,10,0,0" TextWrapping="Wrap" Visibility="{Binding IsolatedTrial.FailureNextStep, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="TrialFailureNextStep" />
+                    <TextBox Text="{Binding IsolatedTrial.FailureDiagnostic, Mode=OneWay}" Style="{StaticResource SelectableText}" Foreground="#963D2E" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" Margin="0,8,0,0" Visibility="{Binding IsolatedTrial.FailureDiagnostic, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="TrialFailureDiagnostic" />
+
+                    <!-- Observable evidence timeline -->
+                    <StackPanel Margin="0,14,0,0" Visibility="{Binding IsolatedTrial.HasEvidenceItems, Converter={StaticResource BoolVisibility}}">
+                        <TextBlock Text="本次会话的可观察依据" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,6" />
+                        <ItemsControl ItemsSource="{Binding IsolatedTrial.EvidenceItems}" AutomationProperties.AutomationId="TrialEvidenceList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="White" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="6" Padding="10,6" Margin="0,0,0,6">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding Timestamp}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,1,10,0" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Stage}" FontWeight="SemiBold" FontSize="13" Margin="0,0,10,0" />
+                                            <TextBlock Grid.Column="2" Text="{Binding Summary}" FontSize="13" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Collapsible technical details -->
+            <Expander Header="查看技术详情与本次依据" IsExpanded="{Binding IsolatedTrial.TechnicalDetailsExpanded, Mode=TwoWay}" Margin="0,0,0,16" Visibility="{Binding IsolatedTrial.CanShowTechnicalDetails, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TrialTechnicalExpander">
+                <Border Style="{StaticResource Surface}" Margin="0,10,0,0">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="沙箱配置与会话记录" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <ui:Button Grid.Column="1" Content="复制技术信息" Appearance="Transparent" Click="OnCopyTechnical" AutomationProperties.AutomationId="CopyTrialTechnicalButton" />
+                        </Grid>
+                        <TextBox Text="{Binding IsolatedTrial.TechnicalDetailsText, Mode=OneWay}" Style="{StaticResource SelectableText}" MaxHeight="300" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" AutomationProperties.AutomationId="TrialTechnicalText" AutomationProperties.Name="隔离试用技术详情" />
+                    </StackPanel>
+                </Border>
+            </Expander>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

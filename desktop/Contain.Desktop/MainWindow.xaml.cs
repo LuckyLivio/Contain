@@ -14,7 +14,7 @@ namespace Contain.Desktop;
 
 public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 {
-    private enum ActiveSection { Records, NewRecord, EnvironmentCheck, PackageCheck }
+    private enum ActiveSection { Records, NewRecord, EnvironmentCheck, PackageCheck, IsolatedTrial }
 
     private readonly PersonalRecords personalRecords;
     private readonly MyRecordsView recordsView = new();
@@ -22,6 +22,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     private readonly RecordDetailsView detailsView = new();
     private readonly EnvironmentCheckView environmentView = new();
     private readonly PackageCheckView packageView = new();
+    private readonly IsolatedTrialView isolatedTrialView = new();
     private readonly DispatcherTimer timer;
     private ActiveSection activeSection = ActiveSection.Records;
     private string localError = "";
@@ -45,10 +46,14 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
             new WorkflowCliEnvironmentService(workflowExecutable),
             dispatcher: action => Dispatcher.BeginInvoke(action));
         PackageCheck = new PackageCheckViewModel(new WorkflowCliPackageService(workflowExecutable));
+        IsolatedTrial = new IsolatedTrialViewModel(
+            new WindowsSandboxTrialService(),
+            dispatch: action => Dispatcher.BeginInvoke(action));
         Records.PropertyChanged += OnModelChanged;
         Install.PropertyChanged += OnModelChanged;
         EnvironmentCheck.PropertyChanged += OnModelChanged;
         PackageCheck.PropertyChanged += OnModelChanged;
+        IsolatedTrial.PropertyChanged += OnModelChanged;
         InitializeComponent();
         Controls.ActionNavigationItem.ConfigureNavigation(Navigation);
         DataContext = this;
@@ -65,14 +70,16 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     public InstallViewModel Install { get; }
     public EnvironmentCheckViewModel EnvironmentCheck { get; }
     public PackageCheckViewModel PackageCheck { get; }
+    public IsolatedTrialViewModel IsolatedTrial { get; }
     public string WindowTitle => "Contain · " + ProductVersion.Version;
-    public string ErrorMessage => localError.Length > 0 ? localError : activeSection is ActiveSection.EnvironmentCheck or ActiveSection.PackageCheck ? "" : Records.ErrorMessage;
+    public string ErrorMessage => localError.Length > 0 ? localError : activeSection is ActiveSection.EnvironmentCheck or ActiveSection.PackageCheck or ActiveSection.IsolatedTrial ? "" : Records.ErrorMessage;
     public string StatusMessage => localStatus.Length > 0
         ? localStatus
         : activeSection switch
         {
             ActiveSection.EnvironmentCheck => EnvironmentCheck.StatusMessage,
             ActiveSection.PackageCheck => PackageCheck.StatusMessage,
+            ActiveSection.IsolatedTrial => IsolatedTrial.StatusMessage,
             _ => Records.StatusMessage
         };
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -93,7 +100,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(Records.ErrorMessage) or nameof(Records.StatusMessage) or nameof(EnvironmentCheck.StatusMessage) or nameof(PackageCheck.StatusMessage))
+        if (e.PropertyName is nameof(Records.ErrorMessage) or nameof(Records.StatusMessage) or nameof(EnvironmentCheck.StatusMessage) or nameof(PackageCheck.StatusMessage) or nameof(IsolatedTrial.StatusMessage))
         {
             localError = "";
             localStatus = "";
@@ -111,6 +118,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         NewNavigation.IsActive = section == ActiveSection.NewRecord;
         EnvironmentNavigation.IsActive = section == ActiveSection.EnvironmentCheck;
         PackageNavigation.IsActive = section == ActiveSection.PackageCheck;
+        IsolatedTrialNavigation.IsActive = section == ActiveSection.IsolatedTrial;
         Changed(nameof(ErrorMessage));
         Changed(nameof(StatusMessage));
     }
@@ -139,6 +147,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 
     public void ShowEnvironmentCheck() => SetPage(environmentView, ActiveSection.EnvironmentCheck);
     public void ShowPackageCheck() => SetPage(packageView, ActiveSection.PackageCheck);
+    public void ShowIsolatedTrial() => SetPage(isolatedTrialView, ActiveSection.IsolatedTrial);
 
     public async Task RefreshRecordsAsync()
     {
@@ -177,6 +186,11 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     private void OnNewRecord(object sender, RoutedEventArgs e) => ShowNewRecord();
     private void OnEnvironmentCheck(object sender, RoutedEventArgs e) => ShowEnvironmentCheck();
     private void OnPackageCheck(object sender, RoutedEventArgs e) => ShowPackageCheck();
+    private async void OnIsolatedTrial(object sender, RoutedEventArgs e)
+    {
+        ShowIsolatedTrial();
+        await RunUiAsync(() => IsolatedTrial.EnsureCapabilityCheckedAsync());
+    }
     private void OnCurrentTask(object sender, RoutedEventArgs e)
     {
         SetPage(newRecordView, ActiveSection.NewRecord);
@@ -269,6 +283,28 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     }
 
     public Task RecheckPackageAsync() => RunUiAsync(() => PackageCheck.RecheckAsync());
+
+    public void PickTrialExecutable()
+    {
+        if (!IsolatedTrial.CanSelectExecutable) return;
+        var dialog = new OpenFileDialog
+        {
+            Title = "选择要隔离试用的 Windows 程序 (.exe)",
+            Filter = "Windows 可执行程序|*.exe",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+        if (dialog.ShowDialog(this) == true)
+            RunUiOperation(() => IsolatedTrial.SelectExecutable(dialog.FileName));
+        else
+            IsolatedTrial.CancelSelection();
+    }
+
+    public Task StartIsolatedTrialAsync() => RunUiAsync(() => IsolatedTrial.StartTrialAsync());
+
+    public Task EndIsolatedTrialAsync() => RunUiAsync(() => IsolatedTrial.EndTrialAsync());
+
+    public Task RecheckSandboxCapabilityAsync() => RunUiAsync(() => IsolatedTrial.RefreshCapabilityAsync());
 
     private void RunUiOperation(Action operation)
     {
@@ -379,11 +415,17 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         if (closeInProgress) return;
         closeInProgress = true;
         Navigation.IsEnabled = false;
-        localStatus = "正在停止读取与导出，请稍候…";
+        localStatus = IsolatedTrial.IsSessionActive || IsolatedTrial.IsStarting
+            ? "正在结束当前隔离试用并清理沙箱，请稍候…"
+            : "正在停止读取与导出，请稍候…";
         Changed(nameof(StatusMessage));
         try
         {
-            await Task.WhenAll(Records.CloseAsync(), EnvironmentCheck.CloseAsync(), PackageCheck.CloseAsync());
+            await Task.WhenAll(
+                Records.CloseAsync(),
+                EnvironmentCheck.CloseAsync(),
+                PackageCheck.CloseAsync(),
+                IsolatedTrial.CloseAsync());
             // Empty-library cleanup can complete synchronously inside Closing.
             // Commit the second Close only after this cancelled event unwinds.
             _ = Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
@@ -407,9 +449,11 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         Install.PropertyChanged -= OnModelChanged;
         EnvironmentCheck.PropertyChanged -= OnModelChanged;
         PackageCheck.PropertyChanged -= OnModelChanged;
+        IsolatedTrial.PropertyChanged -= OnModelChanged;
         Records.Dispose();
         EnvironmentCheck.Dispose();
         PackageCheck.Dispose();
+        IsolatedTrial.Dispose();
     }
 
     private void OnSizeChanged(object sender, SizeChangedEventArgs e)

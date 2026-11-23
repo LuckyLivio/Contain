@@ -37,7 +37,7 @@ class SourcePackageTests(unittest.TestCase):
         if command[:3]==['git','rev-parse','HEAD']:return SOURCE+'\n'
         if command[:3]==['git','status','--porcelain']:return b''
         if command==['dotnet','--version']:return P.MODERN.SDK+'\n'
-        if command[-1]=='--version' and 'contain-workflow' in Path(command[0]).name:return b'contain-workflow 0.5.0\n'
+        if command[-1]=='--version' and 'contain-workflow' in Path(command[0]).name:return b'contain-workflow 0.6.0-beta.1\n'
         if command[-1]=='--version':return b'contain 0.3.2-beta.10\n'
         cwd=Path(kwargs['cwd'])
         (cwd/'samples/viewer-demo.db-wal').write_bytes(b'')
@@ -70,10 +70,10 @@ class SourcePackageTests(unittest.TestCase):
     def test_current_inputs_bound_without_historical_core_fallback(self):
         build=self.freeze();out=self.args.output
         self.assertEqual(build['source_sha'],SOURCE);self.assertEqual(build['core_source_sha'],SOURCE)
-        self.assertEqual(build['version'],'0.5.0');self.assertEqual(build['workflow_cli_version'],'0.5.0')
+        self.assertEqual(build['version'],'0.6.0-beta.1');self.assertEqual(build['workflow_cli_version'],'0.6.0-beta.1')
         self.assertFalse(build['reused_core_binary']);self.assertEqual(build['core_sha256'],P.sha(self.core))
         spec=json.loads((out/'package-spec.json').read_text(encoding='utf-8'));identity=json.loads((out/'identity.json').read_text(encoding='utf-8'))
-        self.assertEqual(spec['launch']['window_title'],'Contain · 0.5.0')
+        self.assertEqual(spec['launch']['window_title'],'Contain · 0.6.0-beta.1')
         self.assertEqual(spec['sha256'],P.sha(out/'contain-source-windows-x64.zip'))
         self.assertEqual(identity['spec_sha256'],P.sha(out/'package-spec.json'))
         self.assertEqual(identity['entry_sha256'],P.sha(self.viewer/'Contain.Viewer.exe'))
