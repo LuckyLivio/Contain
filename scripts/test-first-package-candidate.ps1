@@ -7,6 +7,6 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'test-installed-wpf-workflow.ps1') -CandidateDirectory $CandidateDirectory `
-    -HarnessPath $HarnessPath -EvidenceDirectory $EvidenceDirectory -ExpectedVersion '0.6.0-rc.1' `
+    -HarnessPath $HarnessPath -EvidenceDirectory $EvidenceDirectory -ExpectedVersion '0.6.0' `
     -MeasureFirstPackage -FirstPackageScenario $Scenario
 exit $LASTEXITCODE
