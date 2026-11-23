@@ -105,15 +105,42 @@ public enum TrialHashState
     Failed
 }
 
+/// <summary>
+/// Authoritative observed state of the tracked Windows Sandbox instance.
+/// Never conflated with host staging cleanup state or transient CLI errors.
+/// </summary>
+public enum SandboxInstanceState
+{
+    NotCreated,
+    Running,
+    ConfirmedEnded,
+    Unknown
+}
+
+/// <summary>
+/// Authoritative observed state of the per-session host staging directory.
+/// </summary>
+public enum TrialStagingState
+{
+    NotCreated,
+    Active,
+    Cleaned,
+    Remaining,
+    Unconfirmed
+}
+
 public enum IsolatedTrialPhase
 {
     Idle,
+    Recovering,
     StartingSandbox,
     SandboxOpened,
     ProgramStarted,
     ProgramExitedAfterStart,
+    RecoveredRunning,
     Stopping,
     Ended,
+    Unconfirmed,
     Failed
 }
 
@@ -123,6 +150,8 @@ public enum TrialEndReason
     EndedByContain,
     SandboxWindowClosed,
     SandboxInstanceExited,
+    RecoveredAndEnded,
+    RecoveredAlreadyExited,
     ApplicationClosing
 }
 
@@ -139,6 +168,29 @@ public sealed record SandboxStartResult(
     int? ConnectProcessId,
     DateTimeOffset OpenedAt);
 
+public sealed record PendingTrialSessionRecord(
+    int SchemaVersion,
+    string SessionId,
+    string InstanceId,
+    string StagingRootPath,
+    string FileName,
+    DateTimeOffset CreatedUtc,
+    int OwnerProcessId,
+    long OwnerStartTimeUtcTicks);
+
+public enum PendingSessionLoadStatus
+{
+    None,
+    Loaded,
+    OwnedByAnotherLiveProcess,
+    Corrupt
+}
+
+public sealed record PendingSessionLoadResult(
+    PendingSessionLoadStatus Status,
+    PendingTrialSessionRecord? Record = null,
+    string Diagnostic = "");
+
 public enum GuestProgramLaunchOutcome
 {
     StartedAndRunning,
@@ -154,33 +206,51 @@ public sealed record GuestProgramLaunchResult(
     string Diagnostic = "");
 
 public sealed record SandboxInstancePollResult(
-    bool InstancePresentInList,
+    SandboxInstanceState InstanceState,
     bool? OwnedWindowRunning,
+    TrialStagingState StagingState = TrialStagingState.Unconfirmed,
     string Diagnostic = "");
 
 public sealed record SandboxStopResult(
-    bool InstanceStopped,
-    bool StagingCleaned,
+    SandboxInstanceState InstanceState,
+    TrialStagingState StagingState,
     string Summary,
-    string Diagnostic = "");
+    string Diagnostic = "")
+{
+    public bool IsFullyCleaned =>
+        InstanceState is SandboxInstanceState.NotCreated or SandboxInstanceState.ConfirmedEnded
+        && StagingState is TrialStagingState.NotCreated or TrialStagingState.Cleaned;
+}
 
 public sealed class IsolatedTrialException : Exception
 {
     public string Code { get; }
     public string NextStep { get; }
     public string Diagnostic { get; }
+    public SandboxStopResult? RollbackResult { get; }
+    public string? CreatedInstanceId { get; }
+    public string? StagingRootPath { get; }
+    public string? SessionId { get; }
 
     public IsolatedTrialException(
         string code,
         string message,
         string nextStep = "",
         string diagnostic = "",
-        Exception? inner = null)
+        Exception? inner = null,
+        SandboxStopResult? rollbackResult = null,
+        string? createdInstanceId = null,
+        string? stagingRootPath = null,
+        string? sessionId = null)
         : base(message, inner)
     {
         Code = code;
         NextStep = nextStep;
         Diagnostic = diagnostic;
+        RollbackResult = rollbackResult;
+        CreatedInstanceId = createdInstanceId;
+        StagingRootPath = stagingRootPath;
+        SessionId = sessionId;
     }
 }
 
@@ -201,9 +271,9 @@ public interface IIsolatedTrialService
     void OpenWindowsFeatures();
 
     /// <summary>
-    /// Creates an isolated staging folder with ONLY the selected EXE, starts a new offline
-    /// clipboard-isolated Windows Sandbox instance, opens its interactive window, and verifies
-    /// that the exact returned instance responds to a read-only ExistingLogin readiness probe.
+    /// Creates an isolated staging folder with ONLY the selected EXE, persists a minimal pending
+    /// session record immediately upon receiving the real instance ID, opens its interactive window,
+    /// and verifies that the exact returned instance responds to a read-only ExistingLogin probe.
     /// </summary>
     Task<SandboxStartResult> StartSandboxAsync(
         TrialExecutableInfo executable,
@@ -221,18 +291,49 @@ public interface IIsolatedTrialService
 
     /// <summary>
     /// Polls ONLY the tracked instance ID via `wsb list --raw` and checks ONLY remote-session
-    /// processes whose exact command line matches `--id &lt;instanceId&gt;`.
+    /// processes whose exact command line matches that exact instance ID.
+    /// Never reports ConfirmedEnded unless a valid parsed instance list explicitly omits the ID.
     /// </summary>
     Task<SandboxInstancePollResult> PollSessionAsync(
         SandboxStartResult session,
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Performs a bounded one-shot authoritative status query for an exact tracked instance ID
+    /// and its verified Contain staging directory.
+    /// </summary>
+    Task<SandboxInstancePollResult> QueryInstanceStateAsync(
+        string instanceId,
+        string? stagingRootPath,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Stops ONLY the tracked instance ID, closes ONLY any lingering remote-session window bound
-    /// to that exact ID, and deletes ONLY this session's staging directory.
+    /// to that exact ID, and cleans ONLY the verified staging directory under Contain's staging root.
+    /// Separately reports real InstanceState and real StagingState without false positives.
     /// </summary>
     Task<SandboxStopResult> StopAndCleanupAsync(
         string? instanceId,
         string? stagingRootPath,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Attempts to clean ONLY a verified Contain-owned session staging directory (used when the
+    /// sandbox instance is already confirmed ended and only temporary files remain).
+    /// </summary>
+    Task<SandboxStopResult> CleanupStagingOnlyAsync(
+        string? stagingRootPath,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads and validates any pending session record left behind by an abnormal exit.
+    /// Fails closed on corrupt records or sessions owned by another currently live Contain window.
+    /// </summary>
+    PendingSessionLoadResult LoadPendingSession();
+
+    /// <summary>
+    /// Removes the pending session record only if it matches the specified instance ID / session ID
+    /// (preventing one window from clobbering another window's newer record).
+    /// </summary>
+    void ClearPendingSession(string? expectedInstanceId = null, string? expectedSessionId = null);
 }

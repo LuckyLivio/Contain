@@ -85,6 +85,7 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         """;
 
     private readonly string stagingBaseDirectory;
+    private readonly string pendingSessionFilePath;
     private readonly TimeSpan commandTimeout;
     private readonly TimeSpan readinessTimeout;
     private readonly string? explicitWsbPath;
@@ -93,14 +94,26 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         string? stagingBaseDirectory = null,
         TimeSpan? commandTimeout = null,
         TimeSpan? readinessTimeout = null,
-        string? explicitWsbPath = null)
+        string? explicitWsbPath = null,
+        string? pendingSessionFilePath = null)
     {
         this.stagingBaseDirectory = string.IsNullOrWhiteSpace(stagingBaseDirectory)
             ? Path.Combine(Path.GetTempPath(), "Contain-IsolatedTrial")
             : Path.GetFullPath(stagingBaseDirectory);
+        this.pendingSessionFilePath = string.IsNullOrWhiteSpace(pendingSessionFilePath)
+            ? DefaultPendingSessionFilePath()
+            : Path.GetFullPath(pendingSessionFilePath);
         this.commandTimeout = commandTimeout ?? TimeSpan.FromSeconds(25);
         this.readinessTimeout = readinessTimeout ?? TimeSpan.FromSeconds(60);
         this.explicitWsbPath = string.IsNullOrWhiteSpace(explicitWsbPath) ? null : Path.GetFullPath(explicitWsbPath);
+    }
+
+    public static string DefaultPendingSessionFilePath()
+    {
+        var localData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(localData))
+            localData = Path.GetTempPath();
+        return Path.Combine(localData, "Contain", "IsolatedTrial", "pending-session.json");
     }
 
     public TrialExecutableInfo InspectExecutable(string executablePath) =>
@@ -339,31 +352,71 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         catch (JsonException) { return null; }
     }
 
-    public static IReadOnlyList<string> ParseRunningInstanceIds(string rawJson)
+    public static bool TryParseRunningInstanceIds(string rawJson, out IReadOnlyList<string> ids)
     {
-        if (string.IsNullOrWhiteSpace(rawJson)) return [];
+        ids = [];
+        if (string.IsNullOrWhiteSpace(rawJson)) return false;
         try
         {
             using var doc = JsonDocument.Parse(rawJson);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object) return [];
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return false;
             if (!doc.RootElement.TryGetProperty("WindowsSandboxEnvironments", out var arr) || arr.ValueKind != JsonValueKind.Array)
-                return [];
+                return false;
 
-            var ids = new List<string>();
+            var parsedIds = new List<string>();
             foreach (var item in arr.EnumerateArray())
             {
-                if (item.ValueKind == JsonValueKind.Object
-                    && item.TryGetProperty("Id", out var idProp)
-                    && idProp.ValueKind == JsonValueKind.String)
+                if (item.ValueKind != JsonValueKind.Object
+                    || !item.TryGetProperty("Id", out var idProp)
+                    || idProp.ValueKind != JsonValueKind.String)
                 {
-                    var raw = idProp.GetString()?.Trim();
-                    if (!string.IsNullOrEmpty(raw) && Guid.TryParse(raw, out var parsed))
-                        ids.Add(parsed.ToString("D"));
+                    return false;
                 }
+
+                var raw = idProp.GetString()?.Trim();
+                if (string.IsNullOrEmpty(raw) || !Guid.TryParse(raw, out var parsed))
+                    return false;
+
+                parsedIds.Add(parsed.ToString("D"));
             }
-            return ids;
+
+            ids = parsedIds;
+            return true;
         }
-        catch (JsonException) { return []; }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    public static IReadOnlyList<string> ParseRunningInstanceIds(string rawJson) =>
+        TryParseRunningInstanceIds(rawJson, out var ids) ? ids : [];
+
+    /// <summary>
+    /// Evaluates authoritative sandbox instance state from `wsb stop` + optional fallback `wsb list --raw`.
+    /// Never reports ConfirmedEnded unless stop succeeded OR a valid parsed instance list explicitly omits the ID.
+    /// </summary>
+    public static SandboxInstanceState EvaluateStopOutcome(
+        bool stopTimedOut,
+        int stopExitCode,
+        bool? listTimedOut,
+        int? listExitCode,
+        string? listStdout,
+        string targetInstanceId)
+    {
+        if (!stopTimedOut && stopExitCode == 0)
+            return SandboxInstanceState.ConfirmedEnded;
+
+        if (listTimedOut == false
+            && listExitCode == 0
+            && TryParseRunningInstanceIds(listStdout ?? "", out var ids))
+        {
+            return ids.Contains(targetInstanceId, StringComparer.OrdinalIgnoreCase)
+                ? SandboxInstanceState.Running
+                : SandboxInstanceState.ConfirmedEnded;
+        }
+
+        return SandboxInstanceState.Unknown;
     }
 
     public static int? ParseExecExitCode(string rawJson)
@@ -879,6 +932,10 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                     CombineDiagnostic(startRes));
             }
 
+            // Persist minimal pending-session metadata immediately after obtaining the real UUID,
+            // so even an abnormal exit during connect/readiness can still recover this exact instance.
+            SavePendingSession(CreatePendingRecord(sessionId, createdInstanceId, stagingRoot, executable.FileName));
+
             // 2. Open interactive Sandbox window detached (NEVER redirect pipes or WaitForExit!)
             int? connectPid = LaunchDetachedConnect(wsbPath, createdInstanceId);
 
@@ -893,19 +950,18 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                // Verify the instance is still alive before probing
+                // Verify the instance is still alive before probing (only trust a validly parsed list!)
                 var listCheck = await RunWsbCommandAsync(wsbPath, ["list", "--raw"], TimeSpan.FromSeconds(8), cancellationToken).ConfigureAwait(false);
-                if (!listCheck.TimedOut && listCheck.ExitCode == 0)
+                if (!listCheck.TimedOut
+                    && listCheck.ExitCode == 0
+                    && TryParseRunningInstanceIds(listCheck.Stdout, out var ids)
+                    && !ids.Contains(createdInstanceId, StringComparer.OrdinalIgnoreCase))
                 {
-                    var ids = ParseRunningInstanceIds(listCheck.Stdout);
-                    if (!ids.Contains(createdInstanceId, StringComparer.OrdinalIgnoreCase))
-                    {
-                        throw new IsolatedTrialException(
-                            "sandbox_exited_during_startup",
-                            "Windows 沙箱在初始化完成前已关闭。",
-                            "可能是窗口被提前关闭或沙箱内部启动中止；本次暂存目录已自动清理，可重新尝试。",
-                            $"instance={createdInstanceId}");
-                    }
+                    throw new IsolatedTrialException(
+                        "sandbox_exited_during_startup",
+                        "Windows 沙箱在初始化完成前已关闭。",
+                        "可能是窗口被提前关闭或沙箱内部启动中止；请确认回滚状态后再重新尝试。",
+                        $"instance={createdInstanceId}");
                 }
 
                 var remaining = readinessTimeout - readySw.Elapsed;
@@ -931,7 +987,7 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                 throw new IsolatedTrialException(
                     "sandbox_ready_timeout",
                     $"等待 Windows 沙箱桌面就绪超时（已等待 {Math.Round(readySw.Elapsed.TotalSeconds)} 秒）。",
-                    "本次临时实例与暂存目录已自动清理；请确认交互窗口未被安全软件拦截后重试。",
+                    "请确认交互窗口未被安全软件拦截，并核对下方回滚状态后重试。",
                     lastProbe is null ? $"instance={createdInstanceId}" : $"instance={createdInstanceId}; {CombineDiagnostic(lastProbe)}");
             }
 
@@ -943,11 +999,49 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                 connectPid,
                 DateTimeOffset.Now);
         }
-        catch
+        catch (Exception ex)
         {
-            // Rollback ONLY the instance and staging folder created in this failed attempt
-            await BestEffortStopAndCleanupAsync(wsbPath, createdInstanceId, stagingRoot).ConfigureAwait(false);
-            throw;
+            // Perform real verified rollback ONLY on the instance and staging folder created in this failed attempt,
+            // and propagate the true observed InstanceState + StagingState (never hardcoding "cleaned").
+            var rollback = await StopAndCleanupAsync(createdInstanceId, stagingRoot, CancellationToken.None).ConfigureAwait(false);
+            if (rollback.IsFullyCleaned)
+            {
+                ClearPendingSession(createdInstanceId, sessionId);
+            }
+
+            if (ex is OperationCanceledException)
+                throw;
+
+            if (ex is IsolatedTrialException trialEx)
+            {
+                throw new IsolatedTrialException(
+                    trialEx.Code,
+                    trialEx.Message,
+                    trialEx.NextStep,
+                    string.IsNullOrWhiteSpace(rollback.Diagnostic)
+                        ? trialEx.Diagnostic
+                        : string.IsNullOrWhiteSpace(trialEx.Diagnostic)
+                            ? rollback.Diagnostic
+                            : $"{trialEx.Diagnostic}\nrollback: {rollback.Diagnostic}",
+                    trialEx.InnerException,
+                    rollbackResult: rollback,
+                    createdInstanceId: createdInstanceId,
+                    stagingRootPath: stagingRoot,
+                    sessionId: sessionId);
+            }
+
+            throw new IsolatedTrialException(
+                "start_unexpected_error",
+                ex.Message,
+                "请先核对下方回滚状态与系统沙盒状态，再重新尝试。",
+                string.IsNullOrWhiteSpace(rollback.Diagnostic)
+                    ? $"{ex.GetType().Name}: {ex.Message}"
+                    : $"{ex.GetType().Name}: {ex.Message}\nrollback: {rollback.Diagnostic}",
+                ex,
+                rollbackResult: rollback,
+                createdInstanceId: createdInstanceId,
+                stagingRootPath: stagingRoot,
+                sessionId: sessionId);
         }
     }
 
@@ -1021,33 +1115,48 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         };
     }
 
-    public async Task<SandboxInstancePollResult> PollSessionAsync(
+    public Task<SandboxInstancePollResult> PollSessionAsync(
         SandboxStartResult session,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(session);
+        return QueryInstanceStateAsync(session.InstanceId, session.StagingRootPath, cancellationToken);
+    }
+
+    public async Task<SandboxInstancePollResult> QueryInstanceStateAsync(
+        string instanceId,
+        string? stagingRootPath,
+        CancellationToken cancellationToken = default)
+    {
+        var stagingState = InspectStagingState(stagingRootPath);
+        if (string.IsNullOrWhiteSpace(instanceId) || !Guid.TryParse(instanceId.Trim(), out var parsedGuid))
+            return new SandboxInstancePollResult(SandboxInstanceState.Unknown, null, stagingState, "invalid_instance_id");
+
+        var canonicalId = parsedGuid.ToString("D");
         var wsbPath = ResolveWsbExecutablePath();
         if (wsbPath is null)
-            return new SandboxInstancePollResult(false, null, "wsb.exe unavailable");
+            return new SandboxInstancePollResult(SandboxInstanceState.Unknown, null, stagingState, "wsb.exe unavailable");
 
         var listRes = await RunWsbCommandAsync(wsbPath, ["list", "--raw"], TimeSpan.FromSeconds(8), cancellationToken).ConfigureAwait(false);
         if (listRes.TimedOut || listRes.ExitCode != 0)
-        {
-            // Transient poll failure: assume still running to avoid falsely terminating user's session
-            return new SandboxInstancePollResult(true, null, CombineDiagnostic(listRes));
-        }
+            return new SandboxInstancePollResult(SandboxInstanceState.Unknown, null, stagingState, "wsb list failed: " + CombineDiagnostic(listRes));
 
-        var ids = ParseRunningInstanceIds(listRes.Stdout);
-        var present = ids.Contains(session.InstanceId, StringComparer.OrdinalIgnoreCase);
+        if (!TryParseRunningInstanceIds(listRes.Stdout, out var ids))
+            return new SandboxInstancePollResult(SandboxInstanceState.Unknown, null, stagingState, "wsb list returned unparseable output: " + CombineDiagnostic(listRes));
+
+        var present = ids.Contains(canonicalId, StringComparer.OrdinalIgnoreCase);
         bool? ownedWindowRunning = null;
         if (OperatingSystem.IsWindows())
         {
-            var matchedPids = FindOwnedRemoteSessionPids(session.InstanceId);
+            var matchedPids = FindOwnedRemoteSessionPids(canonicalId);
             if (matchedPids is not null)
                 ownedWindowRunning = matchedPids.Count > 0;
         }
 
-        return new SandboxInstancePollResult(present, ownedWindowRunning);
+        return new SandboxInstancePollResult(
+            present ? SandboxInstanceState.Running : SandboxInstanceState.ConfirmedEnded,
+            ownedWindowRunning,
+            stagingState);
     }
 
     public async Task<SandboxStopResult> StopAndCleanupAsync(
@@ -1057,60 +1166,187 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
     {
         var wsbPath = ResolveWsbExecutablePath();
         var diag = new StringBuilder();
-        var instanceStopped = true;
+        SandboxInstanceState instanceState;
 
-        if (!string.IsNullOrWhiteSpace(instanceId) && wsbPath is not null)
+        if (string.IsNullOrWhiteSpace(instanceId))
         {
-            var stopRes = await RunWsbCommandAsync(wsbPath, ["stop", "--id", instanceId, "--raw"], TimeSpan.FromSeconds(20), cancellationToken).ConfigureAwait(false);
-            if (stopRes.TimedOut)
+            instanceState = SandboxInstanceState.NotCreated;
+        }
+        else if (!Guid.TryParse(instanceId.Trim(), out var parsedGuid))
+        {
+            instanceState = SandboxInstanceState.Unknown;
+            diag.AppendLine("invalid instance id");
+        }
+        else if (wsbPath is null)
+        {
+            instanceState = SandboxInstanceState.Unknown;
+            diag.AppendLine("wsb.exe unavailable");
+        }
+        else
+        {
+            var canonicalId = parsedGuid.ToString("D");
+            var stopRes = await RunWsbCommandAsync(wsbPath, ["stop", "--id", canonicalId, "--raw"], TimeSpan.FromSeconds(20), cancellationToken).ConfigureAwait(false);
+            if (!stopRes.TimedOut && stopRes.ExitCode == 0)
             {
-                instanceStopped = false;
-                diag.AppendLine("wsb stop timed out: " + CombineDiagnostic(stopRes));
+                instanceState = SandboxInstanceState.ConfirmedEnded;
             }
-            else if (stopRes.ExitCode != 0)
+            else
             {
-                // Verify whether the instance is already absent from `wsb list --raw`
+                diag.AppendLine(stopRes.TimedOut
+                    ? "wsb stop timed out: " + CombineDiagnostic(stopRes)
+                    : "wsb stop failed: " + CombineDiagnostic(stopRes));
+
+                // Never infer "ended" unless a freshly returned `wsb list --raw` succeeds AND parses cleanly
                 var listCheck = await RunWsbCommandAsync(wsbPath, ["list", "--raw"], TimeSpan.FromSeconds(8), cancellationToken).ConfigureAwait(false);
-                var ids = ParseRunningInstanceIds(listCheck.Stdout);
-                instanceStopped = !ids.Contains(instanceId, StringComparer.OrdinalIgnoreCase);
-                if (!instanceStopped)
-                    diag.AppendLine("wsb stop failed: " + CombineDiagnostic(stopRes));
+                instanceState = EvaluateStopOutcome(
+                    stopRes.TimedOut,
+                    stopRes.ExitCode,
+                    listCheck.TimedOut,
+                    listCheck.ExitCode,
+                    listCheck.Stdout,
+                    canonicalId);
+
+                if (instanceState == SandboxInstanceState.Unknown)
+                {
+                    diag.AppendLine("wsb list verification inconclusive: " + CombineDiagnostic(listCheck));
+                }
+                else if (instanceState == SandboxInstanceState.Running)
+                {
+                    diag.AppendLine("wsb list confirmed instance is still running");
+                }
+                else if (instanceState == SandboxInstanceState.ConfirmedEnded)
+                {
+                    diag.AppendLine("wsb list confirmed target instance is no longer running");
+                }
             }
 
-            // Close ONLY remote session window process(es) explicitly bound to `--id <instanceId>`
-            if (OperatingSystem.IsWindows())
+            // Close ONLY remote session window process(es) explicitly bound to this exact instanceId
+            if (OperatingSystem.IsWindows() && instanceState == SandboxInstanceState.ConfirmedEnded)
             {
-                CloseOwnedRemoteSessionWindows(instanceId);
+                CloseOwnedRemoteSessionWindows(canonicalId);
             }
         }
 
-        var stagingCleaned = CleanupStagingDirectory(stagingRootPath, out var cleanErr);
-        if (!string.IsNullOrEmpty(cleanErr))
-            diag.AppendLine("staging cleanup: " + cleanErr);
-
-        var summary = (instanceStopped, stagingCleaned) switch
+        // Only delete verified staging folder when sandbox is confirmed not running (NotCreated / ConfirmedEnded).
+        // Never delete a staging folder while the instance is still Running or Unknown.
+        TrialStagingState stagingState;
+        if (instanceState is SandboxInstanceState.NotCreated or SandboxInstanceState.ConfirmedEnded)
         {
-            (true, true) => "已结束本次沙箱实例并清理宿主机暂存目录，来宾内所有改动已丢弃。",
-            (true, false) => "已结束本次沙箱实例，但宿主机暂存目录暂未完全删除（可能仍被占用）。",
-            (false, true) => "已清理宿主机暂存目录，但停止沙箱实例时遇到异常，请核对本机运行中的沙箱。",
-            _ => "停止沙箱实例与清理暂存目录均未完全成功，请查看技术详情。"
-        };
+            stagingState = CleanupStagingDirectoryVerified(stagingRootPath, out var cleanErr);
+            if (!string.IsNullOrEmpty(cleanErr))
+                diag.AppendLine("staging cleanup: " + cleanErr);
+        }
+        else
+        {
+            stagingState = InspectStagingState(stagingRootPath);
+        }
 
-        return new SandboxStopResult(instanceStopped, stagingCleaned, summary, diag.ToString().Trim());
+        var summary = DescribeStopSummary(instanceState, stagingState);
+        var result = new SandboxStopResult(instanceState, stagingState, summary, diag.ToString().Trim());
+        if (result.IsFullyCleaned && !string.IsNullOrWhiteSpace(instanceId))
+        {
+            ClearPendingSession(instanceId);
+        }
+        return result;
     }
 
-    private async Task BestEffortStopAndCleanupAsync(string wsbPath, string? instanceId, string stagingRootPath)
+    public Task<SandboxStopResult> CleanupStagingOnlyAsync(
+        string? stagingRootPath,
+        CancellationToken cancellationToken = default)
     {
-        if (!string.IsNullOrWhiteSpace(instanceId))
+        cancellationToken.ThrowIfCancellationRequested();
+        var stagingState = CleanupStagingDirectoryVerified(stagingRootPath, out var cleanErr);
+        var diag = string.IsNullOrEmpty(cleanErr) ? "" : "staging cleanup: " + cleanErr;
+        var summary = DescribeStopSummary(SandboxInstanceState.ConfirmedEnded, stagingState);
+        return Task.FromResult(new SandboxStopResult(SandboxInstanceState.ConfirmedEnded, stagingState, summary, diag));
+    }
+
+    public static string DescribeStopSummary(SandboxInstanceState instanceState, TrialStagingState stagingState) =>
+        (instanceState, stagingState) switch
         {
-            try
+            (SandboxInstanceState.NotCreated or SandboxInstanceState.ConfirmedEnded, TrialStagingState.NotCreated or TrialStagingState.Cleaned)
+                => "已确认本次沙箱实例结束，并已清理本次宿主暂存目录。",
+            (SandboxInstanceState.NotCreated or SandboxInstanceState.ConfirmedEnded, TrialStagingState.Remaining)
+                => "已确认本次沙箱实例结束，但本次宿主暂存目录仍有残留（可能被占用），可点击“重试清理”。",
+            (SandboxInstanceState.NotCreated or SandboxInstanceState.ConfirmedEnded, _)
+                => "已确认本次沙箱实例结束，但本次宿主暂存目录状态尚未确认。",
+            (SandboxInstanceState.Running, _)
+                => "本次沙箱实例仍在运行，尚未清理临时文件，请点击“结束这次试用”重试。",
+            _
+                => "暂时无法确认本次沙箱实例是否已结束，未删除关联信息；请稍后点击“重新检查”或重试结束。"
+        };
+
+    public static bool IsVerifiedSessionStagingPath(string? candidatePath, string stagingBaseDir, string? expectedSessionId = null)
+    {
+        if (string.IsNullOrWhiteSpace(candidatePath) || string.IsNullOrWhiteSpace(stagingBaseDir))
+            return false;
+
+        try
+        {
+            if (!Path.IsPathFullyQualified(candidatePath)) return false;
+            var fullBase = Path.TrimEndingDirectorySeparator(Path.GetFullPath(stagingBaseDir));
+            var fullCandidate = Path.TrimEndingDirectorySeparator(Path.GetFullPath(candidatePath));
+            var parent = Path.GetDirectoryName(fullCandidate);
+            if (string.IsNullOrEmpty(parent) || !string.Equals(parent, fullBase, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            var leaf = Path.GetFileName(fullCandidate);
+            if (string.IsNullOrEmpty(leaf) || leaf.Length < 8 || leaf.Length > 32)
+                return false;
+            foreach (var ch in leaf)
             {
-                await RunWsbCommandAsync(wsbPath, ["stop", "--id", instanceId, "--raw"], TimeSpan.FromSeconds(15), CancellationToken.None).ConfigureAwait(false);
-                if (OperatingSystem.IsWindows()) CloseOwnedRemoteSessionWindows(instanceId);
+                if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z')))
+                    return false;
             }
-            catch { }
+            if (!string.IsNullOrEmpty(expectedSessionId) && !string.Equals(leaf, expectedSessionId, StringComparison.Ordinal))
+                return false;
+
+            // Refuse to traverse or delete reparse points / junctions / symlinks
+            if (Directory.Exists(fullBase) && (File.GetAttributes(fullBase) & FileAttributes.ReparsePoint) != 0)
+                return false;
+            if (Directory.Exists(fullCandidate) && (File.GetAttributes(fullCandidate) & FileAttributes.ReparsePoint) != 0)
+                return false;
+
+            return true;
         }
-        CleanupStagingDirectory(stagingRootPath, out _);
+        catch
+        {
+            return false;
+        }
+    }
+
+    public TrialStagingState InspectStagingState(string? stagingRootPath)
+    {
+        if (string.IsNullOrWhiteSpace(stagingRootPath))
+            return TrialStagingState.NotCreated;
+        if (!IsVerifiedSessionStagingPath(stagingRootPath, stagingBaseDirectory))
+            return TrialStagingState.Unconfirmed;
+
+        try
+        {
+            var full = Path.GetFullPath(stagingRootPath);
+            return Directory.Exists(full) ? TrialStagingState.Remaining : TrialStagingState.Cleaned;
+        }
+        catch
+        {
+            return TrialStagingState.Unconfirmed;
+        }
+    }
+
+    internal TrialStagingState CleanupStagingDirectoryVerified(string? stagingRootPath, out string error)
+    {
+        error = "";
+        if (string.IsNullOrWhiteSpace(stagingRootPath))
+            return TrialStagingState.NotCreated;
+        if (!IsVerifiedSessionStagingPath(stagingRootPath, stagingBaseDirectory))
+        {
+            error = "refused unverified staging path outside Contain staging root";
+            return TrialStagingState.Unconfirmed;
+        }
+
+        return CleanupStagingDirectory(stagingRootPath, out error)
+            ? TrialStagingState.Cleaned
+            : TrialStagingState.Remaining;
     }
 
     internal static bool CleanupStagingDirectory(string? stagingRootPath, out string error)
@@ -1138,6 +1374,202 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
             }
         }
         return !Directory.Exists(full);
+    }
+
+    public PendingSessionLoadResult LoadPendingSession()
+    {
+        if (!File.Exists(pendingSessionFilePath))
+            return new PendingSessionLoadResult(PendingSessionLoadStatus.None);
+
+        try
+        {
+            if ((File.GetAttributes(pendingSessionFilePath) & FileAttributes.ReparsePoint) != 0)
+                return new PendingSessionLoadResult(PendingSessionLoadStatus.Corrupt, Diagnostic: "pending session file is a reparse point");
+
+            var raw = File.ReadAllText(pendingSessionFilePath, Utf8NoBom);
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                return QuarantineCorruptPendingRecord("root is not JSON object");
+
+            if (!root.TryGetProperty("schema_version", out var verProp) || !verProp.TryGetInt32(out var ver) || ver != 1)
+                return QuarantineCorruptPendingRecord("unsupported schema_version");
+
+            var sessionId = root.TryGetProperty("session_id", out var sidProp) && sidProp.ValueKind == JsonValueKind.String
+                ? sidProp.GetString()?.Trim() ?? ""
+                : "";
+            var rawInstanceId = root.TryGetProperty("instance_id", out var idProp) && idProp.ValueKind == JsonValueKind.String
+                ? idProp.GetString()?.Trim() ?? ""
+                : "";
+            var stagingRoot = root.TryGetProperty("staging_root_path", out var stageProp) && stageProp.ValueKind == JsonValueKind.String
+                ? stageProp.GetString()?.Trim() ?? ""
+                : "";
+            var fileName = root.TryGetProperty("file_name", out var fnProp) && fnProp.ValueKind == JsonValueKind.String
+                ? fnProp.GetString()?.Trim() ?? ""
+                : "";
+            var createdUtc = root.TryGetProperty("created_utc", out var tsProp)
+                && tsProp.ValueKind == JsonValueKind.String
+                && DateTimeOffset.TryParse(tsProp.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsedTs)
+                ? parsedTs
+                : DateTimeOffset.MinValue;
+            var ownerPid = root.TryGetProperty("owner_pid", out var pidProp) && pidProp.TryGetInt32(out var parsedPid)
+                ? parsedPid
+                : 0;
+            var ownerTicks = root.TryGetProperty("owner_start_time_utc_ticks", out var ticksProp) && ticksProp.TryGetInt64(out var parsedTicks)
+                ? parsedTicks
+                : 0L;
+
+            if (!Guid.TryParse(rawInstanceId, out var parsedGuid))
+                return QuarantineCorruptPendingRecord("invalid instance_id GUID");
+
+            if (!IsVerifiedSessionStagingPath(stagingRoot, stagingBaseDirectory, sessionId))
+                return QuarantineCorruptPendingRecord("staging_root_path failed Contain staging containment verification");
+
+            var record = new PendingTrialSessionRecord(
+                1,
+                sessionId,
+                parsedGuid.ToString("D"),
+                Path.GetFullPath(stagingRoot),
+                fileName,
+                createdUtc,
+                ownerPid,
+                ownerTicks);
+
+            if (ownerPid > 0 && ownerPid != Environment.ProcessId && IsOwnerProcessStillAlive(ownerPid, ownerTicks))
+            {
+                return new PendingSessionLoadResult(
+                    PendingSessionLoadStatus.OwnedByAnotherLiveProcess,
+                    record,
+                    $"owned by live Contain process PID {ownerPid}");
+            }
+
+            return new PendingSessionLoadResult(PendingSessionLoadStatus.Loaded, record);
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return QuarantineCorruptPendingRecord($"{ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    public void SavePendingSession(PendingTrialSessionRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        if (!Guid.TryParse(record.InstanceId, out var parsedGuid))
+            return;
+        if (!IsVerifiedSessionStagingPath(record.StagingRootPath, stagingBaseDirectory, record.SessionId))
+            return;
+
+        try
+        {
+            var dir = Path.GetDirectoryName(pendingSessionFilePath);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+
+            var payload = JsonSerializer.Serialize(new
+            {
+                schema_version = 1,
+                session_id = record.SessionId,
+                instance_id = parsedGuid.ToString("D"),
+                staging_root_path = Path.GetFullPath(record.StagingRootPath),
+                file_name = record.FileName,
+                created_utc = record.CreatedUtc.ToString("O", CultureInfo.InvariantCulture),
+                owner_pid = record.OwnerProcessId,
+                owner_start_time_utc_ticks = record.OwnerStartTimeUtcTicks
+            }, new JsonSerializerOptions { WriteIndented = true });
+
+            var tmpPath = pendingSessionFilePath + "." + Guid.NewGuid().ToString("N")[..8] + ".tmp";
+            File.WriteAllText(tmpPath, payload + Environment.NewLine, Utf8NoBom);
+            File.Move(tmpPath, pendingSessionFilePath, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Never fail a trial launch solely because optional recovery metadata could not be written
+        }
+    }
+
+    public void ClearPendingSession(string? expectedInstanceId = null, string? expectedSessionId = null)
+    {
+        try
+        {
+            if (!File.Exists(pendingSessionFilePath)) return;
+            if (!string.IsNullOrWhiteSpace(expectedInstanceId) || !string.IsNullOrWhiteSpace(expectedSessionId))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(File.ReadAllText(pendingSessionFilePath, Utf8NoBom));
+                    var root = doc.RootElement;
+                    if (!string.IsNullOrWhiteSpace(expectedInstanceId)
+                        && root.TryGetProperty("instance_id", out var idProp)
+                        && idProp.ValueKind == JsonValueKind.String
+                        && !string.Equals(idProp.GetString()?.Trim(), expectedInstanceId.Trim(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        return;
+                    }
+                    if (!string.IsNullOrWhiteSpace(expectedSessionId)
+                        && root.TryGetProperty("session_id", out var sidProp)
+                        && sidProp.ValueKind == JsonValueKind.String
+                        && !string.Equals(sidProp.GetString()?.Trim(), expectedSessionId.Trim(), StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+                }
+                catch (JsonException) { /* Corrupt file may still be cleared explicitly if requested */ }
+            }
+
+            File.Delete(pendingSessionFilePath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
+    private PendingSessionLoadResult QuarantineCorruptPendingRecord(string reason)
+    {
+        try
+        {
+            if (File.Exists(pendingSessionFilePath))
+            {
+                var corruptPath = pendingSessionFilePath + ".corrupt";
+                File.Move(pendingSessionFilePath, corruptPath, overwrite: true);
+            }
+        }
+        catch { }
+        return new PendingSessionLoadResult(PendingSessionLoadStatus.Corrupt, Diagnostic: "corrupt pending session record ignored: " + reason);
+    }
+
+    private static PendingTrialSessionRecord CreatePendingRecord(string sessionId, string instanceId, string stagingRoot, string fileName)
+    {
+        long startTicks = 0;
+        try
+        {
+            using var current = Process.GetCurrentProcess();
+            startTicks = current.StartTime.ToUniversalTime().Ticks;
+        }
+        catch { }
+
+        return new PendingTrialSessionRecord(
+            1,
+            sessionId,
+            instanceId,
+            Path.GetFullPath(stagingRoot),
+            fileName,
+            DateTimeOffset.UtcNow,
+            Environment.ProcessId,
+            startTicks);
+    }
+
+    private static bool IsOwnerProcessStillAlive(int ownerPid, long ownerStartTimeUtcTicks)
+    {
+        try
+        {
+            using var proc = Process.GetProcessById(ownerPid);
+            if (proc.HasExited) return false;
+            if (ownerStartTimeUtcTicks <= 0) return true;
+            var actualTicks = proc.StartTime.ToUniversalTime().Ticks;
+            // Allow small clock/granularity drift (~2 seconds) while catching PID reuse
+            return Math.Abs(actualTicks - ownerStartTimeUtcTicks) < TimeSpan.FromSeconds(2).Ticks;
+        }
+        catch (ArgumentException) { return false; }
+        catch (InvalidOperationException) { return false; }
+        catch (Win32Exception) { return true; /* Process exists but cannot read start time; fail closed and do not interfere */ }
     }
 
     private static async Task CopyFileAsync(string sourcePath, string destinationPath, CancellationToken cancellationToken)

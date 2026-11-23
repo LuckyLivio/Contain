@@ -46,8 +46,11 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
             new WorkflowCliEnvironmentService(workflowExecutable),
             dispatcher: action => Dispatcher.BeginInvoke(action));
         PackageCheck = new PackageCheckViewModel(new WorkflowCliPackageService(workflowExecutable));
+        var appDataRoot = Path.GetDirectoryName(Path.GetDirectoryName(personalRecords.DatabasePath))
+            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Contain");
+        var pendingSessionFile = Path.Combine(appDataRoot, "IsolatedTrial", "pending-session.json");
         IsolatedTrial = new IsolatedTrialViewModel(
-            new WindowsSandboxTrialService(),
+            new WindowsSandboxTrialService(pendingSessionFilePath: pendingSessionFile),
             dispatch: action => Dispatcher.BeginInvoke(action));
         Records.PropertyChanged += OnModelChanged;
         Install.PropertyChanged += OnModelChanged;
@@ -71,6 +74,8 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     public EnvironmentCheckViewModel EnvironmentCheck { get; }
     public PackageCheckViewModel PackageCheck { get; }
     public IsolatedTrialViewModel IsolatedTrial { get; }
+    public bool ShowPendingTrialBanner =>
+        IsolatedTrial.HasPendingRecoveryBanner && activeSection != ActiveSection.IsolatedTrial;
     public string WindowTitle => "Contain · " + ProductVersion.Version;
     public string ErrorMessage => localError.Length > 0 ? localError : activeSection is ActiveSection.EnvironmentCheck or ActiveSection.PackageCheck or ActiveSection.IsolatedTrial ? "" : Records.ErrorMessage;
     public string StatusMessage => localStatus.Length > 0
@@ -96,6 +101,8 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
             else
                 await Records.LoadPersonalAsync();
         });
+        // Non-blocking background check for any unfinished trial left by an abnormal Contain exit.
+        _ = RunUiAsync(() => IsolatedTrial.CheckPendingSessionOnStartupAsync());
     }
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
@@ -107,6 +114,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         }
         Changed(nameof(ErrorMessage));
         Changed(nameof(StatusMessage));
+        Changed(nameof(ShowPendingTrialBanner));
     }
 
     private void SetPage(UIElement page, ActiveSection section)
@@ -121,6 +129,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         IsolatedTrialNavigation.IsActive = section == ActiveSection.IsolatedTrial;
         Changed(nameof(ErrorMessage));
         Changed(nameof(StatusMessage));
+        Changed(nameof(ShowPendingTrialBanner));
     }
 
     private bool GuardTaskNavigation()
@@ -303,6 +312,12 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     public Task StartIsolatedTrialAsync() => RunUiAsync(() => IsolatedTrial.StartTrialAsync());
 
     public Task EndIsolatedTrialAsync() => RunUiAsync(() => IsolatedTrial.EndTrialAsync());
+
+    public Task RecheckPendingTrialAsync() => RunUiAsync(() => IsolatedTrial.RecheckPendingSessionAsync());
+
+    public Task RetryEndPendingTrialAsync() => RunUiAsync(() => IsolatedTrial.RetryEndPendingSessionAsync());
+
+    public Task RetryTrialStagingCleanupAsync() => RunUiAsync(() => IsolatedTrial.RetryStagingCleanupAsync());
 
     public Task RecheckSandboxCapabilityAsync() => RunUiAsync(() => IsolatedTrial.RefreshCapabilityAsync());
 

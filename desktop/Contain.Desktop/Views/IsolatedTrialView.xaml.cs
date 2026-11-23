@@ -12,6 +12,9 @@ public partial class IsolatedTrialView : UserControl
     private void OnCopySha256(object sender, RoutedEventArgs e) => Shell.CopyText(Shell.IsolatedTrial.ComputedSha256);
     private async void OnStartTrial(object sender, RoutedEventArgs e) => await Shell.StartIsolatedTrialAsync();
     private async void OnEndTrial(object sender, RoutedEventArgs e) => await Shell.EndIsolatedTrialAsync();
+    private async void OnRecheckPendingSession(object sender, RoutedEventArgs e) => await Shell.RecheckPendingTrialAsync();
+    private async void OnRetryEndPendingSession(object sender, RoutedEventArgs e) => await Shell.RetryEndPendingTrialAsync();
+    private async void OnRetryStagingCleanup(object sender, RoutedEventArgs e) => await Shell.RetryTrialStagingCleanupAsync();
     private async void OnRecheckCapability(object sender, RoutedEventArgs e) => await Shell.RecheckSandboxCapabilityAsync();
     private void OnOpenWindowsFeatures(object sender, RoutedEventArgs e) => Shell.OpenWindowsFeaturesFromTrial();
     private void OnGoToPackaging(object sender, RoutedEventArgs e) => Shell.ShowEnvironmentCheck();

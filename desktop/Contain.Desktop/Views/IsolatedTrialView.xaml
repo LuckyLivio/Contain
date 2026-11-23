@@ -52,6 +52,14 @@
                                 <Setter Property="Background" Value="#F2F8F6" />
                                 <Setter Property="BorderBrush" Value="#137D74" />
                             </DataTrigger>
+                            <DataTrigger Binding="{Binding IsolatedTrial.Phase}" Value="{x:Static model:IsolatedTrialPhase.RecoveredRunning}">
+                                <Setter Property="Background" Value="#FFFBF2" />
+                                <Setter Property="BorderBrush" Value="#D99B26" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsolatedTrial.Phase}" Value="{x:Static model:IsolatedTrialPhase.Unconfirmed}">
+                                <Setter Property="Background" Value="#FFF8EB" />
+                                <Setter Property="BorderBrush" Value="#D99B26" />
+                            </DataTrigger>
                             <DataTrigger Binding="{Binding IsolatedTrial.Phase}" Value="{x:Static model:IsolatedTrialPhase.Failed}">
                                 <Setter Property="Background" Value="#FFF0ED" />
                                 <Setter Property="BorderBrush" Value="#B84A39" />
@@ -60,19 +68,25 @@
                     </Style>
                 </Border.Style>
                 <StackPanel>
+                    <ProgressBar IsIndeterminate="True" Height="4" Margin="0,0,0,12" Visibility="{Binding IsolatedTrial.IsRecovering, Converter={StaticResource BoolVisibility}}" />
                     <ProgressBar IsIndeterminate="True" Height="4" Margin="0,0,0,12" Visibility="{Binding IsolatedTrial.IsStarting, Converter={StaticResource BoolVisibility}}" />
                     <ProgressBar IsIndeterminate="True" Height="4" Margin="0,0,0,12" Visibility="{Binding IsolatedTrial.IsStopping, Converter={StaticResource BoolVisibility}}" />
 
-                    <!-- Clean stage badges (UUID/PID/timeline stay inside Technical Details) -->
+                    <!-- Clean stage badges separating Sandbox instance state from Program / Host Staging state -->
                     <WrapPanel Margin="0,0,0,10">
                         <Border Background="#D4EFE7" CornerRadius="6" Padding="10,4" Margin="0,0,8,4">
-                            <TextBlock FontSize="12" FontWeight="SemiBold">
-                                <Run Text="沙箱状态：" /><Run Text="{Binding IsolatedTrial.SandboxStageBadge, Mode=OneWay}" />
+                            <TextBlock FontSize="12" FontWeight="SemiBold" AutomationProperties.AutomationId="TrialSandboxStageBadge">
+                                <Run Text="沙箱实例：" /><Run Text="{Binding IsolatedTrial.SandboxStageBadge, Mode=OneWay}" />
                             </TextBlock>
                         </Border>
-                        <Border Background="#E4EFF9" CornerRadius="6" Padding="10,4" Margin="0,0,8,4">
-                            <TextBlock Foreground="#24527A" FontSize="12" FontWeight="SemiBold">
+                        <Border Background="#E4EFF9" CornerRadius="6" Padding="10,4" Margin="0,0,8,4" Visibility="{Binding IsolatedTrial.ShowProgramStageBadge, Converter={StaticResource BoolVisibility}}">
+                            <TextBlock Foreground="#24527A" FontSize="12" FontWeight="SemiBold" AutomationProperties.AutomationId="TrialProgramStageBadge">
                                 <Run Text="程序状态：" /><Run Text="{Binding IsolatedTrial.ProgramStageBadge, Mode=OneWay}" />
+                            </TextBlock>
+                        </Border>
+                        <Border Background="#EEF2F2" CornerRadius="6" Padding="10,4" Margin="0,0,8,4" Visibility="{Binding IsolatedTrial.ShowStagingStageBadge, Converter={StaticResource BoolVisibility}}">
+                            <TextBlock Foreground="#354643" FontSize="12" FontWeight="SemiBold" AutomationProperties.AutomationId="TrialStagingStageBadge">
+                                <Run Text="暂存目录：" /><Run Text="{Binding IsolatedTrial.StagingStageBadge, Mode=OneWay}" />
                             </TextBlock>
                         </Border>
                     </WrapPanel>
@@ -110,10 +124,17 @@
 
                     <TextBlock Text="{Binding IsolatedTrial.FailureNextStep}" Style="{StaticResource MutedText}" Margin="0,10,0,0" TextWrapping="Wrap" Visibility="{Binding IsolatedTrial.FailureNextStep, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="TrialFailureNextStep" />
 
-                    <!-- Immediate primary actions right on the result card -->
+                    <!-- Immediate primary actions right on the result / recovery card -->
                     <WrapPanel Margin="0,14,0,0">
-                        <ui:Button Content="结束试用" Appearance="Danger" Padding="18,10" Margin="0,0,12,0" Click="OnEndTrial" IsEnabled="{Binding IsolatedTrial.CanEndTrial}" Visibility="{Binding IsolatedTrial.IsSessionActive, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="EndIsolatedTrialButton">
+                        <ui:Button Content="{Binding IsolatedTrial.EndTrialButtonText}" Appearance="Danger" Padding="18,10" Margin="0,0,10,0" Click="OnEndTrial" IsEnabled="{Binding IsolatedTrial.CanEndTrial}" Visibility="{Binding IsolatedTrial.IsSessionActive, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="EndIsolatedTrialButton">
                             <ui:Button.Icon><ui:SymbolIcon Symbol="Stop24" /></ui:Button.Icon>
+                        </ui:Button>
+                        <ui:Button Content="重新检查" Appearance="Primary" Padding="18,10" Margin="0,0,10,0" Click="OnRecheckPendingSession" IsEnabled="{Binding IsolatedTrial.CanRecheckPendingSession}" Visibility="{Binding IsolatedTrial.CanRecheckPendingSession, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="RecheckPendingSessionButton">
+                            <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowClockwise24" /></ui:Button.Icon>
+                        </ui:Button>
+                        <ui:Button Content="{Binding IsolatedTrial.RetryEndPendingButtonText}" Appearance="Secondary" Padding="16,10" Margin="0,0,10,0" Click="OnRetryEndPendingSession" IsEnabled="{Binding IsolatedTrial.CanRetryEndPendingSession}" Visibility="{Binding IsolatedTrial.CanRetryEndPendingSession, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="RetryEndPendingSessionButton" />
+                        <ui:Button Content="重试清理" Appearance="Primary" Padding="18,10" Margin="0,0,10,0" Click="OnRetryStagingCleanup" IsEnabled="{Binding IsolatedTrial.CanRetryStagingCleanup}" Visibility="{Binding IsolatedTrial.CanRetryStagingCleanup, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="RetryStagingCleanupButton">
+                            <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowClockwise24" /></ui:Button.Icon>
                         </ui:Button>
                         <ui:Button Content="再次试用" Appearance="Primary" Padding="20,10" Click="OnStartTrial" IsEnabled="{Binding IsolatedTrial.CanRetryTrial}" Visibility="{Binding IsolatedTrial.CanRetryTrial, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="RetryIsolatedTrialButton">
                             <ui:Button.Icon><ui:SymbolIcon Symbol="Play24" /></ui:Button.Icon>
