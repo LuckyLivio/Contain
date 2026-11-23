@@ -360,6 +360,33 @@ public sealed record PendingSessionLoadResult(
     PendingTrialSessionRecord? Record = null,
     string Diagnostic = "");
 
+public sealed record PendingPreparedSnapshotRecord(
+    int SchemaVersion,
+    string SessionId,
+    string StagingRootPath,
+    string DisplayName,
+    DateTimeOffset CreatedUtc,
+    int OwnerProcessId,
+    long OwnerStartTimeUtcTicks);
+
+public sealed record OrphanedPreparedSnapshotItem(
+    string SessionId,
+    string StagingRootPath,
+    string DisplayName,
+    TrialStagingState StagingState,
+    string Diagnostic = "");
+
+public sealed record OrphanedPreparedReclaimResult(
+    int ReclaimedCount,
+    int SkippedLiveOwnerCount,
+    int SkippedSandboxOwnedCount,
+    int IgnoredInvalidCount,
+    IReadOnlyList<OrphanedPreparedSnapshotItem> RemainingItems,
+    string Diagnostic = "")
+{
+    public bool HasRemaining => RemainingItems.Count > 0;
+}
+
 public enum GuestProgramLaunchOutcome
 {
     StartedAndRunning,
@@ -466,11 +493,13 @@ public interface IIsolatedTrialService
     /// <summary>
     /// Verifies that an already-prepared staging snapshot is still intact AND that the live
     /// source folder has not changed since the snapshot was prepared (including equal-length
-    /// edits). Returns false if source changed or staging was disturbed so caller can re-stage
-    /// and ask the user to re-confirm.
+    /// edits with restored timestamps across directories of any size). Performs read-only
+    /// streaming SHA-256 verification with progress and cancellation support. Returns false if
+    /// source changed or staging was disturbed so caller can re-stage and ask the user to re-confirm.
     /// </summary>
     Task<bool> IsPreparedSnapshotFreshAsync(
         PreparedTrialSnapshot snapshot,
+        IProgress<TrialStagingProgress>? progress = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -528,6 +557,25 @@ public interface IIsolatedTrialService
     /// </summary>
     Task<SandboxStopResult> CleanupStagingOnlyAsync(
         string? stagingRootPath,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Attempts to clean ONLY a verified Contain-owned prepared staging directory and removes its
+    /// cross-restart ownership record strictly when deletion is confirmed (Cleaned or NotCreated).
+    /// Retains ownership metadata if files remain locked so retry or next startup can reclaim it.
+    /// </summary>
+    Task<SandboxStopResult> CleanupPreparedStagingAsync(
+        string sessionId,
+        string? stagingRootPath,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reclaims ONLY orphaned pre-start staging snapshots whose verifiable cross-restart ownership
+    /// records belong to a confirmed-dead Contain process and were never handed off to a Sandbox.
+    /// Strictly skips live peer Contain windows, sandbox-owned sessions, and never enumerates or
+    /// touches unowned directories under the temp staging root.
+    /// </summary>
+    Task<OrphanedPreparedReclaimResult> ReclaimOrphanedPreparedSnapshotsAsync(
         CancellationToken cancellationToken = default);
 
     /// <summary>

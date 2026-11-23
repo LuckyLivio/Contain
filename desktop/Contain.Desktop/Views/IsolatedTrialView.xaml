@@ -167,6 +167,20 @@
                 </StackPanel>
             </Border>
 
+            <!-- RC.1 Orphaned pre-start prepared staging warning card (shown ONLY when locked/remaining) -->
+            <Border CornerRadius="10" Padding="18" Margin="0,0,0,16" Background="#FFF8EB" BorderBrush="#D99B26" BorderThickness="1" Visibility="{Binding IsolatedTrial.HasOrphanedPreparedRemaining, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TrialOrphanedPreparedCard">
+                <StackPanel>
+                    <TextBlock Text="上次未完成准备留下的临时暂存目录待清理（未创建试用记录）" FontSize="12" FontWeight="SemiBold" Foreground="#8A4B00" Margin="0,0,0,6" />
+                    <TextBlock Text="{Binding IsolatedTrial.OrphanedPreparedWarningHeadline}" FontSize="17" FontWeight="SemiBold" Foreground="#7A4300" TextWrapping="Wrap" Margin="0,0,0,6" AutomationProperties.AutomationId="TrialOrphanedPreparedHeadline" />
+                    <TextBlock Text="{Binding IsolatedTrial.OrphanedPreparedWarningDetail}" Style="{StaticResource MutedText}" TextWrapping="Wrap" AutomationProperties.AutomationId="TrialOrphanedPreparedDetail" />
+                    <WrapPanel Margin="0,12,0,0">
+                        <ui:Button Content="重试清理" Appearance="Primary" Padding="18,9" Click="OnRetryOrphanedPreparedCleanup" IsEnabled="{Binding IsolatedTrial.CanRetryOrphanedPreparedCleanup}" AutomationProperties.AutomationId="RetryOrphanedPreparedCleanupButton">
+                            <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowClockwise24" /></ui:Button.Icon>
+                        </ui:Button>
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+
             <!-- Capability blocked card with tailored non-destructive primary action -->
             <Border CornerRadius="10" Padding="20" Margin="0,0,0,16" Background="#FFF6F4" BorderBrush="#C86D5D" BorderThickness="1" Visibility="{Binding IsolatedTrial.IsCapabilityBlocked, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TrialCapabilityBlockedCard">
                 <StackPanel>

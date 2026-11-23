@@ -19,6 +19,7 @@ public partial class IsolatedTrialView : UserControl
     private async void OnRecheckPendingSession(object sender, RoutedEventArgs e) => await Shell.RecheckPendingTrialAsync();
     private async void OnRetryEndPendingSession(object sender, RoutedEventArgs e) => await Shell.RetryEndPendingTrialAsync();
     private async void OnRetryStagingCleanup(object sender, RoutedEventArgs e) => await Shell.RetryTrialStagingCleanupAsync();
+    private async void OnRetryOrphanedPreparedCleanup(object sender, RoutedEventArgs e) => await Shell.RetryOrphanedPreparedCleanupAsync();
     private async void OnRecheckCapability(object sender, RoutedEventArgs e) => await Shell.RecheckSandboxCapabilityAsync();
     private void OnOpenWindowsFeatures(object sender, RoutedEventArgs e) => Shell.OpenWindowsFeaturesFromTrial();
     private void OnGoToPackaging(object sender, RoutedEventArgs e) => Shell.ShowEnvironmentCheck();

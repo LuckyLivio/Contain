@@ -1619,6 +1619,364 @@ internal static class IsolatedTrialChecks
             await vm.CloseAsync();
         });
 
+        await Check("RC.1: prepared staging ownership created before staging dir and dead-owner partial/complete orphans reclaimed on restart with zero history created", async () =>
+        {
+            using var temp = new TempDir();
+            var stagingBase = temp.Sub("staging-rc1-1");
+            var appDataDir = temp.Sub("appdata-rc1-1");
+            var pendingSessionFile = Path.Combine(appDataDir, "pending-session.json");
+            var pendingPreparedDir = Path.Combine(appDataDir, "PendingPrepared");
+            var historyDir = Path.Combine(appDataDir, "History");
+            var appRoot = temp.Sub("SampleApp");
+            WriteMinimalPe(Path.Combine(appRoot, "App.exe"), 0x8664, extraByte: 0x31);
+            File.WriteAllText(Path.Combine(appRoot, "readme.txt"), "sample-rc1");
+
+            var realSvc = new WindowsSandboxTrialService(
+                stagingBaseDirectory: stagingBase,
+                pendingSessionFilePath: pendingSessionFile,
+                pendingPreparedDirectoryPath: pendingPreparedDir);
+            var store = new JsonTrialHistoryStore(historyDir);
+
+            // 1. Live PrepareFolderSnapshotAsync creates verifiable ownership record before staging
+            var livePrep = await realSvc.PrepareFolderSnapshotAsync(appRoot, "App.exe");
+            var liveOwnerFile = Path.Combine(pendingPreparedDir, livePrep.SessionId + ".json");
+            True(File.Exists(liveOwnerFile), "PendingPrepared ownership file written for prepared snapshot");
+            True(Directory.Exists(livePrep.StagingRootPath), "staging directory created");
+
+            // Normal cleanup removes both staging dir AND ownership file
+            var cleanRes = await realSvc.CleanupPreparedStagingAsync(livePrep.SessionId, livePrep.StagingRootPath);
+            Equal(TrialStagingState.Cleaned, cleanRes.StagingState, "normal prepared cleanup succeeds");
+            True(!Directory.Exists(livePrep.StagingRootPath), "normal prepared staging removed");
+            True(!File.Exists(liveOwnerFile), "ownership record removed after confirmed delete");
+
+            // 2. Simulate crashed dead-owner partial copy (non-existent PID) and crashed ready snapshot (PID reuse: same PID, 2h old start time)
+            var partialSid = "deadpart0001";
+            var partialDir = Path.Combine(stagingBase, partialSid);
+            Directory.CreateDirectory(Path.Combine(partialDir, "input"));
+            File.WriteAllText(Path.Combine(partialDir, "input", "partial.bin"), "half-copied");
+            realSvc.SavePendingPreparedSnapshot(new PendingPreparedSnapshotRecord(
+                1, partialSid, partialDir, "SampleApp", DateTimeOffset.UtcNow.AddMinutes(-5), int.MaxValue - 77, 12345L));
+
+            var readySid = "deadrdy00002";
+            var readyDir = Path.Combine(stagingBase, readySid);
+            Directory.CreateDirectory(Path.Combine(readyDir, "input"));
+            File.WriteAllText(Path.Combine(readyDir, "input", "App.exe"), "complete-copy");
+            long staleTicks;
+            using (var cur = Process.GetCurrentProcess())
+                staleTicks = cur.StartTime.ToUniversalTime().AddHours(-2).Ticks;
+            realSvc.SavePendingPreparedSnapshot(new PendingPreparedSnapshotRecord(
+                1, readySid, readyDir, "SampleApp", DateTimeOffset.UtcNow.AddMinutes(-3), Environment.ProcessId, staleTicks));
+
+            var service = new ControlledTrialService { RealStagingService = realSvc };
+            using var vm = new IsolatedTrialViewModel(service, pollInterval: TimeSpan.FromHours(1), historyStore: store);
+            await vm.CheckPendingSessionOnStartupAsync();
+
+            Equal(2, vm.LastStartupReclaimedPreparedCount, "both dead-owner partial and complete orphans reclaimed on startup");
+            True(!vm.HasOrphanedPreparedRemaining, "no remaining locked items");
+            True(!vm.HasPendingRecoveryBanner, "no pending recovery banner after clean reclamation");
+            Equal(IsolatedTrialPhase.Idle, vm.Phase, "phase stays Idle after reclaiming pre-start staging");
+            Equal(0, Directory.GetDirectories(stagingBase).Length, "all dead-owner staging dirs deleted");
+            Equal(0, Directory.GetFiles(pendingPreparedDir, "*.json").Length, "all reclaimed PendingPrepared markers removed");
+            Equal(0, store.LoadAll().Count, "reclaiming pre-start staging NEVER creates a trial history record");
+            await vm.CloseAsync();
+        });
+
+        await Check("RC.1: orphan reclamation protects live peer Contain window, sandbox-owned pending-session.json, corrupt records, and unowned foreign temp directories", async () =>
+        {
+            using var temp = new TempDir();
+            var stagingBase = temp.Sub("staging-rc1-2");
+            var appDataDir = temp.Sub("appdata-rc1-2");
+            var pendingSessionFile = Path.Combine(appDataDir, "pending-session.json");
+            var pendingPreparedDir = Path.Combine(appDataDir, "PendingPrepared");
+            var outsideDir = temp.Sub("outside-sensitive-dir");
+            File.WriteAllText(Path.Combine(outsideDir, "keep.txt"), "must-never-delete");
+
+            var realSvc = new WindowsSandboxTrialService(
+                stagingBaseDirectory: stagingBase,
+                pendingSessionFilePath: pendingSessionFile,
+                pendingPreparedDirectoryPath: pendingPreparedDir);
+
+            // (a) Live owner snapshot (current process PID + real start time simulates another live Contain window)
+            var liveSid = "livewin00001";
+            var liveDir = Path.Combine(stagingBase, liveSid);
+            Directory.CreateDirectory(Path.Combine(liveDir, "input"));
+            File.WriteAllText(Path.Combine(liveDir, "input", "live.txt"), "still-in-use");
+            long currentStartTicks;
+            using (var cur = Process.GetCurrentProcess())
+                currentStartTicks = cur.StartTime.ToUniversalTime().Ticks;
+            realSvc.SavePendingPreparedSnapshot(new PendingPreparedSnapshotRecord(
+                1, liveSid, liveDir, "LiveApp", DateTimeOffset.UtcNow, Environment.ProcessId, currentStartTicks));
+
+            // (b) Sandbox-owned snapshot (dead PID, BUT already handed off to pending-session.json)
+            var sandboxSid = "sbxowned0002";
+            var sandboxDir = Path.Combine(stagingBase, sandboxSid);
+            Directory.CreateDirectory(Path.Combine(sandboxDir, "input"));
+            File.WriteAllText(Path.Combine(sandboxDir, "input", "app.bin"), "mounted-in-sandbox");
+            realSvc.SavePendingSession(new PendingTrialSessionRecord(
+                1, sandboxSid, InstanceA, sandboxDir, "SandboxApp.exe", DateTimeOffset.UtcNow, int.MaxValue - 88, 111L));
+            realSvc.SavePendingPreparedSnapshot(new PendingPreparedSnapshotRecord(
+                1, sandboxSid, sandboxDir, "SandboxApp", DateTimeOffset.UtcNow, int.MaxValue - 88, 111L));
+
+            // (c) Unowned foreign directory directly under stagingBase (NO PendingPrepared record!)
+            var foreignDir = Path.Combine(stagingBase, "foreign99999");
+            Directory.CreateDirectory(foreignDir);
+            var foreignFile = Path.Combine(foreignDir, "unowned.txt");
+            File.WriteAllText(foreignFile, "do-not-touch");
+
+            // (d) Corrupt PendingPrepared JSON attempting path traversal outside stagingBase
+            Directory.CreateDirectory(pendingPreparedDir);
+            var corruptJson = Path.Combine(pendingPreparedDir, "badpath00003.json");
+            File.WriteAllText(corruptJson, $$"""
+                {
+                  "schema_version": 1,
+                  "session_id": "badpath00003",
+                  "staging_root_path": "{{outsideDir.Replace("\\", "\\\\")}}",
+                  "display_name": "Evil",
+                  "created_utc": "2026-01-01T00:00:00Z",
+                  "owner_pid": 999999,
+                  "owner_start_time_utc_ticks": 1
+                }
+                """);
+
+            // (e) Legitimate dead-owner orphan
+            var deadSid = "realdead0004";
+            var deadDir = Path.Combine(stagingBase, deadSid);
+            Directory.CreateDirectory(Path.Combine(deadDir, "input"));
+            File.WriteAllText(Path.Combine(deadDir, "input", "orphan.bin"), "reclaim-me");
+            realSvc.SavePendingPreparedSnapshot(new PendingPreparedSnapshotRecord(
+                1, deadSid, deadDir, "DeadApp", DateTimeOffset.UtcNow, int.MaxValue - 99, 222L));
+
+            var res = await realSvc.ReclaimOrphanedPreparedSnapshotsAsync();
+
+            Equal(1, res.ReclaimedCount, "only confirmed dead-owner non-sandbox orphan reclaimed");
+            Equal(1, res.SkippedLiveOwnerCount, "live owner snapshot skipped");
+            Equal(1, res.SkippedSandboxOwnedCount, "sandbox-owned snapshot protected");
+            Equal(1, res.IgnoredInvalidCount, "corrupt outside-path record ignored");
+            True(!res.HasRemaining, "no locked items");
+
+            True(!Directory.Exists(deadDir), "dead-owner orphan directory deleted");
+            True(!File.Exists(Path.Combine(pendingPreparedDir, deadSid + ".json")), "dead-owner marker removed");
+            True(Directory.Exists(liveDir) && File.Exists(Path.Combine(pendingPreparedDir, liveSid + ".json")),
+                "live peer staging directory and marker preserved untouched");
+            True(Directory.Exists(sandboxDir) && File.Exists(Path.Combine(sandboxDir, "input", "app.bin")),
+                "sandbox-owned staging directory preserved untouched");
+            True(!File.Exists(Path.Combine(pendingPreparedDir, sandboxSid + ".json")),
+                "redundant superseded PendingPrepared marker cleaned for sandbox-owned session");
+            True(Directory.Exists(foreignDir) && File.Exists(foreignFile),
+                "unowned foreign directory under staging root NEVER touched");
+            True(Directory.Exists(outsideDir) && File.Exists(Path.Combine(outsideDir, "keep.txt")),
+                "outside directory targeted by corrupt record NEVER touched");
+        });
+
+        await Check("RC.1: locked orphaned prepared snapshot retains pending retry state until truly deleted", async () =>
+        {
+            using var temp = new TempDir();
+            var stagingBase = temp.Sub("staging-rc1-3");
+            var appDataDir = temp.Sub("appdata-rc1-3");
+            var pendingSessionFile = Path.Combine(appDataDir, "pending-session.json");
+            var pendingPreparedDir = Path.Combine(appDataDir, "PendingPrepared");
+            var historyDir = Path.Combine(appDataDir, "History");
+
+            var realSvc = new WindowsSandboxTrialService(
+                stagingBaseDirectory: stagingBase,
+                pendingSessionFilePath: pendingSessionFile,
+                pendingPreparedDirectoryPath: pendingPreparedDir);
+            var store = new JsonTrialHistoryStore(historyDir);
+
+            var lockedSid = "lockedpr0001";
+            var lockedDir = Path.Combine(stagingBase, lockedSid);
+            Directory.CreateDirectory(Path.Combine(lockedDir, "input"));
+            var lockedFile = Path.Combine(lockedDir, "input", "held.bin");
+            File.WriteAllText(lockedFile, "held-by-external-process");
+            realSvc.SavePendingPreparedSnapshot(new PendingPreparedSnapshotRecord(
+                1, lockedSid, lockedDir, "LockedPortable", DateTimeOffset.UtcNow, int.MaxValue - 66, 333L));
+            var markerFile = Path.Combine(pendingPreparedDir, lockedSid + ".json");
+
+            var service = new ControlledTrialService { RealStagingService = realSvc };
+            using var vm = new IsolatedTrialViewModel(service, pollInterval: TimeSpan.FromHours(1), historyStore: store);
+
+            using (var lockHandle = new FileStream(lockedFile, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                await vm.CheckPendingSessionOnStartupAsync();
+                Equal(0, vm.LastStartupReclaimedPreparedCount, "locked orphan NOT falsely reported as reclaimed");
+                True(vm.HasOrphanedPreparedRemaining, "remaining locked orphan surfaced visibly");
+                True(vm.HasPendingRecoveryBanner, "shell banner alerts user to pending locked staging cleanup");
+                True(vm.CanRetryOrphanedPreparedCleanup, "retry cleanup button enabled");
+                True(File.Exists(markerFile), "ownership record preserved while directory remains locked");
+                True(Directory.Exists(lockedDir), "locked directory still present");
+                Equal(0, store.LoadAll().Count, "locked orphan detection creates zero history records");
+            }
+
+            // Once unlocked, explicit RetryOrphanedPreparedCleanupAsync deletes dir and clears warning
+            True(await vm.RetryOrphanedPreparedCleanupAsync(), "retry cleanup succeeds after lock released");
+            True(!vm.HasOrphanedPreparedRemaining, "remaining warning cleared only after actual deletion");
+            True(!vm.HasPendingRecoveryBanner, "shell banner cleared after actual deletion");
+            True(!Directory.Exists(lockedDir), "staging directory deleted");
+            True(!File.Exists(markerFile), "ownership record deleted after confirmed cleanup");
+            Equal(0, store.LoadAll().Count, "retry cleanup creates zero history records");
+            await vm.CloseAsync();
+        });
+
+        await Check("RC.1: >64 MiB directory equal-length edit with restored earlier LastWriteTimeUtc is detected before launch, refreshes diff, and launches updated snapshot on 2nd click", async () =>
+        {
+            using var temp = new TempDir();
+            var stagingBase = temp.Sub("staging-rc1-4");
+            var appDataDir = temp.Sub("appdata-rc1-4");
+            var pendingSessionFile = Path.Combine(appDataDir, "pending-session.json");
+            var pendingPreparedDir = Path.Combine(appDataDir, "PendingPrepared");
+            var historyDir = Path.Combine(appDataDir, "History");
+            var appRoot = temp.Sub("LargePortableApp");
+            var assetsDir = Path.Combine(appRoot, "assets");
+            Directory.CreateDirectory(assetsDir);
+
+            var exePath = Path.Combine(appRoot, "App.exe");
+            WriteMinimalPe(exePath, 0x8664, extraByte: 0x41);
+            var bannerPath = Path.Combine(assetsDir, "banner.txt");
+            var oldBanner = "CONTAIN-RC1-BANNER-OLD-0001";
+            var newBanner = "CONTAIN-RC1-BANNER-NEW-9999";
+            Equal(oldBanner.Length, newBanner.Length, "test banners must have identical byte length");
+            File.WriteAllText(bannerPath, oldBanner);
+
+            // Create a 66 MiB padding blob so total directory size strictly exceeds 64 MiB
+            var blobPath = Path.Combine(assetsDir, "payload66m.bin");
+            const int blobSize = 66 * 1024 * 1024;
+            using (var fs = new FileStream(blobPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                fs.SetLength(blobSize);
+                fs.Position = 0;
+                fs.Write("CONTAIN-66M-HEADER"u8);
+                fs.Position = blobSize - 18;
+                fs.Write("CONTAIN-66M-FOOTER"u8);
+            }
+
+            // Set all file timestamps 10 days in the past (well outside any 2-second mtime window!)
+            var oldUtc = DateTime.UtcNow.AddDays(-10);
+            File.SetLastWriteTimeUtc(exePath, oldUtc);
+            File.SetLastWriteTimeUtc(bannerPath, oldUtc);
+            File.SetLastWriteTimeUtc(blobPath, oldUtc);
+            var exactBannerTicks = File.GetLastWriteTimeUtc(bannerPath).Ticks;
+
+            var realSvc = new WindowsSandboxTrialService(
+                stagingBaseDirectory: stagingBase,
+                pendingSessionFilePath: pendingSessionFile,
+                pendingPreparedDirectoryPath: pendingPreparedDir);
+            var store = new JsonTrialHistoryStore(historyDir);
+            string? launchedBannerContent = null;
+            string? launchedSessionId = null;
+            var service = new ControlledTrialService
+            {
+                RealStagingService = realSvc,
+                TargetStartFactory = async (target, progress, ct) =>
+                {
+                    var sid = target.SessionId ?? "rc1large0001";
+                    if (target.PreparedSnapshot is PreparedTrialSnapshot reused)
+                    {
+                        launchedSessionId = reused.SessionId;
+                        launchedBannerContent = File.ReadAllText(Path.Combine(reused.InputDirPath, "assets", "banner.txt"));
+                        realSvc.ClearPendingPreparedSnapshot(reused.SessionId);
+                        return new SandboxStartResult(reused.SessionId, InstanceA, reused.StagingRootPath, reused.InputDirPath, 7001, DateTimeOffset.UtcNow, target.Kind, target.EntryRelativePath, reused.FileCount, reused.EntrySha256, reused.ManifestFiles);
+                    }
+                    var stgRoot = Path.Combine(stagingBase, sid);
+                    var inDir = Path.Combine(stgRoot, "input");
+                    var summary = await realSvc.StageInputSnapshotAsync(target, inDir, progress, ct);
+                    return new SandboxStartResult(sid, InstanceA, stgRoot, inDir, 7001, DateTimeOffset.UtcNow, target.Kind, summary.EntryRelativePath, summary.FileCount, summary.EntrySha256, summary.ManifestFiles);
+                }
+            };
+
+            using var vm = new IsolatedTrialViewModel(service, pollInterval: TimeSpan.FromHours(1), historyStore: store);
+            await vm.RefreshCapabilityAsync();
+            True(await vm.SelectFolderAsync(appRoot), "scanned >64 MiB folder");
+            True(vm.SelectedFolder!.TotalBytes > 64L * 1024 * 1024, "folder strictly > 64 MiB");
+            True(await vm.StartTrialAsync(), "started baseline >64 MiB trial");
+            var baseId = vm.CurrentHistorySessionId;
+            True(await vm.EndTrialAsync(), "ended baseline trial");
+            var baseRec = store.LoadBySessionId(baseId)!;
+
+            // Open replay confirmation screen -> initially consistent
+            True(await vm.PrepareReplayFromHistoryAsync(baseRec), "prepared >64 MiB replay snapshot");
+            Equal(TrialFolderComparisonStatus.Unchanged, vm.FolderComparison?.Status, "initially identical");
+            var firstPrepPath = vm.PreparedSnapshotStagingPath;
+            True(Directory.Exists(firstPrepPath), "first prepared snapshot staged");
+
+            // Equal-length edit banner.txt AND restore exact earlier LastWriteTimeUtc!
+            File.WriteAllText(bannerPath, newBanner);
+            File.SetLastWriteTimeUtc(bannerPath, new DateTime(exactBannerTicks, DateTimeKind.Utc));
+            Equal(exactBannerTicks, File.GetLastWriteTimeUtc(bannerPath).Ticks, "timestamp restored verbatim");
+
+            // 1st Start click: MUST detect content edit despite >64 MiB + equal length + restored timestamp,
+            // block launch, clean stale snapshot, refresh diff strictly to assets\banner.txt!
+            var startCallsBefore = service.StartCalls;
+            True(!await vm.StartTrialAsync(), "1st Start blocked after >64 MiB timestamp-restored equal-length edit");
+            Equal(startCallsBefore, service.StartCalls, "Sandbox NOT launched on stale >64 MiB snapshot");
+            True(!Directory.Exists(firstPrepPath), "stale >64 MiB prepared snapshot cleaned");
+            True(vm.HasMidConfirmRefreshBanner, "mid-confirmation refresh banner shown");
+            Equal(TrialFolderComparisonStatus.Changed, vm.FolderComparison?.Status, "comparison refreshed to Changed");
+            Equal(1, vm.FolderComparison?.ModifiedCount, "strictly 1 changed file");
+            Equal("与上次相比，1 个文件内容变化", vm.FolderComparisonHeadline, "exact diff headline");
+            Equal(1, vm.FolderDiffItems.Count, "strictly 1 diff entry");
+            Equal(@"assets\banner.txt", vm.FolderDiffItems[0].RelativePath, "diff points strictly to assets\\banner.txt");
+            Equal(1, store.LoadAll().Count, "blocked stale Start did not create a spurious history record");
+
+            // 2nd Start click: verifies unchanged refreshed >64 MiB snapshot, reuses it with ZERO re-copy, launches updated content!
+            var prepCallsBeforeSecondClick = service.PrepareSnapshotCalls;
+            var secondPrepPath = vm.PreparedSnapshotStagingPath;
+            var secondPrepSid = Path.GetFileName(secondPrepPath);
+            True(await vm.StartTrialAsync(), "2nd Start launches refreshed >64 MiB snapshot");
+            Equal(startCallsBefore + 1, service.StartCalls, "Sandbox launched on 2nd confirmation");
+            Equal(prepCallsBeforeSecondClick, service.PrepareSnapshotCalls, "zero re-copy when >64 MiB source unchanged on 2nd click");
+            Equal(secondPrepSid, launchedSessionId, "reused exact prepared >64 MiB snapshot");
+            Equal(newBanner, launchedBannerContent, "launched snapshot contains updated banner.txt");
+
+            True(await vm.EndTrialAsync(), "ended 2nd trial cleanly");
+            Equal(0, Directory.GetDirectories(stagingBase).Length, "0 staging dirs left");
+            Equal(0, Directory.GetFiles(pendingPreparedDir, "*.json").Length, "0 PendingPrepared markers left");
+            await vm.CloseAsync();
+        });
+
+        await Check("RC.1: >64 MiB pre-start freshness verification reports progress and supports clean cancellation", async () =>
+        {
+            using var temp = new TempDir();
+            var stagingBase = temp.Sub("staging-rc1-5");
+            var appDataDir = temp.Sub("appdata-rc1-5");
+            var appRoot = temp.Sub("LargeCancelApp");
+            WriteMinimalPe(Path.Combine(appRoot, "App.exe"), 0x8664, extraByte: 0x51);
+            var blobPath = Path.Combine(appRoot, "big65m.bin");
+            using (var fs = new FileStream(blobPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                fs.SetLength(65 * 1024 * 1024);
+
+            var realSvc = new WindowsSandboxTrialService(
+                stagingBaseDirectory: stagingBase,
+                pendingSessionFilePath: Path.Combine(appDataDir, "pending-session.json"),
+                pendingPreparedDirectoryPath: Path.Combine(appDataDir, "PendingPrepared"));
+
+            var prep = await realSvc.PrepareFolderSnapshotAsync(appRoot, "App.exe");
+            try
+            {
+                var progressEvents = 0;
+                var progress = new Progress<TrialStagingProgress>(_ => Interlocked.Increment(ref progressEvents));
+                True(await realSvc.IsPreparedSnapshotFreshAsync(prep, progress), "unchanged >64 MiB snapshot verified fresh");
+                True(progressEvents > 0, "freshness verification emitted progress updates");
+
+                using var cancelledCts = new CancellationTokenSource();
+                cancelledCts.Cancel();
+                var caughtCancel = false;
+                try
+                {
+                    await realSvc.IsPreparedSnapshotFreshAsync(prep, null, cancelledCts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    caughtCancel = true;
+                }
+                True(caughtCancel, "freshness verification respects cancellation cleanly");
+            }
+            finally
+            {
+                await realSvc.CleanupPreparedStagingAsync(prep.SessionId, prep.StagingRootPath);
+            }
+            Equal(0, Directory.GetDirectories(stagingBase).Length, "staging cleaned in finally");
+        });
+
         return passed;
 
         async Task Check(string name, Func<Task> body)
@@ -1721,7 +2079,9 @@ internal static class IsolatedTrialChecks
         public WindowsSandboxTrialService? RealStagingService { get; set; }
         public Func<string, IProgress<TrialFolderScanProgress>?, CancellationToken, Task<TrialFolderInfo>>? ScanFolderFactory { get; set; }
         public Func<string, string?, IProgress<TrialStagingProgress>?, CancellationToken, Task<PreparedTrialSnapshot>>? PrepareSnapshotFactory { get; set; }
-        public Func<PreparedTrialSnapshot, CancellationToken, Task<bool>>? FreshnessFactory { get; set; }
+        public Func<PreparedTrialSnapshot, IProgress<TrialStagingProgress>?, CancellationToken, Task<bool>>? FreshnessFactory { get; set; }
+        public Func<string, string?, CancellationToken, Task<SandboxStopResult>>? CleanupPreparedFactory { get; set; }
+        public Func<CancellationToken, Task<OrphanedPreparedReclaimResult>>? ReclaimPreparedFactory { get; set; }
         public Func<string, CancellationToken, Task<string>>? HashFactory { get; set; }
         public Func<TrialExecutableInfo, CancellationToken, Task<SandboxStartResult>>? StartFactory { get; set; }
         public Func<TrialLaunchTarget, IProgress<TrialStagingProgress>?, CancellationToken, Task<SandboxStartResult>>? TargetStartFactory { get; set; }
@@ -1790,12 +2150,13 @@ internal static class IsolatedTrialChecks
 
         public Task<bool> IsPreparedSnapshotFreshAsync(
             PreparedTrialSnapshot snapshot,
+            IProgress<TrialStagingProgress>? progress = null,
             CancellationToken cancellationToken = default)
         {
             if (FreshnessFactory is not null)
-                return FreshnessFactory(snapshot, cancellationToken);
+                return FreshnessFactory(snapshot, progress, cancellationToken);
             if (RealStagingService is not null)
-                return RealStagingService.IsPreparedSnapshotFreshAsync(snapshot, cancellationToken);
+                return RealStagingService.IsPreparedSnapshotFreshAsync(snapshot, progress, cancellationToken);
             return Task.FromResult(true);
         }
 
@@ -1856,6 +2217,22 @@ internal static class IsolatedTrialChecks
             if (RealStagingService is not null && !string.IsNullOrEmpty(stagingRootPath))
                 return RealStagingService.CleanupStagingOnlyAsync(stagingRootPath, cancellationToken);
             return Task.FromResult(new SandboxStopResult(SandboxInstanceState.ConfirmedEnded, TrialStagingState.Cleaned, "已清理本次宿主暂存目录。"));
+        }
+
+        public Task<SandboxStopResult> CleanupPreparedStagingAsync(string sessionId, string? stagingRootPath, CancellationToken cancellationToken = default)
+        {
+            if (CleanupPreparedFactory is not null) return CleanupPreparedFactory(sessionId, stagingRootPath, cancellationToken);
+            if (RealStagingService is not null)
+                return RealStagingService.CleanupPreparedStagingAsync(sessionId, stagingRootPath, cancellationToken);
+            return Task.FromResult(new SandboxStopResult(SandboxInstanceState.NotCreated, TrialStagingState.Cleaned, "已清理准备中暂存目录。"));
+        }
+
+        public Task<OrphanedPreparedReclaimResult> ReclaimOrphanedPreparedSnapshotsAsync(CancellationToken cancellationToken = default)
+        {
+            if (ReclaimPreparedFactory is not null) return ReclaimPreparedFactory(cancellationToken);
+            if (RealStagingService is not null)
+                return RealStagingService.ReclaimOrphanedPreparedSnapshotsAsync(cancellationToken);
+            return Task.FromResult(new OrphanedPreparedReclaimResult(0, 0, 0, 0, []));
         }
 
         public PendingSessionLoadResult LoadPendingSession() => PendingLoadResult;

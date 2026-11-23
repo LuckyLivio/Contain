@@ -137,6 +137,10 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
     private bool folderDiffExpanded;
     private string midConfirmRefreshBanner = "";
 
+    // RC.1 Orphaned pre-start staging reclamation & retry state (NEVER creates trial history records)
+    private int lastStartupReclaimedPreparedCount;
+    private string orphanedPreparedDiagnostic = "";
+
     public IsolatedTrialViewModel(
         IIsolatedTrialService service,
         Action<Action>? dispatch = null,
@@ -158,6 +162,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
     public ObservableCollection<TrialEvidenceEntry> EvidenceItems { get; } = [];
     public ObservableCollection<TrialFolderEntryCandidate> FolderEntryCandidates { get; } = [];
     public ObservableCollection<TrialFolderDiffItem> FolderDiffItems { get; } = [];
+    public ObservableCollection<OrphanedPreparedSnapshotItem> OrphanedPreparedRemainingItems { get; } = [];
 
     // Capability state & tailored primary actions
     public SandboxCapabilityReport Capability => capability;
@@ -348,10 +353,11 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
     public bool HasStagingProgressText => IsPreparingInput && !string.IsNullOrWhiteSpace(stagingProgressText);
     public bool CanCancelPreparation => !disposed && phase == IsolatedTrialPhase.PreparingInput && startCts is not null;
 
-    // Non-blocking banner for MainWindow when an unresolved session was discovered on startup
+    // Non-blocking banner for MainWindow when an unresolved session or locked pre-start staging was discovered
     public bool HasPendingRecoveryBanner =>
         phase is IsolatedTrialPhase.RecoveredRunning or IsolatedTrialPhase.Unconfirmed
-        || (phase == IsolatedTrialPhase.Ended && stagingState is TrialStagingState.Remaining or TrialStagingState.Unconfirmed);
+        || (phase == IsolatedTrialPhase.Ended && stagingState is TrialStagingState.Remaining or TrialStagingState.Unconfirmed)
+        || HasOrphanedPreparedRemaining;
 
     public string PendingRecoveryBannerText => phase switch
     {
@@ -359,6 +365,8 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         IsolatedTrialPhase.Unconfirmed => "暂时无法确认上次隔离试用状态，点击前往「隔离试用」重新检查。",
         IsolatedTrialPhase.Ended when stagingState is TrialStagingState.Remaining or TrialStagingState.Unconfirmed
             => "上次隔离试用已结束，但临时文件尚未完全清理，点击前往「隔离试用」重试清理。",
+        _ when HasOrphanedPreparedRemaining
+            => $"检测到上次中断准备留下的 {OrphanedPreparedRemainingItems.Count} 个临时暂存目录仍有残留，点击前往「隔离试用」重试清理。",
         _ => ""
     };
 
@@ -538,11 +546,25 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
     public bool HasPreparedSnapshot => preparedSnapshot is not null;
     public string PreparedSnapshotStagingPath => preparedSnapshot?.StagingRootPath ?? "";
 
+    // RC.1 Orphaned pre-start staging reclamation bindings
+    public bool HasOrphanedPreparedRemaining => OrphanedPreparedRemainingItems.Count > 0;
+    public int LastStartupReclaimedPreparedCount => lastStartupReclaimedPreparedCount;
+    public string OrphanedPreparedWarningHeadline => OrphanedPreparedRemainingItems.Count == 1
+        ? $"上次未完成准备留下的暂存目录仍有残留（{OrphanedPreparedRemainingItems[0].DisplayName}）"
+        : $"上次未完成准备留下的 {OrphanedPreparedRemainingItems.Count} 个暂存目录仍有残留";
+    public string OrphanedPreparedWarningDetail =>
+        "Contain 已核验上述暂存目录归属且未创建试用记录，但清理时可能被其他程序占用。请释放占用后点击“重试清理”；实际删除确认完成前不会标记为已清理。";
+    public bool CanRetryOrphanedPreparedCleanup =>
+        !disposed && !operationBusy && !IsStopping && !IsRecovering && HasOrphanedPreparedRemaining;
+
     public void CancelSelection() { }
 
     /// <summary>
-    /// Bounded non-blocking startup check for any pending session left behind by an abnormal Contain exit.
-    /// Does not block MainWindow or other pages, and returns immediately when no pending file exists.
+    /// Bounded non-blocking startup check:
+    /// 1) Reclaims verified orphaned pre-start staging snapshots whose owning Contain process exited
+    ///    abnormally (strictly skipping live peer Contain windows, sandbox-owned sessions, and any
+    ///    unowned directories; never creates trial history records).
+    /// 2) Checks any pending Sandbox session record left behind by an abnormal Contain exit.
     /// </summary>
     public Task CheckPendingSessionOnStartupAsync()
     {
@@ -550,16 +572,61 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
             return Task.CompletedTask;
         pendingCheckStarted = true;
 
+        return Track(CheckPendingSessionAndOrphansCoreAsync);
+    }
+
+    private async Task CheckPendingSessionAndOrphansCoreAsync()
+    {
+        try
+        {
+            var reclaim = await service.ReclaimOrphanedPreparedSnapshotsAsync().ConfigureAwait(true);
+            if (disposed) return;
+
+            lastStartupReclaimedPreparedCount = reclaim.ReclaimedCount;
+            SetOrphanedPreparedRemaining(reclaim.RemainingItems);
+
+            var changed = false;
+            if (reclaim.ReclaimedCount > 0)
+            {
+                AddEvidence("自动回收未完成暂存", $"启动时已自动回收 {reclaim.ReclaimedCount} 个上次中断准备留下的临时暂存目录（未创建试用记录）。");
+                changed = true;
+            }
+            if (reclaim.SkippedLiveOwnerCount > 0)
+            {
+                AddEvidence("多窗口保护", $"检测到另一个正在运行的 Contain 窗口持有 {reclaim.SkippedLiveOwnerCount} 个准备中暂存目录，本窗口未触碰。");
+                changed = true;
+            }
+            if (reclaim.HasRemaining)
+            {
+                orphanedPreparedDiagnostic = string.Join(
+                    Environment.NewLine,
+                    reclaim.RemainingItems.Select(r => $"{r.SessionId}: {r.StagingState} ({r.Diagnostic})"));
+                AddEvidence("未完成暂存待重试清理", $"检测到 {reclaim.RemainingItems.Count} 个上次中断准备留下的暂存目录仍有残留（可能被占用），请释放占用后点击“重试清理”。");
+                changed = true;
+            }
+            if (changed)
+            {
+                RebuildTechnicalDetails();
+                NotifyAll();
+            }
+        }
+        catch
+        {
+            // Never let optional pre-start orphan reclamation block startup or pending sandbox recovery
+        }
+
+        if (disposed) return;
+
         var loaded = service.LoadPendingSession();
         if (loaded.Status == PendingSessionLoadStatus.None)
-            return Task.CompletedTask;
+            return;
 
         if (loaded.Status == PendingSessionLoadStatus.OwnedByAnotherLiveProcess)
         {
             AddEvidence("多窗口保护", $"检测到另一个正在运行的 Contain 窗口持有会话（{loaded.Diagnostic}），本窗口不介入该实例或暂存目录。");
             RebuildTechnicalDetails();
             NotifyAll();
-            return Task.CompletedTask;
+            return;
         }
 
         if (loaded.Status == PendingSessionLoadStatus.Corrupt || loaded.Record is null)
@@ -567,10 +634,10 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
             AddEvidence("恢复记录已忽略", $"发现损坏或未通过路径核验的待恢复记录，已安全忽略且未操作任何沙箱或目录（{loaded.Diagnostic}）。");
             RebuildTechnicalDetails();
             NotifyAll();
-            return Task.CompletedTask;
+            return;
         }
 
-        return Track(() => RecoverPendingRecordCoreAsync(loaded.Record));
+        await RecoverPendingRecordCoreAsync(loaded.Record).ConfigureAwait(true);
     }
 
     private async Task RecoverPendingRecordCoreAsync(PendingTrialSessionRecord record)
@@ -917,6 +984,99 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                 NotifyAll();
             }
         });
+    }
+
+    public Task<bool> RetryOrphanedPreparedCleanupAsync()
+    {
+        if (!CanRetryOrphanedPreparedCleanup) return Task.FromResult(false);
+        operationBusy = true;
+        statusMessage = "正在重试清理上次中断准备留下的临时暂存目录…";
+        NotifyAll();
+
+        return Track(async () =>
+        {
+            try
+            {
+                var remaining = new List<OrphanedPreparedSnapshotItem>();
+                var cleanedAny = false;
+                var snapshotItems = OrphanedPreparedRemainingItems.ToList();
+
+                foreach (var item in snapshotItems)
+                {
+                    var res = await service.CleanupPreparedStagingAsync(item.SessionId, item.StagingRootPath).ConfigureAwait(true);
+                    if (disposed) return false;
+                    if (res.StagingState is TrialStagingState.Cleaned or TrialStagingState.NotCreated)
+                    {
+                        cleanedAny = true;
+                    }
+                    else
+                    {
+                        remaining.Add(item with { StagingState = res.StagingState, Diagnostic = res.Diagnostic });
+                    }
+                }
+
+                // Also re-check any external dead-owner pending prepared records on disk
+                var reclaim = await service.ReclaimOrphanedPreparedSnapshotsAsync().ConfigureAwait(true);
+                if (disposed) return false;
+                if (reclaim.ReclaimedCount > 0) cleanedAny = true;
+                foreach (var item in reclaim.RemainingItems)
+                {
+                    if (!remaining.Any(r => string.Equals(r.SessionId, item.SessionId, StringComparison.OrdinalIgnoreCase)))
+                        remaining.Add(item);
+                }
+
+                SetOrphanedPreparedRemaining(remaining);
+
+                if (remaining.Count == 0)
+                {
+                    orphanedPreparedDiagnostic = "";
+                    statusMessage = "已清理上次中断准备留下的临时暂存目录。";
+                    AddEvidence("重试清理残留预准备暂存", "已确认删除上次未完成准备留下的临时暂存目录（未创建试用记录）。");
+                }
+                else
+                {
+                    orphanedPreparedDiagnostic = string.Join(
+                        Environment.NewLine,
+                        remaining.Select(r => $"{r.SessionId}: {r.StagingState} ({r.Diagnostic})"));
+                    statusMessage = cleanedAny
+                        ? $"已清理部分残留暂存目录，仍有 {remaining.Count} 个目录被占用，请释放后再次点击“重试清理”。"
+                        : $"仍有 {remaining.Count} 个未完成准备留下的暂存目录无法删除（可能被占用），请确认无程序占用后再次点击“重试清理”。";
+                    AddEvidence("残留预准备暂存待重试", statusMessage);
+                }
+
+                RebuildTechnicalDetails();
+                NotifyAll();
+                return remaining.Count == 0;
+            }
+            finally
+            {
+                operationBusy = false;
+                NotifyAll();
+            }
+        });
+    }
+
+    private void SetOrphanedPreparedRemaining(IReadOnlyList<OrphanedPreparedSnapshotItem> items)
+    {
+        OrphanedPreparedRemainingItems.Clear();
+        foreach (var item in items)
+            OrphanedPreparedRemainingItems.Add(item);
+    }
+
+    private void AddOrUpdateOrphanedPreparedRemaining(OrphanedPreparedSnapshotItem item)
+    {
+        for (var i = 0; i < OrphanedPreparedRemainingItems.Count; i++)
+        {
+            if (string.Equals(OrphanedPreparedRemainingItems[i].SessionId, item.SessionId, StringComparison.OrdinalIgnoreCase))
+            {
+                OrphanedPreparedRemainingItems[i] = item;
+                return;
+            }
+        }
+        OrphanedPreparedRemainingItems.Add(item);
+        orphanedPreparedDiagnostic = string.Join(
+            Environment.NewLine,
+            OrphanedPreparedRemainingItems.Select(r => $"{r.SessionId}: {r.StagingState} ({r.Diagnostic})"));
     }
 
     public Task EnsureCapabilityCheckedAsync()
@@ -1675,17 +1835,71 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
     {
         try
         {
-            var isFresh = await service.IsPreparedSnapshotFreshAsync(prep).ConfigureAwait(true);
+            bool isFresh;
+            using (var verifyCts = new CancellationTokenSource())
+            {
+                replayPrepCts = verifyCts;
+                isPreparingReplayComparison = true;
+                replayPrepProgressPercent = 0;
+                isReplayPrepProgressIndeterminate = prep.TotalBytes <= 0;
+                replayPrepProgressText = $"正在启动前复核源目录文件内容（共 {prep.FileCount:N0} 个文件，{prep.FormattedTotalSize}）…";
+                statusMessage = replayPrepProgressText;
+                NotifyAll();
+
+                try
+                {
+                    var verifyProgress = new Progress<TrialStagingProgress>(p =>
+                    {
+                        dispatch(() =>
+                        {
+                            if (disposed || !isPreparingReplayComparison) return;
+                            replayPrepProgressPercent = p.Percent;
+                            isReplayPrepProgressIndeterminate = p.TotalBytes <= 0 && p.TotalFiles <= 0;
+                            var fileHint = string.IsNullOrWhiteSpace(p.CurrentRelativePath) ? "" : $" · {p.CurrentRelativePath}";
+                            replayPrepProgressText = $"正在启动前复核源目录：已校验 {p.FilesCopied:N0}/{p.TotalFiles:N0} 个文件（{WindowsSandboxTrialService.FormatByteSize(p.BytesCopied)} / {WindowsSandboxTrialService.FormatByteSize(p.TotalBytes)}）{fileHint}";
+                            statusMessage = replayPrepProgressText;
+                            OnPropertyChanged(nameof(ReplayPrepProgressPercent));
+                            OnPropertyChanged(nameof(IsReplayPrepProgressIndeterminate));
+                            OnPropertyChanged(nameof(ReplayPrepProgressText));
+                            OnPropertyChanged(nameof(StatusMessage));
+                        });
+                    });
+
+                    isFresh = await service.IsPreparedSnapshotFreshAsync(prep, verifyProgress, verifyCts.Token).ConfigureAwait(true);
+                }
+                catch (OperationCanceledException)
+                {
+                    if (disposed)
+                    {
+                        if (ReferenceEquals(preparedSnapshot, prep)) preparedSnapshot = null;
+                        await CleanupPreparedSnapshotSafeAsync(prep, reportRemaining: false).ConfigureAwait(false);
+                        return false;
+                    }
+                    isPreparingReplayComparison = false;
+                    replayPrepProgressText = "";
+                    operationBusy = false;
+                    statusMessage = "已取消启动前复核，尚未启动沙箱。";
+                    NotifyAll();
+                    return false;
+                }
+                finally
+                {
+                    if (ReferenceEquals(replayPrepCts, verifyCts)) replayPrepCts = null;
+                }
+            }
+
             if (disposed)
             {
                 if (ReferenceEquals(preparedSnapshot, prep)) preparedSnapshot = null;
-                await CleanupPreparedSnapshotSafeAsync(prep).ConfigureAwait(false);
+                await CleanupPreparedSnapshotSafeAsync(prep, reportRemaining: false).ConfigureAwait(false);
                 return false;
             }
 
             if (isFresh)
             {
                 // Ownership transfers directly to StartSandboxAsync -> ZERO re-copy!
+                isPreparingReplayComparison = false;
+                replayPrepProgressText = "";
                 if (ReferenceEquals(preparedSnapshot, prep)) preparedSnapshot = null;
                 operationBusy = false;
                 var reuseTarget = TrialLaunchTarget.FromFolder(folder, entry, prep.SessionId) with { PreparedSnapshot = prep };
@@ -1880,6 +2094,8 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
+            isPreparingReplayComparison = false;
+            replayPrepProgressText = "";
             operationBusy = false;
             if (!disposed)
             {
@@ -2573,7 +2789,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         // Release any prepared staging snapshot still held for the confirmation screen
         if (preparedToClean is not null)
         {
-            await CleanupPreparedSnapshotSafeAsync(preparedToClean).ConfigureAwait(false);
+            await CleanupPreparedSnapshotSafeAsync(preparedToClean, reportRemaining: false).ConfigureAwait(false);
         }
 
         if (sessionToClean is not null)
@@ -2625,7 +2841,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         preparedSnapshot = null;
         if (leftover is not null)
         {
-            try { _ = service.CleanupStagingOnlyAsync(leftover.StagingRootPath); } catch { }
+            try { _ = service.CleanupPreparedStagingAsync(leftover.SessionId, leftover.StagingRootPath); } catch { }
         }
         try { startCts?.Cancel(); } catch { }
         startCts?.Dispose();
@@ -2729,13 +2945,31 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         return CleanupPreparedSnapshotSafeAsync(snap);
     }
 
-    private async Task CleanupPreparedSnapshotSafeAsync(PreparedTrialSnapshot snap)
+    private async Task CleanupPreparedSnapshotSafeAsync(PreparedTrialSnapshot snap, bool reportRemaining = true)
     {
         try
         {
-            await service.CleanupStagingOnlyAsync(snap.StagingRootPath).ConfigureAwait(false);
+            var res = await service.CleanupPreparedStagingAsync(snap.SessionId, snap.StagingRootPath).ConfigureAwait(false);
+            if (reportRemaining && !disposed && res.StagingState is TrialStagingState.Remaining or TrialStagingState.Unconfirmed)
+            {
+                var displayName = Path.GetFileName(Path.TrimEndingDirectorySeparator(snap.SourceFolderPath));
+                if (string.IsNullOrWhiteSpace(displayName)) displayName = snap.SessionId;
+                var remainingItem = new OrphanedPreparedSnapshotItem(
+                    snap.SessionId,
+                    snap.StagingRootPath,
+                    displayName,
+                    res.StagingState,
+                    res.Diagnostic);
+                dispatch(() =>
+                {
+                    if (disposed) return;
+                    AddOrUpdateOrphanedPreparedRemaining(remainingItem);
+                    RebuildTechnicalDetails();
+                    NotifyAll();
+                });
+            }
         }
-        catch { /* Best-effort cleanup of unlaunched prepared snapshot */ }
+        catch { /* Best-effort cleanup; PendingPrepared ownership record remains for retry or next startup */ }
     }
 
     private void ResetHashStateOnly()
@@ -2944,12 +3178,23 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
             sb.AppendLine($"实例状态：{FormatInstanceStateLabel(instanceState)} | 宿主暂存目录：{FormatStagingStateLabel(stagingState)}");
         }
 
-        if (EvidenceItems.Count > 0)
+        List<TrialTimelineEventReport> timelineCopy;
+        lock (timelineGate) timelineCopy = [.. reportTimeline];
+        if (timelineCopy.Count > 0)
         {
             sb.AppendLine();
             sb.AppendLine("完整时间线与可观察依据：");
-            foreach (var item in EvidenceItems)
-                sb.AppendLine($"[{item.Timestamp}] {item.Stage}：{item.Summary}");
+            foreach (var item in timelineCopy)
+                sb.AppendLine($"[{item.DisplayTime}] {item.Stage}：{item.Summary}");
+        }
+        if (OrphanedPreparedRemainingItems.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("待重试清理的未完成预准备暂存目录：");
+            foreach (var item in OrphanedPreparedRemainingItems)
+                sb.AppendLine($"- {item.SessionId}（{item.DisplayName}）：{FormatStagingStateLabel(item.StagingState)} · {item.StagingRootPath}");
+            if (!string.IsNullOrWhiteSpace(orphanedPreparedDiagnostic))
+                sb.AppendLine(orphanedPreparedDiagnostic);
         }
         if (!string.IsNullOrWhiteSpace(failureDiagnostic))
         {
@@ -3132,5 +3377,10 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(MidConfirmRefreshBanner));
         OnPropertyChanged(nameof(HasPreparedSnapshot));
         OnPropertyChanged(nameof(PreparedSnapshotStagingPath));
+        OnPropertyChanged(nameof(HasOrphanedPreparedRemaining));
+        OnPropertyChanged(nameof(LastStartupReclaimedPreparedCount));
+        OnPropertyChanged(nameof(OrphanedPreparedWarningHeadline));
+        OnPropertyChanged(nameof(OrphanedPreparedWarningDetail));
+        OnPropertyChanged(nameof(CanRetryOrphanedPreparedCleanup));
     }
 }

@@ -436,6 +436,8 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 
     public Task RetryTrialStagingCleanupAsync() => RunUiAsync(() => IsolatedTrial.RetryStagingCleanupAsync());
 
+    public Task RetryOrphanedPreparedCleanupAsync() => RunUiAsync(() => IsolatedTrial.RetryOrphanedPreparedCleanupAsync());
+
     public Task RecheckSandboxCapabilityAsync() => RunUiAsync(() => IsolatedTrial.RefreshCapabilityAsync());
 
     public Task ComputeTrialSha256Async() => RunUiAsync(() => IsolatedTrial.ComputeSha256Async());

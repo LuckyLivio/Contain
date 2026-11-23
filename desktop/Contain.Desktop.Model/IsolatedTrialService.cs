@@ -134,6 +134,7 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
 
     private readonly string stagingBaseDirectory;
     private readonly string pendingSessionFilePath;
+    private readonly string pendingPreparedDirectoryPath;
     private readonly TimeSpan commandTimeout;
     private readonly TimeSpan readinessTimeout;
     private readonly string? explicitWsbPath;
@@ -145,7 +146,8 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         TimeSpan? readinessTimeout = null,
         string? explicitWsbPath = null,
         string? pendingSessionFilePath = null,
-        Func<string, long?>? availableFreeSpaceProvider = null)
+        Func<string, long?>? availableFreeSpaceProvider = null,
+        string? pendingPreparedDirectoryPath = null)
     {
         this.stagingBaseDirectory = string.IsNullOrWhiteSpace(stagingBaseDirectory)
             ? Path.Combine(Path.GetTempPath(), "Contain-IsolatedTrial")
@@ -153,11 +155,16 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         this.pendingSessionFilePath = string.IsNullOrWhiteSpace(pendingSessionFilePath)
             ? DefaultPendingSessionFilePath()
             : Path.GetFullPath(pendingSessionFilePath);
+        this.pendingPreparedDirectoryPath = string.IsNullOrWhiteSpace(pendingPreparedDirectoryPath)
+            ? Path.Combine(Path.GetDirectoryName(this.pendingSessionFilePath) ?? Path.GetTempPath(), "PendingPrepared")
+            : Path.GetFullPath(pendingPreparedDirectoryPath);
         this.commandTimeout = commandTimeout ?? TimeSpan.FromSeconds(25);
         this.readinessTimeout = readinessTimeout ?? TimeSpan.FromSeconds(60);
         this.explicitWsbPath = string.IsNullOrWhiteSpace(explicitWsbPath) ? null : Path.GetFullPath(explicitWsbPath);
         this.availableFreeSpaceProvider = availableFreeSpaceProvider;
     }
+
+    public string PendingPreparedDirectoryPath => pendingPreparedDirectoryPath;
 
     public static string DefaultPendingSessionFilePath()
     {
@@ -1235,6 +1242,10 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         var stagingRoot = Path.Combine(stagingBaseDirectory, sessionId);
         var inputDir = Path.Combine(stagingRoot, "input");
 
+        // Record verifiable cross-restart ownership BEFORE creating any staging directory so
+        // even a crash mid-copy or on the confirmation screen can be reclaimed cleanly on restart.
+        SavePendingPreparedSnapshot(CreatePendingPreparedRecord(sessionId, stagingRoot, displayName));
+
         try
         {
             Directory.CreateDirectory(inputDir);
@@ -1266,13 +1277,18 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         }
         catch
         {
-            CleanupStagingDirectoryVerified(stagingRoot, out _);
+            var cleanState = CleanupStagingDirectoryVerified(stagingRoot, out _);
+            if (cleanState is TrialStagingState.Cleaned or TrialStagingState.NotCreated)
+            {
+                ClearPendingPreparedSnapshot(sessionId);
+            }
             throw;
         }
     }
 
     public async Task<bool> IsPreparedSnapshotFreshAsync(
         PreparedTrialSnapshot snapshot,
+        IProgress<TrialStagingProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -1301,6 +1317,7 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
             expectedManifest[TrialFolderDiffEngine.NormalizeRelativePath(item.RelativePath)] = item;
 
         var liveFiles = new List<(string RelativePath, string FullPath, long SizeBytes, long LastWriteTicks)>();
+        long liveTotalBytes = 0;
         var stack = new Stack<string>();
         stack.Push(fullRoot);
 
@@ -1326,6 +1343,7 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                         var fi = new FileInfo(entry);
                         var rel = TrialFolderDiffEngine.NormalizeRelativePath(GetRelativeNormalized(fullRoot, entry));
                         liveFiles.Add((rel, entry, fi.Length, fi.LastWriteTimeUtc.Ticks));
+                        liveTotalBytes += fi.Length;
                     }
                 }
             }
@@ -1334,10 +1352,10 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         catch (IOException) { return false; }
         catch (UnauthorizedAccessException) { return false; }
 
-        if (liveFiles.Count != expectedFingerprint.Count)
+        if (liveFiles.Count != expectedFingerprint.Count || liveFiles.Count != expectedManifest.Count)
             return false;
 
-        // First pass: check exact relative paths, byte lengths, and LastWriteTimeUtc ticks
+        // First pass: fast metadata check (relative paths, byte lengths, LastWriteTimeUtc ticks)
         foreach (var live in liveFiles)
         {
             if (!expectedFingerprint.TryGetValue(live.RelativePath, out var exp))
@@ -1346,32 +1364,97 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                 return false;
         }
 
-        // Second pass: catch equal-length edits within the same timestamp tick or timestamp-preserving edits
-        var verifyAllHashes = snapshot.TotalBytes <= 64L * 1024 * 1024;
-        var preparedTicks = snapshot.PreparedAtUtc.UtcTicks;
-        var twoSecondTicks = TimeSpan.FromSeconds(2).Ticks;
+        // Second pass: COMPLETE read-only streaming SHA-256 verification of EVERY live file
+        // regardless of total folder size (> 64 MiB included), catching equal-length edits even
+        // when LastWriteTimeUtc has been restored. Verify smaller files first so edits to small
+        // text/config/DLL/EXE files fail in milliseconds without blocking on large data blobs.
+        liveFiles.Sort((a, b) =>
+        {
+            var sizeCmp = a.SizeBytes.CompareTo(b.SizeBytes);
+            return sizeCmp != 0 ? sizeCmp : StringComparer.OrdinalIgnoreCase.Compare(a.RelativePath, b.RelativePath);
+        });
+
+        const string verifyStage = "正在启动前复核源目录文件内容…";
+        var totalFiles = liveFiles.Count;
+        var verifiedFiles = 0;
+        long verifiedBytes = 0;
+        var lastReport = Stopwatch.StartNew();
+        progress?.Report(new TrialStagingProgress(verifyStage, 0, totalFiles, 0, liveTotalBytes, ""));
 
         foreach (var live in liveFiles)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!verifyAllHashes && Math.Abs(live.LastWriteTicks - preparedTicks) > twoSecondTicks)
-                continue;
-
             if (!expectedManifest.TryGetValue(live.RelativePath, out var expEntry))
                 return false;
 
             try
             {
-                var currentSha = await ComputeFileSha256Async(live.FullPath, cancellationToken).ConfigureAwait(false);
+                var currentSha = await ComputeFileSha256StreamingAsync(
+                    live.FullPath,
+                    live.RelativePath,
+                    verifyStage,
+                    progress,
+                    verifiedFiles,
+                    totalFiles,
+                    verifiedBytes,
+                    liveTotalBytes,
+                    lastReport,
+                    cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(currentSha, expEntry.Sha256, StringComparison.OrdinalIgnoreCase))
                     return false;
             }
             catch (OperationCanceledException) { throw; }
             catch (IOException) { return false; }
             catch (UnauthorizedAccessException) { return false; }
+
+            verifiedFiles++;
+            verifiedBytes += live.SizeBytes;
+            if (progress is not null && (verifiedFiles % 8 == 0 || verifiedFiles == totalFiles || lastReport.ElapsedMilliseconds >= 80))
+            {
+                progress.Report(new TrialStagingProgress(verifyStage, verifiedFiles, totalFiles, verifiedBytes, liveTotalBytes, live.RelativePath));
+                lastReport.Restart();
+            }
         }
 
         return true;
+    }
+
+    private static async Task<string> ComputeFileSha256StreamingAsync(
+        string filePath,
+        string relativeDisplayPath,
+        string stageLabel,
+        IProgress<TrialStagingProgress>? progress,
+        int verifiedFilesSoFar,
+        int totalFiles,
+        long verifiedBytesBeforeFile,
+        long totalBytes,
+        Stopwatch lastReport,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 262144, useAsync: true);
+        using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = new byte[262144];
+        long readInFile = 0;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var read = await stream.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
+            if (read == 0) break;
+            hasher.AppendData(buffer, 0, read);
+            readInFile += read;
+            if (progress is not null && lastReport.ElapsedMilliseconds >= 80)
+            {
+                progress.Report(new TrialStagingProgress(
+                    stageLabel,
+                    verifiedFilesSoFar,
+                    totalFiles,
+                    verifiedBytesBeforeFile + readInFile,
+                    totalBytes,
+                    relativeDisplayPath));
+                lastReport.Restart();
+            }
+        }
+        return Convert.ToHexString(hasher.GetHashAndReset()).ToLowerInvariant();
     }
 
     /// <summary>
@@ -1830,6 +1913,12 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         var bootstrapDir = Path.Combine(stagingRoot, "bootstrap");
 
         string? createdInstanceId = null;
+        if (reusable is null)
+        {
+            // Record verifiable pre-start ownership BEFORE creating staging dirs for direct launches too.
+            SavePendingPreparedSnapshot(CreatePendingPreparedRecord(sessionId, stagingRoot, target.DisplayName));
+        }
+
         try
         {
             Directory.CreateDirectory(inputDir);
@@ -1934,12 +2023,13 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                     failedStage: "启动 Windows 沙箱");
             }
 
-            // Persist minimal pending-session metadata immediately after obtaining the real UUID,
-            // so even an abnormal exit during connect/readiness can still recover this exact instance.
+            // Persist minimal pending-session metadata FIRST, then remove pre-start prepared ownership
+            // so ownership transfers atomically from pre-start staging to sandbox recovery without any gap.
             var recoveryDisplay = target.Kind == TrialInputKind.Folder
                 ? $"{target.DisplayName} ({staged.EntryRelativePath})"
                 : target.EntryExecutable.FileName;
             SavePendingSession(CreatePendingRecord(sessionId, createdInstanceId, stagingRoot, recoveryDisplay));
+            ClearPendingPreparedSnapshot(sessionId);
             stagingProgress?.Report(new TrialStagingProgress(
                 "沙箱实例已创建，等待桌面就绪…",
                 staged.FileCount,
@@ -2029,6 +2119,10 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
             if (rollback.IsFullyCleaned)
             {
                 ClearPendingSession(createdInstanceId, sessionId);
+            }
+            if (rollback.StagingState is TrialStagingState.Cleaned or TrialStagingState.NotCreated)
+            {
+                ClearPendingPreparedSnapshot(sessionId);
             }
 
             if (ex is OperationCanceledException)
@@ -2310,11 +2404,165 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         string? stagingRootPath,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        var stagingState = CleanupStagingDirectoryVerified(stagingRootPath, out var cleanErr);
-        var diag = string.IsNullOrEmpty(cleanErr) ? "" : "staging cleanup: " + cleanErr;
-        var summary = DescribeStopSummary(SandboxInstanceState.ConfirmedEnded, stagingState);
-        return Task.FromResult(new SandboxStopResult(SandboxInstanceState.ConfirmedEnded, stagingState, summary, diag));
+        return Task.Run(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var stagingState = CleanupStagingDirectoryVerified(stagingRootPath, out var cleanErr);
+            if (stagingState is TrialStagingState.Cleaned or TrialStagingState.NotCreated
+                && !string.IsNullOrWhiteSpace(stagingRootPath)
+                && IsVerifiedSessionStagingPath(stagingRootPath, stagingBaseDirectory))
+            {
+                var leafSessionId = Path.GetFileName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(stagingRootPath)));
+                if (!string.IsNullOrEmpty(leafSessionId))
+                    ClearPendingPreparedSnapshot(leafSessionId);
+            }
+            var diag = string.IsNullOrEmpty(cleanErr) ? "" : "staging cleanup: " + cleanErr;
+            var summary = DescribeStopSummary(SandboxInstanceState.ConfirmedEnded, stagingState);
+            return new SandboxStopResult(SandboxInstanceState.ConfirmedEnded, stagingState, summary, diag);
+        }, cancellationToken);
+    }
+
+    public Task<SandboxStopResult> CleanupPreparedStagingAsync(
+        string sessionId,
+        string? stagingRootPath,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.Run(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            TrialStagingState stagingState;
+            var cleanErr = "";
+            if (string.IsNullOrWhiteSpace(stagingRootPath))
+            {
+                stagingState = TrialStagingState.NotCreated;
+            }
+            else if (!IsVerifiedSessionStagingPath(stagingRootPath, stagingBaseDirectory, string.IsNullOrWhiteSpace(sessionId) ? null : sessionId))
+            {
+                cleanErr = "refused unverified prepared staging path outside Contain staging root";
+                stagingState = TrialStagingState.Unconfirmed;
+            }
+            else
+            {
+                stagingState = CleanupStagingDirectoryVerified(stagingRootPath, out cleanErr);
+            }
+
+            if (stagingState is TrialStagingState.Cleaned or TrialStagingState.NotCreated
+                && !string.IsNullOrWhiteSpace(sessionId))
+            {
+                ClearPendingPreparedSnapshot(sessionId);
+            }
+
+            var diag = string.IsNullOrEmpty(cleanErr) ? "" : "prepared staging cleanup: " + cleanErr;
+            var summary = DescribeStopSummary(SandboxInstanceState.NotCreated, stagingState);
+            return new SandboxStopResult(SandboxInstanceState.NotCreated, stagingState, summary, diag);
+        }, cancellationToken);
+    }
+
+    public Task<OrphanedPreparedReclaimResult> ReclaimOrphanedPreparedSnapshotsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return Task.Run(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!Directory.Exists(pendingPreparedDirectoryPath))
+                return new OrphanedPreparedReclaimResult(0, 0, 0, 0, []);
+
+            if (IsReparsePointPath(pendingPreparedDirectoryPath))
+            {
+                return new OrphanedPreparedReclaimResult(
+                    0, 0, 0, 1, [],
+                    "pending prepared directory is a reparse point; skipped reclamation");
+            }
+
+            // Collect any staging directory already handed off to a Sandbox (regardless of live/dead owner)
+            // so pre-start reclamation NEVER deletes a staging directory owned by pending-session.json.
+            var (sandboxSessionId, sandboxStagingPath) = TryReadRawPendingSessionExclusions();
+
+            var reclaimed = 0;
+            var skippedLive = 0;
+            var skippedSandbox = 0;
+            var ignoredInvalid = 0;
+            var remaining = new List<OrphanedPreparedSnapshotItem>();
+            var diag = new StringBuilder();
+
+            IEnumerable<string> files;
+            try
+            {
+                files = Directory.EnumerateFiles(pendingPreparedDirectoryPath, "*.json").ToList();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return new OrphanedPreparedReclaimResult(0, 0, 0, 0, [], $"failed to enumerate PendingPrepared: {ex.Message}");
+            }
+
+            foreach (var file in files)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (IsReparsePointPath(file))
+                {
+                    ignoredInvalid++;
+                    diag.AppendLine($"ignored reparse pending prepared record: {Path.GetFileName(file)}");
+                    continue;
+                }
+
+                if (!TryParsePendingPreparedFile(file, out var rec, out var parseErr) || rec is null)
+                {
+                    ignoredInvalid++;
+                    QuarantineCorruptPendingPreparedFile(file);
+                    diag.AppendLine($"ignored corrupt pending prepared record ({Path.GetFileName(file)}): {parseErr}");
+                    continue;
+                }
+
+                // 1. Live Contain window protection (covers both peer Contain windows and current live process)
+                if (rec.OwnerProcessId > 0 && IsOwnerProcessStillAlive(rec.OwnerProcessId, rec.OwnerStartTimeUtcTicks))
+                {
+                    skippedLive++;
+                    continue;
+                }
+
+                // 2. Sandbox handoff protection: if pending-session.json owns this session/staging path,
+                //    NEVER touch the staging directory; only drop the superseded PendingPrepared marker.
+                var normalizedRecStaging = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rec.StagingRootPath));
+                var isSandboxOwned =
+                    (!string.IsNullOrEmpty(sandboxSessionId)
+                        && string.Equals(sandboxSessionId, rec.SessionId, StringComparison.OrdinalIgnoreCase))
+                    || (!string.IsNullOrEmpty(sandboxStagingPath)
+                        && string.Equals(sandboxStagingPath, normalizedRecStaging, StringComparison.OrdinalIgnoreCase));
+                if (isSandboxOwned)
+                {
+                    TryDeleteFileSafe(file);
+                    skippedSandbox++;
+                    continue;
+                }
+
+                // 3. Confirmed dead owner and never handed off to Sandbox -> reclaim verified staging dir ONLY.
+                var cleanState = CleanupStagingDirectoryVerified(rec.StagingRootPath, out var cleanErr);
+                if (cleanState is TrialStagingState.Cleaned or TrialStagingState.NotCreated)
+                {
+                    TryDeleteFileSafe(file);
+                    reclaimed++;
+                }
+                else
+                {
+                    // Keep ownership record on disk so user retry or future restart can still reclaim it!
+                    remaining.Add(new OrphanedPreparedSnapshotItem(
+                        rec.SessionId,
+                        rec.StagingRootPath,
+                        rec.DisplayName,
+                        cleanState,
+                        cleanErr));
+                    diag.AppendLine($"remaining prepared staging {rec.SessionId}: {cleanState} ({cleanErr})");
+                }
+            }
+
+            return new OrphanedPreparedReclaimResult(
+                reclaimed,
+                skippedLive,
+                skippedSandbox,
+                ignoredInvalid,
+                remaining,
+                diag.ToString().Trim());
+        }, cancellationToken);
     }
 
     public static string DescribeStopSummary(SandboxInstanceState instanceState, TrialStagingState stagingState) =>
@@ -2589,6 +2837,208 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         }
         catch { }
         return new PendingSessionLoadResult(PendingSessionLoadStatus.Corrupt, Diagnostic: "corrupt pending session record ignored: " + reason);
+    }
+
+    public void SavePendingPreparedSnapshot(PendingPreparedSnapshotRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        if (!JsonTrialHistoryStore.IsValidSessionId(record.SessionId))
+            return;
+        if (!IsVerifiedSessionStagingPath(record.StagingRootPath, stagingBaseDirectory, record.SessionId))
+            return;
+
+        try
+        {
+            Directory.CreateDirectory(pendingPreparedDirectoryPath);
+            if (IsReparsePointPath(pendingPreparedDirectoryPath))
+                return;
+
+            var targetPath = Path.Combine(pendingPreparedDirectoryPath, record.SessionId + ".json");
+            var payload = JsonSerializer.Serialize(new
+            {
+                schema_version = 1,
+                session_id = record.SessionId,
+                staging_root_path = Path.GetFullPath(record.StagingRootPath),
+                display_name = record.DisplayName,
+                created_utc = record.CreatedUtc.ToString("O", CultureInfo.InvariantCulture),
+                owner_pid = record.OwnerProcessId,
+                owner_start_time_utc_ticks = record.OwnerStartTimeUtcTicks
+            }, new JsonSerializerOptions { WriteIndented = true });
+
+            var tmpPath = targetPath + "." + Guid.NewGuid().ToString("N")[..8] + ".tmp";
+            File.WriteAllText(tmpPath, payload + Environment.NewLine, Utf8NoBom);
+            File.Move(tmpPath, targetPath, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Never fail preparation solely because optional recovery ownership metadata could not be written
+        }
+    }
+
+    public void ClearPendingPreparedSnapshot(string? sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId) || !JsonTrialHistoryStore.IsValidSessionId(sessionId))
+            return;
+
+        try
+        {
+            var targetPath = Path.Combine(pendingPreparedDirectoryPath, sessionId.Trim() + ".json");
+            if (File.Exists(targetPath) && !IsReparsePointPath(targetPath))
+            {
+                File.Delete(targetPath);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
+    private (string? SessionId, string? StagingRootPath) TryReadRawPendingSessionExclusions()
+    {
+        if (!File.Exists(pendingSessionFilePath) || IsReparsePointPath(pendingSessionFilePath))
+            return (null, null);
+
+        try
+        {
+            var raw = File.ReadAllText(pendingSessionFilePath, Utf8NoBom);
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return (null, null);
+
+            var sid = root.TryGetProperty("session_id", out var sidProp) && sidProp.ValueKind == JsonValueKind.String
+                ? sidProp.GetString()?.Trim()
+                : null;
+            var stage = root.TryGetProperty("staging_root_path", out var stageProp) && stageProp.ValueKind == JsonValueKind.String
+                ? stageProp.GetString()?.Trim()
+                : null;
+            string? fullStage = null;
+            if (!string.IsNullOrWhiteSpace(stage))
+            {
+                try { fullStage = Path.TrimEndingDirectorySeparator(Path.GetFullPath(stage)); }
+                catch { fullStage = null; }
+            }
+            return (string.IsNullOrWhiteSpace(sid) ? null : sid, fullStage);
+        }
+        catch
+        {
+            return (null, null);
+        }
+    }
+
+    private bool TryParsePendingPreparedFile(string filePath, out PendingPreparedSnapshotRecord? record, out string error)
+    {
+        record = null;
+        error = "";
+        try
+        {
+            var raw = File.ReadAllText(filePath, Utf8NoBom);
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                error = "root is not JSON object";
+                return false;
+            }
+            if (!root.TryGetProperty("schema_version", out var verProp) || !verProp.TryGetInt32(out var ver) || ver != 1)
+            {
+                error = "unsupported schema_version";
+                return false;
+            }
+            var sessionId = root.TryGetProperty("session_id", out var sidProp) && sidProp.ValueKind == JsonValueKind.String
+                ? sidProp.GetString()?.Trim() ?? ""
+                : "";
+            var fileStem = Path.GetFileNameWithoutExtension(filePath);
+            if (!JsonTrialHistoryStore.IsValidSessionId(sessionId)
+                || !string.Equals(sessionId, fileStem, StringComparison.Ordinal))
+            {
+                error = "session_id missing or does not match filename";
+                return false;
+            }
+            var stagingRoot = root.TryGetProperty("staging_root_path", out var stageProp) && stageProp.ValueKind == JsonValueKind.String
+                ? stageProp.GetString()?.Trim() ?? ""
+                : "";
+            if (!IsVerifiedSessionStagingPath(stagingRoot, stagingBaseDirectory, sessionId))
+            {
+                error = "staging_root_path failed Contain staging containment verification";
+                return false;
+            }
+            var displayName = root.TryGetProperty("display_name", out var dnProp) && dnProp.ValueKind == JsonValueKind.String
+                ? dnProp.GetString()?.Trim() ?? ""
+                : "";
+            if (string.IsNullOrWhiteSpace(displayName))
+                displayName = sessionId;
+            var createdUtc = root.TryGetProperty("created_utc", out var tsProp)
+                && tsProp.ValueKind == JsonValueKind.String
+                && DateTimeOffset.TryParse(tsProp.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsedTs)
+                ? parsedTs
+                : DateTimeOffset.MinValue;
+            var ownerPid = root.TryGetProperty("owner_pid", out var pidProp) && pidProp.TryGetInt32(out var parsedPid)
+                ? parsedPid
+                : 0;
+            if (ownerPid <= 0)
+            {
+                error = "missing valid owner_pid";
+                return false;
+            }
+            var ownerTicks = root.TryGetProperty("owner_start_time_utc_ticks", out var ticksProp) && ticksProp.TryGetInt64(out var parsedTicks)
+                ? parsedTicks
+                : 0L;
+
+            record = new PendingPreparedSnapshotRecord(
+                1,
+                sessionId,
+                Path.GetFullPath(stagingRoot),
+                displayName,
+                createdUtc,
+                ownerPid,
+                ownerTicks);
+            return true;
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            error = $"{ex.GetType().Name}: {ex.Message}";
+            return false;
+        }
+    }
+
+    private static void QuarantineCorruptPendingPreparedFile(string filePath)
+    {
+        try
+        {
+            if (File.Exists(filePath) && !IsReparsePointPath(filePath))
+            {
+                File.Move(filePath, filePath + ".corrupt", overwrite: true);
+            }
+        }
+        catch { }
+    }
+
+    private static void TryDeleteFileSafe(string filePath)
+    {
+        try
+        {
+            if (File.Exists(filePath) && !IsReparsePointPath(filePath))
+                File.Delete(filePath);
+        }
+        catch { }
+    }
+
+    private static PendingPreparedSnapshotRecord CreatePendingPreparedRecord(string sessionId, string stagingRoot, string displayName)
+    {
+        long startTicks = 0;
+        try
+        {
+            using var current = Process.GetCurrentProcess();
+            startTicks = current.StartTime.ToUniversalTime().Ticks;
+        }
+        catch { }
+
+        return new PendingPreparedSnapshotRecord(
+            1,
+            sessionId,
+            Path.GetFullPath(stagingRoot),
+            displayName,
+            DateTimeOffset.UtcNow,
+            Environment.ProcessId,
+            startTicks);
     }
 
     private static PendingTrialSessionRecord CreatePendingRecord(string sessionId, string instanceId, string stagingRoot, string fileName)
