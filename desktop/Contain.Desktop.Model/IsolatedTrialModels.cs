@@ -75,6 +75,12 @@ public enum TrialExecutableArch
     Arm64
 }
 
+public enum TrialInputKind
+{
+    SingleFile,
+    Folder
+}
+
 public sealed record TrialExecutableInfo(
     string FileName,
     string FullPath,
@@ -95,6 +101,122 @@ public sealed record TrialExecutableInfo(
             : !string.IsNullOrWhiteSpace(FileVersion)
                 ? FileVersion
                 : "未提供";
+}
+
+/// <summary>
+/// Candidate executable discovered inside a selected portable software folder.
+/// Identified uniquely by RelativePath so same-name EXEs in nested subdirectories stay distinct.
+/// </summary>
+public sealed record TrialFolderEntryCandidate(
+    string RelativePath,
+    string FileName,
+    string FullPath,
+    long SizeBytes,
+    string FormattedSize,
+    TrialExecutableArch Architecture,
+    string ArchitectureLabel,
+    string? ProductVersion,
+    string? FileVersion)
+{
+    public bool IsRunnableInX64Sandbox => Architecture is TrialExecutableArch.X64 or TrialExecutableArch.X86;
+
+    public string DisplayVersion =>
+        !string.IsNullOrWhiteSpace(ProductVersion)
+            ? ProductVersion
+            : !string.IsNullOrWhiteSpace(FileVersion)
+                ? FileVersion
+                : "未提供";
+
+    public string DisplayLabel => $"{RelativePath}（{FormattedSize} · {ArchitectureLabel}）";
+
+    public TrialExecutableInfo ToExecutableInfo() => new(
+        FileName,
+        FullPath,
+        SizeBytes,
+        FormattedSize,
+        Architecture,
+        ArchitectureLabel,
+        ProductVersion,
+        FileVersion,
+        HasSiblingFiles: false,
+        SiblingFileCount: 0);
+}
+
+public sealed record TrialFolderInfo(
+    string FolderName,
+    string FullPath,
+    int FileCount,
+    int DirectoryCount,
+    long TotalBytes,
+    string FormattedTotalSize,
+    IReadOnlyList<TrialFolderEntryCandidate> RunnableEntries,
+    IReadOnlyList<TrialFolderEntryCandidate> UnsupportedEntries)
+{
+    public bool HasRunnableEntries => RunnableEntries.Count > 0;
+}
+
+public sealed record TrialFolderScanProgress(
+    int DirectoriesScanned,
+    int FilesScanned,
+    long TotalBytes,
+    int CandidateCount,
+    string CurrentRelativePath);
+
+public sealed record TrialStagingProgress(
+    string Stage,
+    int FilesCopied,
+    int TotalFiles,
+    long BytesCopied,
+    long TotalBytes,
+    string CurrentRelativePath)
+{
+    public double Percent => TotalBytes > 0
+        ? Math.Clamp(BytesCopied * 100.0 / TotalBytes, 0, 100)
+        : TotalFiles > 0 ? Math.Clamp(FilesCopied * 100.0 / TotalFiles, 0, 100) : 0;
+}
+
+/// <summary>
+/// Unified immutable launch specification for both single-file and portable-folder trials.
+/// Flows through one shared sandbox lifecycle (staging -> wsb start -> readiness -> guest launch -> monitor -> recovery -> cleanup).
+/// </summary>
+public sealed record TrialLaunchTarget(
+    TrialInputKind Kind,
+    string DisplayName,
+    string SourcePath,
+    string EntryRelativePath,
+    TrialExecutableInfo EntryExecutable,
+    int TotalFileCount,
+    long TotalBytes,
+    string FormattedTotalSize)
+{
+    public static TrialLaunchTarget FromSingleExecutable(TrialExecutableInfo executable)
+    {
+        ArgumentNullException.ThrowIfNull(executable);
+        return new TrialLaunchTarget(
+            TrialInputKind.SingleFile,
+            executable.FileName,
+            executable.FullPath,
+            executable.FileName,
+            executable,
+            TotalFileCount: 1,
+            TotalBytes: executable.SizeBytes,
+            FormattedTotalSize: executable.FormattedSize);
+    }
+
+    public static TrialLaunchTarget FromFolder(TrialFolderInfo folder, TrialFolderEntryCandidate entry)
+    {
+        ArgumentNullException.ThrowIfNull(folder);
+        ArgumentNullException.ThrowIfNull(entry);
+        return new TrialLaunchTarget(
+            TrialInputKind.Folder,
+            folder.FolderName,
+            folder.FullPath,
+            entry.RelativePath,
+            entry.ToExecutableInfo(),
+            TotalFileCount: folder.FileCount,
+            TotalBytes: folder.TotalBytes,
+            FormattedTotalSize: folder.FormattedTotalSize);
+    }
 }
 
 public enum TrialHashState
@@ -133,6 +255,7 @@ public enum IsolatedTrialPhase
 {
     Idle,
     Recovering,
+    PreparingInput,
     StartingSandbox,
     SandboxOpened,
     ProgramStarted,
@@ -152,7 +275,8 @@ public enum TrialEndReason
     SandboxInstanceExited,
     RecoveredAndEnded,
     RecoveredAlreadyExited,
-    ApplicationClosing
+    ApplicationClosing,
+    PreparationCancelled
 }
 
 public sealed record TrialEvidenceEntry(
@@ -166,7 +290,10 @@ public sealed record SandboxStartResult(
     string StagingRootPath,
     string ReadOnlyInputPath,
     int? ConnectProcessId,
-    DateTimeOffset OpenedAt);
+    DateTimeOffset OpenedAt,
+    TrialInputKind InputKind = TrialInputKind.SingleFile,
+    string EntryRelativePath = "",
+    int StagedFileCount = 1);
 
 public sealed record PendingTrialSessionRecord(
     int SchemaVersion,
@@ -227,6 +354,7 @@ public sealed class IsolatedTrialException : Exception
     public string Code { get; }
     public string NextStep { get; }
     public string Diagnostic { get; }
+    public string FailedStage { get; }
     public SandboxStopResult? RollbackResult { get; }
     public string? CreatedInstanceId { get; }
     public string? StagingRootPath { get; }
@@ -241,12 +369,14 @@ public sealed class IsolatedTrialException : Exception
         SandboxStopResult? rollbackResult = null,
         string? createdInstanceId = null,
         string? stagingRootPath = null,
-        string? sessionId = null)
+        string? sessionId = null,
+        string failedStage = "")
         : base(message, inner)
     {
         Code = code;
         NextStep = nextStep;
         Diagnostic = diagnostic;
+        FailedStage = failedStage;
         RollbackResult = rollbackResult;
         CreatedInstanceId = createdInstanceId;
         StagingRootPath = stagingRootPath;
@@ -260,6 +390,15 @@ public interface IIsolatedTrialService
     TrialExecutableInfo InspectExecutable(string executablePath);
 
     /// <summary>
+    /// Asynchronously scans a selected portable software folder read-only, rejecting directory links,
+    /// junctions, or other reparse points so the displayed scope matches what will be staged.
+    /// </summary>
+    Task<TrialFolderInfo> ScanFolderAsync(
+        string folderPath,
+        IProgress<TrialFolderScanProgress>? progress = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Computes the lowercase hex SHA-256 digest of a local file strictly read-only without executing it.
     /// </summary>
     Task<string> ComputeSha256Async(string executablePath, CancellationToken cancellationToken = default);
@@ -271,22 +410,24 @@ public interface IIsolatedTrialService
     void OpenWindowsFeatures();
 
     /// <summary>
-    /// Creates an isolated staging folder with ONLY the selected EXE, persists a minimal pending
-    /// session record immediately upon receiving the real instance ID, opens its interactive window,
-    /// and verifies that the exact returned instance responds to a read-only ExistingLogin probe.
+    /// Stages the single EXE or full verified folder snapshot into a per-session host staging directory
+    /// (supporting progress and cancellation and rejecting reparse points, unreadable files, or
+    /// insufficient space before starting Sandbox), then launches the isolated offline sandbox instance
+    /// and verifies readiness.
     /// </summary>
     Task<SandboxStartResult> StartSandboxAsync(
-        TrialExecutableInfo executable,
+        TrialLaunchTarget target,
+        IProgress<TrialStagingProgress>? stagingProgress = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Copies the selected EXE from the read-only mount into a writable guest-local directory
-    /// using UTF-8 JSON metadata (never interpolating filenames into shell commands) and starts it
-    /// inside the interactive guest session.
+    /// Copies the staged input from the read-only mount into a writable guest-local directory
+    /// preserving relative layout, sets WorkingDirectory to the entry EXE's directory, and launches
+    /// the entry executable inside the interactive guest session.
     /// </summary>
     Task<GuestProgramLaunchResult> LaunchProgramInSandboxAsync(
         SandboxStartResult session,
-        TrialExecutableInfo executable,
+        TrialLaunchTarget target,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -309,6 +309,24 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
             IsolatedTrial.CancelSelection();
     }
 
+    public async Task PickTrialFolderAsync()
+    {
+        if (!IsolatedTrial.CanSelectFolder) return;
+        var dialog = new OpenFolderDialog
+        {
+            Title = "选择要隔离试用的便携软件文件夹",
+            Multiselect = false
+        };
+        if (dialog.ShowDialog(this) == true)
+            await RunUiAsync(() => IsolatedTrial.SelectFolderAsync(dialog.FolderName));
+        else
+            IsolatedTrial.CancelSelection();
+    }
+
+    public void CancelTrialFolderScan() => RunUiOperation(() => IsolatedTrial.CancelFolderScan());
+
+    public void CancelTrialPreparation() => RunUiOperation(() => IsolatedTrial.CancelPreparation());
+
     public Task StartIsolatedTrialAsync() => RunUiAsync(() => IsolatedTrial.StartTrialAsync());
 
     public Task EndIsolatedTrialAsync() => RunUiAsync(() => IsolatedTrial.EndTrialAsync());
@@ -434,7 +452,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         if (closeInProgress) return;
         closeInProgress = true;
         Navigation.IsEnabled = false;
-        localStatus = IsolatedTrial.IsSessionActive || IsolatedTrial.IsStarting
+        localStatus = IsolatedTrial.IsSessionActive || IsolatedTrial.IsStarting || IsolatedTrial.IsPreparingInput
             ? "正在结束当前隔离试用并清理沙箱，请稍候…"
             : "正在停止读取与导出，请稍候…";
         Changed(nameof(StatusMessage));

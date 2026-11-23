@@ -569,19 +569,285 @@ internal static class IsolatedTrialChecks
             True(!await duplicate, "rapid duplicate click synchronously rejected");
             Equal(1, service.StartCalls, "only one start initiated");
 
-            startGate.SetResult(new SandboxStartResult("a1b2c3d4e5f6", InstanceA, @"C:\temp\a1b2c3d4e5f6", @"C:\temp\a1b2c3d4e5f6\input", 4242, DateTimeOffset.UtcNow));
+            startGate.SetResult(new SandboxStartResult("a1b2c3d4e5f6", InstanceA, @"C:\temp\a1b2c3d4e5f6", @"C:\temp\a1b2c3d4e5f6\input", 4242, DateTimeOffset.UtcNow, TrialInputKind.SingleFile, "trial.exe", 1));
             await WaitUntilAsync(() => vm.Phase == IsolatedTrialPhase.SandboxOpened);
             Equal("沙箱已打开", vm.SandboxStageBadge, "sandbox opened");
-            Equal("正在沙箱内启动程序…", vm.ProgramStageBadge, "program launching");
+            Equal("正在沙箱内启动入口…", vm.ProgramStageBadge, "program launching");
 
             launchGate.SetResult(new GuestProgramLaunchResult(GuestProgramLaunchOutcome.StartedAndRunning, 0, "已启动"));
             True(await first, "start trial completes");
             Equal(IsolatedTrialPhase.ProgramStarted, vm.Phase, "ProgramStarted");
-            Equal("程序已启动", vm.ProgramStageBadge, "program started");
+            Equal("沙箱运行中", vm.SessionHeadline, "active headline is 沙箱运行中");
+            Equal("沙箱运行中", vm.SandboxStageBadge, "sandbox badge is 沙箱运行中");
+            Equal("已启动入口：trial.exe", vm.ProgramStageBadge, "action badge records 已启动入口");
+            True(vm.SessionSummary.Contains("安装完成并退出后仍可在同一沙箱继续使用", StringComparison.Ordinal), "summary explains installer exit keeps sandbox usable");
 
             await vm.CloseAsync();
             Equal(1, service.StoppedInstances.Count, "CloseAsync stops owned instance");
             Equal(InstanceA, service.StoppedInstances[0], "CloseAsync stops exact ID");
+        });
+
+        await Check("folder mode scans nested Chinese/space/& portable app, auto-selects single entry, stages full tree, and labels entry SHA-256", async () =>
+        {
+            using var temp = new TempDir();
+            var appRoot = temp.Sub("便携 样例 & 软件");
+            var binDir = Path.Combine(appRoot, "子目录 & bin");
+            var resDir = Path.Combine(appRoot, "assets");
+            var emptySub = Path.Combine(appRoot, "empty-cache");
+            Directory.CreateDirectory(binDir);
+            Directory.CreateDirectory(resDir);
+            Directory.CreateDirectory(emptySub);
+
+            var entryExe = Path.Combine(binDir, "便携 入口 & App.exe");
+            WriteMinimalPe(entryExe, 0x8664, extraByte: 0x33);
+            File.WriteAllText(Path.Combine(binDir, "Helper.dll"), "fake-dll-payload");
+            File.WriteAllText(Path.Combine(resDir, "greeting.txt"), "Hello from relative resource!");
+
+            var realSvc = new WindowsSandboxTrialService(stagingBaseDirectory: temp.Sub("staging-base"));
+            var scanned = await realSvc.ScanFolderAsync(appRoot);
+            Equal("便携 样例 & 软件", scanned.FolderName, "folder name preserved");
+            Equal(3, scanned.FileCount, "all 3 files counted");
+            Equal(3, scanned.DirectoryCount, "all 3 subdirectories counted");
+            Equal(1, scanned.RunnableEntries.Count, "single runnable EXE discovered in nested subdir");
+            Equal(@"子目录 & bin\便携 入口 & App.exe", scanned.RunnableEntries[0].RelativePath, "exact nested relative path");
+
+            // Stage real snapshot and verify directory structure & byte counts preserved intact
+            var stagedInput = temp.Sub("staged-input");
+            var target = TrialLaunchTarget.FromFolder(scanned, scanned.RunnableEntries[0]);
+            var stagedSummary = await realSvc.StageInputSnapshotAsync(target, stagedInput);
+            Equal(3, stagedSummary.FileCount, "staged all 3 files");
+            True(File.Exists(Path.Combine(stagedInput, @"子目录 & bin\便携 入口 & App.exe")), "entry EXE staged at relative path");
+            True(File.Exists(Path.Combine(stagedInput, @"子目录 & bin\Helper.dll")), "sibling DLL staged beside entry");
+            True(File.Exists(Path.Combine(stagedInput, @"assets\greeting.txt")), "relative resource staged");
+            True(Directory.Exists(Path.Combine(stagedInput, "empty-cache")), "empty subdir preserved");
+
+            // ViewModel auto-selects single entry, labels entry SHA-256, and starts unified folder session
+            TrialLaunchTarget? capturedTarget = null;
+            var ctrl = new ControlledTrialService
+            {
+                TargetStartFactory = (t, prog, _) =>
+                {
+                    capturedTarget = t;
+                    prog?.Report(new TrialStagingProgress("输入快照准备完成，正在启动 Windows 沙箱…", t.TotalFileCount, t.TotalFileCount, t.TotalBytes, t.TotalBytes, ""));
+                    return Task.FromResult(new SandboxStartResult("f1e2d3c4b5a6", InstanceA, @"C:\temp\f1e2d3c4b5a6", @"C:\temp\f1e2d3c4b5a6\input", 2001, DateTimeOffset.UtcNow, t.Kind, t.EntryRelativePath, t.TotalFileCount));
+                }
+            };
+            using var vm = new IsolatedTrialViewModel(ctrl, pollInterval: TimeSpan.FromHours(1));
+            await vm.RefreshCapabilityAsync();
+            True(await vm.SelectFolderAsync(appRoot), "folder selected");
+            True(vm.IsFolderSelected && vm.SelectedFolderEntry is not null, "auto-selected unique entry");
+            Equal(@"子目录 & bin\便携 入口 & App.exe", vm.SelectedFolderEntry!.RelativePath, "selected nested entry");
+            True(vm.Sha256SectionTitle.Contains("入口文件", StringComparison.Ordinal), "SHA-256 explicitly labeled as entry file hash");
+            Equal("只读快照传入所选目录", vm.IsolationMountBadgeText, "isolation badge shows folder snapshot");
+            True(vm.CanStartTrial, "Start enabled once unique entry auto-selected");
+
+            var entryHash = await vm.ComputeSha256Async();
+            Equal(await WindowsSandboxTrialService.ComputeFileSha256Async(entryExe), entryHash ?? "", "entry SHA-256 computed accurately");
+
+            True(await vm.StartTrialAsync(), "folder trial started");
+            True(capturedTarget?.Kind == TrialInputKind.Folder && capturedTarget.TotalFileCount == 3, "unified StartSandboxAsync received folder target");
+            Equal("沙箱运行中", vm.SessionHeadline, "active folder trial headline is 沙箱运行中");
+            Equal(@"已启动入口：子目录 & bin\便携 入口 & App.exe", vm.ProgramStageBadge, "action badge shows nested entry relative path");
+            await vm.CloseAsync();
+        });
+
+        await Check("folder mode disambiguates same-name EXEs in nested folders, clears stale SHA-256 on entry switch, and explains missing runnable entries", async () =>
+        {
+            using var temp = new TempDir();
+            var multiRoot = temp.Sub("MultiEntryApp");
+            var dirA = Path.Combine(multiRoot, "app");
+            var dirB = Path.Combine(multiRoot, "tools");
+            Directory.CreateDirectory(dirA);
+            Directory.CreateDirectory(dirB);
+            WriteMinimalPe(Path.Combine(dirA, "Tool.exe"), 0x8664, extraByte: 0x01);
+            WriteMinimalPe(Path.Combine(dirB, "Tool.exe"), 0x8664, extraByte: 0x02);
+
+            var ctrl = new ControlledTrialService();
+            using var vm = new IsolatedTrialViewModel(ctrl, pollInterval: TimeSpan.FromHours(1));
+            await vm.RefreshCapabilityAsync();
+            True(await vm.SelectFolderAsync(multiRoot), "scanned multi-entry folder");
+            Equal(2, vm.FolderEntryCandidates.Count, "both same-name EXEs listed");
+            True(vm.SelectedFolderEntry is null && vm.NeedsFolderEntrySelection && !vm.CanStartTrial, "requires explicit entry selection when >1 EXE");
+
+            True(vm.SelectFolderEntryByRelativePath(@"app\Tool.exe"), "selected app\\Tool.exe");
+            True(vm.CanStartTrial, "Start enabled after picking entry");
+            var hashA = await vm.ComputeSha256Async();
+            True(!string.IsNullOrEmpty(hashA), "computed hash A");
+
+            True(vm.SelectFolderEntryByRelativePath(@"tools\Tool.exe"), "switched to tools\\Tool.exe");
+            True(!vm.HasComputedSha256 && vm.ComputedSha256 == "", "switching entry clears prior SHA-256");
+            var hashB = await vm.ComputeSha256Async();
+            True(hashA != hashB, "distinct hash for second same-name EXE");
+
+            // ARM64-only folder explains incompatibility and disables Start
+            var armOnly = temp.Sub("ArmOnlyFolder");
+            WriteMinimalPe(Path.Combine(armOnly, "only-arm64.exe"), 0xAA64);
+            True(await vm.SelectFolderAsync(armOnly), "scanned ARM64-only folder");
+            True(vm.HasNoRunnableFolderEntries && !vm.CanStartTrial, "ARM64-only blocks Start");
+            True(vm.FolderNoEntryReasonText.Contains("ARM64", StringComparison.Ordinal), "explains incompatible ARM64 EXE");
+
+            // Empty folder explains no EXE found
+            var emptyFolder = temp.Sub("EmptyApp");
+            True(await vm.SelectFolderAsync(emptyFolder), "scanned empty folder");
+            True(vm.HasNoRunnableFolderEntries && !vm.CanStartTrial, "empty folder blocks Start");
+            True(vm.FolderNoEntryReasonText.Contains("为空", StringComparison.Ordinal), "explains empty folder");
+        });
+
+        await Check("folder mode rejects reparse points/junctions during scan and staging, and rejects entry path traversal", async () =>
+        {
+            using var temp = new TempDir();
+            var outside = temp.Sub("OutsideSecret");
+            File.WriteAllText(Path.Combine(outside, "secret.txt"), "do-not-stage");
+
+            var folder = temp.Sub("PortableWithLink");
+            WriteMinimalPe(Path.Combine(folder, "Main.exe"), 0x8664);
+
+            // ValidateFolderEntryPath rejects traversal & outside paths
+            True(!WindowsSandboxTrialService.ValidateFolderEntryPath(folder, @"..\OutsideSecret\evil.exe", out _, out _), "rejects .. traversal");
+            True(!WindowsSandboxTrialService.ValidateFolderEntryPath(folder, @"C:\Windows\notepad.exe", out _, out _), "rejects rooted entry path");
+            True(WindowsSandboxTrialService.ValidateFolderEntryPath(folder, "Main.exe", out _, out _), "accepts contained entry");
+
+            if (OperatingSystem.IsWindows())
+            {
+                var junctionPath = Path.Combine(folder, "linked-dir");
+                using (var mk = Process.Start(new ProcessStartInfo("cmd.exe", $"/c mklink /J \"{junctionPath}\" \"{outside}\"")
+                {
+                    UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
+                })!)
+                {
+                    mk.WaitForExit(5000);
+                }
+                True(Directory.Exists(junctionPath), "junction created for test");
+
+                var realSvc = new WindowsSandboxTrialService(stagingBaseDirectory: temp.Sub("staging-rp"));
+                try
+                {
+                    await realSvc.ScanFolderAsync(folder);
+                    throw new InvalidOperationException("ScanFolderAsync should have rejected junction!");
+                }
+                catch (IsolatedTrialException ex)
+                {
+                    Equal("reparse_point_detected", ex.Code, "scan rejects directory junction");
+                }
+
+                // TOCTOU defense: even if a TrialLaunchTarget was constructed earlier, staging rejects junction & stages nothing outside
+                var syntheticFolderInfo = new TrialFolderInfo("PortableWithLink", folder, 1, 0, 128, "128 B",
+                    [new TrialFolderEntryCandidate("Main.exe", "Main.exe", Path.Combine(folder, "Main.exe"), 128, "128 B", TrialExecutableArch.X64, "Windows x64 (PE32+)", null, null)],
+                    []);
+                var target = TrialLaunchTarget.FromFolder(syntheticFolderInfo, syntheticFolderInfo.RunnableEntries[0]);
+                var stagedInput = temp.Sub("staged-rp");
+                try
+                {
+                    await realSvc.StageInputSnapshotAsync(target, stagedInput);
+                    throw new InvalidOperationException("StageInputSnapshotAsync should have rejected junction!");
+                }
+                catch (IsolatedTrialException ex)
+                {
+                    Equal("reparse_point_detected", ex.Code, "staging rejects directory junction");
+                    Equal("准备输入快照", ex.FailedStage, "reports exact failing stage");
+                }
+                True(!File.Exists(Path.Combine(stagedInput, "linked-dir", "secret.txt")), "outside linked file never staged");
+
+                // Clean junction safely before TempDir teardown
+                Directory.Delete(junctionPath, recursive: false);
+            }
+        });
+
+        await Check("cancelling staging preparation cleans partial staging and never starts Sandbox", async () =>
+        {
+            using var temp = new TempDir();
+            var appRoot = temp.Sub("CancelApp");
+            WriteMinimalPe(Path.Combine(appRoot, "App.exe"), 0x8664);
+
+            var copyStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var ctrl = new ControlledTrialService
+            {
+                TargetStartFactory = async (t, prog, ct) =>
+                {
+                    prog?.Report(new TrialStagingProgress("正在复制软件文件夹到本次暂存目录…", 0, 10, 0, 10240, "big.bin"));
+                    copyStarted.TrySetResult();
+                    try
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(10), ct);
+                        throw new InvalidOperationException("Should have been cancelled");
+                    }
+                    catch (OperationCanceledException ex)
+                    {
+                        throw new IsolatedTrialException(
+                            "preparation_cancelled",
+                            "已取消准备本次输入快照，未启动沙箱。",
+                            rollbackResult: new SandboxStopResult(SandboxInstanceState.NotCreated, TrialStagingState.Cleaned, "已清理本次暂存目录。"),
+                            stagingRootPath: @"C:\temp\cancelled-staging",
+                            sessionId: "cancelsess",
+                            failedStage: "准备输入快照",
+                            inner: ex);
+                    }
+                }
+            };
+
+            using var vm = new IsolatedTrialViewModel(ctrl, pollInterval: TimeSpan.FromHours(1));
+            await vm.RefreshCapabilityAsync();
+            True(await vm.SelectFolderAsync(appRoot), "folder selected");
+
+            var startTask = vm.StartTrialAsync();
+            await copyStarted.Task;
+            Equal(IsolatedTrialPhase.PreparingInput, vm.Phase, "entered PreparingInput during copy");
+            True(vm.CanCancelPreparation, "取消准备 button enabled during copy");
+
+            vm.CancelPreparation();
+            True(!await startTask, "StartTrialAsync returns false when cancelled");
+            Equal(IsolatedTrialPhase.Ended, vm.Phase, "cancelled cleanly");
+            Equal(TrialEndReason.PreparationCancelled, vm.EndReason, "PreparationCancelled end reason");
+            Equal("已取消准备", vm.SessionHeadline, "headline shows 已取消准备");
+            Equal("本次暂存目录已清理", vm.CleanupStatusText, "staging cleanup confirmed");
+            True(!vm.IsCleanupWarning && vm.CanRetryTrial, "allows retrying cleanly");
+        });
+
+        await Check("unreadable file and insufficient disk space abort during staging and clean up without starting Sandbox", async () =>
+        {
+            using var temp = new TempDir();
+            var appRoot = temp.Sub("ErrorApp");
+            var exePath = Path.Combine(appRoot, "App.exe");
+            var lockedPath = Path.Combine(appRoot, "locked.dat");
+            WriteMinimalPe(exePath, 0x8664);
+            File.WriteAllText(lockedPath, "secret-data");
+
+            var stagingBase = temp.Sub("staging-err");
+            var scanned = await WindowsSandboxTrialService.ScanPortableFolderAsync(appRoot);
+            var target = TrialLaunchTarget.FromFolder(scanned, scanned.RunnableEntries[0]);
+
+            // 1. Insufficient disk space detected before copying
+            var lowSpaceSvc = new WindowsSandboxTrialService(
+                stagingBaseDirectory: stagingBase,
+                availableFreeSpaceProvider: _ => 1024L);
+            try
+            {
+                await lowSpaceSvc.StageInputSnapshotAsync(target, Path.Combine(stagingBase, "lowspace-input"));
+                throw new InvalidOperationException("Expected insufficient_disk_space!");
+            }
+            catch (IsolatedTrialException ex)
+            {
+                Equal("insufficient_disk_space", ex.Code, "insufficient disk space rejected");
+                Equal("准备输入快照", ex.FailedStage, "reports staging stage");
+            }
+
+            // 2. Exclusively locked unreadable file fails cleanly during staging copy
+            var normalSvc = new WindowsSandboxTrialService(stagingBaseDirectory: stagingBase);
+            var lockedStagingDir = Path.Combine(stagingBase, "locked-input");
+            using (var exclusiveLock = new FileStream(lockedPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                try
+                {
+                    await normalSvc.StageInputSnapshotAsync(target, lockedStagingDir);
+                    throw new InvalidOperationException("Expected staging_copy_read_failed on exclusively locked file!");
+                }
+                catch (IsolatedTrialException ex)
+                {
+                    Equal("staging_copy_read_failed", ex.Code, "unreadable file fails with staging_copy_read_failed");
+                    True(ex.Message.Contains("locked.dat", StringComparison.OrdinalIgnoreCase), "error names unreadable file");
+                    Equal("准备输入快照", ex.FailedStage, "reports staging stage");
+                }
+            }
         });
 
         return passed;
@@ -683,9 +949,12 @@ internal static class IsolatedTrialChecks
             "Windows 11 Pro (Professional)");
 
         public PendingSessionLoadResult PendingLoadResult { get; set; } = new(PendingSessionLoadStatus.None);
+        public Func<string, IProgress<TrialFolderScanProgress>?, CancellationToken, Task<TrialFolderInfo>>? ScanFolderFactory { get; set; }
         public Func<string, CancellationToken, Task<string>>? HashFactory { get; set; }
         public Func<TrialExecutableInfo, CancellationToken, Task<SandboxStartResult>>? StartFactory { get; set; }
+        public Func<TrialLaunchTarget, IProgress<TrialStagingProgress>?, CancellationToken, Task<SandboxStartResult>>? TargetStartFactory { get; set; }
         public Func<SandboxStartResult, TrialExecutableInfo, CancellationToken, Task<GuestProgramLaunchResult>>? LaunchFactory { get; set; }
+        public Func<SandboxStartResult, TrialLaunchTarget, CancellationToken, Task<GuestProgramLaunchResult>>? TargetLaunchFactory { get; set; }
         public Func<SandboxStartResult, CancellationToken, Task<SandboxInstancePollResult>>? PollFactory { get; set; }
         public Func<string, string?, CancellationToken, Task<SandboxInstancePollResult>>? QueryFactory { get; set; }
         public Func<string?, string?, CancellationToken, Task<SandboxStopResult>>? StopFactory { get; set; }
@@ -703,6 +972,14 @@ internal static class IsolatedTrialChecks
         public TrialExecutableInfo InspectExecutable(string executablePath) =>
             WindowsSandboxTrialService.InspectExecutableFile(executablePath);
 
+        public Task<TrialFolderInfo> ScanFolderAsync(
+            string folderPath,
+            IProgress<TrialFolderScanProgress>? progress = null,
+            CancellationToken cancellationToken = default) =>
+            ScanFolderFactory is not null
+                ? ScanFolderFactory(folderPath, progress, cancellationToken)
+                : WindowsSandboxTrialService.ScanPortableFolderAsync(folderPath, null, progress, cancellationToken);
+
         public Task<string> ComputeSha256Async(string executablePath, CancellationToken cancellationToken = default) =>
             HashFactory is not null
                 ? HashFactory(executablePath, cancellationToken)
@@ -710,17 +987,25 @@ internal static class IsolatedTrialChecks
 
         public void OpenWindowsFeatures() => OpenWindowsFeaturesCalls++;
 
-        public Task<SandboxStartResult> StartSandboxAsync(TrialExecutableInfo executable, CancellationToken cancellationToken = default)
+        public Task<SandboxStartResult> StartSandboxAsync(
+            TrialLaunchTarget target,
+            IProgress<TrialStagingProgress>? stagingProgress = null,
+            CancellationToken cancellationToken = default)
         {
             StartCalls++;
-            if (StartFactory is not null) return StartFactory(executable, cancellationToken);
-            return Task.FromResult(new SandboxStartResult("a1b2c3d4e5f6", InstanceA, @"C:\temp\a1b2c3d4e5f6", @"C:\temp\a1b2c3d4e5f6\input", 1001, DateTimeOffset.UtcNow));
+            if (TargetStartFactory is not null) return TargetStartFactory(target, stagingProgress, cancellationToken);
+            if (StartFactory is not null) return StartFactory(target.EntryExecutable, cancellationToken);
+            return Task.FromResult(new SandboxStartResult("a1b2c3d4e5f6", InstanceA, @"C:\temp\a1b2c3d4e5f6", @"C:\temp\a1b2c3d4e5f6\input", 1001, DateTimeOffset.UtcNow, target.Kind, target.EntryRelativePath, target.TotalFileCount));
         }
 
-        public Task<GuestProgramLaunchResult> LaunchProgramInSandboxAsync(SandboxStartResult session, TrialExecutableInfo executable, CancellationToken cancellationToken = default)
+        public Task<GuestProgramLaunchResult> LaunchProgramInSandboxAsync(
+            SandboxStartResult session,
+            TrialLaunchTarget target,
+            CancellationToken cancellationToken = default)
         {
-            if (LaunchFactory is not null) return LaunchFactory(session, executable, cancellationToken);
-            return Task.FromResult(new GuestProgramLaunchResult(GuestProgramLaunchOutcome.StartedAndRunning, 0, $"已启动 {executable.FileName}"));
+            if (TargetLaunchFactory is not null) return TargetLaunchFactory(session, target, cancellationToken);
+            if (LaunchFactory is not null) return LaunchFactory(session, target.EntryExecutable, cancellationToken);
+            return Task.FromResult(new GuestProgramLaunchResult(GuestProgramLaunchOutcome.StartedAndRunning, 0, $"已启动 {target.EntryRelativePath}"));
         }
 
         public Task<SandboxInstancePollResult> PollSessionAsync(SandboxStartResult session, CancellationToken cancellationToken = default)

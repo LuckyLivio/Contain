@@ -29,15 +29,18 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
     private static readonly string[] RequiredSubcommands =
         ["start", "list", "connect", "exec", "stop"];
 
-    // Static, pure-ASCII PowerShell 5.1 guest launcher. Reads target filename strictly as UTF-8
-    // JSON data (never interpolated into a command string), copies into writable guest-local
-    // C:\ContainTrialRun so programs writing beside themselves work while C:\ContainTrialInput
-    // remains read-only, and reports observable launch outcome via exact guest exit codes:
+    // Static, pure-ASCII PowerShell 5.1 guest launcher. Reads target metadata strictly as UTF-8
+    // JSON data (never interpolated into a command string), recursively copies the full read-only
+    // input snapshot (single EXE or portable folder preserving subdirectories) into writable
+    // guest-local C:\ContainTrialRun, sets WorkingDirectory to the entry EXE's directory so sibling
+    // DLLs, relative resources and local settings work naturally, and reports observable launch
+    // outcome via exact guest exit codes:
     //   0  = started and still running after 1s
     //   20 = started and exited cleanly with code 0 within 1s
     //   21 = started and exited non-zero within 1s
-    //   12 = input EXE missing in read-only mount
-    //   13 = copy to guest local run folder failed
+    //   11 = invalid target metadata or entry path
+    //   12 = input entry EXE missing in read-only mount
+    //   13 = copy to guest local run folder failed or incomplete
     //   14 = Process.Start failed or returned no process handle/PID
     internal const string GuestLauncherScript = """
         $ErrorActionPreference = 'Stop'
@@ -46,26 +49,69 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
             $metaPath = 'C:\ContainTrialBootstrap\target.json'
             if (!(Test-Path -LiteralPath $metaPath -PathType Leaf)) { exit 11 }
             $meta = [System.IO.File]::ReadAllText($metaPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
-            $name = [string]$meta.file_name
-            if ([string]::IsNullOrWhiteSpace($name) -or $name.IndexOfAny([char[]]@('\', '/', ':')) -ge 0) { exit 11 }
-            $src = [System.IO.Path]::Combine('C:\ContainTrialInput', $name)
-            if (!(Test-Path -LiteralPath $src -PathType Leaf)) { exit 12 }
-            $srcInfo = New-Object System.IO.FileInfo($src)
-            $runDir = 'C:\ContainTrialRun'
+            $entryRel = ''
+            if ($null -ne $meta.PSObject.Properties['entry_relative_path']) {
+                $entryRel = [string]$meta.entry_relative_path
+            } elseif ($null -ne $meta.PSObject.Properties['file_name']) {
+                $entryRel = [string]$meta.file_name
+            }
+            if ([string]::IsNullOrWhiteSpace($entryRel)) { exit 11 }
+            $entryRel = $entryRel.Replace('/', '\').Trim()
+            if ([System.IO.Path]::IsPathRooted($entryRel) -or $entryRel.Contains(':')) { exit 11 }
+            foreach ($seg in $entryRel.Split('\')) {
+                if ([string]::IsNullOrEmpty($seg) -or $seg -eq '.' -or $seg -eq '..') { exit 11 }
+            }
+
+            $inputRoot = [System.IO.Path]::GetFullPath('C:\ContainTrialInput')
+            $srcEntry = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($inputRoot, $entryRel))
+            if (!$srcEntry.StartsWith($inputRoot + '\', [System.StringComparison]::OrdinalIgnoreCase)) { exit 11 }
+            if (!(Test-Path -LiteralPath $srcEntry -PathType Leaf)) { exit 12 }
+
+            $runDir = [System.IO.Path]::GetFullPath('C:\ContainTrialRun')
             if (!(Test-Path -LiteralPath $runDir)) { [void][System.IO.Directory]::CreateDirectory($runDir) }
-            $dst = [System.IO.Path]::Combine($runDir, $name)
+
+            $expectedCount = 0
+            if ($null -ne $meta.PSObject.Properties['expected_file_count'] -and $null -ne $meta.expected_file_count) {
+                $expectedCount = [int]$meta.expected_file_count
+            }
+
+            $copiedFiles = 0
             try {
-                [System.IO.File]::Copy($src, $dst, $true)
-                $dstInfo = New-Object System.IO.FileInfo($dst)
-                if ($dstInfo.IsReadOnly) { $dstInfo.IsReadOnly = $false }
-                if ($dstInfo.Length -ne $srcInfo.Length) { exit 13 }
+                $stack = New-Object System.Collections.Generic.Stack[string]
+                $stack.Push($inputRoot)
+                while ($stack.Count -gt 0) {
+                    $curDir = $stack.Pop()
+                    $relDir = if ($curDir.Length -le $inputRoot.Length) { '' } else { $curDir.Substring($inputRoot.Length + 1) }
+                    $dstDir = if ([string]::IsNullOrEmpty($relDir)) { $runDir } else { [System.IO.Path]::Combine($runDir, $relDir) }
+                    if (!(Test-Path -LiteralPath $dstDir)) { [void][System.IO.Directory]::CreateDirectory($dstDir) }
+
+                    foreach ($sub in [System.IO.Directory]::EnumerateDirectories($curDir)) {
+                        $stack.Push($sub)
+                    }
+                    foreach ($file in [System.IO.Directory]::EnumerateFiles($curDir)) {
+                        $srcInfo = New-Object System.IO.FileInfo($file)
+                        $dstFile = [System.IO.Path]::Combine($dstDir, $srcInfo.Name)
+                        [System.IO.File]::Copy($file, $dstFile, $true)
+                        $dstInfo = New-Object System.IO.FileInfo($dstFile)
+                        if ($dstInfo.IsReadOnly) { $dstInfo.IsReadOnly = $false }
+                        if ($dstInfo.Length -ne $srcInfo.Length) { exit 13 }
+                        $copiedFiles++
+                    }
+                }
+                if ($expectedCount -gt 0 -and $copiedFiles -lt $expectedCount) { exit 13 }
             } catch {
                 exit 13
             }
+
+            $dstEntry = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($runDir, $entryRel))
+            if (!(Test-Path -LiteralPath $dstEntry -PathType Leaf)) { exit 13 }
+            $workDir = [System.IO.Path]::GetDirectoryName($dstEntry)
+            if ([string]::IsNullOrEmpty($workDir)) { $workDir = $runDir }
+
             try {
                 $psi = New-Object System.Diagnostics.ProcessStartInfo
-                $psi.FileName = $dst
-                $psi.WorkingDirectory = $runDir
+                $psi.FileName = $dstEntry
+                $psi.WorkingDirectory = $workDir
                 $psi.UseShellExecute = $true
                 $proc = [System.Diagnostics.Process]::Start($psi)
                 if ($null -eq $proc -or $proc.Id -le 0) { exit 14 }
@@ -84,18 +130,22 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         }
         """;
 
+    private const long StagingDiskSafetyMarginBytes = 64L * 1024 * 1024;
+
     private readonly string stagingBaseDirectory;
     private readonly string pendingSessionFilePath;
     private readonly TimeSpan commandTimeout;
     private readonly TimeSpan readinessTimeout;
     private readonly string? explicitWsbPath;
+    private readonly Func<string, long?>? availableFreeSpaceProvider;
 
     public WindowsSandboxTrialService(
         string? stagingBaseDirectory = null,
         TimeSpan? commandTimeout = null,
         TimeSpan? readinessTimeout = null,
         string? explicitWsbPath = null,
-        string? pendingSessionFilePath = null)
+        string? pendingSessionFilePath = null,
+        Func<string, long?>? availableFreeSpaceProvider = null)
     {
         this.stagingBaseDirectory = string.IsNullOrWhiteSpace(stagingBaseDirectory)
             ? Path.Combine(Path.GetTempPath(), "Contain-IsolatedTrial")
@@ -106,6 +156,7 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         this.commandTimeout = commandTimeout ?? TimeSpan.FromSeconds(25);
         this.readinessTimeout = readinessTimeout ?? TimeSpan.FromSeconds(60);
         this.explicitWsbPath = string.IsNullOrWhiteSpace(explicitWsbPath) ? null : Path.GetFullPath(explicitWsbPath);
+        this.availableFreeSpaceProvider = availableFreeSpaceProvider;
     }
 
     public static string DefaultPendingSessionFilePath()
@@ -118,6 +169,341 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
 
     public TrialExecutableInfo InspectExecutable(string executablePath) =>
         InspectExecutableFile(executablePath);
+
+    public Task<TrialFolderInfo> ScanFolderAsync(
+        string folderPath,
+        IProgress<TrialFolderScanProgress>? progress = null,
+        CancellationToken cancellationToken = default) =>
+        ScanPortableFolderAsync(folderPath, stagingBaseDirectory, progress, cancellationToken);
+
+    public static Task<TrialFolderInfo> ScanPortableFolderAsync(
+        string folderPath,
+        string? forbiddenNestedDir = null,
+        IProgress<TrialFolderScanProgress>? progress = null,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(() => ScanPortableFolderCore(folderPath, forbiddenNestedDir, progress, cancellationToken), cancellationToken);
+
+    private static TrialFolderInfo ScanPortableFolderCore(
+        string folderPath,
+        string? forbiddenNestedDir,
+        IProgress<TrialFolderScanProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(folderPath) || folderPath.Contains('\0'))
+            throw new IsolatedTrialException("invalid_folder_path", "请选择有效的本地软件文件夹。", failedStage: "扫描软件文件夹");
+
+        var trimmed = folderPath.Trim().Trim('"');
+        string fullRoot;
+        try { fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(trimmed)); }
+        catch (Exception ex)
+        {
+            throw new IsolatedTrialException("invalid_folder_path", "文件夹路径格式无效，请重新选择。", diagnostic: ex.Message, inner: ex, failedStage: "扫描软件文件夹");
+        }
+
+        if (!Directory.Exists(fullRoot))
+            throw new IsolatedTrialException("folder_missing", "所选文件夹不存在或无法访问，请重新选择。", failedStage: "扫描软件文件夹");
+
+        // Reject root drive or reparse point root
+        if (Path.GetDirectoryName(fullRoot) is null)
+            throw new IsolatedTrialException("folder_root_drive", "不能选择整个磁盘根目录作为软件文件夹，请选择具体程序目录。", failedStage: "扫描软件文件夹");
+
+        if (IsReparsePointPath(fullRoot))
+        {
+            throw new IsolatedTrialException(
+                "reparse_point_detected",
+                $"所选目录本身是符号链接、联接点或重解析点（{Path.GetFileName(fullRoot)}），已停止扫描。",
+                "为保证实际带入沙箱的范围与界面展示一致，Contain 不跟随目录链接、联接点或其他重解析点。请直接选择真实的源目录。",
+                $"reparse_root={fullRoot}",
+                failedStage: "扫描软件文件夹");
+        }
+
+        if (!string.IsNullOrWhiteSpace(forbiddenNestedDir))
+        {
+            var fullForbidden = Path.TrimEndingDirectorySeparator(Path.GetFullPath(forbiddenNestedDir));
+            if (IsPathEqualOrUnder(fullForbidden, fullRoot))
+            {
+                throw new IsolatedTrialException(
+                    "folder_contains_staging",
+                    "所选目录包含 Contain 暂存目录，不能作为试用目录。",
+                    "请选择具体的便携软件目录，避免包含系统临时目录。",
+                    $"folder={fullRoot}; staging={fullForbidden}",
+                    failedStage: "扫描软件文件夹");
+            }
+        }
+
+        var folderName = Path.GetFileName(fullRoot);
+        if (string.IsNullOrWhiteSpace(folderName)) folderName = fullRoot;
+
+        var runnable = new List<TrialFolderEntryCandidate>();
+        var unsupported = new List<TrialFolderEntryCandidate>();
+        var fileCount = 0;
+        var dirCount = 0;
+        long totalBytes = 0;
+
+        var stack = new Stack<string>();
+        stack.Push(fullRoot);
+        var lastReport = Stopwatch.StartNew();
+
+        while (stack.Count > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var currentDir = stack.Pop();
+            var relDir = GetRelativeNormalized(fullRoot, currentDir);
+
+            IEnumerable<string> entries;
+            try
+            {
+                entries = Directory.EnumerateFileSystemEntries(currentDir).ToList();
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                var displayRel = string.IsNullOrEmpty(relDir) ? folderName : relDir;
+                throw new IsolatedTrialException(
+                    "folder_read_failed",
+                    $"扫描目录时无法读取“{displayRel}”：{ex.Message}",
+                    "请确认当前用户对该目录及子目录拥有读取权限，或改选其他文件夹。",
+                    $"{ex.GetType().Name}: {ex.Message}",
+                    ex,
+                    failedStage: "扫描软件文件夹");
+            }
+
+            foreach (var entryPath in entries)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var relPath = GetRelativeNormalized(fullRoot, entryPath);
+
+                FileAttributes attrs;
+                try { attrs = File.GetAttributes(entryPath); }
+                catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+                {
+                    throw new IsolatedTrialException(
+                        "folder_read_failed",
+                        $"扫描目录时无法访问“{relPath}”：{ex.Message}",
+                        "请确认文件未被独占占用或权限受限后重试。",
+                        $"{ex.GetType().Name}: {ex.Message}",
+                        ex,
+                        failedStage: "扫描软件文件夹");
+                }
+
+                if ((attrs & FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new IsolatedTrialException(
+                        "reparse_point_detected",
+                        $"目录内包含链接、联接点或其他重解析点（{relPath}），已停止扫描。",
+                        "为保证实际带入沙箱的范围与界面展示一致，Contain 不跟随目录链接、联接点或符号链接。请移除该链接或替换为真实文件/目录后重试。",
+                        $"reparse_entry={relPath}",
+                        failedStage: "扫描软件文件夹");
+                }
+
+                if ((attrs & FileAttributes.Directory) != 0)
+                {
+                    dirCount++;
+                    stack.Push(entryPath);
+                    continue;
+                }
+
+                FileInfo fi;
+                long len;
+                try
+                {
+                    fi = new FileInfo(entryPath);
+                    len = fi.Length;
+                }
+                catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+                {
+                    throw new IsolatedTrialException(
+                        "folder_read_failed",
+                        $"扫描目录时无法读取文件信息“{relPath}”：{ex.Message}",
+                        "请确认文件可读后重试。",
+                        $"{ex.GetType().Name}: {ex.Message}",
+                        ex,
+                        failedStage: "扫描软件文件夹");
+                }
+
+                fileCount++;
+                totalBytes += len;
+
+                if (entryPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    var arch = ReadPeArchitecture(entryPath);
+                    if (arch != TrialExecutableArch.Unknown)
+                    {
+                        string? productVersion = null;
+                        string? fileVersion = null;
+                        try
+                        {
+                            var vi = FileVersionInfo.GetVersionInfo(entryPath);
+                            productVersion = NormalizeVersionText(vi.ProductVersion);
+                            fileVersion = NormalizeVersionText(vi.FileVersion);
+                        }
+                        catch (IOException) { }
+                        catch (UnauthorizedAccessException) { }
+
+                        var candidate = new TrialFolderEntryCandidate(
+                            relPath,
+                            fi.Name,
+                            entryPath,
+                            len,
+                            FormatByteSize(len),
+                            arch,
+                            FormatArchitectureLabel(arch),
+                            productVersion,
+                            fileVersion);
+
+                        if (candidate.IsRunnableInX64Sandbox)
+                            runnable.Add(candidate);
+                        else
+                            unsupported.Add(candidate);
+                    }
+                }
+
+                if (progress is not null && (fileCount % 16 == 0 || lastReport.ElapsedMilliseconds >= 80))
+                {
+                    progress.Report(new TrialFolderScanProgress(dirCount, fileCount, totalBytes, runnable.Count, relPath));
+                    lastReport.Restart();
+                }
+            }
+        }
+
+        progress?.Report(new TrialFolderScanProgress(dirCount, fileCount, totalBytes, runnable.Count, ""));
+
+        runnable.Sort((a, b) =>
+        {
+            var depthCmp = CountPathDepth(a.RelativePath).CompareTo(CountPathDepth(b.RelativePath));
+            return depthCmp != 0 ? depthCmp : StringComparer.OrdinalIgnoreCase.Compare(a.RelativePath, b.RelativePath);
+        });
+        unsupported.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.RelativePath, b.RelativePath));
+
+        return new TrialFolderInfo(
+            folderName,
+            fullRoot,
+            fileCount,
+            dirCount,
+            totalBytes,
+            FormatByteSize(totalBytes),
+            runnable,
+            unsupported);
+    }
+
+    public static bool ValidateFolderEntryPath(string folderFullPath, string entryRelativePath, out string resolvedFullPath, out string reason)
+    {
+        resolvedFullPath = "";
+        reason = "";
+        if (string.IsNullOrWhiteSpace(folderFullPath) || string.IsNullOrWhiteSpace(entryRelativePath) || entryRelativePath.Contains('\0'))
+        {
+            reason = "入口相对路径为空或无效。";
+            return false;
+        }
+
+        var normalizedRel = entryRelativePath.Replace('/', '\\').Trim();
+        if (Path.IsPathRooted(normalizedRel) || normalizedRel.Contains(':'))
+        {
+            reason = "入口路径必须是所选目录内的相对路径。";
+            return false;
+        }
+
+        foreach (var seg in normalizedRel.Split('\\'))
+        {
+            if (string.IsNullOrEmpty(seg) || seg == "." || seg == "..")
+            {
+                reason = "入口相对路径包含非法目录段（如 ..）。";
+                return false;
+            }
+        }
+
+        try
+        {
+            var fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folderFullPath));
+            var combined = Path.GetFullPath(Path.Combine(fullRoot, normalizedRel));
+            if (!IsPathStrictlyUnder(combined, fullRoot))
+            {
+                reason = "入口程序越出所选软件目录范围。";
+                return false;
+            }
+            if (!combined.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                reason = "入口文件必须是 .exe 可执行程序。";
+                return false;
+            }
+            if (!File.Exists(combined))
+            {
+                reason = $"所选入口程序不存在：{normalizedRel}";
+                return false;
+            }
+
+            // Ensure neither root, intermediate directories, nor entry file is a reparse point
+            if (IsReparsePointPath(fullRoot))
+            {
+                reason = "所选软件根目录是链接或重解析点。";
+                return false;
+            }
+            var cur = combined;
+            while (!string.Equals(cur, fullRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                if (IsReparsePointPath(cur))
+                {
+                    reason = $"入口路径包含链接或重解析点：{GetRelativeNormalized(fullRoot, cur)}";
+                    return false;
+                }
+                var parent = Path.GetDirectoryName(cur);
+                if (string.IsNullOrEmpty(parent)) break;
+                cur = parent;
+            }
+
+            resolvedFullPath = combined;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            reason = ex.Message;
+            return false;
+        }
+    }
+
+    private static string FormatArchitectureLabel(TrialExecutableArch arch) => arch switch
+    {
+        TrialExecutableArch.X64 => "Windows x64 (PE32+)",
+        TrialExecutableArch.X86 => "Windows x86 (32 位)",
+        TrialExecutableArch.Arm64 => "Windows ARM64（仅可查看信息，不适用于 x64 沙箱运行）",
+        _ => "未知架构"
+    };
+
+    private static bool IsReparsePointPath(string path)
+    {
+        try { return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0; }
+        catch { return false; }
+    }
+
+    private static bool IsPathEqualOrUnder(string candidate, string root)
+    {
+        var normRoot = Path.TrimEndingDirectorySeparator(root);
+        var normCand = Path.TrimEndingDirectorySeparator(candidate);
+        return string.Equals(normCand, normRoot, StringComparison.OrdinalIgnoreCase)
+            || normCand.StartsWith(normRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsPathStrictlyUnder(string candidate, string root)
+    {
+        var normRoot = Path.TrimEndingDirectorySeparator(root);
+        var normCand = Path.TrimEndingDirectorySeparator(candidate);
+        return normCand.StartsWith(normRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetRelativeNormalized(string root, string fullPath)
+    {
+        var normRoot = Path.TrimEndingDirectorySeparator(root);
+        if (string.Equals(Path.TrimEndingDirectorySeparator(fullPath), normRoot, StringComparison.OrdinalIgnoreCase))
+            return "";
+        return Path.GetRelativePath(normRoot, fullPath).Replace('/', '\\');
+    }
+
+    private static int CountPathDepth(string relPath)
+    {
+        var depth = 0;
+        foreach (var ch in relPath)
+            if (ch == '\\' || ch == '/') depth++;
+        return depth;
+    }
 
     public Task<string> ComputeSha256Async(string executablePath, CancellationToken cancellationToken = default) =>
         ComputeFileSha256Async(executablePath, cancellationToken);
@@ -247,13 +633,7 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
             catch (UnauthorizedAccessException) { }
         }
 
-        var archLabel = arch switch
-        {
-            TrialExecutableArch.X64 => "Windows x64 (PE32+)",
-            TrialExecutableArch.X86 => "Windows x86 (32 位，本轮以 x64 单文件为主)",
-            TrialExecutableArch.Arm64 => "Windows ARM64（仅可查看信息，不适用于 x64 沙箱运行）",
-            _ => "未知架构"
-        };
+        var archLabel = FormatArchitectureLabel(arch);
 
         return new TrialExecutableInfo(
             info.Name,
@@ -832,17 +1212,371 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         return $"当前以普通用户权限运行，以下项因权限受限未能读取：{string.Join("、", denied)}（未对其做猜测）。";
     }
 
-    public async Task<SandboxStartResult> StartSandboxAsync(
-        TrialExecutableInfo executable,
+    public sealed record StagedSnapshotSummary(
+        int FileCount,
+        int DirectoryCount,
+        long TotalBytes,
+        string EntryRelativePath);
+
+    /// <summary>
+    /// Copies a single EXE or verified portable folder snapshot into inputDir without following
+    /// any reparse points, checking free disk space beforehand, supporting cancellation and live
+    /// progress, and verifying byte-length completeness for every copied file.
+    /// </summary>
+    public async Task<StagedSnapshotSummary> StageInputSnapshotAsync(
+        TrialLaunchTarget target,
+        string inputDir,
+        IProgress<TrialStagingProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(executable);
-        if (!executable.IsRunnableInX64Sandbox)
+        ArgumentNullException.ThrowIfNull(target);
+        Directory.CreateDirectory(inputDir);
+
+        if (target.Kind == TrialInputKind.SingleFile)
+        {
+            var srcPath = Path.GetFullPath(target.SourcePath);
+            if (!File.Exists(srcPath))
+                throw new IsolatedTrialException("source_missing", $"所选程序“{target.DisplayName}”不存在或已被移走。", "请重新选择本地 .exe 文件。", failedStage: "准备输入快照");
+            if (IsReparsePointPath(srcPath))
+                throw new IsolatedTrialException("reparse_point_detected", $"所选文件“{target.DisplayName}”是链接或重解析点，已停止本次准备。", "请直接选择真实的源 .exe 文件。", failedStage: "准备输入快照");
+
+            long len;
+            try { len = new FileInfo(srcPath).Length; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                throw new IsolatedTrialException("source_read_failed", $"无法读取所选程序“{target.DisplayName}”：{ex.Message}", "请确认文件未被移动或独占占用。", $"{ex.GetType().Name}: {ex.Message}", ex, failedStage: "准备输入快照");
+            }
+
+            EnsureSufficientStagingSpace(inputDir, len, "准备输入快照");
+            progress?.Report(new TrialStagingProgress("正在复制所选程序到本次暂存目录…", 0, 1, 0, len, target.EntryRelativePath));
+
+            var dstPath = Path.Combine(inputDir, target.EntryRelativePath);
+            var copiedBytes = await CopyFileCheckedAsync(srcPath, dstPath, len, target.EntryRelativePath, progress, 0, 1, 0, len, cancellationToken).ConfigureAwait(false);
+            if (copiedBytes != len || !File.Exists(dstPath) || new FileInfo(dstPath).Length != len)
+            {
+                throw new IsolatedTrialException(
+                    "staging_copy_incomplete",
+                    $"复制“{target.DisplayName}”不完整（预期 {len:N0} 字节，实际 {copiedBytes:N0} 字节），已停止准备。",
+                    "请确认源程序未在复制过程中被修改且磁盘空间充足后重试。",
+                    failedStage: "核验输入快照");
+            }
+
+            progress?.Report(new TrialStagingProgress("输入快照准备完成，正在启动 Windows 沙箱…", 1, 1, len, len, ""));
+            return new StagedSnapshotSummary(1, 0, len, target.EntryRelativePath);
+        }
+
+        // Folder mode: strictly validate source folder & entry containment (re-checking reparse points for TOCTOU safety)
+        var fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(target.SourcePath));
+        if (!Directory.Exists(fullRoot))
+            throw new IsolatedTrialException("folder_missing", $"所选软件文件夹“{target.DisplayName}”不存在或已被移走。", "请重新选择软件文件夹。", failedStage: "准备输入快照");
+        if (IsReparsePointPath(fullRoot))
+            throw new IsolatedTrialException("reparse_point_detected", $"所选软件文件夹“{target.DisplayName}”是链接或重解析点，已停止本次准备。", "请直接选择真实的源文件夹。", failedStage: "准备输入快照");
+        if (IsPathEqualOrUnder(Path.GetFullPath(stagingBaseDirectory), fullRoot))
+            throw new IsolatedTrialException("folder_contains_staging", "所选目录包含 Contain 暂存目录，已停止准备。", "请选择具体的便携软件目录。", failedStage: "准备输入快照");
+
+        if (!ValidateFolderEntryPath(fullRoot, target.EntryRelativePath, out _, out var entryErr))
+        {
+            throw new IsolatedTrialException(
+                "invalid_folder_entry",
+                $"所选入口程序无效：{entryErr}",
+                "请重新选择位于该软件文件夹内的有效 .exe 入口程序。",
+                $"entry={target.EntryRelativePath}; reason={entryErr}",
+                failedStage: "核验入口程序");
+        }
+
+        // Enumerate live folder plan (fail-closed on any reparse point or unreadable entry)
+        var relDirs = new List<string>();
+        var filesToCopy = new List<(string SourcePath, string RelativePath, long ExpectedLength)>();
+        long totalBytes = 0;
+
+        var stack = new Stack<string>();
+        stack.Push(fullRoot);
+        while (stack.Count > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var cur = stack.Pop();
+            var curRel = GetRelativeNormalized(fullRoot, cur);
+            if (!string.IsNullOrEmpty(curRel))
+                relDirs.Add(curRel);
+
+            IEnumerable<string> entries;
+            try { entries = Directory.EnumerateFileSystemEntries(cur).ToList(); }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                var relLabel = string.IsNullOrEmpty(curRel) ? target.DisplayName : curRel;
+                throw new IsolatedTrialException(
+                    "staging_copy_read_failed",
+                    $"准备输入快照时无法读取目录“{relLabel}”：{ex.Message}",
+                    "请确认当前用户对该目录拥有读取权限后重试。",
+                    $"{ex.GetType().Name}: {ex.Message}",
+                    ex,
+                    failedStage: "准备输入快照");
+            }
+
+            foreach (var entry in entries)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var rel = GetRelativeNormalized(fullRoot, entry);
+                FileAttributes attrs;
+                try { attrs = File.GetAttributes(entry); }
+                catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+                {
+                    throw new IsolatedTrialException(
+                        "staging_copy_read_failed",
+                        $"准备输入快照时无法访问“{rel}”：{ex.Message}",
+                        "请确认文件未被独占占用或权限受限后重试。",
+                        $"{ex.GetType().Name}: {ex.Message}",
+                        ex,
+                        failedStage: "准备输入快照");
+                }
+
+                if ((attrs & FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new IsolatedTrialException(
+                        "reparse_point_detected",
+                        $"准备输入快照时检测到链接、联接点或其他重解析点（{rel}），已停止本次准备并清理暂存。",
+                        "为保证实际带入沙箱的范围与界面展示一致，Contain 不跟随目录链接、联接点或符号链接。请移除后重试。",
+                        $"reparse_entry={rel}",
+                        failedStage: "准备输入快照");
+                }
+
+                if ((attrs & FileAttributes.Directory) != 0)
+                {
+                    stack.Push(entry);
+                }
+                else
+                {
+                    long fLen;
+                    try { fLen = new FileInfo(entry).Length; }
+                    catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+                    {
+                        throw new IsolatedTrialException(
+                            "staging_copy_read_failed",
+                            $"准备输入快照时无法读取“{rel}”：{ex.Message}",
+                            "请确认文件未被独占锁定或移动后重试。",
+                            $"{ex.GetType().Name}: {ex.Message}",
+                            ex,
+                            failedStage: "准备输入快照");
+                    }
+                    filesToCopy.Add((entry, rel, fLen));
+                    totalBytes += fLen;
+                }
+            }
+        }
+
+        EnsureSufficientStagingSpace(inputDir, totalBytes, "准备输入快照");
+
+        var totalFiles = filesToCopy.Count;
+        progress?.Report(new TrialStagingProgress("正在复制软件文件夹到本次暂存目录…", 0, totalFiles, 0, totalBytes, ""));
+
+        // Create all subdirectories first to preserve empty relative directories
+        foreach (var relDir in relDirs)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Directory.CreateDirectory(Path.Combine(inputDir, relDir));
+        }
+
+        var filesCopied = 0;
+        long bytesCopiedBeforeCurrent = 0;
+        var lastReport = Stopwatch.StartNew();
+
+        foreach (var (srcFile, relPath, expectedLen) in filesToCopy)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var dstFile = Path.Combine(inputDir, relPath);
+            var dstParent = Path.GetDirectoryName(dstFile);
+            if (!string.IsNullOrEmpty(dstParent))
+                Directory.CreateDirectory(dstParent);
+
+            var reportForFile = progress is not null && (lastReport.ElapsedMilliseconds >= 80 || expectedLen >= 256 * 1024 || filesCopied == 0)
+                ? progress
+                : null;
+            if (reportForFile is not null) lastReport.Restart();
+
+            var written = await CopyFileCheckedAsync(
+                srcFile,
+                dstFile,
+                expectedLen,
+                relPath,
+                reportForFile,
+                filesCopied,
+                totalFiles,
+                bytesCopiedBeforeCurrent,
+                totalBytes,
+                cancellationToken).ConfigureAwait(false);
+
+            long actualDstLen;
+            try { actualDstLen = new FileInfo(dstFile).Length; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                throw new IsolatedTrialException(
+                    "staging_copy_incomplete",
+                    $"核验已复制文件“{relPath}”失败：{ex.Message}",
+                    "请检查磁盘状态后重试。",
+                    $"{ex.GetType().Name}: {ex.Message}",
+                    ex,
+                    failedStage: "核验输入快照");
+            }
+
+            if (written != expectedLen || actualDstLen != expectedLen)
+            {
+                throw new IsolatedTrialException(
+                    "staging_copy_incomplete",
+                    $"复制文件“{relPath}”不完整（预期 {expectedLen:N0} 字节，实际 {actualDstLen:N0} 字节），已清理本次暂存。",
+                    "源文件可能在复制期间发生了变化或磁盘空间不足，请确认后重试。",
+                    $"file={relPath}; expected={expectedLen}; written={written}; actual={actualDstLen}",
+                    failedStage: "核验输入快照");
+            }
+
+            filesCopied++;
+            bytesCopiedBeforeCurrent += written;
+            if (progress is not null && (filesCopied % 8 == 0 || filesCopied == totalFiles || lastReport.ElapsedMilliseconds >= 80))
+            {
+                progress.Report(new TrialStagingProgress("正在复制软件文件夹到本次暂存目录…", filesCopied, totalFiles, bytesCopiedBeforeCurrent, totalBytes, relPath));
+                lastReport.Restart();
+            }
+        }
+
+        // Final integrity check: exact entry EXE exists inside inputDir snapshot
+        var normalizedEntryRel = target.EntryRelativePath.Replace('/', '\\').Trim();
+        var stagedEntryPath = Path.GetFullPath(Path.Combine(inputDir, normalizedEntryRel));
+        if (!IsPathStrictlyUnder(stagedEntryPath, Path.GetFullPath(inputDir)) || !File.Exists(stagedEntryPath))
+        {
+            throw new IsolatedTrialException(
+                "staging_entry_missing",
+                $"输入快照核验失败：未在暂存目录中找到入口程序“{normalizedEntryRel}”。",
+                "请重新扫描软件文件夹并选择入口程序后再试。",
+                $"staged_entry={stagedEntryPath}",
+                failedStage: "核验输入快照");
+        }
+
+        progress?.Report(new TrialStagingProgress("输入快照准备完成，正在启动 Windows 沙箱…", filesCopied, totalFiles, totalBytes, totalBytes, ""));
+        return new StagedSnapshotSummary(filesCopied, relDirs.Count, totalBytes, normalizedEntryRel);
+    }
+
+    private void EnsureSufficientStagingSpace(string stagingPath, long requiredBytes, string failedStage)
+    {
+        long? avail = null;
+        if (availableFreeSpaceProvider is not null)
+        {
+            avail = availableFreeSpaceProvider(stagingPath);
+        }
+        else
+        {
+            try
+            {
+                var root = Path.GetPathRoot(Path.GetFullPath(stagingPath));
+                if (!string.IsNullOrEmpty(root))
+                    avail = new DriveInfo(root).AvailableFreeSpace;
+            }
+            catch { avail = null; }
+        }
+
+        if (avail is long freeBytes)
+        {
+            var neededWithMargin = requiredBytes + StagingDiskSafetyMarginBytes;
+            if (freeBytes < neededWithMargin)
+            {
+                throw new IsolatedTrialException(
+                    "insufficient_disk_space",
+                    $"暂存磁盘空间不足：准备该输入快照至少需要 {FormatByteSize(neededWithMargin)}（含缓冲），当前仅剩 {FormatByteSize(freeBytes)}。",
+                    "请释放临时目录所在磁盘的空间，或改选更小的软件文件夹后再试。",
+                    $"required={requiredBytes}; margin={StagingDiskSafetyMarginBytes}; available={freeBytes}",
+                    failedStage: failedStage);
+            }
+        }
+    }
+
+    private static async Task<long> CopyFileCheckedAsync(
+        string sourcePath,
+        string destinationPath,
+        long expectedLength,
+        string relativeDisplayPath,
+        IProgress<TrialStagingProgress>? progress,
+        int filesCopiedSoFar,
+        int totalFiles,
+        long bytesCopiedBeforeFile,
+        long totalBytes,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920, useAsync: true);
+            await using var dest = new FileStream(destinationPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true);
+
+            var buffer = new byte[81920];
+            long copied = 0;
+            var sw = Stopwatch.StartNew();
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var read = await source.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
+                if (read == 0) break;
+                await dest.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                copied += read;
+
+                if (progress is not null && sw.ElapsedMilliseconds >= 100)
+                {
+                    progress.Report(new TrialStagingProgress(
+                        "正在复制软件文件夹到本次暂存目录…",
+                        filesCopiedSoFar,
+                        totalFiles,
+                        bytesCopiedBeforeFile + copied,
+                        totalBytes,
+                        relativeDisplayPath));
+                    sw.Restart();
+                }
+            }
+            await dest.FlushAsync(cancellationToken).ConfigureAwait(false);
+            return copied;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Distinguish disk-full IOException (ERROR_DISK_FULL = 0x70, ERROR_HANDLE_DISK_FULL = 0x27)
+            var hr = ex.HResult & 0xFFFF;
+            if (ex is IOException && (hr == 0x70 || hr == 0x27))
+            {
+                throw new IsolatedTrialException(
+                    "insufficient_disk_space",
+                    $"复制“{relativeDisplayPath}”时暂存磁盘空间不足：{ex.Message}",
+                    "请释放临时目录所在磁盘空间后重试。",
+                    $"{ex.GetType().Name} (0x{ex.HResult:X8}): {ex.Message}",
+                    ex,
+                    failedStage: "准备输入快照");
+            }
+
+            throw new IsolatedTrialException(
+                "staging_copy_read_failed",
+                $"准备输入快照时无法读取或复制“{relativeDisplayPath}”：{ex.Message}",
+                "请确认文件未被移动、删除或被其他程序独占锁定，且当前用户拥有读取权限后重试。",
+                $"{ex.GetType().Name}: {ex.Message}",
+                ex,
+                failedStage: "准备输入快照");
+        }
+    }
+
+    public Task<SandboxStartResult> StartSandboxAsync(
+        TrialExecutableInfo executable,
+        CancellationToken cancellationToken = default) =>
+        StartSandboxAsync(TrialLaunchTarget.FromSingleExecutable(executable), null, cancellationToken);
+
+    public async Task<SandboxStartResult> StartSandboxAsync(
+        TrialLaunchTarget target,
+        IProgress<TrialStagingProgress>? stagingProgress = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        if (!target.EntryExecutable.IsRunnableInX64Sandbox)
         {
             throw new IsolatedTrialException(
                 "unsupported_arch",
-                $"“{executable.FileName}”为 {executable.ArchitectureLabel}，不能在 Windows x64 沙箱中运行。",
-                "本页已保留该文件的只读信息与 SHA-256 计算功能；如需沙箱试运行，请选择 Windows x64 单文件程序。");
+                $"“{target.EntryRelativePath}”为 {target.EntryExecutable.ArchitectureLabel}，不能在 Windows x64 沙箱中运行。",
+                "本页已保留该文件的只读信息与 SHA-256 计算功能；如需沙箱试运行，请选择 Windows x64/x86 入口程序。",
+                failedStage: "核验入口架构");
         }
         var capability = await ProbeCapabilityAsync(cancellationToken).ConfigureAwait(false);
         if (!capability.IsReady || string.IsNullOrEmpty(capability.WsbExecutablePath))
@@ -851,7 +1585,8 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                 "capability_unavailable",
                 capability.Headline,
                 capability.NextStep,
-                capability.Diagnostic);
+                capability.Diagnostic,
+                failedStage: "检测沙盒能力");
         }
 
         var wsbPath = capability.WsbExecutablePath;
@@ -866,35 +1601,25 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
             Directory.CreateDirectory(inputDir);
             Directory.CreateDirectory(bootstrapDir);
 
-            // Copy ONLY the selected single EXE into inputDir (preserving exact original file name)
-            var stagedExePath = Path.Combine(inputDir, executable.FileName);
-            try
-            {
-                await CopyFileAsync(executable.FullPath, stagedExePath, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                throw new IsolatedTrialException(
-                    "source_read_failed",
-                    $"无法读取所选程序“{executable.FileName}”：{ex.Message}",
-                    "请确认原文件未被移动、删除或被其他程序独占占用，然后重新选择文件或再次点击“开始隔离试用”。",
-                    $"{ex.GetType().Name}: {ex.Message}",
-                    ex);
-            }
+            // 1. Complete & verify input staging snapshot BEFORE starting Windows Sandbox!
+            var staged = await StageInputSnapshotAsync(target, inputDir, stagingProgress, cancellationToken).ConfigureAwait(false);
 
-            // Write UTF-8 JSON target metadata + static pure-ASCII launcher script into bootstrapDir
+            // Write UTF-8 JSON target metadata (schema 2) + static pure-ASCII launcher script into bootstrapDir
             var targetJson = JsonSerializer.Serialize(new
             {
-                schema_version = 1,
+                schema_version = 2,
                 session_id = sessionId,
-                file_name = executable.FileName
+                input_kind = target.Kind == TrialInputKind.Folder ? "folder" : "single_file",
+                entry_relative_path = staged.EntryRelativePath,
+                file_name = target.EntryExecutable.FileName,
+                expected_file_count = staged.FileCount
             });
             await File.WriteAllTextAsync(Path.Combine(bootstrapDir, "target.json"), targetJson, Utf8NoBom, cancellationToken).ConfigureAwait(false);
             await File.WriteAllTextAsync(Path.Combine(bootstrapDir, "launch-trial.ps1"), GuestLauncherScript, Utf8NoBom, cancellationToken).ConfigureAwait(false);
 
             var configXml = BuildSandboxConfigXml(inputDir, bootstrapDir);
 
-            // 1. Create isolated sandbox instance via `wsb start --config <xml> --raw`
+            // 2. Create isolated sandbox instance via `wsb start --config <xml> --raw`
             var startRes = await RunWsbCommandAsync(wsbPath, ["start", "--config", configXml, "--raw"], TimeSpan.FromSeconds(45), cancellationToken).ConfigureAwait(false);
             if (startRes.TimedOut)
             {
@@ -902,7 +1627,8 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                     "wsb_start_timeout",
                     "创建 Windows 沙箱实例超时。",
                     "请检查宿主机内存与虚拟化服务状态后重试；若持续超时，可确认 Windows 沙盒能否单独打开。",
-                    CombineDiagnostic(startRes));
+                    CombineDiagnostic(startRes),
+                    failedStage: "启动 Windows 沙箱");
             }
             if (startRes.ExitCode != 0)
             {
@@ -912,14 +1638,16 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                         "sandbox_already_running",
                         "本机已有另一个正在运行的 Windows 沙箱实例。",
                         "Windows 沙盒当前仅允许同时运行一个实例；Contain 不会自动关闭你自行打开的其他沙箱。请先自行关闭另一个 Windows 沙箱后，再重新点击“开始隔离试用”。",
-                        CombineDiagnostic(startRes));
+                        CombineDiagnostic(startRes),
+                        failedStage: "启动 Windows 沙箱");
                 }
 
                 throw new IsolatedTrialException(
                     "wsb_start_failed",
                     $"创建 Windows 沙箱实例失败（退出码 {startRes.ExitCode}）。",
                     "请检查本机是否允许启动 Windows 沙盒（如内存不足、策略限制或虚拟化未就绪），处理后可重新点击“开始隔离试用”。",
-                    CombineDiagnostic(startRes));
+                    CombineDiagnostic(startRes),
+                    failedStage: "启动 Windows 沙箱");
             }
 
             createdInstanceId = ParseStartedInstanceId(startRes.Stdout);
@@ -929,17 +1657,21 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                     "wsb_start_no_id",
                     "Windows 沙箱启动命令未返回有效的实例 ID。",
                     "无法安全跟踪该实例，请检查本机 Windows 沙盒 CLI 版本后重试。",
-                    CombineDiagnostic(startRes));
+                    CombineDiagnostic(startRes),
+                    failedStage: "启动 Windows 沙箱");
             }
 
             // Persist minimal pending-session metadata immediately after obtaining the real UUID,
             // so even an abnormal exit during connect/readiness can still recover this exact instance.
-            SavePendingSession(CreatePendingRecord(sessionId, createdInstanceId, stagingRoot, executable.FileName));
+            var recoveryDisplay = target.Kind == TrialInputKind.Folder
+                ? $"{target.DisplayName} ({staged.EntryRelativePath})"
+                : target.EntryExecutable.FileName;
+            SavePendingSession(CreatePendingRecord(sessionId, createdInstanceId, stagingRoot, recoveryDisplay));
 
-            // 2. Open interactive Sandbox window detached (NEVER redirect pipes or WaitForExit!)
+            // 3. Open interactive Sandbox window detached (NEVER redirect pipes or WaitForExit!)
             int? connectPid = LaunchDetachedConnect(wsbPath, createdInstanceId);
 
-            // 3. Wait up to readinessTimeout (default 60s) for THIS exact instance to respond to
+            // 4. Wait up to readinessTimeout (default 60s) for THIS exact instance to respond to
             //    a side-effect-free ExistingLogin probe confirming the read-only input mount.
             var readySw = Stopwatch.StartNew();
             WsbCommandResult? lastProbe = null;
@@ -961,7 +1693,8 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                         "sandbox_exited_during_startup",
                         "Windows 沙箱在初始化完成前已关闭。",
                         "可能是窗口被提前关闭或沙箱内部启动中止；请确认回滚状态后再重新尝试。",
-                        $"instance={createdInstanceId}");
+                        $"instance={createdInstanceId}",
+                        failedStage: "等待沙箱就绪");
                 }
 
                 var remaining = readinessTimeout - readySw.Elapsed;
@@ -988,7 +1721,8 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                     "sandbox_ready_timeout",
                     $"等待 Windows 沙箱桌面就绪超时（已等待 {Math.Round(readySw.Elapsed.TotalSeconds)} 秒）。",
                     "请确认交互窗口未被安全软件拦截，并核对下方回滚状态后重试。",
-                    lastProbe is null ? $"instance={createdInstanceId}" : $"instance={createdInstanceId}; {CombineDiagnostic(lastProbe)}");
+                    lastProbe is null ? $"instance={createdInstanceId}" : $"instance={createdInstanceId}; {CombineDiagnostic(lastProbe)}",
+                    failedStage: "等待沙箱就绪");
             }
 
             return new SandboxStartResult(
@@ -997,7 +1731,10 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                 stagingRoot,
                 inputDir,
                 connectPid,
-                DateTimeOffset.Now);
+                DateTimeOffset.Now,
+                target.Kind,
+                staged.EntryRelativePath,
+                staged.FileCount);
         }
         catch (Exception ex)
         {
@@ -1010,7 +1747,21 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
             }
 
             if (ex is OperationCanceledException)
-                throw;
+            {
+                throw new IsolatedTrialException(
+                    "preparation_cancelled",
+                    createdInstanceId is null
+                        ? "已取消准备本次输入快照，未启动沙箱。"
+                        : "已取消启动本次隔离试用。",
+                    "可随时重新点击“开始隔离试用”或改选其他程序/目录。",
+                    rollback.Diagnostic,
+                    ex,
+                    rollbackResult: rollback,
+                    createdInstanceId: createdInstanceId,
+                    stagingRootPath: stagingRoot,
+                    sessionId: sessionId,
+                    failedStage: createdInstanceId is null ? "准备输入快照" : "启动 Windows 沙箱");
+            }
 
             if (ex is IsolatedTrialException trialEx)
             {
@@ -1027,7 +1778,8 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                     rollbackResult: rollback,
                     createdInstanceId: createdInstanceId,
                     stagingRootPath: stagingRoot,
-                    sessionId: sessionId);
+                    sessionId: sessionId,
+                    failedStage: trialEx.FailedStage);
             }
 
             throw new IsolatedTrialException(
@@ -1041,25 +1793,37 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                 rollbackResult: rollback,
                 createdInstanceId: createdInstanceId,
                 stagingRootPath: stagingRoot,
-                sessionId: sessionId);
+                sessionId: sessionId,
+                failedStage: createdInstanceId is null ? "准备输入快照" : "启动 Windows 沙箱");
         }
     }
 
-    public async Task<GuestProgramLaunchResult> LaunchProgramInSandboxAsync(
+    public Task<GuestProgramLaunchResult> LaunchProgramInSandboxAsync(
         SandboxStartResult session,
         TrialExecutableInfo executable,
+        CancellationToken cancellationToken = default) =>
+        LaunchProgramInSandboxAsync(session, TrialLaunchTarget.FromSingleExecutable(executable), cancellationToken);
+
+    public async Task<GuestProgramLaunchResult> LaunchProgramInSandboxAsync(
+        SandboxStartResult session,
+        TrialLaunchTarget target,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(session);
-        ArgumentNullException.ThrowIfNull(executable);
+        ArgumentNullException.ThrowIfNull(target);
         var wsbPath = ResolveWsbExecutablePath()
             ?? throw new IsolatedTrialException("wsb_missing", "找不到 wsb.exe，无法在沙箱内启动程序。");
+
+        var entryDisplay = string.IsNullOrWhiteSpace(session.EntryRelativePath)
+            ? target.EntryRelativePath
+            : session.EntryRelativePath;
+        var launchTimeoutSeconds = Math.Clamp(30 + (int)(target.TotalBytes / (2 * 1024 * 1024)), 30, 180);
 
         const string launchCmd = @"powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\ContainTrialBootstrap\launch-trial.ps1";
         var execRes = await RunWsbCommandAsync(
             wsbPath,
             ["exec", "--id", session.InstanceId, "-r", "ExistingLogin", "-c", launchCmd, "--raw"],
-            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(launchTimeoutSeconds),
             cancellationToken).ConfigureAwait(false);
 
         if (execRes.TimedOut)
@@ -1067,7 +1831,7 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
             return new GuestProgramLaunchResult(
                 GuestProgramLaunchOutcome.FailedToLaunch,
                 -1,
-                "沙箱已打开，但等待程序启动回执超时。你可以在沙箱窗口内的 C:\\ContainTrialRun 中查看实际情况，或点击“结束试用”。",
+                "沙箱已打开，但等待来宾复制并启动入口程序超时。你可以在沙箱窗口内的 C:\\ContainTrialRun 中查看实际情况，或点击“结束试用”。",
                 CombineDiagnostic(execRes));
         }
 
@@ -1081,32 +1845,39 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         }
 
         var guestCode = ParseExecExitCode(execRes.Stdout) ?? -1;
+        var guestWorkDir = Path.GetDirectoryName(Path.Combine(GuestRunFolder, entryDisplay)) ?? GuestRunFolder;
+        var scopePhrase = target.Kind == TrialInputKind.Folder
+            ? $"已将软件目录“{target.DisplayName}”（{session.StagedFileCount} 个文件）复制到来宾可写目录 {GuestRunFolder}，并以 {guestWorkDir} 为工作目录启动入口“{entryDisplay}”"
+            : $"已将“{entryDisplay}”复制到来宾可写目录 {GuestRunFolder} 并启动入口";
+
         return guestCode switch
         {
             0 => new GuestProgramLaunchResult(
                 GuestProgramLaunchOutcome.StartedAndRunning,
                 0,
-                $"已将“{executable.FileName}”复制到来宾本地目录 C:\\ContainTrialRun 并启动进程（启动 1 秒后进程仍在运行）。"),
+                $"{scopePhrase}（已确认启动，1 秒后入口进程仍在运行）。"),
             20 => new GuestProgramLaunchResult(
                 GuestProgramLaunchOutcome.StartedAndExitedZero,
                 20,
-                $"已在来宾本地目录 C:\\ContainTrialRun 启动“{executable.FileName}”，程序已执行完毕并正常退出（退出码 0）。"),
+                $"{scopePhrase}（入口进程已执行完毕并正常退出，返回码 0；沙箱仍保持打开）。"),
             21 => new GuestProgramLaunchResult(
                 GuestProgramLaunchOutcome.StartedAndExitedNonZero,
                 21,
-                $"沙箱已打开，“{executable.FileName}”已尝试启动但立即异常退出。若该程序依赖同目录其他文件或需要联网下载，在离线单文件沙箱中可能无法运行。"),
+                target.Kind == TrialInputKind.Folder
+                    ? $"{scopePhrase}，但入口进程启动后立即异常退出。若程序需要联网或系统运行库，在离线沙箱中可能无法运行。"
+                    : $"{scopePhrase}，但入口进程启动后立即异常退出。若程序依赖同目录其他文件，请改用“选择软件文件夹”；若需联网下载，在离线沙箱中可能无法运行。"),
             12 => new GuestProgramLaunchResult(
                 GuestProgramLaunchOutcome.FailedToLaunch,
                 12,
-                "沙箱已打开，但在只读输入目录 C:\\ContainTrialInput 中未找到目标程序。"),
+                $"沙箱已打开，但在只读输入目录 C:\\ContainTrialInput 中未找到入口程序“{entryDisplay}”。"),
             13 => new GuestProgramLaunchResult(
                 GuestProgramLaunchOutcome.FailedToLaunch,
                 13,
-                "沙箱已打开，但将程序复制到来宾本地目录 C:\\ContainTrialRun 时失败。"),
+                "沙箱已打开，但将输入快照复制到来宾可写目录 C:\\ContainTrialRun 时失败或不完整。"),
             14 => new GuestProgramLaunchResult(
                 GuestProgramLaunchOutcome.FailedToLaunch,
                 14,
-                $"沙箱已打开，但无法启动“{executable.FileName}”（进程未能创建，可能不兼容当前离线环境或被系统阻止）。"),
+                $"沙箱已打开，但无法启动入口“{entryDisplay}”（进程未能创建，可能不兼容当前离线环境或被系统阻止）。"),
             _ => new GuestProgramLaunchResult(
                 GuestProgramLaunchOutcome.FailedToLaunch,
                 guestCode,
@@ -1360,9 +2131,9 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         {
             try
             {
-                foreach (var file in Directory.EnumerateFiles(full, "*", SearchOption.AllDirectories))
+                foreach (var entry in Directory.EnumerateFileSystemEntries(full, "*", SearchOption.AllDirectories))
                 {
-                    try { File.SetAttributes(file, FileAttributes.Normal); } catch { }
+                    try { File.SetAttributes(entry, FileAttributes.Normal); } catch { }
                 }
                 Directory.Delete(full, recursive: true);
                 if (!Directory.Exists(full)) return true;
@@ -1570,13 +2341,6 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         catch (ArgumentException) { return false; }
         catch (InvalidOperationException) { return false; }
         catch (Win32Exception) { return true; /* Process exists but cannot read start time; fail closed and do not interfere */ }
-    }
-
-    private static async Task CopyFileAsync(string sourcePath, string destinationPath, CancellationToken cancellationToken)
-    {
-        await using var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920, useAsync: true);
-        await using var dest = new FileStream(destinationPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true);
-        await source.CopyToAsync(dest, cancellationToken).ConfigureAwait(false);
     }
 
     private static int? LaunchDetachedConnect(string wsbPath, string instanceId)

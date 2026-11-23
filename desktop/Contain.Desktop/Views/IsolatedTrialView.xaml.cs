@@ -8,6 +8,9 @@ public partial class IsolatedTrialView : UserControl
     public IsolatedTrialView() => InitializeComponent();
     private MainWindow Shell => (MainWindow)DataContext;
     private void OnPickExe(object sender, RoutedEventArgs e) => Shell.PickTrialExecutable();
+    private async void OnPickFolder(object sender, RoutedEventArgs e) => await Shell.PickTrialFolderAsync();
+    private void OnCancelFolderScan(object sender, RoutedEventArgs e) => Shell.CancelTrialFolderScan();
+    private void OnCancelPreparation(object sender, RoutedEventArgs e) => Shell.CancelTrialPreparation();
     private async void OnComputeSha256(object sender, RoutedEventArgs e) => await Shell.ComputeTrialSha256Async();
     private void OnCopySha256(object sender, RoutedEventArgs e) => Shell.CopyText(Shell.IsolatedTrial.ComputedSha256);
     private async void OnStartTrial(object sender, RoutedEventArgs e) => await Shell.StartIsolatedTrialAsync();
