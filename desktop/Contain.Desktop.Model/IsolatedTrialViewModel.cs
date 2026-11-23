@@ -38,6 +38,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         public long? EntrySizeBytes { get; set; }
         public string? EntrySha256 { get; set; }
         public TrialFolderScopeReport? FolderScope { get; set; }
+        public TrialLocalFolderManifest? LocalFolderManifest { get; set; }
         public string LaunchOutcome { get; set; } = "not_attempted";
         public string LaunchOutcomeLabel { get; set; } = "尚未启动入口";
         public string LaunchSummary { get; set; } = "正在准备输入快照并等待沙箱就绪。";
@@ -67,6 +68,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
     private TrialFolderEntryCandidate? selectedFolderEntry;
     private string selectionError = "";
     private long selectionEpoch;
+    private long folderSelectionEpoch;
 
     // Async folder scanning state (keeps UI responsive & cancellable)
     private bool isScanningFolder;
@@ -121,9 +123,19 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
     private TrialHistoryRecord? activeHistoryRecord;
     private string historySaveError = "";
 
-    // Replay-from-history confirmation notice (never auto-starts Sandbox)
+    // Replay-from-history confirmation notice & folder diff comparison (never auto-starts Sandbox)
     private string replayNoticeText = "";
     private bool isReplayNoticeWarning;
+    private TrialHistoryRecord? replayBaselineRecord;
+    private PreparedTrialSnapshot? preparedSnapshot;
+    private bool isPreparingReplayComparison;
+    private double replayPrepProgressPercent;
+    private bool isReplayPrepProgressIndeterminate = true;
+    private string replayPrepProgressText = "";
+    private CancellationTokenSource? replayPrepCts;
+    private TrialFolderComparisonResult? folderComparison;
+    private bool folderDiffExpanded;
+    private string midConfirmRefreshBanner = "";
 
     public IsolatedTrialViewModel(
         IIsolatedTrialService service,
@@ -145,6 +157,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<TrialEvidenceEntry> EvidenceItems { get; } = [];
     public ObservableCollection<TrialFolderEntryCandidate> FolderEntryCandidates { get; } = [];
+    public ObservableCollection<TrialFolderDiffItem> FolderDiffItems { get; } = [];
 
     // Capability state & tailored primary actions
     public SandboxCapabilityReport Capability => capability;
@@ -361,7 +374,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
     {
         get
         {
-            if (disposed || checkingCapability || !capability.IsReady || HasBlockingSessionState || isScanningFolder)
+            if (disposed || checkingCapability || !capability.IsReady || HasBlockingSessionState || isScanningFolder || isPreparingReplayComparison)
                 return false;
             if (stagingState == TrialStagingState.Remaining)
                 return false;
@@ -407,7 +420,9 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                     ? "上次临时文件仍有残留，请先点击上方“重试清理”。"
                     : isScanningFolder
                         ? "正在扫描所选软件文件夹，完成后即可选择入口并开始隔离试用。"
-                        : NeedsFolderEntrySelection
+                        : isPreparingReplayComparison
+                            ? "正在准备文件夹变化对照快照，完成后即可核对并决定是否启动（界面保持可操作，可随时取消准备）。"
+                            : NeedsFolderEntrySelection
                             ? "请先在上方“启动哪个程序”中选择入口程序（相对路径），再点击“开始隔离试用”。"
                             : HasNoRunnableFolderEntries
                                 ? "当前所选软件文件夹中没有可运行的 Windows x64/x86 入口程序。"
@@ -496,9 +511,32 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
     public TrialHistoryRecord? ActiveHistoryRecord => activeHistoryRecord;
     public bool HasHistorySaveError => historySaveError.Length > 0;
     public string HistorySaveErrorMessage => historySaveError;
-    public bool HasReplayNotice => replayNoticeText.Length > 0;
+    public bool HasReplayNotice => replayNoticeText.Length > 0 && !HasFolderComparison;
     public string ReplayNoticeText => replayNoticeText;
     public bool IsReplayNoticeWarning => isReplayNoticeWarning;
+
+    // Beta.6 Folder Replay Comparison & Prepared Snapshot bindings
+    public bool IsPreparingReplayComparison => isPreparingReplayComparison;
+    public double ReplayPrepProgressPercent => replayPrepProgressPercent;
+    public bool IsReplayPrepProgressIndeterminate => isReplayPrepProgressIndeterminate;
+    public string ReplayPrepProgressText => replayPrepProgressText;
+    public bool CanCancelReplayPreparation => !disposed && isPreparingReplayComparison && replayPrepCts is not null;
+    public TrialFolderComparisonResult? FolderComparison => folderComparison;
+    public bool HasFolderComparison => folderComparison is not null && folderComparison.Status != TrialFolderComparisonStatus.None;
+    public bool IsFolderComparisonWarning => folderComparison?.IsWarning == true || midConfirmRefreshBanner.Length > 0;
+    public string FolderComparisonHeadline => folderComparison?.Headline ?? "";
+    public string FolderComparisonDetail => folderComparison?.Detail ?? "";
+    public bool HasFolderDiffItems => folderComparison?.HasDiffItems == true;
+    public string FolderDiffExpanderHeader => folderComparison?.ExpanderHeaderText ?? "";
+    public bool FolderDiffExpanded
+    {
+        get => folderDiffExpanded;
+        set => SetProperty(ref folderDiffExpanded, value);
+    }
+    public bool HasMidConfirmRefreshBanner => midConfirmRefreshBanner.Length > 0;
+    public string MidConfirmRefreshBanner => midConfirmRefreshBanner;
+    public bool HasPreparedSnapshot => preparedSnapshot is not null;
+    public string PreparedSnapshotStagingPath => preparedSnapshot?.StagingRootPath ?? "";
 
     public void CancelSelection() { }
 
@@ -616,6 +654,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                 EntrySizeBytes = r.EntrySizeBytes,
                 EntrySha256 = r.EntrySha256Recorded ? r.EntrySha256 : null,
                 FolderScope = r.FolderScope,
+                LocalFolderManifest = existing.LocalFolderManifest,
                 LaunchOutcome = r.LaunchOutcome,
                 LaunchOutcomeLabel = r.LaunchOutcomeLabel,
                 LaunchSummary = r.LaunchSummary,
@@ -952,12 +991,17 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
 
         CancelActiveFolderScan();
         CancelActiveHash();
+        CancelActiveReplayPreparation();
         selectionEpoch++;
+        folderSelectionEpoch++;
         ResetHashStateOnly();
         if (clearReplayNotice)
         {
-            replayNoticeText = "";
-            isReplayNoticeWarning = false;
+            ClearReplayComparisonAndReleaseSnapshot();
+        }
+        else
+        {
+            ReleasePreparedSnapshotBackground();
         }
         inputKind = TrialInputKind.SingleFile;
         selectedFolder = null;
@@ -998,14 +1042,15 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
 
         CancelActiveFolderScan();
         CancelActiveHash();
-        selectionEpoch++;
-        var epoch = selectionEpoch;
-        ResetHashStateOnly();
         if (clearReplayNotice)
         {
-            replayNoticeText = "";
-            isReplayNoticeWarning = false;
+            CancelActiveReplayPreparation();
+            ClearReplayComparisonAndReleaseSnapshot();
         }
+        selectionEpoch++;
+        folderSelectionEpoch++;
+        var epoch = selectionEpoch;
+        ResetHashStateOnly();
 
         inputKind = TrialInputKind.Folder;
         selectedExecutable = null;
@@ -1046,6 +1091,12 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         }
 
         MaybeResetCompletedSessionDisplay();
+        CancelActiveReplayPreparation();
+        await ReleasePreparedSnapshotAsync().ConfigureAwait(true);
+        if (disposed) return false;
+        ClearReplayComparisonStateOnly();
+        replayBaselineRecord = record;
+
         var report = record.Report;
         var hints = record.LocalHints;
 
@@ -1152,76 +1203,155 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
             if (disposed) return false;
             if (!scanned || selectedFolder is null)
             {
-                replayNoticeText = $"重新扫描原软件文件夹“{report.SoftwareName}”失败，请检查目录状态或重新选择软件文件夹。";
+                var failReason = string.IsNullOrWhiteSpace(selectionError)
+                    ? $"重新扫描原软件文件夹“{report.SoftwareName}”失败或已取消，未能确认文件内容是否变化。"
+                    : $"文件夹扫描未完成：{selectionError}（未能确认文件内容是否变化，未启动沙箱）。";
+                ApplyFolderComparison(new TrialFolderComparisonResult(
+                    TrialFolderComparisonStatus.Failed,
+                    "文件夹变化对照未完成",
+                    failReason,
+                    0, 0, 0, 0, 0, false, false, []));
+                replayNoticeText = failReason;
                 isReplayNoticeWarning = true;
-                statusMessage = replayNoticeText;
+                statusMessage = failReason;
+                RebuildTechnicalDetails();
                 NotifyAll();
                 return false;
             }
 
-            var matched = SelectFolderEntryByRelativePath(report.EntryRelativePath);
-            if (!matched || selectedFolderEntry is null)
+            _ = SelectFolderEntryByRelativePath(report.EntryRelativePath);
+            var folderEpoch = folderSelectionEpoch;
+            var cts = new CancellationTokenSource();
+            replayPrepCts = cts;
+            isPreparingReplayComparison = true;
+            replayPrepProgressPercent = 0;
+            isReplayPrepProgressIndeterminate = true;
+            replayPrepProgressText = $"正在准备“{selectedFolder.FolderName}”的验证快照并核对全部 {selectedFolder.FileCount:N0} 个文件（{selectedFolder.FormattedTotalSize}）…";
+            statusMessage = replayPrepProgressText;
+            NotifyAll();
+
+            try
             {
-                replayNoticeText = $"目录已变化：已重新扫描“{selectedFolder.FolderName}”（当前 {selectedFolder.FileCount:N0} 个文件，{selectedFolder.FormattedTotalSize}），但原入口“{report.EntryRelativePath}”已不存在或不再可运行。请在下方重新选择入口程序或改选软件文件夹。";
-                isReplayNoticeWarning = true;
-                statusMessage = replayNoticeText;
+                var progress = new Progress<TrialStagingProgress>(p =>
+                {
+                    dispatch(() =>
+                    {
+                        if (disposed || folderEpoch != folderSelectionEpoch || !isPreparingReplayComparison) return;
+                        replayPrepProgressPercent = p.Percent;
+                        isReplayPrepProgressIndeterminate = p.TotalBytes <= 0 && p.TotalFiles <= 0;
+                        var fileHint = string.IsNullOrWhiteSpace(p.CurrentRelativePath) ? "" : $" · {p.CurrentRelativePath}";
+                        replayPrepProgressText = $"正在准备对比快照：已核对 {p.FilesCopied:N0}/{p.TotalFiles:N0} 个文件（{WindowsSandboxTrialService.FormatByteSize(p.BytesCopied)} / {WindowsSandboxTrialService.FormatByteSize(p.TotalBytes)}）{fileHint}";
+                        statusMessage = replayPrepProgressText;
+                        OnPropertyChanged(nameof(ReplayPrepProgressPercent));
+                        OnPropertyChanged(nameof(IsReplayPrepProgressIndeterminate));
+                        OnPropertyChanged(nameof(ReplayPrepProgressText));
+                        OnPropertyChanged(nameof(StatusMessage));
+                    });
+                });
+
+                var entryRelForPrep = selectedFolderEntry?.RelativePath;
+                var prep = await Track(() => service.PrepareFolderSnapshotAsync(selectedFolder.FullPath, entryRelForPrep, progress, cts.Token)).ConfigureAwait(true);
+
+                if (disposed || folderEpoch != folderSelectionEpoch)
+                {
+                    // Superseded by another file/folder/record switch or window close: release immediately!
+                    await CleanupPreparedSnapshotSafeAsync(prep).ConfigureAwait(false);
+                    return false;
+                }
+
+                isPreparingReplayComparison = false;
+                replayPrepProgressText = "";
+
+                // Reconcile if user switched entry inside the same folder while snapshot was preparing
+                var currentEntryRel = selectedFolderEntry?.RelativePath;
+                if (!string.IsNullOrWhiteSpace(currentEntryRel))
+                {
+                    var normCurrent = TrialFolderDiffEngine.NormalizeRelativePath(currentEntryRel);
+                    var matchedEntry = prep.ManifestFiles.FirstOrDefault(f =>
+                        string.Equals(TrialFolderDiffEngine.NormalizeRelativePath(f.RelativePath), normCurrent, StringComparison.OrdinalIgnoreCase));
+                    prep = prep with { EntryRelativePath = currentEntryRel, EntrySha256 = matchedEntry?.Sha256 ?? prep.EntrySha256 };
+                }
+                preparedSnapshot = prep;
+
+                if (!string.IsNullOrWhiteSpace(prep.EntrySha256))
+                {
+                    hashState = TrialHashState.Computed;
+                    computedSha256 = prep.EntrySha256;
+                    hashErrorMessage = "";
+                }
+
+                var comparison = TrialFolderDiffEngine.Compare(
+                    record,
+                    prep.ManifestFiles,
+                    selectedFolderEntry?.RelativePath ?? report.EntryRelativePath,
+                    currentSnapshotComplete: true);
+                ApplyFolderComparison(comparison);
+
+                replayNoticeText = $"{comparison.Headline}。{comparison.Detail}";
+                isReplayNoticeWarning = comparison.IsWarning;
+                statusMessage = comparison.Headline;
                 RebuildTechnicalDetails();
                 NotifyAll();
                 return true;
             }
-
-            var epoch = selectionEpoch;
-            var scopeChanged = report.FolderScope is not null
-                && (selectedFolder.FileCount != report.FolderScope.FileCount || selectedFolder.TotalBytes != report.FolderScope.TotalBytes);
-
-            if (report.EntrySha256Recorded && !string.IsNullOrWhiteSpace(report.EntrySha256))
+            catch (OperationCanceledException)
             {
-                try
-                {
-                    var currentHash = await service.ComputeSha256Async(selectedFolderEntry.FullPath).ConfigureAwait(true);
-                    if (disposed || epoch != selectionEpoch) return false;
-                    hashState = TrialHashState.Computed;
-                    computedSha256 = currentHash;
-                    hashErrorMessage = "";
-
-                    if (!string.Equals(currentHash, report.EntrySha256, StringComparison.OrdinalIgnoreCase))
-                    {
-                        var currShort = currentHash.Length >= 12 ? currentHash[..12] + "…" : currentHash;
-                        var scopeNote = scopeChanged ? $"，且目录范围已变化（当前 {selectedFolder.FileCount:N0} 个文件 / {selectedFolder.FormattedTotalSize}）" : "";
-                        replayNoticeText = $"文件已变化：已重新扫描“{selectedFolder.FolderName}”，入口“{selectedFolderEntry.RelativePath}”的 SHA-256 与历史记录不一致（历史：{report.DisplayEntryShortSha256}，当前：{currShort}）{scopeNote}。请确认后再点击“开始隔离试用”；确认开始后将生成新记录，原历史记录保持不变。";
-                        isReplayNoticeWarning = true;
-                    }
-                    else if (scopeChanged)
-                    {
-                        replayNoticeText = $"目录内容已变化：入口“{selectedFolderEntry.RelativePath}”的 SHA-256 与历史记录一致，但目录范围已变动（历史：{report.FolderScope!.FileCount:N0} 个文件 / {report.FolderScope.FormattedTotalSize}，当前：{selectedFolder.FileCount:N0} 个文件 / {selectedFolder.FormattedTotalSize}）。确认后点击“开始隔离试用”将生成一条新记录。";
-                        isReplayNoticeWarning = true;
-                    }
-                    else
-                    {
-                        replayNoticeText = $"已按历史记录重新扫描“{selectedFolder.FolderName}”并选中入口“{selectedFolderEntry.RelativePath}”，入口文件 SHA-256 与历史记录一致。确认后点击“开始隔离试用”将生成一条新记录（不会自动启动沙箱）。";
-                        isReplayNoticeWarning = false;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    if (disposed || epoch != selectionEpoch) return false;
-                    replayNoticeText = $"已重新扫描“{selectedFolder.FolderName}”并选中入口“{selectedFolderEntry.RelativePath}”，但校验当前入口 SHA-256 失败（{ex.Message}），请核对后再确认开始。";
-                    isReplayNoticeWarning = true;
-                }
+                if (disposed || folderEpoch != folderSelectionEpoch) return false;
+                isPreparingReplayComparison = false;
+                replayPrepProgressText = "";
+                var cancelled = new TrialFolderComparisonResult(
+                    TrialFolderComparisonStatus.Cancelled,
+                    "已取消文件夹变化对照",
+                    "快照准备与逐文件哈希核对已取消（已清理本次临时暂存），尚未确认文件夹内所有文件是否与上次一致。",
+                    0, 0, 0, selectedFolder?.FileCount ?? 0, selectedFolder?.TotalBytes ?? 0, false, false, []);
+                ApplyFolderComparison(cancelled);
+                replayNoticeText = cancelled.Detail;
+                isReplayNoticeWarning = true;
+                statusMessage = cancelled.Headline;
+                RebuildTechnicalDetails();
+                NotifyAll();
+                return false;
             }
-            else
+            catch (Exception ex)
             {
-                replayNoticeText = scopeChanged
-                    ? $"目录内容已变化：已重新扫描“{selectedFolder.FolderName}”并选中入口“{selectedFolderEntry.RelativePath}”（历史记录未记录入口 SHA-256）。确认后点击“开始隔离试用”将生成一条新记录。"
-                    : $"已按历史记录重新扫描“{selectedFolder.FolderName}”并选中入口“{selectedFolderEntry.RelativePath}”（历史记录未记录入口 SHA-256）。确认后点击“开始隔离试用”将生成一条新记录。";
-                isReplayNoticeWarning = scopeChanged;
+                if (disposed || folderEpoch != folderSelectionEpoch) return false;
+                isPreparingReplayComparison = false;
+                replayPrepProgressText = "";
+                var stageInfo = ex is IsolatedTrialException ite && !string.IsNullOrWhiteSpace(ite.FailedStage)
+                    ? $"（发生在“{ite.FailedStage}”阶段）"
+                    : "";
+                var failed = new TrialFolderComparisonResult(
+                    TrialFolderComparisonStatus.Failed,
+                    "文件夹变化对照未完成",
+                    $"准备对照快照失败{stageInfo}：{ex.Message}。已清理本次临时暂存，未能确认文件夹内容是否一致，未启动沙箱。",
+                    0, 0, 0, selectedFolder?.FileCount ?? 0, selectedFolder?.TotalBytes ?? 0, false, false, []);
+                ApplyFolderComparison(failed);
+                replayNoticeText = failed.Detail;
+                isReplayNoticeWarning = true;
+                statusMessage = failed.Headline;
+                RebuildTechnicalDetails();
+                NotifyAll();
+                return false;
             }
-
-            statusMessage = replayNoticeText;
-            RebuildTechnicalDetails();
-            NotifyAll();
-            return true;
+            finally
+            {
+                if (ReferenceEquals(replayPrepCts, cts))
+                {
+                    replayPrepCts = null;
+                }
+                cts.Dispose();
+                NotifyAll();
+            }
         }
+    }
+
+    public void CancelReplayPreparation()
+    {
+        if (!CanCancelReplayPreparation) return;
+        replayPrepProgressText = "正在取消文件夹对照准备并清理暂存文件…";
+        statusMessage = replayPrepProgressText;
+        try { replayPrepCts?.Cancel(); } catch { }
+        NotifyAll();
     }
 
     private async Task<bool> SelectFolderCoreAsync(string folderPath, long epoch, CancellationToken token)
@@ -1344,6 +1474,28 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         selectedFolderEntry = entry;
         if (entry is not null && selectedFolder is not null)
         {
+            if (preparedSnapshot is not null
+                && string.Equals(preparedSnapshot.SourceFolderPath, selectedFolder.FullPath, StringComparison.OrdinalIgnoreCase))
+            {
+                var normRel = TrialFolderDiffEngine.NormalizeRelativePath(entry.RelativePath);
+                var manifestMatch = preparedSnapshot.ManifestFiles.FirstOrDefault(f =>
+                    string.Equals(TrialFolderDiffEngine.NormalizeRelativePath(f.RelativePath), normRel, StringComparison.OrdinalIgnoreCase));
+                preparedSnapshot = preparedSnapshot with
+                {
+                    EntryRelativePath = entry.RelativePath,
+                    EntrySha256 = manifestMatch?.Sha256
+                };
+                if (!string.IsNullOrWhiteSpace(manifestMatch?.Sha256))
+                {
+                    hashState = TrialHashState.Computed;
+                    computedSha256 = manifestMatch.Sha256;
+                }
+                if (replayBaselineRecord is not null)
+                {
+                    var updated = TrialFolderDiffEngine.Compare(replayBaselineRecord, preparedSnapshot.ManifestFiles, entry.RelativePath, currentSnapshotComplete: true);
+                    ApplyFolderComparison(updated);
+                }
+            }
             statusMessage = $"已选择入口“{entry.RelativePath}”（将带入整个目录“{selectedFolder.FolderName}”，共 {selectedFolder.FileCount:N0} 个文件，{selectedFolder.FormattedTotalSize}）。";
         }
         RebuildTechnicalDetails();
@@ -1357,7 +1509,10 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
 
         CancelActiveFolderScan();
         CancelActiveHash();
+        CancelActiveReplayPreparation();
+        ClearReplayComparisonAndReleaseSnapshot();
         selectionEpoch++;
+        folderSelectionEpoch++;
         ResetHashStateOnly();
 
         executablePathInput = rawValue;
@@ -1476,6 +1631,24 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         if (!CanStartTrial)
             return Task.FromResult(false);
 
+        if (inputKind == TrialInputKind.Folder
+            && selectedFolder is not null
+            && selectedFolderEntry is not null
+            && preparedSnapshot is PreparedTrialSnapshot prep
+            && string.Equals(prep.SourceFolderPath, selectedFolder.FullPath, StringComparison.OrdinalIgnoreCase))
+        {
+            operationBusy = true;
+            var baseline = replayBaselineRecord;
+            var folder = selectedFolder;
+            var entry = selectedFolderEntry;
+            statusMessage = "正在核验已准备的文件夹快照…";
+            NotifyAll();
+            return Track(() => StartPreparedFolderAsync(prep, baseline, folder, entry));
+        }
+
+        // Release any stale prepared snapshot from a different path before starting fresh
+        ReleasePreparedSnapshotBackground();
+
         var sessionId = Guid.NewGuid().ToString("N")[..12];
         TrialLaunchTarget target;
         if (inputKind == TrialInputKind.Folder)
@@ -1491,9 +1664,244 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
             target = TrialLaunchTarget.FromSingleExecutable(selectedExecutable) with { SessionId = sessionId };
         }
 
+        return Track(() => LaunchTrialWithTargetAsync(target, reusedSnapshot: null));
+    }
+
+    private async Task<bool> StartPreparedFolderAsync(
+        PreparedTrialSnapshot prep,
+        TrialHistoryRecord? baseline,
+        TrialFolderInfo folder,
+        TrialFolderEntryCandidate entry)
+    {
+        try
+        {
+            var isFresh = await service.IsPreparedSnapshotFreshAsync(prep).ConfigureAwait(true);
+            if (disposed)
+            {
+                if (ReferenceEquals(preparedSnapshot, prep)) preparedSnapshot = null;
+                await CleanupPreparedSnapshotSafeAsync(prep).ConfigureAwait(false);
+                return false;
+            }
+
+            if (isFresh)
+            {
+                // Ownership transfers directly to StartSandboxAsync -> ZERO re-copy!
+                if (ReferenceEquals(preparedSnapshot, prep)) preparedSnapshot = null;
+                operationBusy = false;
+                var reuseTarget = TrialLaunchTarget.FromFolder(folder, entry, prep.SessionId) with { PreparedSnapshot = prep };
+                return await LaunchTrialWithTargetAsync(reuseTarget, reusedSnapshot: prep).ConfigureAwait(true);
+            }
+
+            // Source changed (or prepared staging was disturbed) after comparison screen opened!
+            // Release stale snapshot, re-stage fresh snapshot, and if file contents actually changed,
+            // refresh the comparison diff and wait for the user's explicit re-confirmation!
+            if (ReferenceEquals(preparedSnapshot, prep)) preparedSnapshot = null;
+            await CleanupPreparedSnapshotSafeAsync(prep).ConfigureAwait(true);
+            if (disposed) return false;
+
+            var cts = new CancellationTokenSource();
+            replayPrepCts = cts;
+            isPreparingReplayComparison = true;
+            replayPrepProgressPercent = 0;
+            isReplayPrepProgressIndeterminate = true;
+            replayPrepProgressText = "检测到源目录在确认期间发生变动，正在重新准备快照并核对变化…";
+            statusMessage = replayPrepProgressText;
+            NotifyAll();
+
+            try
+            {
+                var rescanned = await service.ScanFolderAsync(folder.FullPath, null, cts.Token).ConfigureAwait(true);
+                if (disposed) return false;
+
+                var progress = new Progress<TrialStagingProgress>(p =>
+                {
+                    dispatch(() =>
+                    {
+                        if (disposed || !isPreparingReplayComparison) return;
+                        replayPrepProgressPercent = p.Percent;
+                        isReplayPrepProgressIndeterminate = p.TotalBytes <= 0 && p.TotalFiles <= 0;
+                        var fileHint = string.IsNullOrWhiteSpace(p.CurrentRelativePath) ? "" : $" · {p.CurrentRelativePath}";
+                        replayPrepProgressText = $"源目录已变化，正在刷新快照：已核对 {p.FilesCopied:N0}/{p.TotalFiles:N0} 个文件（{WindowsSandboxTrialService.FormatByteSize(p.BytesCopied)} / {WindowsSandboxTrialService.FormatByteSize(p.TotalBytes)}）{fileHint}";
+                        statusMessage = replayPrepProgressText;
+                        OnPropertyChanged(nameof(ReplayPrepProgressPercent));
+                        OnPropertyChanged(nameof(IsReplayPrepProgressIndeterminate));
+                        OnPropertyChanged(nameof(ReplayPrepProgressText));
+                        OnPropertyChanged(nameof(StatusMessage));
+                    });
+                });
+
+                var refreshedEntryCandidate = rescanned.RunnableEntries.FirstOrDefault(c =>
+                    string.Equals(TrialFolderDiffEngine.NormalizeRelativePath(c.RelativePath),
+                                  TrialFolderDiffEngine.NormalizeRelativePath(entry.RelativePath),
+                                  StringComparison.OrdinalIgnoreCase));
+
+                var newPrep = await service.PrepareFolderSnapshotAsync(
+                    rescanned.FullPath,
+                    refreshedEntryCandidate?.RelativePath,
+                    progress,
+                    cts.Token).ConfigureAwait(true);
+
+                if (disposed)
+                {
+                    await CleanupPreparedSnapshotSafeAsync(newPrep).ConfigureAwait(false);
+                    return false;
+                }
+
+                isPreparingReplayComparison = false;
+                replayPrepProgressText = "";
+
+                // If the re-staged files are byte-identical to what the user ALREADY confirmed, launch immediately!
+                if (refreshedEntryCandidate is not null
+                    && TrialFolderDiffEngine.ManifestsEqual(prep.ManifestFiles, newPrep.ManifestFiles))
+                {
+                    selectedFolder = rescanned;
+                    FolderEntryCandidates.Clear();
+                    foreach (var c in rescanned.RunnableEntries) FolderEntryCandidates.Add(c);
+                    selectedFolderEntry = refreshedEntryCandidate;
+                    operationBusy = false;
+                    var freshTarget = TrialLaunchTarget.FromFolder(rescanned, refreshedEntryCandidate, newPrep.SessionId) with { PreparedSnapshot = newPrep };
+                    return await LaunchTrialWithTargetAsync(freshTarget, reusedSnapshot: newPrep).ConfigureAwait(true);
+                }
+
+                // Files ACTUALLY changed mid-confirmation -> DO NOT start Sandbox! Refresh diff and wait for user re-confirmation!
+                selectedFolder = rescanned;
+                FolderEntryCandidates.Clear();
+                foreach (var c in rescanned.RunnableEntries) FolderEntryCandidates.Add(c);
+                selectedFolderEntry = refreshedEntryCandidate;
+                preparedSnapshot = newPrep;
+                if (!string.IsNullOrWhiteSpace(newPrep.EntrySha256))
+                {
+                    hashState = TrialHashState.Computed;
+                    computedSha256 = newPrep.EntrySha256;
+                    hashErrorMessage = "";
+                }
+                else
+                {
+                    ResetHashStateOnly();
+                }
+
+                if (baseline is not null)
+                {
+                    var refreshedDiff = TrialFolderDiffEngine.Compare(
+                        baseline,
+                        newPrep.ManifestFiles,
+                        selectedFolderEntry?.RelativePath ?? baseline.Report.EntryRelativePath,
+                        currentSnapshotComplete: true);
+                    ApplyFolderComparison(refreshedDiff, autoExpandIfChanged: true);
+                }
+                else
+                {
+                    var syntheticPrevious = new TrialHistoryRecord(
+                        TrialHistoryRecord.CurrentRecordSchemaVersion,
+                        prep.PreparedAtUtc,
+                        new TrialSessionReport(
+                            TrialSessionReport.CurrentSchemaVersion,
+                            TrialSessionReport.ProtocolName,
+                            prep.SessionId,
+                            prep.PreparedAtUtc,
+                            null,
+                            folder.FolderName,
+                            entry.DisplayVersion,
+                            "folder",
+                            "软件文件夹",
+                            entry.RelativePath,
+                            entry.FileName,
+                            entry.ArchitectureLabel,
+                            entry.SizeBytes,
+                            prep.EntrySha256,
+                            !string.IsNullOrWhiteSpace(prep.EntrySha256),
+                            new TrialFolderScopeReport(prep.FileCount, prep.DirectoryCount, prep.TotalBytes, prep.FormattedTotalSize),
+                            new TrialIsolationPolicyReport("Disable", "Disable", true, true),
+                            "not_attempted",
+                            "准备对比",
+                            "",
+                            "NotCreated",
+                            "未创建",
+                            "NotCreated",
+                            "未创建",
+                            "准备对比",
+                            TrialSessionReport.DefaultEvidenceScopeNote,
+                            []),
+                        new TrialReplayHints(folder.FullPath, entry.FullPath),
+                        new TrialLocalFolderManifest(TrialLocalFolderManifest.CurrentManifestSchemaVersion, true, prep.ManifestFiles));
+                    var refreshedDiff = TrialFolderDiffEngine.Compare(
+                        syntheticPrevious,
+                        newPrep.ManifestFiles,
+                        selectedFolderEntry?.RelativePath ?? entry.RelativePath,
+                        currentSnapshotComplete: true);
+                    ApplyFolderComparison(refreshedDiff, autoExpandIfChanged: true);
+                }
+
+                midConfirmRefreshBanner = "检测到源目录在确认期间又发生了变化，已重新准备快照并刷新变化对照（尚未启动沙箱）。请核对最新变化后再次点击“开始隔离试用”。";
+                replayNoticeText = midConfirmRefreshBanner;
+                isReplayNoticeWarning = true;
+                statusMessage = midConfirmRefreshBanner;
+                RebuildTechnicalDetails();
+                return false;
+            }
+            catch (OperationCanceledException)
+            {
+                if (disposed) return false;
+                isPreparingReplayComparison = false;
+                replayPrepProgressText = "";
+                ApplyFolderComparison(new TrialFolderComparisonResult(
+                    TrialFolderComparisonStatus.Cancelled,
+                    "已取消刷新文件夹对照",
+                    "已取消重新准备快照并清理本次暂存，尚未启动沙箱。",
+                    0, 0, 0, folder.FileCount, folder.TotalBytes, false, false, []));
+                midConfirmRefreshBanner = "";
+                statusMessage = "已取消刷新文件夹对照。";
+                return false;
+            }
+            catch (Exception ex)
+            {
+                if (disposed) return false;
+                isPreparingReplayComparison = false;
+                replayPrepProgressText = "";
+                var stageInfo = ex is IsolatedTrialException ite && !string.IsNullOrWhiteSpace(ite.FailedStage)
+                    ? $"（发生在“{ite.FailedStage}”阶段）"
+                    : "";
+                ApplyFolderComparison(new TrialFolderComparisonResult(
+                    TrialFolderComparisonStatus.Failed,
+                    "源目录变化后重新准备快照失败",
+                    $"重新准备对照快照失败{stageInfo}：{ex.Message}。已清理本次临时暂存，未启动沙箱。",
+                    0, 0, 0, folder.FileCount, folder.TotalBytes, false, false, []));
+                midConfirmRefreshBanner = "";
+                statusMessage = "重新准备快照失败，未启动沙箱。";
+                return false;
+            }
+            finally
+            {
+                if (ReferenceEquals(replayPrepCts, cts)) replayPrepCts = null;
+                cts.Dispose();
+                operationBusy = false;
+                NotifyAll();
+            }
+        }
+        catch (Exception ex)
+        {
+            operationBusy = false;
+            if (!disposed)
+            {
+                ApplyFolderComparison(new TrialFolderComparisonResult(
+                    TrialFolderComparisonStatus.Failed,
+                    "核验已准备快照失败",
+                    $"核验快照时发生错误：{ex.Message}。未启动沙箱，请重新选择目录后重试。",
+                    0, 0, 0, folder.FileCount, folder.TotalBytes, false, false, []));
+                statusMessage = "核验已准备快照失败。";
+                NotifyAll();
+            }
+            return false;
+        }
+    }
+
+    private Task<bool> LaunchTrialWithTargetAsync(TrialLaunchTarget target, PreparedTrialSnapshot? reusedSnapshot)
+    {
+        var sessionId = !string.IsNullOrWhiteSpace(target.SessionId) ? target.SessionId! : Guid.NewGuid().ToString("N")[..12];
+        target = target with { SessionId = sessionId };
+
         isRecoveredContext = false;
-        replayNoticeText = "";
-        isReplayNoticeWarning = false;
+        ClearReplayComparisonStateOnly();
         historySaveError = "";
         phase = IsolatedTrialPhase.PreparingInput;
         endReason = TrialEndReason.None;
@@ -1504,7 +1912,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         observedOwnedWindow = false;
         lastSessionId = sessionId;
         lastInstanceId = "";
-        lastStagingPath = "";
+        lastStagingPath = reusedSnapshot?.StagingRootPath ?? "";
         lastSessionDisplayName = target.DisplayName;
         lastEntryRelativePath = target.EntryRelativePath;
         lastSessionInputKind = target.Kind;
@@ -1514,11 +1922,13 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         isCleanupWarning = false;
         failureNextStep = "";
         failureDiagnostic = "";
-        stagingProgressPercent = 0;
-        isStagingProgressIndeterminate = true;
-        stagingProgressText = target.Kind == TrialInputKind.Folder
-            ? $"正在准备软件目录“{target.DisplayName}”的输入快照（共 {target.TotalFileCount:N0} 个文件，{target.FormattedTotalSize}）…"
-            : $"正在准备“{target.DisplayName}”的输入快照…";
+        stagingProgressPercent = reusedSnapshot is not null ? 100 : 0;
+        isStagingProgressIndeterminate = reusedSnapshot is null;
+        stagingProgressText = reusedSnapshot is not null
+            ? $"已复用已核验快照（{reusedSnapshot.FileCount:N0} 个文件，{reusedSnapshot.FormattedTotalSize}），正在启动沙箱…"
+            : target.Kind == TrialInputKind.Folder
+                ? $"正在准备软件目录“{target.DisplayName}”的输入快照（共 {target.TotalFileCount:N0} 个文件，{target.FormattedTotalSize}）…"
+                : $"正在准备“{target.DisplayName}”的输入快照…";
         EvidenceItems.Clear();
         lock (timelineGate) reportTimeline.Clear();
 
@@ -1534,28 +1944,39 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
             EntryFileName = target.EntryExecutable.FileName,
             EntryArchitecture = target.EntryExecutable.ArchitectureLabel,
             EntrySizeBytes = target.EntryExecutable.SizeBytes,
-            EntrySha256 = null, // Populated authoritatively from exact staged entry bytes!
+            EntrySha256 = reusedSnapshot?.EntrySha256,
             FolderScope = target.Kind == TrialInputKind.Folder
                 ? new TrialFolderScopeReport(target.TotalFileCount, target.DirectoryCount, target.TotalBytes, target.FormattedTotalSize)
                 : null,
+            LocalFolderManifest = reusedSnapshot is not null
+                ? new TrialLocalFolderManifest(TrialLocalFolderManifest.CurrentManifestSchemaVersion, true, reusedSnapshot.ManifestFiles)
+                : null,
             LaunchOutcome = "not_attempted",
             LaunchOutcomeLabel = "尚未启动入口",
-            LaunchSummary = "正在准备输入快照并等待沙箱就绪。",
+            LaunchSummary = reusedSnapshot is not null
+                ? "已复用核验完成的文件夹快照，正在启动沙箱。"
+                : "正在准备输入快照并等待沙箱就绪。",
             SourcePathHint = target.SourcePath,
             EntryPathHint = target.EntryExecutable.FullPath,
             InstanceIdHint = null
         };
 
         sessionHeadline = target.Kind == TrialInputKind.Folder
-            ? $"正在准备软件目录快照：“{target.DisplayName}”"
+            ? (reusedSnapshot is not null
+                ? $"正在使用已核验快照启动沙箱：“{target.DisplayName}”"
+                : $"正在准备软件目录快照：“{target.DisplayName}”")
             : $"正在准备隔离试用：“{target.DisplayName}”";
         sessionSummary = target.Kind == TrialInputKind.Folder
-            ? $"正在将所选软件文件夹完整复制到本次专用暂存目录（共 {target.TotalFileCount:N0} 个文件，{target.FormattedTotalSize}）；准备完成并核验无误后才会启动沙箱。"
+            ? (reusedSnapshot is not null
+                ? $"已复用确认页核验一致的完整目录快照（共 {target.TotalFileCount:N0} 个文件，{target.FormattedTotalSize}），正在启动离线且禁用剪贴板的 Windows 沙箱。"
+                : $"正在将所选软件文件夹完整复制到本次专用暂存目录（共 {target.TotalFileCount:N0} 个文件，{target.FormattedTotalSize}）；准备完成并核验无误后才会启动沙箱。")
             : "正在将所选程序复制到本次专用暂存目录；准备完成后将启动断网、禁用剪贴板的 Windows 沙箱。";
         statusMessage = stagingProgressText;
 
         var prepNote = target.Kind == TrialInputKind.Folder
-            ? $"已锁定便携软件目录“{target.DisplayName}”（{target.TotalFileCount:N0} 个文件，{target.FormattedTotalSize}），入口相对路径“{target.EntryRelativePath}”，配置关闭网络与剪贴板共享、只读映射输入快照。"
+            ? (reusedSnapshot is not null
+                ? $"已锁定便携软件目录“{target.DisplayName}”（复用已核验快照：{target.TotalFileCount:N0} 个文件，{target.FormattedTotalSize}），入口相对路径“{target.EntryRelativePath}”，配置关闭网络与剪贴板共享、只读映射输入快照。"
+                : $"已锁定便携软件目录“{target.DisplayName}”（{target.TotalFileCount:N0} 个文件，{target.FormattedTotalSize}），入口相对路径“{target.EntryRelativePath}”，配置关闭网络与剪贴板共享、只读映射输入快照。")
             : $"已锁定单文件目标“{target.DisplayName}”（{target.FormattedTotalSize}），配置关闭网络与剪贴板共享、只读映射输入目录。";
         AddEvidence("启动准备", prepNote);
         PersistCurrentHistoryRecord();
@@ -1565,7 +1986,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         var token = startCts.Token;
         NotifyAll();
 
-        return Track(() => StartTrialCoreAsync(target, token));
+        return StartTrialCoreAsync(target, token);
     }
 
     private async Task<bool> StartTrialCoreAsync(TrialLaunchTarget target, CancellationToken token)
@@ -1584,6 +2005,13 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
 
                     if (historyContext is not null && !string.IsNullOrWhiteSpace(p.StagedEntrySha256))
                         historyContext.EntrySha256 = p.StagedEntrySha256;
+                    if (historyContext is not null && p.StagedManifestFiles is { Count: > 0 })
+                    {
+                        historyContext.LocalFolderManifest = new TrialLocalFolderManifest(
+                            TrialLocalFolderManifest.CurrentManifestSchemaVersion,
+                            IsComplete: true,
+                            Files: p.StagedManifestFiles);
+                    }
 
                     if (!string.IsNullOrWhiteSpace(p.CreatedInstanceId))
                     {
@@ -1643,6 +2071,13 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
             {
                 if (!string.IsNullOrWhiteSpace(session.EntrySha256))
                     historyContext.EntrySha256 = session.EntrySha256;
+                if (session.StagedManifestFiles is { Count: > 0 })
+                {
+                    historyContext.LocalFolderManifest = new TrialLocalFolderManifest(
+                        TrialLocalFolderManifest.CurrentManifestSchemaVersion,
+                        IsComplete: true,
+                        Files: session.StagedManifestFiles);
+                }
                 historyContext.InstanceIdHint = session.InstanceId;
                 historyContext.EntryRelativePath = lastEntryRelativePath;
                 if (historyContext.FolderScope is not null)
@@ -2122,15 +2557,24 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         StopMonitorOnly();
         CancelActiveFolderScan();
         CancelActiveHash();
+        CancelActiveReplayPreparation();
         try { startCts?.Cancel(); } catch { }
 
         var sessionToClean = activeSession;
         activeSession = null;
+        var preparedToClean = preparedSnapshot;
+        preparedSnapshot = null;
 
         Task[] snapshot;
         lock (opsGate) snapshot = [.. pendingOps];
         try { await Task.WhenAll(snapshot).ConfigureAwait(false); }
         catch { }
+
+        // Release any prepared staging snapshot still held for the confirmation screen
+        if (preparedToClean is not null)
+        {
+            await CleanupPreparedSnapshotSafeAsync(preparedToClean).ConfigureAwait(false);
+        }
 
         if (sessionToClean is not null)
         {
@@ -2176,6 +2620,13 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         StopMonitorOnly();
         CancelActiveFolderScan();
         CancelActiveHash();
+        CancelActiveReplayPreparation();
+        var leftover = preparedSnapshot;
+        preparedSnapshot = null;
+        if (leftover is not null)
+        {
+            try { _ = service.CleanupStagingOnlyAsync(leftover.StagingRootPath); } catch { }
+        }
         try { startCts?.Cancel(); } catch { }
         startCts?.Dispose();
     }
@@ -2213,6 +2664,78 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         if (cts is null) return;
         try { cts.Cancel(); } catch { }
         cts.Dispose();
+    }
+
+    private void CancelActiveReplayPreparation()
+    {
+        isPreparingReplayComparison = false;
+        replayPrepProgressText = "";
+        var cts = replayPrepCts;
+        replayPrepCts = null;
+        if (cts is null) return;
+        try { cts.Cancel(); } catch { }
+        cts.Dispose();
+    }
+
+    private void ApplyFolderComparison(TrialFolderComparisonResult? result, bool autoExpandIfChanged = false)
+    {
+        folderComparison = result;
+        FolderDiffItems.Clear();
+        if (result is not null)
+        {
+            foreach (var item in result.Items)
+                FolderDiffItems.Add(item);
+            folderDiffExpanded = autoExpandIfChanged && result.HasDiffItems;
+        }
+        else
+        {
+            folderDiffExpanded = false;
+        }
+    }
+
+    private void ClearReplayComparisonStateOnly()
+    {
+        replayBaselineRecord = null;
+        folderComparison = null;
+        FolderDiffItems.Clear();
+        folderDiffExpanded = false;
+        midConfirmRefreshBanner = "";
+        replayNoticeText = "";
+        isReplayNoticeWarning = false;
+        replayPrepProgressText = "";
+        replayPrepProgressPercent = 0;
+        isReplayPrepProgressIndeterminate = true;
+    }
+
+    private void ClearReplayComparisonAndReleaseSnapshot()
+    {
+        ClearReplayComparisonStateOnly();
+        ReleasePreparedSnapshotBackground();
+    }
+
+    private void ReleasePreparedSnapshotBackground()
+    {
+        var snap = preparedSnapshot;
+        preparedSnapshot = null;
+        if (snap is null) return;
+        _ = Track(() => CleanupPreparedSnapshotSafeAsync(snap));
+    }
+
+    private Task ReleasePreparedSnapshotAsync()
+    {
+        var snap = preparedSnapshot;
+        preparedSnapshot = null;
+        if (snap is null) return Task.CompletedTask;
+        return CleanupPreparedSnapshotSafeAsync(snap);
+    }
+
+    private async Task CleanupPreparedSnapshotSafeAsync(PreparedTrialSnapshot snap)
+    {
+        try
+        {
+            await service.CleanupStagingOnlyAsync(snap.StagingRootPath).ConfigureAwait(false);
+        }
+        catch { /* Best-effort cleanup of unlaunched prepared snapshot */ }
     }
 
     private void ResetHashStateOnly()
@@ -2333,7 +2856,8 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
             TrialHistoryRecord.CurrentRecordSchemaVersion,
             clock().ToUniversalTime(),
             report,
-            hints);
+            hints,
+            LocalFolderManifest: ctx.LocalFolderManifest);
 
         activeHistoryRecord = record;
 
@@ -2591,5 +3115,22 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasReplayNotice));
         OnPropertyChanged(nameof(ReplayNoticeText));
         OnPropertyChanged(nameof(IsReplayNoticeWarning));
+        OnPropertyChanged(nameof(IsPreparingReplayComparison));
+        OnPropertyChanged(nameof(ReplayPrepProgressPercent));
+        OnPropertyChanged(nameof(IsReplayPrepProgressIndeterminate));
+        OnPropertyChanged(nameof(ReplayPrepProgressText));
+        OnPropertyChanged(nameof(CanCancelReplayPreparation));
+        OnPropertyChanged(nameof(FolderComparison));
+        OnPropertyChanged(nameof(HasFolderComparison));
+        OnPropertyChanged(nameof(IsFolderComparisonWarning));
+        OnPropertyChanged(nameof(FolderComparisonHeadline));
+        OnPropertyChanged(nameof(FolderComparisonDetail));
+        OnPropertyChanged(nameof(HasFolderDiffItems));
+        OnPropertyChanged(nameof(FolderDiffExpanderHeader));
+        OnPropertyChanged(nameof(FolderDiffExpanded));
+        OnPropertyChanged(nameof(HasMidConfirmRefreshBanner));
+        OnPropertyChanged(nameof(MidConfirmRefreshBanner));
+        OnPropertyChanged(nameof(HasPreparedSnapshot));
+        OnPropertyChanged(nameof(PreparedSnapshotStagingPath));
     }
 }

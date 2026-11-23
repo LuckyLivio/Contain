@@ -101,6 +101,414 @@ public sealed record TrialSessionReport(
 }
 
 /// <summary>
+/// Per-file staged snapshot entry recorded during folder snapshot copying (exact bytes staged into Sandbox).
+/// Persisted ONLY in local user history to power "再次试用前的文件夹变化对照"; NEVER included in default exported JSON.
+/// </summary>
+public sealed record TrialStagedFileEntry(
+    [property: JsonPropertyName("relative_path")] string RelativePath,
+    [property: JsonPropertyName("size_bytes")] long SizeBytes,
+    [property: JsonPropertyName("sha256")] string Sha256);
+
+/// <summary>
+/// Local-only complete folder file manifest persisted alongside TrialHistoryRecord.
+/// Omitted in Beta.5 records (null) so legacy records remain untouched and cleanly detected.
+/// NEVER included in exported TrialSessionReport JSON.
+/// </summary>
+public sealed record TrialLocalFolderManifest(
+    [property: JsonPropertyName("manifest_schema_version")] int ManifestSchemaVersion,
+    [property: JsonPropertyName("is_complete")] bool IsComplete,
+    [property: JsonPropertyName("files")] IReadOnlyList<TrialStagedFileEntry> Files)
+{
+    public const int CurrentManifestSchemaVersion = 1;
+}
+
+public enum TrialFolderDiffKind
+{
+    Modified,
+    Added,
+    Removed
+}
+
+public sealed record TrialFolderDiffItem(
+    TrialFolderDiffKind Kind,
+    string RelativePath,
+    long? PreviousSizeBytes,
+    long? CurrentSizeBytes,
+    string? PreviousSha256,
+    string? CurrentSha256,
+    bool IsSelectedEntry = false)
+{
+    public string KindBadge => Kind switch
+    {
+        TrialFolderDiffKind.Modified => "内容变化",
+        TrialFolderDiffKind.Added => "新增",
+        TrialFolderDiffKind.Removed => "已移除",
+        _ => "变化"
+    };
+
+    public string DetailSummary => Kind switch
+    {
+        TrialFolderDiffKind.Modified =>
+            $"原 {FormatSize(PreviousSizeBytes)}（{ShortHash(PreviousSha256)}）→ 现 {FormatSize(CurrentSizeBytes)}（{ShortHash(CurrentSha256)}）"
+            + (IsSelectedEntry ? " · 入口文件" : ""),
+        TrialFolderDiffKind.Added =>
+            $"新增文件 · {FormatSize(CurrentSizeBytes)}（{ShortHash(CurrentSha256)}）"
+            + (IsSelectedEntry ? " · 入口文件" : ""),
+        TrialFolderDiffKind.Removed =>
+            $"已移除 · 原 {FormatSize(PreviousSizeBytes)}（{ShortHash(PreviousSha256)}）"
+            + (IsSelectedEntry ? " · 原入口文件" : ""),
+        _ => ""
+    };
+
+    private static string FormatSize(long? bytes) =>
+        bytes is long b ? WindowsSandboxTrialService.FormatByteSize(b) : "未知大小";
+
+    private static string ShortHash(string? sha) =>
+        !string.IsNullOrWhiteSpace(sha) && sha.Length >= 10 ? sha[..10] + "…" : "未记录";
+}
+
+public enum TrialFolderComparisonStatus
+{
+    None,
+    Preparing,
+    Unchanged,
+    Changed,
+    LegacyEntryOnly,
+    IncompleteManifest,
+    Cancelled,
+    Failed
+}
+
+public sealed record TrialFolderComparisonResult(
+    TrialFolderComparisonStatus Status,
+    string Headline,
+    string Detail,
+    int ModifiedCount,
+    int AddedCount,
+    int RemovedCount,
+    int TotalCurrentFiles,
+    long TotalCurrentBytes,
+    bool EntryChanged,
+    bool EntryRemoved,
+    IReadOnlyList<TrialFolderDiffItem> Items)
+{
+    public bool IsWarning => Status is TrialFolderComparisonStatus.Changed
+        or TrialFolderComparisonStatus.IncompleteManifest
+        or TrialFolderComparisonStatus.Cancelled
+        or TrialFolderComparisonStatus.Failed
+        || (Status == TrialFolderComparisonStatus.LegacyEntryOnly && (EntryChanged || EntryRemoved));
+
+    public bool HasDiffItems => Items.Count > 0;
+
+    public string ExpanderHeaderText => Items.Count > 0
+        ? $"查看变化文件明细（共 {Items.Count:N0} 项相对路径）"
+        : "";
+}
+
+public static class TrialFolderDiffEngine
+{
+    public static bool IsValidSha256Hex(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length != 64) return false;
+        foreach (var ch in value)
+        {
+            var isHex = (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F');
+            if (!isHex) return false;
+        }
+        return true;
+    }
+
+    public static bool TryValidateCompleteManifest(
+        TrialLocalFolderManifest? manifest,
+        TrialFolderScopeReport? expectedScope,
+        out Dictionary<string, TrialStagedFileEntry> map,
+        out string reason)
+    {
+        map = new Dictionary<string, TrialStagedFileEntry>(StringComparer.OrdinalIgnoreCase);
+        reason = "";
+        if (manifest is null)
+        {
+            reason = "missing_manifest";
+            return false;
+        }
+        if (manifest.ManifestSchemaVersion != TrialLocalFolderManifest.CurrentManifestSchemaVersion || !manifest.IsComplete)
+        {
+            reason = "manifest_marked_incomplete";
+            return false;
+        }
+        if (manifest.Files is null)
+        {
+            reason = "manifest_files_null";
+            return false;
+        }
+        if (expectedScope is not null && manifest.Files.Count != expectedScope.FileCount)
+        {
+            reason = $"manifest_count_mismatch({manifest.Files.Count}!={expectedScope.FileCount})";
+            return false;
+        }
+
+        foreach (var entry in manifest.Files)
+        {
+            if (entry is null || string.IsNullOrWhiteSpace(entry.RelativePath) || entry.SizeBytes < 0 || !IsValidSha256Hex(entry.Sha256))
+            {
+                reason = "manifest_entry_invalid";
+                return false;
+            }
+            var norm = NormalizeRelativePath(entry.RelativePath);
+            if (!map.TryAdd(norm, entry with { RelativePath = norm }))
+            {
+                reason = "manifest_duplicate_path";
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static bool ManifestsEqual(
+        IReadOnlyList<TrialStagedFileEntry>? first,
+        IReadOnlyList<TrialStagedFileEntry>? second)
+    {
+        if (first is null || second is null || first.Count != second.Count) return false;
+        var map = new Dictionary<string, TrialStagedFileEntry>(first.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var item in first)
+        {
+            var key = NormalizeRelativePath(item.RelativePath);
+            if (!map.TryAdd(key, item)) return false;
+        }
+        foreach (var item in second)
+        {
+            var key = NormalizeRelativePath(item.RelativePath);
+            if (!map.TryGetValue(key, out var other)) return false;
+            if (other.SizeBytes != item.SizeBytes
+                || !string.Equals(other.Sha256, item.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static TrialFolderComparisonResult Compare(
+        TrialHistoryRecord previous,
+        IReadOnlyList<TrialStagedFileEntry>? currentFiles,
+        string? selectedEntryRelPath,
+        bool currentSnapshotComplete)
+    {
+        ArgumentNullException.ThrowIfNull(previous);
+        var normalizedEntry = string.IsNullOrWhiteSpace(selectedEntryRelPath)
+            ? NormalizeRelativePath(previous.Report.EntryRelativePath)
+            : NormalizeRelativePath(selectedEntryRelPath);
+
+        if (!currentSnapshotComplete || currentFiles is null)
+        {
+            return new TrialFolderComparisonResult(
+                TrialFolderComparisonStatus.Failed,
+                "文件夹变化对照未完成",
+                "当前文件夹的快照与哈希核对尚未完成，无法确认文件内容是否与上次一致。",
+                0, 0, 0,
+                currentFiles?.Count ?? 0,
+                currentFiles?.Sum(f => f.SizeBytes) ?? 0,
+                EntryChanged: false,
+                EntryRemoved: false,
+                Items: []);
+        }
+
+        var currentMap = new Dictionary<string, TrialStagedFileEntry>(currentFiles.Count, StringComparer.OrdinalIgnoreCase);
+        long currentTotalBytes = 0;
+        foreach (var f in currentFiles)
+        {
+            if (f is null || string.IsNullOrWhiteSpace(f.RelativePath) || !IsValidSha256Hex(f.Sha256))
+            {
+                return new TrialFolderComparisonResult(
+                    TrialFolderComparisonStatus.Failed,
+                    "文件夹变化对照未完整完成",
+                    "当前快照中有文件未能完成哈希校验，因此不能确认文件内容与上次一致。",
+                    0, 0, 0, currentFiles.Count, currentTotalBytes, false, false, []);
+            }
+            var norm = NormalizeRelativePath(f.RelativePath);
+            currentMap[norm] = f with { RelativePath = norm };
+            currentTotalBytes += f.SizeBytes;
+        }
+
+        // Check current entry status
+        var hasCurrentEntry = currentMap.TryGetValue(normalizedEntry, out var currentEntryFile);
+        var hasPreviousEntrySha = previous.Report.EntrySha256Recorded && IsValidSha256Hex(previous.Report.EntrySha256);
+        var entryChangedByHash = hasCurrentEntry && hasPreviousEntrySha
+            && !string.Equals(currentEntryFile!.Sha256, previous.Report.EntrySha256, StringComparison.OrdinalIgnoreCase);
+        var entryRemoved = !hasCurrentEntry;
+
+        // 1. Beta.5 legacy record (no folder manifest at all): preserve legacy record untouched & explain cleanly!
+        if (previous.LocalFolderManifest is null)
+        {
+            var entryCheckSummary = BuildEntryCheckSummary(previous.Report, normalizedEntry, currentEntryFile, entryChangedByHash, entryRemoved);
+            return new TrialFolderComparisonResult(
+                TrialFolderComparisonStatus.LegacyEntryOnly,
+                "上次仅记录了入口文件，可核对入口；完成本次试用后可比较整个文件夹。",
+                entryCheckSummary,
+                ModifiedCount: entryChangedByHash ? 1 : 0,
+                AddedCount: 0,
+                RemovedCount: entryRemoved ? 1 : 0,
+                TotalCurrentFiles: currentMap.Count,
+                TotalCurrentBytes: currentTotalBytes,
+                EntryChanged: entryChangedByHash,
+                EntryRemoved: entryRemoved,
+                Items: []);
+        }
+
+        // 2. Incomplete / corrupted historical manifest: honestly report up to what can be confirmed!
+        if (!TryValidateCompleteManifest(previous.LocalFolderManifest, previous.Report.FolderScope, out var previousMap, out _))
+        {
+            var entryCheckSummary = BuildEntryCheckSummary(previous.Report, normalizedEntry, currentEntryFile, entryChangedByHash, entryRemoved);
+            return new TrialFolderComparisonResult(
+                TrialFolderComparisonStatus.IncompleteManifest,
+                "上次记录的文件夹清单不完整，仅能核对入口文件，无法确认整个文件夹是否完全一致。",
+                $"{entryCheckSummary} 完成本次试用后将重新保存完整文件清单。",
+                ModifiedCount: entryChangedByHash ? 1 : 0,
+                AddedCount: 0,
+                RemovedCount: entryRemoved ? 1 : 0,
+                TotalCurrentFiles: currentMap.Count,
+                TotalCurrentBytes: currentTotalBytes,
+                EntryChanged: entryChangedByHash,
+                EntryRemoved: entryRemoved,
+                Items: []);
+        }
+
+        // 3. Full per-file SHA-256 comparison across every relative path!
+        var modified = new List<TrialFolderDiffItem>();
+        var added = new List<TrialFolderDiffItem>();
+        var removed = new List<TrialFolderDiffItem>();
+
+        foreach (var (relPath, cur) in currentMap)
+        {
+            var isEntry = string.Equals(relPath, normalizedEntry, StringComparison.OrdinalIgnoreCase);
+            if (previousMap.TryGetValue(relPath, out var prev))
+            {
+                if (!string.Equals(prev.Sha256, cur.Sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    modified.Add(new TrialFolderDiffItem(
+                        TrialFolderDiffKind.Modified,
+                        cur.RelativePath,
+                        prev.SizeBytes,
+                        cur.SizeBytes,
+                        prev.Sha256,
+                        cur.Sha256,
+                        IsSelectedEntry: isEntry));
+                }
+            }
+            else
+            {
+                added.Add(new TrialFolderDiffItem(
+                    TrialFolderDiffKind.Added,
+                    cur.RelativePath,
+                    null,
+                    cur.SizeBytes,
+                    null,
+                    cur.Sha256,
+                    IsSelectedEntry: isEntry));
+            }
+        }
+
+        var prevEntryRel = NormalizeRelativePath(previous.Report.EntryRelativePath);
+        foreach (var (relPath, prev) in previousMap)
+        {
+            if (!currentMap.ContainsKey(relPath))
+            {
+                var wasEntry = string.Equals(relPath, prevEntryRel, StringComparison.OrdinalIgnoreCase);
+                removed.Add(new TrialFolderDiffItem(
+                    TrialFolderDiffKind.Removed,
+                    prev.RelativePath,
+                    prev.SizeBytes,
+                    null,
+                    prev.Sha256,
+                    null,
+                    IsSelectedEntry: wasEntry));
+            }
+        }
+
+        modified.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.RelativePath, b.RelativePath));
+        added.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.RelativePath, b.RelativePath));
+        removed.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.RelativePath, b.RelativePath));
+
+        var allItems = new List<TrialFolderDiffItem>(modified.Count + added.Count + removed.Count);
+        allItems.AddRange(modified);
+        allItems.AddRange(added);
+        allItems.AddRange(removed);
+
+        var entryModifiedInDiff = modified.Any(m => string.Equals(m.RelativePath, normalizedEntry, StringComparison.OrdinalIgnoreCase));
+        var entryRemovedInDiff = !currentMap.ContainsKey(prevEntryRel);
+
+        if (allItems.Count == 0)
+        {
+            return new TrialFolderComparisonResult(
+                TrialFolderComparisonStatus.Unchanged,
+                "文件内容与上次一致",
+                $"已完整核对本次快照全部 {currentMap.Count:N0} 个文件（共 {WindowsSandboxTrialService.FormatByteSize(currentTotalBytes)}），所有相对路径与 SHA-256 均与上次一致。确认后点击“开始隔离试用”将直接复用本次已准备快照并生成新记录（不会自动启动沙箱）。",
+                0, 0, 0,
+                currentMap.Count,
+                currentTotalBytes,
+                EntryChanged: false,
+                EntryRemoved: false,
+                Items: []);
+        }
+
+        var summaryParts = new List<string>(3);
+        if (modified.Count > 0) summaryParts.Add($"{modified.Count} 个文件内容变化");
+        if (added.Count > 0) summaryParts.Add($"{added.Count} 个新增");
+        if (removed.Count > 0) summaryParts.Add($"{removed.Count} 个移除");
+        var headline = $"与上次相比，{string.Join("，", summaryParts)}";
+
+        string detail;
+        if (entryRemovedInDiff)
+        {
+            detail = $"原入口“{previous.Report.EntryRelativePath}”已不在当前目录中。点开下方明细可查看全部相对路径，请重新确认入口后再决定是否启动；原历史记录保持不变。";
+        }
+        else if (entryModifiedInDiff)
+        {
+            detail = $"入口“{normalizedEntry}”及目录内容已发生变化。点开下方明细可查看全部相对路径，确认后点击“开始隔离试用”将使用当前快照并生成新记录，原历史记录保持不变。";
+        }
+        else
+        {
+            detail = $"入口“{normalizedEntry}”本身未变化，但目录内其他文件已变化。点开下方明细可查看具体相对路径，确认后点击“开始隔离试用”将使用当前快照并生成新记录，原历史记录保持不变。";
+        }
+
+        return new TrialFolderComparisonResult(
+            TrialFolderComparisonStatus.Changed,
+            headline,
+            detail,
+            modified.Count,
+            added.Count,
+            removed.Count,
+            currentMap.Count,
+            currentTotalBytes,
+            EntryChanged: entryModifiedInDiff,
+            EntryRemoved: entryRemovedInDiff,
+            Items: allItems);
+    }
+
+    private static string BuildEntryCheckSummary(
+        TrialSessionReport prevReport,
+        string normalizedEntry,
+        TrialStagedFileEntry? currentEntryFile,
+        bool entryChanged,
+        bool entryRemoved)
+    {
+        if (entryRemoved)
+            return $"当前已确认：原入口“{prevReport.EntryRelativePath}”已不存在，请在下方重新选择入口后再启动（原历史记录保持不变）。";
+        if (!prevReport.EntrySha256Recorded || string.IsNullOrWhiteSpace(prevReport.EntrySha256))
+            return $"当前已确认：目录已重新准备快照并找到入口“{normalizedEntry}”（原历史未记录入口 SHA-256，原历史记录保持不变）。";
+        if (entryChanged && currentEntryFile is not null)
+        {
+            var currShort = currentEntryFile.Sha256.Length >= 12 ? currentEntryFile.Sha256[..12] + "…" : currentEntryFile.Sha256;
+            return $"当前已核对入口“{normalizedEntry}”：文件已变化（历史：{prevReport.DisplayEntryShortSha256}，当前：{currShort}）。";
+        }
+        return $"当前已核对入口“{normalizedEntry}”：入口 SHA-256 与上次一致（其余文件尚无历史对照基线，原历史记录保持不变）。";
+    }
+
+    public static string NormalizeRelativePath(string path) =>
+        (path ?? "").Replace('/', '\\').Trim().TrimStart('\\');
+}
+
+/// <summary>
 /// Local-only hints persisted alongside the report in user app data to support "再次试用" replay
 /// and crash-recovery correlation. NEVER included in exported shareable JSON reports.
 /// </summary>
@@ -113,7 +521,8 @@ public sealed record TrialHistoryRecord(
     [property: JsonPropertyName("record_schema_version")] int RecordSchemaVersion,
     [property: JsonPropertyName("updated_at_utc")] DateTimeOffset UpdatedAtUtc,
     [property: JsonPropertyName("report")] TrialSessionReport Report,
-    [property: JsonPropertyName("local_hints")] TrialReplayHints LocalHints)
+    [property: JsonPropertyName("local_hints")] TrialReplayHints LocalHints,
+    [property: JsonPropertyName("local_folder_manifest")] TrialLocalFolderManifest? LocalFolderManifest = null)
 {
     public const int CurrentRecordSchemaVersion = 1;
 

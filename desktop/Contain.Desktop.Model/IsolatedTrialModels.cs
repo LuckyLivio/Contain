@@ -170,12 +170,42 @@ public sealed record TrialStagingProgress(
     long TotalBytes,
     string CurrentRelativePath,
     string? StagedEntrySha256 = null,
-    string? CreatedInstanceId = null)
+    string? CreatedInstanceId = null,
+    IReadOnlyList<TrialStagedFileEntry>? StagedManifestFiles = null)
 {
     public double Percent => TotalBytes > 0
         ? Math.Clamp(BytesCopied * 100.0 / TotalBytes, 0, 100)
         : TotalFiles > 0 ? Math.Clamp(FilesCopied * 100.0 / TotalFiles, 0, 100) : 0;
 }
+
+/// <summary>
+/// Source file metadata fingerprint captured alongside a prepared folder snapshot so Contain
+/// can verify freshness before reusing the prepared snapshot on explicit Start.
+/// </summary>
+public sealed record PreparedSourceFileMeta(
+    string RelativePath,
+    long SizeBytes,
+    long LastWriteTimeUtcTicks);
+
+/// <summary>
+/// A verified per-session folder snapshot already staged into Contain's temp staging directory
+/// during replay comparison so what the user reviews on the confirmation screen matches the
+/// exact snapshot launched into Windows Sandbox (unless the source changed mid-confirmation).
+/// </summary>
+public sealed record PreparedTrialSnapshot(
+    string SessionId,
+    string StagingRootPath,
+    string InputDirPath,
+    string SourceFolderPath,
+    string? EntryRelativePath,
+    int FileCount,
+    int DirectoryCount,
+    long TotalBytes,
+    string FormattedTotalSize,
+    string? EntrySha256,
+    IReadOnlyList<TrialStagedFileEntry> ManifestFiles,
+    IReadOnlyList<PreparedSourceFileMeta> SourceFingerprint,
+    DateTimeOffset PreparedAtUtc);
 
 /// <summary>
 /// Unified immutable launch specification for both single-file and portable-folder trials.
@@ -191,7 +221,8 @@ public sealed record TrialLaunchTarget(
     long TotalBytes,
     string FormattedTotalSize,
     int DirectoryCount = 0,
-    string? SessionId = null)
+    string? SessionId = null,
+    PreparedTrialSnapshot? PreparedSnapshot = null)
 {
     public static TrialLaunchTarget FromSingleExecutable(TrialExecutableInfo executable, string? sessionId = null)
     {
@@ -303,7 +334,8 @@ public sealed record SandboxStartResult(
     TrialInputKind InputKind = TrialInputKind.SingleFile,
     string EntryRelativePath = "",
     int StagedFileCount = 1,
-    string? EntrySha256 = null);
+    string? EntrySha256 = null,
+    IReadOnlyList<TrialStagedFileEntry>? StagedManifestFiles = null);
 
 public sealed record PendingTrialSessionRecord(
     int SchemaVersion,
@@ -418,6 +450,28 @@ public interface IIsolatedTrialService
     /// so the user can decide whether to enable Windows Sandbox and reboot later.
     /// </summary>
     void OpenWindowsFeatures();
+
+    /// <summary>
+    /// Prepares a full verified staging snapshot of a portable software folder, hashing every
+    /// copied file in a single streaming pass so replay folder diff shows exact staged content
+    /// and subsequent Start can reuse the snapshot without a second copy.
+    /// Automatically cleans partial staging on failure or cancellation.
+    /// </summary>
+    Task<PreparedTrialSnapshot> PrepareFolderSnapshotAsync(
+        string folderPath,
+        string? entryRelativePath,
+        IProgress<TrialStagingProgress>? progress = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Verifies that an already-prepared staging snapshot is still intact AND that the live
+    /// source folder has not changed since the snapshot was prepared (including equal-length
+    /// edits). Returns false if source changed or staging was disturbed so caller can re-stage
+    /// and ask the user to re-confirm.
+    /// </summary>
+    Task<bool> IsPreparedSnapshotFreshAsync(
+        PreparedTrialSnapshot snapshot,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Stages the single EXE or full verified folder snapshot into a per-session host staging directory

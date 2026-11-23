@@ -1239,11 +1239,384 @@ internal static class IsolatedTrialChecks
             True(!exportedJson.Contains("SecretHostUser", StringComparison.OrdinalIgnoreCase), "exported JSON omits host staging username");
             True(!exportedJson.Contains("wsb.exe", StringComparison.OrdinalIgnoreCase), "exported JSON omits raw diagnostic commands");
             True(!exportedJson.Contains("local_hints", StringComparison.OrdinalIgnoreCase), "exported JSON omits local replay hints");
+            True(!exportedJson.Contains("local_folder_manifest", StringComparison.OrdinalIgnoreCase), "exported JSON omits local folder manifest");
             if (!string.IsNullOrWhiteSpace(Environment.UserName) && Environment.UserName.Length >= 3)
             {
                 True(!exportedJson.Contains(Environment.UserName, StringComparison.OrdinalIgnoreCase),
                     "exported JSON omits current Windows username");
             }
+        });
+
+        await Check("Beta.6 folder staging hashes every file in one pass, keeps manifest local-only, and detects unchanged vs equal-length non-entry change", async () =>
+        {
+            using var temp = new TempDir();
+            var stagingBase = temp.Sub("staging-b6-1");
+            var historyDir = Path.Combine(temp.Root, "history-b6-1");
+            var appRoot = temp.Sub("PortableDiffDemo");
+            Directory.CreateDirectory(Path.Combine(appRoot, "bin"));
+            Directory.CreateDirectory(Path.Combine(appRoot, "assets"));
+            var exePath = Path.Combine(appRoot, "bin", "App.exe");
+            var dllPath = Path.Combine(appRoot, "bin", "helper.dll");
+            var bannerPath = Path.Combine(appRoot, "assets", "banner.txt");
+            WriteMinimalPe(exePath, 0x8664, extraByte: 0x11);
+            File.WriteAllText(dllPath, "DLL-PAYLOAD-V1");
+            File.WriteAllText(bannerPath, "BANNER-V1-EXACT-LEN");
+
+            var realSvc = new WindowsSandboxTrialService(stagingBaseDirectory: stagingBase);
+            var store = new JsonTrialHistoryStore(historyDir);
+            var service = new ControlledTrialService
+            {
+                RealStagingService = realSvc,
+                TargetStartFactory = async (target, progress, ct) =>
+                {
+                    if (target.PreparedSnapshot is PreparedTrialSnapshot prep)
+                    {
+                        return new SandboxStartResult(prep.SessionId, InstanceA, prep.StagingRootPath, prep.InputDirPath, 6001, DateTimeOffset.UtcNow, target.Kind, target.EntryRelativePath, prep.FileCount, prep.EntrySha256, prep.ManifestFiles);
+                    }
+                    var sid = target.SessionId ?? "b6test000001";
+                    var stgRoot = Path.Combine(stagingBase, sid);
+                    var inDir = Path.Combine(stgRoot, "input");
+                    var summary = await realSvc.StageInputSnapshotAsync(target, inDir, progress, ct);
+                    return new SandboxStartResult(sid, InstanceA, stgRoot, inDir, 6001, DateTimeOffset.UtcNow, target.Kind, summary.EntryRelativePath, summary.FileCount, summary.EntrySha256, summary.ManifestFiles);
+                }
+            };
+
+            using var vm = new IsolatedTrialViewModel(service, pollInterval: TimeSpan.FromHours(1), historyStore: store);
+            await vm.RefreshCapabilityAsync();
+            True(await vm.SelectFolderAsync(appRoot), "scanned folder");
+            True(await vm.StartTrialAsync(), "started first folder trial");
+            var firstId = vm.CurrentHistorySessionId;
+            True(await vm.EndTrialAsync(), "ended first trial");
+
+            var firstRec = store.LoadBySessionId(firstId)!;
+            True(firstRec.LocalFolderManifest is { IsComplete: true, Files.Count: 3 }, "saved complete per-file manifest locally");
+            var exported = JsonTrialHistoryStore.SerializeReportJson(firstRec.Report);
+            True(!exported.Contains("banner.txt", StringComparison.OrdinalIgnoreCase) && !exported.Contains("helper.dll", StringComparison.OrdinalIgnoreCase),
+                "default JSON export protects directory privacy by omitting full file manifest");
+
+            // 1. Replay unchanged folder -> "文件内容与上次一致" and Start REUSES prepared snapshot without re-copy!
+            var prepBefore = service.PrepareSnapshotCalls;
+            True(await vm.PrepareReplayFromHistoryAsync(firstRec), "replay prepared unchanged folder");
+            Equal(prepBefore + 1, service.PrepareSnapshotCalls, "prepared 1 snapshot");
+            Equal(TrialFolderComparisonStatus.Unchanged, vm.FolderComparison?.Status, "unchanged status");
+            Equal("文件内容与上次一致", vm.FolderComparisonHeadline, "exact unchanged headline");
+            True(!vm.HasFolderDiffItems && vm.HasPreparedSnapshot, "prepared snapshot ready for reuse");
+
+            var preparedSid = vm.PreparedSnapshotStagingPath;
+            True(Directory.Exists(preparedSid), "prepared staging exists on disk");
+            True(await vm.StartTrialAsync(), "start reuses prepared snapshot");
+            Equal(prepBefore + 1, service.PrepareSnapshotCalls, "ZERO second snapshot copy on unchanged Start!");
+            True(await vm.EndTrialAsync(), "ended reused run");
+
+            // 2. Equal-length modification ONLY to assets\banner.txt (same file count, same total bytes, same entry EXE!)
+            File.WriteAllText(bannerPath, "BANNER-V2-EXACT-LEN");
+            True(await vm.PrepareReplayFromHistoryAsync(firstRec), "replay prepared modified folder");
+            Equal(TrialFolderComparisonStatus.Changed, vm.FolderComparison?.Status, "changed status");
+            Equal("与上次相比，1 个文件内容变化", vm.FolderComparisonHeadline, "exact 1-modified headline");
+            Equal(1, vm.FolderDiffItems.Count, "strictly 1 diff item");
+            Equal(@"assets\banner.txt", vm.FolderDiffItems[0].RelativePath, "exact relative path reported");
+            Equal(TrialFolderDiffKind.Modified, vm.FolderDiffItems[0].Kind, "marked Modified");
+            True(!vm.FolderComparison!.EntryChanged && !vm.FolderComparison.EntryRemoved, "entry EXE itself unchanged");
+            await vm.CloseAsync();
+            True(!Directory.Exists(vm.PreparedSnapshotStagingPath) || string.IsNullOrEmpty(vm.PreparedSnapshotStagingPath), "CloseAsync released prepared snapshot");
+        });
+
+        await Check("Beta.6 folder diff handles added, removed, and same-name files in different subdirectories distinctly", async () =>
+        {
+            using var temp = new TempDir();
+            var stagingBase = temp.Sub("staging-b6-2");
+            var historyDir = Path.Combine(temp.Root, "history-b6-2");
+            var appRoot = temp.Sub("MultiDirApp");
+            Directory.CreateDirectory(Path.Combine(appRoot, "bin"));
+            Directory.CreateDirectory(Path.Combine(appRoot, "plugins"));
+            Directory.CreateDirectory(Path.Combine(appRoot, "docs"));
+            WriteMinimalPe(Path.Combine(appRoot, "bin", "Main.exe"), 0x8664, extraByte: 0x01);
+            File.WriteAllText(Path.Combine(appRoot, "bin", "shared.dll"), "SHARED-BIN-ORIGINAL");
+            File.WriteAllText(Path.Combine(appRoot, "plugins", "shared.dll"), "SHARED-PLUGIN-ORIGINAL");
+            File.WriteAllText(Path.Combine(appRoot, "docs", "legacy.txt"), "WILL-BE-REMOVED");
+
+            var realSvc = new WindowsSandboxTrialService(stagingBaseDirectory: stagingBase);
+            var store = new JsonTrialHistoryStore(historyDir);
+            var service = new ControlledTrialService
+            {
+                RealStagingService = realSvc,
+                TargetStartFactory = async (target, progress, ct) =>
+                {
+                    var sid = target.SessionId ?? "b6test000002";
+                    var stgRoot = Path.Combine(stagingBase, sid);
+                    var inDir = Path.Combine(stgRoot, "input");
+                    var summary = await realSvc.StageInputSnapshotAsync(target, inDir, progress, ct);
+                    return new SandboxStartResult(sid, InstanceA, stgRoot, inDir, 6002, DateTimeOffset.UtcNow, target.Kind, summary.EntryRelativePath, summary.FileCount, summary.EntrySha256, summary.ManifestFiles);
+                }
+            };
+
+            using var vm = new IsolatedTrialViewModel(service, pollInterval: TimeSpan.FromHours(1), historyStore: store);
+            await vm.RefreshCapabilityAsync();
+            True(await vm.SelectFolderAsync(appRoot), "scanned");
+            True(await vm.StartTrialAsync(), "started baseline");
+            var baseId = vm.CurrentHistorySessionId;
+            True(await vm.EndTrialAsync(), "ended baseline");
+            var baseRec = store.LoadBySessionId(baseId)!;
+
+            // Modify ONLY plugins\shared.dll (keep bin\shared.dll identical!), remove docs\legacy.txt, add 2 new files
+            File.WriteAllText(Path.Combine(appRoot, "plugins", "shared.dll"), "SHARED-PLUGIN-UPDATED!");
+            File.Delete(Path.Combine(appRoot, "docs", "legacy.txt"));
+            File.WriteAllText(Path.Combine(appRoot, "bin", "extra1.dat"), "NEW-1");
+            File.WriteAllText(Path.Combine(appRoot, "plugins", "extra2.dat"), "NEW-2");
+
+            True(await vm.PrepareReplayFromHistoryAsync(baseRec), "prepared complex diff");
+            Equal(TrialFolderComparisonStatus.Changed, vm.FolderComparison?.Status, "changed");
+            Equal("与上次相比，1 个文件内容变化，2 个新增，1 个移除", vm.FolderComparisonHeadline, "exact summary count");
+            Equal(4, vm.FolderDiffItems.Count, "4 diff entries");
+            True(vm.FolderDiffItems.Any(i => i.Kind == TrialFolderDiffKind.Modified && i.RelativePath == @"plugins\shared.dll"), "plugins\\shared.dll flagged Modified");
+            True(!vm.FolderDiffItems.Any(i => i.RelativePath == @"bin\shared.dll"), "unchanged bin\\shared.dll NOT falsely flagged");
+            True(vm.FolderDiffItems.Any(i => i.Kind == TrialFolderDiffKind.Added && i.RelativePath == @"bin\extra1.dat"), "bin\\extra1.dat flagged Added");
+            True(vm.FolderDiffItems.Any(i => i.Kind == TrialFolderDiffKind.Added && i.RelativePath == @"plugins\extra2.dat"), "plugins\\extra2.dat flagged Added");
+            True(vm.FolderDiffItems.Any(i => i.Kind == TrialFolderDiffKind.Removed && i.RelativePath == @"docs\legacy.txt"), "docs\\legacy.txt flagged Removed");
+            await vm.CloseAsync();
+        });
+
+        await Check("Beta.6 preserves Beta.5 legacy records untouched and refuses to claim consistent on incomplete manifest", async () =>
+        {
+            using var temp = new TempDir();
+            var stagingBase = temp.Sub("staging-b6-3");
+            var historyDir = Path.Combine(temp.Root, "history-b6-3");
+            var appRoot = temp.Sub("LegacyApp");
+            Directory.CreateDirectory(Path.Combine(appRoot, "bin"));
+            var exePath = Path.Combine(appRoot, "bin", "Legacy.exe");
+            WriteMinimalPe(exePath, 0x8664, extraByte: 0x2A);
+            File.WriteAllText(Path.Combine(appRoot, "readme.txt"), "hello");
+            var entryHash = await WindowsSandboxTrialService.ComputeFileSha256Async(exePath);
+
+            var store = new JsonTrialHistoryStore(historyDir);
+            var legacySessionId = "beta5legacy1";
+            var legacyReport = new TrialSessionReport(
+                1, TrialSessionReport.ProtocolName, legacySessionId,
+                DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(-1).AddMinutes(2),
+                "LegacyApp", "未提供", "folder", "软件文件夹", @"bin\Legacy.exe", "Legacy.exe",
+                "Windows x64 (PE32+)", 128, entryHash, true,
+                new TrialFolderScopeReport(2, 1, 133, "133 B"),
+                new TrialIsolationPolicyReport("Disable", "Disable", true, true),
+                "started_and_running", "已启动入口", "已启动", "ConfirmedEnded", "已确认结束",
+                "Cleaned", "已清理", "已确认结束", TrialSessionReport.DefaultEvidenceScopeNote, []);
+            var legacyRecord = new TrialHistoryRecord(1, DateTimeOffset.UtcNow.AddDays(-1), legacyReport, new TrialReplayHints(appRoot, exePath), LocalFolderManifest: null);
+            store.Save(legacyRecord);
+            var legacyFilePath = Path.Combine(historyDir, legacySessionId + ".json");
+            var legacyRawBefore = File.ReadAllText(legacyFilePath);
+
+            var realSvc = new WindowsSandboxTrialService(stagingBaseDirectory: stagingBase);
+            var service = new ControlledTrialService { RealStagingService = realSvc };
+            using var vm = new IsolatedTrialViewModel(service, pollInterval: TimeSpan.FromHours(1), historyStore: store);
+            await vm.RefreshCapabilityAsync();
+
+            True(await vm.PrepareReplayFromHistoryAsync(store.LoadBySessionId(legacySessionId)!), "Beta.5 legacy replay prepared");
+            Equal(TrialFolderComparisonStatus.LegacyEntryOnly, vm.FolderComparison?.Status, "classified as LegacyEntryOnly");
+            Equal("上次仅记录了入口文件，可核对入口；完成本次试用后可比较整个文件夹。", vm.FolderComparisonHeadline, "exact legacy message");
+            True(vm.FolderComparisonDetail.Contains("一致", StringComparison.Ordinal), "verifies entry hash matches");
+            Equal(legacyRawBefore, File.ReadAllText(legacyFilePath), "Beta.5 legacy history file untouched on disk");
+
+            // Incomplete manifest (marked IsComplete=false) must NEVER claim "文件内容与上次一致"
+            var incompleteRecord = legacyRecord with
+            {
+                LocalFolderManifest = new TrialLocalFolderManifest(1, IsComplete: false, Files: [new TrialStagedFileEntry(@"bin\Legacy.exe", 128, entryHash)])
+            };
+            True(await vm.PrepareReplayFromHistoryAsync(incompleteRecord), "incomplete manifest replay prepared");
+            Equal(TrialFolderComparisonStatus.IncompleteManifest, vm.FolderComparison?.Status, "classified as IncompleteManifest");
+            True(vm.FolderComparisonHeadline != "文件内容与上次一致", "never claims unchanged when manifest is incomplete");
+            await vm.CloseAsync();
+        });
+
+        await Check("Beta.6 detects mid-confirmation source modification on Start, refreshes diff without launching Sandbox, and launches refreshed snapshot on re-confirm", async () =>
+        {
+            using var temp = new TempDir();
+            var stagingBase = temp.Sub("staging-b6-4");
+            var historyDir = Path.Combine(temp.Root, "history-b6-4");
+            var appRoot = temp.Sub("MidEditApp");
+            Directory.CreateDirectory(Path.Combine(appRoot, "bin"));
+            Directory.CreateDirectory(Path.Combine(appRoot, "assets"));
+            var exePath = Path.Combine(appRoot, "bin", "App.exe");
+            var bannerPath = Path.Combine(appRoot, "assets", "banner.txt");
+            WriteMinimalPe(exePath, 0x8664, extraByte: 0x3B);
+            File.WriteAllText(bannerPath, "ORIGINAL-TEXT-123");
+
+            var realSvc = new WindowsSandboxTrialService(stagingBaseDirectory: stagingBase);
+            var store = new JsonTrialHistoryStore(historyDir);
+            string? launchedBannerContent = null;
+            var service = new ControlledTrialService
+            {
+                RealStagingService = realSvc,
+                TargetStartFactory = async (target, progress, ct) =>
+                {
+                    if (target.PreparedSnapshot is PreparedTrialSnapshot prep)
+                    {
+                        launchedBannerContent = File.ReadAllText(Path.Combine(prep.InputDirPath, "assets", "banner.txt"));
+                        return new SandboxStartResult(prep.SessionId, InstanceA, prep.StagingRootPath, prep.InputDirPath, 6004, DateTimeOffset.UtcNow, target.Kind, target.EntryRelativePath, prep.FileCount, prep.EntrySha256, prep.ManifestFiles);
+                    }
+                    var sid = target.SessionId ?? "b6test000004";
+                    var stgRoot = Path.Combine(stagingBase, sid);
+                    var inDir = Path.Combine(stgRoot, "input");
+                    var summary = await realSvc.StageInputSnapshotAsync(target, inDir, progress, ct);
+                    return new SandboxStartResult(sid, InstanceA, stgRoot, inDir, 6004, DateTimeOffset.UtcNow, target.Kind, summary.EntryRelativePath, summary.FileCount, summary.EntrySha256, summary.ManifestFiles);
+                }
+            };
+
+            using var vm = new IsolatedTrialViewModel(service, pollInterval: TimeSpan.FromHours(1), historyStore: store);
+            await vm.RefreshCapabilityAsync();
+            True(await vm.SelectFolderAsync(appRoot), "scanned");
+            True(await vm.StartTrialAsync(), "started baseline");
+            var baseId = vm.CurrentHistorySessionId;
+            True(await vm.EndTrialAsync(), "ended baseline");
+            var baseRec = store.LoadBySessionId(baseId)!;
+
+            // Open replay comparison -> shows unchanged with prepared snapshot S1
+            True(await vm.PrepareReplayFromHistoryAsync(baseRec), "prepared S1");
+            Equal(TrialFolderComparisonStatus.Unchanged, vm.FolderComparison?.Status, "S1 shows unchanged");
+            var s1StagingPath = vm.PreparedSnapshotStagingPath;
+            True(Directory.Exists(s1StagingPath), "S1 staging exists");
+
+            // Modify source file AFTER comparison opened, BEFORE clicking Start!
+            File.WriteAllText(bannerPath, "MID-EDIT-TEXT-456");
+            var startCallsBefore = service.StartCalls;
+
+            // First Start click detects change -> releases S1, prepares S2, refreshes diff, DOES NOT launch Sandbox!
+            True(!await vm.StartTrialAsync(), "first Start returns false and asks user to re-confirm");
+            Equal(startCallsBefore, service.StartCalls, "Sandbox NOT started on mid-confirmation change");
+            True(!Directory.Exists(s1StagingPath), "stale snapshot S1 was cleaned up on disk");
+            True(vm.HasMidConfirmRefreshBanner && vm.FolderDiffExpanded, "mid-confirmation refresh banner shown & diff auto-expanded");
+            Equal("与上次相比，1 个文件内容变化", vm.FolderComparisonHeadline, "refreshed diff accurately detects assets\\banner.txt");
+            Equal(@"assets\banner.txt", vm.FolderDiffItems[0].RelativePath, "refreshed diff lists assets\\banner.txt");
+            Equal(1, store.LoadAll().Count, "no phantom history record created for unconfirmed refresh");
+
+            // Second Start click confirms refreshed snapshot S2 -> launches S2 directly!
+            True(await vm.StartTrialAsync(), "second Start confirms and launches refreshed S2");
+            Equal(startCallsBefore + 1, service.StartCalls, "Sandbox launched once on re-confirmation");
+            Equal("MID-EDIT-TEXT-456", launchedBannerContent ?? "", "launched snapshot contains exact confirmed MID-EDIT content!");
+            True(await vm.EndTrialAsync(), "ended cleanly");
+        });
+
+        await Check("Beta.6 cancels replay prep cleanly and releases prepared staging on cancel, record switch, and window close", async () =>
+        {
+            using var temp = new TempDir();
+            var stagingBase = temp.Sub("staging-b6-5");
+            var historyDir = Path.Combine(temp.Root, "history-b6-5");
+            var dir1 = temp.Sub("AppOne");
+            var dir2 = temp.Sub("AppTwo");
+            WriteMinimalPe(Path.Combine(dir1, "One.exe"), 0x8664, extraByte: 0x01);
+            WriteMinimalPe(Path.Combine(dir2, "Two.exe"), 0x8664, extraByte: 0x02);
+
+            var realSvc = new WindowsSandboxTrialService(stagingBaseDirectory: stagingBase);
+            var store = new JsonTrialHistoryStore(historyDir);
+            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var holdNextPrep = false;
+
+            var service = new ControlledTrialService
+            {
+                RealStagingService = realSvc,
+                PrepareSnapshotFactory = async (folder, entry, prog, ct) =>
+                {
+                    if (holdNextPrep)
+                    {
+                        gate.TrySetResult();
+                        await Task.Delay(Timeout.Infinite, ct);
+                    }
+                    return await realSvc.PrepareFolderSnapshotAsync(folder, entry, prog, ct);
+                },
+                TargetStartFactory = async (target, progress, ct) =>
+                {
+                    var sid = target.SessionId ?? "b6test000005";
+                    var stgRoot = Path.Combine(stagingBase, sid);
+                    var inDir = Path.Combine(stgRoot, "input");
+                    var summary = await realSvc.StageInputSnapshotAsync(target, inDir, progress, ct);
+                    return new SandboxStartResult(sid, InstanceA, stgRoot, inDir, 6005, DateTimeOffset.UtcNow, target.Kind, summary.EntryRelativePath, summary.FileCount, summary.EntrySha256, summary.ManifestFiles);
+                }
+            };
+
+            using var vm = new IsolatedTrialViewModel(service, pollInterval: TimeSpan.FromHours(1), historyStore: store);
+            await vm.RefreshCapabilityAsync();
+            True(await vm.SelectFolderAsync(dir1), "scanned dir1");
+            True(await vm.StartTrialAsync(), "started dir1");
+            var id1 = vm.CurrentHistorySessionId;
+            True(await vm.EndTrialAsync(), "ended dir1");
+
+            True(await vm.SelectFolderAsync(dir2), "scanned dir2");
+            True(await vm.StartTrialAsync(), "started dir2");
+            var id2 = vm.CurrentHistorySessionId;
+            True(await vm.EndTrialAsync(), "ended dir2");
+
+            var rec1 = store.LoadBySessionId(id1)!;
+            var rec2 = store.LoadBySessionId(id2)!;
+
+            // 1. Cancel in-flight replay prep -> Cancelled status, UI remained operable, 0 leftover staging
+            holdNextPrep = true;
+            var cancelledTask = vm.PrepareReplayFromHistoryAsync(rec1);
+            await gate.Task;
+            True(vm.IsPreparingReplayComparison && vm.CanCancelReplayPreparation && vm.CanSelectFolder && !vm.CanStartTrial,
+                "during prep: visible progress, cancel enabled, UI operable, Start blocked");
+            vm.CancelReplayPreparation();
+            True(!await cancelledTask, "cancelled prep returns false");
+            Equal(TrialFolderComparisonStatus.Cancelled, vm.FolderComparison?.Status, "reports Cancelled honestly");
+
+            // 2. Switching to another history record releases previous prepared snapshot immediately!
+            holdNextPrep = false;
+            True(await vm.PrepareReplayFromHistoryAsync(rec1), "prepared rec1");
+            var prep1Path = vm.PreparedSnapshotStagingPath;
+            True(Directory.Exists(prep1Path), "rec1 staging exists");
+
+            True(await vm.PrepareReplayFromHistoryAsync(rec2), "switched to rec2");
+            var prep2Path = vm.PreparedSnapshotStagingPath;
+            True(!Directory.Exists(prep1Path), "switching record cleaned rec1 staging immediately");
+            True(Directory.Exists(prep2Path), "rec2 staging exists");
+
+            // 3. Closing window cleans rec2 prepared snapshot!
+            await vm.CloseAsync();
+            True(!Directory.Exists(prep2Path), "CloseAsync cleaned rec2 prepared staging");
+            Equal(0, Directory.GetDirectories(stagingBase).Length, "0 leftover staging directories under stagingBase");
+        });
+
+        await Check("Beta.6 replay comparison reports read failure honestly, cleans partial staging, and never claims consistent", async () =>
+        {
+            using var temp = new TempDir();
+            var stagingBase = temp.Sub("staging-b6-6");
+            var historyDir = Path.Combine(temp.Root, "history-b6-6");
+            var appRoot = temp.Sub("ReadFailApp");
+            WriteMinimalPe(Path.Combine(appRoot, "App.exe"), 0x8664, extraByte: 0x19);
+            var lockedFile = Path.Combine(appRoot, "config.dat");
+            File.WriteAllText(lockedFile, "initial-config");
+
+            var realSvc = new WindowsSandboxTrialService(stagingBaseDirectory: stagingBase);
+            var store = new JsonTrialHistoryStore(historyDir);
+            var service = new ControlledTrialService
+            {
+                RealStagingService = realSvc,
+                TargetStartFactory = async (target, progress, ct) =>
+                {
+                    var sid = target.SessionId ?? "b6test000006";
+                    var stgRoot = Path.Combine(stagingBase, sid);
+                    var inDir = Path.Combine(stgRoot, "input");
+                    var summary = await realSvc.StageInputSnapshotAsync(target, inDir, progress, ct);
+                    return new SandboxStartResult(sid, InstanceA, stgRoot, inDir, 6006, DateTimeOffset.UtcNow, target.Kind, summary.EntryRelativePath, summary.FileCount, summary.EntrySha256, summary.ManifestFiles);
+                }
+            };
+
+            using var vm = new IsolatedTrialViewModel(service, pollInterval: TimeSpan.FromHours(1), historyStore: store);
+            await vm.RefreshCapabilityAsync();
+            True(await vm.SelectFolderAsync(appRoot), "scanned");
+            True(await vm.StartTrialAsync(), "started baseline");
+            var baseId = vm.CurrentHistorySessionId;
+            True(await vm.EndTrialAsync(), "ended baseline");
+            var baseRec = store.LoadBySessionId(baseId)!;
+
+            // Lock config.dat exclusively so staging copy fails cleanly during replay prep
+            using (var exclusive = new FileStream(lockedFile, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                True(!await vm.PrepareReplayFromHistoryAsync(baseRec), "locked file fails replay prep cleanly");
+                Equal(TrialFolderComparisonStatus.Failed, vm.FolderComparison?.Status, "reports Failed status");
+                True(vm.FolderComparisonHeadline != "文件内容与上次一致" && vm.FolderComparisonDetail.Contains("config.dat", StringComparison.OrdinalIgnoreCase),
+                    "honestly identifies failed file and never claims consistent");
+                True(!vm.HasPreparedSnapshot, "no prepared snapshot retained on failure");
+                Equal(0, Directory.GetDirectories(stagingBase).Length, "partial staging cleaned up after read failure");
+            }
+            await vm.CloseAsync();
         });
 
         return passed;
@@ -1345,7 +1718,10 @@ internal static class IsolatedTrialChecks
             "Windows 11 Pro (Professional)");
 
         public PendingSessionLoadResult PendingLoadResult { get; set; } = new(PendingSessionLoadStatus.None);
+        public WindowsSandboxTrialService? RealStagingService { get; set; }
         public Func<string, IProgress<TrialFolderScanProgress>?, CancellationToken, Task<TrialFolderInfo>>? ScanFolderFactory { get; set; }
+        public Func<string, string?, IProgress<TrialStagingProgress>?, CancellationToken, Task<PreparedTrialSnapshot>>? PrepareSnapshotFactory { get; set; }
+        public Func<PreparedTrialSnapshot, CancellationToken, Task<bool>>? FreshnessFactory { get; set; }
         public Func<string, CancellationToken, Task<string>>? HashFactory { get; set; }
         public Func<TrialExecutableInfo, CancellationToken, Task<SandboxStartResult>>? StartFactory { get; set; }
         public Func<TrialLaunchTarget, IProgress<TrialStagingProgress>?, CancellationToken, Task<SandboxStartResult>>? TargetStartFactory { get; set; }
@@ -1357,6 +1733,7 @@ internal static class IsolatedTrialChecks
         public Func<string?, CancellationToken, Task<SandboxStopResult>>? CleanupOnlyFactory { get; set; }
 
         public int StartCalls { get; private set; }
+        public int PrepareSnapshotCalls { get; private set; }
         public int OpenWindowsFeaturesCalls { get; private set; }
         public int ClearPendingCalls { get; private set; }
         public List<string> StoppedInstances { get; } = [];
@@ -1375,6 +1752,52 @@ internal static class IsolatedTrialChecks
             ScanFolderFactory is not null
                 ? ScanFolderFactory(folderPath, progress, cancellationToken)
                 : WindowsSandboxTrialService.ScanPortableFolderAsync(folderPath, null, progress, cancellationToken);
+
+        public async Task<PreparedTrialSnapshot> PrepareFolderSnapshotAsync(
+            string folderPath,
+            string? entryRelativePath,
+            IProgress<TrialStagingProgress>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            PrepareSnapshotCalls++;
+            if (PrepareSnapshotFactory is not null)
+                return await PrepareSnapshotFactory(folderPath, entryRelativePath, progress, cancellationToken);
+            if (RealStagingService is not null)
+                return await RealStagingService.PrepareFolderSnapshotAsync(folderPath, entryRelativePath, progress, cancellationToken);
+
+            // Synthetic in-place hash snapshot for unit tests that do not configure a RealStagingService
+            var fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folderPath));
+            var manifest = new List<TrialStagedFileEntry>();
+            var fingerprint = new List<PreparedSourceFileMeta>();
+            long totalBytes = 0;
+            string? entrySha = null;
+            var normEntry = string.IsNullOrWhiteSpace(entryRelativePath) ? "" : TrialFolderDiffEngine.NormalizeRelativePath(entryRelativePath);
+            foreach (var f in Directory.EnumerateFiles(fullRoot, "*", SearchOption.AllDirectories))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var rel = TrialFolderDiffEngine.NormalizeRelativePath(Path.GetRelativePath(fullRoot, f));
+                var fi = new FileInfo(f);
+                var sha = await WindowsSandboxTrialService.ComputeFileSha256Async(f, cancellationToken);
+                manifest.Add(new TrialStagedFileEntry(rel, fi.Length, sha));
+                fingerprint.Add(new PreparedSourceFileMeta(rel, fi.Length, fi.LastWriteTimeUtc.Ticks));
+                totalBytes += fi.Length;
+                if (!string.IsNullOrEmpty(normEntry) && string.Equals(rel, normEntry, StringComparison.OrdinalIgnoreCase))
+                    entrySha = sha;
+            }
+            var sid = Guid.NewGuid().ToString("N")[..12];
+            return new PreparedTrialSnapshot(sid, @"C:\temp\" + sid, @"C:\temp\" + sid + @"\input", fullRoot, entryRelativePath, manifest.Count, 0, totalBytes, WindowsSandboxTrialService.FormatByteSize(totalBytes), entrySha, manifest, fingerprint, DateTimeOffset.UtcNow);
+        }
+
+        public Task<bool> IsPreparedSnapshotFreshAsync(
+            PreparedTrialSnapshot snapshot,
+            CancellationToken cancellationToken = default)
+        {
+            if (FreshnessFactory is not null)
+                return FreshnessFactory(snapshot, cancellationToken);
+            if (RealStagingService is not null)
+                return RealStagingService.IsPreparedSnapshotFreshAsync(snapshot, cancellationToken);
+            return Task.FromResult(true);
+        }
 
         public Task<string> ComputeSha256Async(string executablePath, CancellationToken cancellationToken = default) =>
             HashFactory is not null
@@ -1422,12 +1845,16 @@ internal static class IsolatedTrialChecks
             if (!string.IsNullOrEmpty(instanceId)) StoppedInstances.Add(instanceId);
             if (!string.IsNullOrEmpty(stagingRootPath)) CleanedStagingPaths.Add(stagingRootPath);
             if (StopFactory is not null) return StopFactory(instanceId, stagingRootPath, cancellationToken);
+            if (RealStagingService is not null && !string.IsNullOrEmpty(stagingRootPath))
+                return RealStagingService.CleanupStagingOnlyAsync(stagingRootPath, cancellationToken);
             return Task.FromResult(new SandboxStopResult(SandboxInstanceState.ConfirmedEnded, TrialStagingState.Cleaned, "已确认本次沙箱实例结束，并已清理本次宿主暂存目录。"));
         }
 
         public Task<SandboxStopResult> CleanupStagingOnlyAsync(string? stagingRootPath, CancellationToken cancellationToken = default)
         {
             if (CleanupOnlyFactory is not null) return CleanupOnlyFactory(stagingRootPath, cancellationToken);
+            if (RealStagingService is not null && !string.IsNullOrEmpty(stagingRootPath))
+                return RealStagingService.CleanupStagingOnlyAsync(stagingRootPath, cancellationToken);
             return Task.FromResult(new SandboxStopResult(SandboxInstanceState.ConfirmedEnded, TrialStagingState.Cleaned, "已清理本次宿主暂存目录。"));
         }
 

@@ -3,7 +3,7 @@ namespace Contain.Viewer;
 /// <summary>The new desktop uses the exact accepted Beta.10 core and strict v3 protocol.</summary>
 public static class ProductVersion
 {
-    public const string Version = "0.6.0-beta.5";
+    public const string Version = "0.6.0-beta.6";
     public const string CoreVersion = "0.3.2-beta.10";
     public const string CoreSource = "b0d2510db34cdf6630d2d550b69ccdbfe6da3fd4";
     public static string Display => "Contain " + Version;

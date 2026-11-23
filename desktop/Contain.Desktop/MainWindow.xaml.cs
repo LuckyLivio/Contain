@@ -222,8 +222,9 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         var record = TrialHistory.SelectedRecord;
         if (record is null) return;
         ShowIsolatedTrial();
+        var capabilityTask = RunUiAsync(() => IsolatedTrial.EnsureCapabilityCheckedAsync());
         await RunUiAsync(() => IsolatedTrial.PrepareReplayFromHistoryAsync(record));
-        await RunUiAsync(() => IsolatedTrial.EnsureCapabilityCheckedAsync());
+        await capabilityTask;
     }
 
     public void ExportSelectedTrialReport()
@@ -420,6 +421,8 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     }
 
     public void CancelTrialFolderScan() => RunUiOperation(() => IsolatedTrial.CancelFolderScan());
+
+    public void CancelTrialReplayPreparation() => RunUiOperation(() => IsolatedTrial.CancelReplayPreparation());
 
     public void CancelTrialPreparation() => RunUiOperation(() => IsolatedTrial.CancelPreparation());
 

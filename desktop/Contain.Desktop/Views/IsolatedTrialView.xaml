@@ -194,7 +194,7 @@
             <!-- Unified target picker (Single EXE or Portable Software Folder) + Read-only inspection + Sandbox run -->
             <Border Style="{StaticResource Surface}">
                 <StackPanel>
-                    <!-- Replay-from-history confirmation notice (warns "文件已变化" or missing file/folder; never auto-starts) -->
+                    <!-- Replay-from-history confirmation notice (single-file or missing target) -->
                     <Border CornerRadius="8" Padding="12,10" Margin="0,0,0,14" BorderThickness="1"
                             Visibility="{Binding IsolatedTrial.HasReplayNotice, Converter={StaticResource BoolVisibility}}"
                             AutomationProperties.AutomationId="TrialReplayNoticeBanner">
@@ -222,6 +222,121 @@
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
+                    </Border>
+
+                    <!-- Beta.6 Replay folder snapshot preparation progress (visible, cancellable, non-blocking UI) -->
+                    <Border Background="#EEF5FB" BorderBrush="#9BBAD8" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,0,0,14"
+                            Visibility="{Binding IsolatedTrial.IsPreparingReplayComparison, Converter={StaticResource BoolVisibility}}"
+                            AutomationProperties.AutomationId="TrialReplayPrepPanel">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding IsolatedTrial.ReplayPrepProgressText}" Foreground="#1B466C" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" AutomationProperties.AutomationId="TrialReplayPrepProgressText" />
+                                <ui:Button Grid.Column="1" Content="取消准备" Appearance="Secondary" Padding="12,5" Margin="12,0,0,0" Click="OnCancelReplayPreparation" IsEnabled="{Binding IsolatedTrial.CanCancelReplayPreparation}" AutomationProperties.AutomationId="CancelReplayPrepButton" />
+                            </Grid>
+                            <ProgressBar Minimum="0" Maximum="100" Value="{Binding IsolatedTrial.ReplayPrepProgressPercent, Mode=OneWay}" IsIndeterminate="{Binding IsolatedTrial.IsReplayPrepProgressIndeterminate, Mode=OneWay}" Height="5" Margin="0,8,0,0" AutomationProperties.AutomationId="TrialReplayPrepProgressBar" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Beta.6 Folder replay comparison result & expandable per-file relative-path diff -->
+                    <Border CornerRadius="8" Padding="14,12" Margin="0,0,0,14" BorderThickness="1"
+                            Visibility="{Binding IsolatedTrial.HasFolderComparison, Converter={StaticResource BoolVisibility}}"
+                            AutomationProperties.AutomationId="TrialFolderComparisonCard">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="#EAF5F1" />
+                                <Setter Property="BorderBrush" Value="#8DC4B7" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsolatedTrial.IsFolderComparisonWarning}" Value="True">
+                                        <Setter Property="Background" Value="#FFF8EB" />
+                                        <Setter Property="BorderBrush" Value="#D99B26" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel>
+                            <!-- Mid-confirmation source edit alert -->
+                            <Border Background="#FDE8C8" BorderBrush="#D99B26" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,0,0,10"
+                                    Visibility="{Binding IsolatedTrial.HasMidConfirmRefreshBanner, Converter={StaticResource BoolVisibility}}"
+                                    AutomationProperties.AutomationId="TrialMidConfirmRefreshBanner">
+                                <TextBlock Text="{Binding IsolatedTrial.MidConfirmRefreshBanner}" Foreground="#7A4300" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="TrialMidConfirmRefreshText" />
+                            </Border>
+
+                            <TextBlock Text="与上次试用的文件夹变化对照" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedText}" Margin="0,0,0,4" />
+                            <TextBlock Text="{Binding IsolatedTrial.FolderComparisonHeadline}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="TrialFolderComparisonHeadline">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="#0E5A53" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsolatedTrial.IsFolderComparisonWarning}" Value="True">
+                                                <Setter Property="Foreground" Value="#8A4B00" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBlock Text="{Binding IsolatedTrial.FolderComparisonDetail}" Style="{StaticResource MutedText}" FontSize="13" Margin="0,4,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="TrialFolderComparisonDetail" />
+
+                            <!-- Expandable per-file relative-path list -->
+                            <Expander Header="{Binding IsolatedTrial.FolderDiffExpanderHeader}"
+                                      IsExpanded="{Binding IsolatedTrial.FolderDiffExpanded, Mode=TwoWay}"
+                                      Margin="0,10,0,0"
+                                      Visibility="{Binding IsolatedTrial.HasFolderDiffItems, Converter={StaticResource BoolVisibility}}"
+                                      AutomationProperties.AutomationId="TrialFolderDiffExpander">
+                                <Border Background="White" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,8,0,0">
+                                    <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                        <ItemsControl ItemsSource="{Binding IsolatedTrial.FolderDiffItems}" AutomationProperties.AutomationId="TrialFolderDiffList">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border BorderBrush="{StaticResource HairlineBrush}" BorderThickness="0,0,0,1" Padding="0,6">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="Auto" />
+                                                                <ColumnDefinition Width="*" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <Border CornerRadius="4" Padding="8,2" Margin="0,1,10,0" VerticalAlignment="Top">
+                                                                <Border.Style>
+                                                                    <Style TargetType="Border">
+                                                                        <Setter Property="Background" Value="#FFF0D6" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding Kind}" Value="{x:Static model:TrialFolderDiffKind.Added}">
+                                                                                <Setter Property="Background" Value="#E4F1ED" />
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding Kind}" Value="{x:Static model:TrialFolderDiffKind.Removed}">
+                                                                                <Setter Property="Background" Value="#FDE3DC" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Border.Style>
+                                                                <TextBlock Text="{Binding KindBadge}" FontSize="11" FontWeight="SemiBold">
+                                                                    <TextBlock.Style>
+                                                                        <Style TargetType="TextBlock">
+                                                                            <Setter Property="Foreground" Value="#8A4B00" />
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding Kind}" Value="{x:Static model:TrialFolderDiffKind.Added}">
+                                                                                    <Setter Property="Foreground" Value="#0E5A53" />
+                                                                                </DataTrigger>
+                                                                                <DataTrigger Binding="{Binding Kind}" Value="{x:Static model:TrialFolderDiffKind.Removed}">
+                                                                                    <Setter Property="Foreground" Value="#8F2D1E" />
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </TextBlock.Style>
+                                                                </TextBlock>
+                                                            </Border>
+                                                            <StackPanel Grid.Column="1">
+                                                                <TextBlock Text="{Binding RelativePath}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                                <TextBlock Text="{Binding DetailSummary}" Style="{StaticResource MutedText}" FontSize="12" Margin="0,2,0,0" TextWrapping="Wrap" />
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </Border>
+                            </Expander>
+                        </StackPanel>
                     </Border>
 
                     <Grid>

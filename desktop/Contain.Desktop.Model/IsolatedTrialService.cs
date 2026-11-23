@@ -1217,12 +1217,167 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         int DirectoryCount,
         long TotalBytes,
         string EntryRelativePath,
-        string? EntrySha256 = null);
+        string? EntrySha256 = null,
+        IReadOnlyList<TrialStagedFileEntry>? ManifestFiles = null,
+        IReadOnlyList<PreparedSourceFileMeta>? SourceFingerprint = null);
+
+    public async Task<PreparedTrialSnapshot> PrepareFolderSnapshotAsync(
+        string folderPath,
+        string? entryRelativePath,
+        IProgress<TrialStagingProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folderPath ?? ""));
+        var displayName = Path.GetFileName(fullRoot);
+        if (string.IsNullOrWhiteSpace(displayName)) displayName = fullRoot;
+
+        var sessionId = Guid.NewGuid().ToString("N")[..12];
+        var stagingRoot = Path.Combine(stagingBaseDirectory, sessionId);
+        var inputDir = Path.Combine(stagingRoot, "input");
+
+        try
+        {
+            Directory.CreateDirectory(inputDir);
+            var staged = await StageFolderSnapshotInternalAsync(
+                fullRoot,
+                displayName,
+                entryRelativePath,
+                inputDir,
+                progress,
+                copyStageLabel: "正在准备文件夹变化对照快照…",
+                completeStageLabel: "文件夹快照与校验已完成。",
+                requireEntry: !string.IsNullOrWhiteSpace(entryRelativePath),
+                cancellationToken).ConfigureAwait(false);
+
+            return new PreparedTrialSnapshot(
+                sessionId,
+                stagingRoot,
+                inputDir,
+                fullRoot,
+                string.IsNullOrWhiteSpace(entryRelativePath) ? null : staged.EntryRelativePath,
+                staged.FileCount,
+                staged.DirectoryCount,
+                staged.TotalBytes,
+                FormatByteSize(staged.TotalBytes),
+                staged.EntrySha256,
+                staged.ManifestFiles ?? [],
+                staged.SourceFingerprint ?? [],
+                DateTimeOffset.UtcNow);
+        }
+        catch
+        {
+            CleanupStagingDirectoryVerified(stagingRoot, out _);
+            throw;
+        }
+    }
+
+    public async Task<bool> IsPreparedSnapshotFreshAsync(
+        PreparedTrialSnapshot snapshot,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (!IsVerifiedSessionStagingPath(snapshot.StagingRootPath, stagingBaseDirectory, snapshot.SessionId))
+            return false;
+        if (!Directory.Exists(snapshot.InputDirPath))
+            return false;
+
+        if (!string.IsNullOrWhiteSpace(snapshot.EntryRelativePath))
+        {
+            var stagedEntry = Path.GetFullPath(Path.Combine(snapshot.InputDirPath, snapshot.EntryRelativePath));
+            if (!IsPathStrictlyUnder(stagedEntry, Path.GetFullPath(snapshot.InputDirPath)) || !File.Exists(stagedEntry))
+                return false;
+        }
+
+        var fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(snapshot.SourceFolderPath));
+        if (!Directory.Exists(fullRoot) || IsReparsePointPath(fullRoot))
+            return false;
+
+        var expectedFingerprint = new Dictionary<string, PreparedSourceFileMeta>(snapshot.SourceFingerprint.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var item in snapshot.SourceFingerprint)
+            expectedFingerprint[TrialFolderDiffEngine.NormalizeRelativePath(item.RelativePath)] = item;
+
+        var expectedManifest = new Dictionary<string, TrialStagedFileEntry>(snapshot.ManifestFiles.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var item in snapshot.ManifestFiles)
+            expectedManifest[TrialFolderDiffEngine.NormalizeRelativePath(item.RelativePath)] = item;
+
+        var liveFiles = new List<(string RelativePath, string FullPath, long SizeBytes, long LastWriteTicks)>();
+        var stack = new Stack<string>();
+        stack.Push(fullRoot);
+
+        try
+        {
+            while (stack.Count > 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var cur = stack.Pop();
+                foreach (var entry in Directory.EnumerateFileSystemEntries(cur))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var attrs = File.GetAttributes(entry);
+                    if ((attrs & FileAttributes.ReparsePoint) != 0)
+                        return false;
+
+                    if ((attrs & FileAttributes.Directory) != 0)
+                    {
+                        stack.Push(entry);
+                    }
+                    else
+                    {
+                        var fi = new FileInfo(entry);
+                        var rel = TrialFolderDiffEngine.NormalizeRelativePath(GetRelativeNormalized(fullRoot, entry));
+                        liveFiles.Add((rel, entry, fi.Length, fi.LastWriteTimeUtc.Ticks));
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+
+        if (liveFiles.Count != expectedFingerprint.Count)
+            return false;
+
+        // First pass: check exact relative paths, byte lengths, and LastWriteTimeUtc ticks
+        foreach (var live in liveFiles)
+        {
+            if (!expectedFingerprint.TryGetValue(live.RelativePath, out var exp))
+                return false;
+            if (live.SizeBytes != exp.SizeBytes || live.LastWriteTicks != exp.LastWriteTimeUtcTicks)
+                return false;
+        }
+
+        // Second pass: catch equal-length edits within the same timestamp tick or timestamp-preserving edits
+        var verifyAllHashes = snapshot.TotalBytes <= 64L * 1024 * 1024;
+        var preparedTicks = snapshot.PreparedAtUtc.UtcTicks;
+        var twoSecondTicks = TimeSpan.FromSeconds(2).Ticks;
+
+        foreach (var live in liveFiles)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!verifyAllHashes && Math.Abs(live.LastWriteTicks - preparedTicks) > twoSecondTicks)
+                continue;
+
+            if (!expectedManifest.TryGetValue(live.RelativePath, out var expEntry))
+                return false;
+
+            try
+            {
+                var currentSha = await ComputeFileSha256Async(live.FullPath, cancellationToken).ConfigureAwait(false);
+                if (!string.Equals(currentSha, expEntry.Sha256, StringComparison.OrdinalIgnoreCase))
+                    return false;
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (IOException) { return false; }
+            catch (UnauthorizedAccessException) { return false; }
+        }
+
+        return true;
+    }
 
     /// <summary>
     /// Copies a single EXE or verified portable folder snapshot into inputDir without following
     /// any reparse points, checking free disk space beforehand, supporting cancellation and live
-    /// progress, hashing the exact staged entry bytes in one pass, and verifying byte-length completeness.
+    /// progress, hashing every staged file in one pass, and verifying byte-length completeness.
     /// </summary>
     public async Task<StagedSnapshotSummary> StageInputSnapshotAsync(
         TrialLaunchTarget target,
@@ -1266,28 +1421,53 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
             return new StagedSnapshotSummary(1, 0, len, target.EntryRelativePath, entrySha256);
         }
 
-        // Folder mode: strictly validate source folder & entry containment (re-checking reparse points for TOCTOU safety)
         var fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(target.SourcePath));
+        return await StageFolderSnapshotInternalAsync(
+            fullRoot,
+            target.DisplayName,
+            target.EntryRelativePath,
+            inputDir,
+            progress,
+            copyStageLabel: "正在复制软件文件夹到本次暂存目录…",
+            completeStageLabel: "输入快照准备完成，正在启动 Windows 沙箱…",
+            requireEntry: true,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<StagedSnapshotSummary> StageFolderSnapshotInternalAsync(
+        string fullRoot,
+        string displayName,
+        string? entryRelativePath,
+        string inputDir,
+        IProgress<TrialStagingProgress>? progress,
+        string copyStageLabel,
+        string completeStageLabel,
+        bool requireEntry,
+        CancellationToken cancellationToken)
+    {
         if (!Directory.Exists(fullRoot))
-            throw new IsolatedTrialException("folder_missing", $"所选软件文件夹“{target.DisplayName}”不存在或已被移走。", "请重新选择软件文件夹。", failedStage: "准备输入快照");
+            throw new IsolatedTrialException("folder_missing", $"所选软件文件夹“{displayName}”不存在或已被移走。", "请重新选择软件文件夹。", failedStage: "准备输入快照");
         if (IsReparsePointPath(fullRoot))
-            throw new IsolatedTrialException("reparse_point_detected", $"所选软件文件夹“{target.DisplayName}”是链接或重解析点，已停止本次准备。", "请直接选择真实的源文件夹。", failedStage: "准备输入快照");
+            throw new IsolatedTrialException("reparse_point_detected", $"所选软件文件夹“{displayName}”是链接或重解析点，已停止本次准备。", "请直接选择真实的源文件夹。", failedStage: "准备输入快照");
         if (IsPathEqualOrUnder(Path.GetFullPath(stagingBaseDirectory), fullRoot))
             throw new IsolatedTrialException("folder_contains_staging", "所选目录包含 Contain 暂存目录，已停止准备。", "请选择具体的便携软件目录。", failedStage: "准备输入快照");
 
-        if (!ValidateFolderEntryPath(fullRoot, target.EntryRelativePath, out _, out var entryErr))
+        var normalizedEntryRel = string.IsNullOrWhiteSpace(entryRelativePath)
+            ? ""
+            : TrialFolderDiffEngine.NormalizeRelativePath(entryRelativePath);
+        if (requireEntry && !ValidateFolderEntryPath(fullRoot, normalizedEntryRel, out _, out var entryErr))
         {
             throw new IsolatedTrialException(
                 "invalid_folder_entry",
                 $"所选入口程序无效：{entryErr}",
                 "请重新选择位于该软件文件夹内的有效 .exe 入口程序。",
-                $"entry={target.EntryRelativePath}; reason={entryErr}",
+                $"entry={normalizedEntryRel}; reason={entryErr}",
                 failedStage: "核验入口程序");
         }
 
         // Enumerate live folder plan (fail-closed on any reparse point or unreadable entry)
         var relDirs = new List<string>();
-        var filesToCopy = new List<(string SourcePath, string RelativePath, long ExpectedLength)>();
+        var filesToCopy = new List<(string SourcePath, string RelativePath, long ExpectedLength, long LastWriteTicks)>();
         long totalBytes = 0;
 
         var stack = new Stack<string>();
@@ -1304,7 +1484,7 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
             try { entries = Directory.EnumerateFileSystemEntries(cur).ToList(); }
             catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
             {
-                var relLabel = string.IsNullOrEmpty(curRel) ? target.DisplayName : curRel;
+                var relLabel = string.IsNullOrEmpty(curRel) ? displayName : curRel;
                 throw new IsolatedTrialException(
                     "staging_copy_read_failed",
                     $"准备输入快照时无法读取目录“{relLabel}”：{ex.Message}",
@@ -1348,7 +1528,13 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                 else
                 {
                     long fLen;
-                    try { fLen = new FileInfo(entry).Length; }
+                    long lastWriteTicks;
+                    try
+                    {
+                        var fi = new FileInfo(entry);
+                        fLen = fi.Length;
+                        lastWriteTicks = fi.LastWriteTimeUtc.Ticks;
+                    }
                     catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
                     {
                         throw new IsolatedTrialException(
@@ -1359,7 +1545,7 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                             ex,
                             failedStage: "准备输入快照");
                     }
-                    filesToCopy.Add((entry, rel, fLen));
+                    filesToCopy.Add((entry, rel, fLen, lastWriteTicks));
                     totalBytes += fLen;
                 }
             }
@@ -1368,7 +1554,7 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         EnsureSufficientStagingSpace(inputDir, totalBytes, "准备输入快照");
 
         var totalFiles = filesToCopy.Count;
-        progress?.Report(new TrialStagingProgress("正在复制软件文件夹到本次暂存目录…", 0, totalFiles, 0, totalBytes, ""));
+        progress?.Report(new TrialStagingProgress(copyStageLabel, 0, totalFiles, 0, totalBytes, ""));
 
         // Create all subdirectories first to preserve empty relative directories
         foreach (var relDir in relDirs)
@@ -1377,13 +1563,14 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
             Directory.CreateDirectory(Path.Combine(inputDir, relDir));
         }
 
-        var normalizedEntryRel = target.EntryRelativePath.Replace('/', '\\').Trim();
         var filesCopied = 0;
         long bytesCopiedBeforeCurrent = 0;
         string? stagedEntrySha256 = null;
+        var manifestFiles = new List<TrialStagedFileEntry>(totalFiles);
+        var sourceFingerprint = new List<PreparedSourceFileMeta>(totalFiles);
         var lastReport = Stopwatch.StartNew();
 
-        foreach (var (srcFile, relPath, expectedLen) in filesToCopy)
+        foreach (var (srcFile, relPath, expectedLen, lastWriteTicks) in filesToCopy)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var dstFile = Path.Combine(inputDir, relPath);
@@ -1396,7 +1583,10 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                 : null;
             if (reportForFile is not null) lastReport.Restart();
 
-            var isEntryFile = string.Equals(relPath, normalizedEntryRel, StringComparison.OrdinalIgnoreCase);
+            var isEntryFile = !string.IsNullOrEmpty(normalizedEntryRel)
+                && string.Equals(relPath, normalizedEntryRel, StringComparison.OrdinalIgnoreCase);
+
+            // Beta.6: Compute SHA-256 of EVERY copied file in a single streaming pass!
             var (written, fileSha256) = await CopyFileCheckedAsync(
                 srcFile,
                 dstFile,
@@ -1407,7 +1597,7 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                 totalFiles,
                 bytesCopiedBeforeCurrent,
                 totalBytes,
-                computeSha256: isEntryFile,
+                computeSha256: true,
                 cancellationToken).ConfigureAwait(false);
             if (isEntryFile) stagedEntrySha256 = fileSha256;
 
@@ -1424,7 +1614,7 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                     failedStage: "核验输入快照");
             }
 
-            if (written != expectedLen || actualDstLen != expectedLen)
+            if (written != expectedLen || actualDstLen != expectedLen || string.IsNullOrWhiteSpace(fileSha256))
             {
                 throw new IsolatedTrialException(
                     "staging_copy_incomplete",
@@ -1434,29 +1624,53 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                     failedStage: "核验输入快照");
             }
 
+            manifestFiles.Add(new TrialStagedFileEntry(relPath, written, fileSha256!));
+            sourceFingerprint.Add(new PreparedSourceFileMeta(relPath, expectedLen, lastWriteTicks));
+
             filesCopied++;
             bytesCopiedBeforeCurrent += written;
             if (progress is not null && (filesCopied % 8 == 0 || filesCopied == totalFiles || lastReport.ElapsedMilliseconds >= 80))
             {
-                progress.Report(new TrialStagingProgress("正在复制软件文件夹到本次暂存目录…", filesCopied, totalFiles, bytesCopiedBeforeCurrent, totalBytes, relPath));
+                progress.Report(new TrialStagingProgress(copyStageLabel, filesCopied, totalFiles, bytesCopiedBeforeCurrent, totalBytes, relPath));
                 lastReport.Restart();
             }
         }
 
-        // Final integrity check: exact entry EXE exists inside inputDir snapshot
-        var stagedEntryPath = Path.GetFullPath(Path.Combine(inputDir, normalizedEntryRel));
-        if (!IsPathStrictlyUnder(stagedEntryPath, Path.GetFullPath(inputDir)) || !File.Exists(stagedEntryPath))
+        if (requireEntry)
         {
-            throw new IsolatedTrialException(
-                "staging_entry_missing",
-                $"输入快照核验失败：未在暂存目录中找到入口程序“{normalizedEntryRel}”。",
-                "请重新扫描软件文件夹并选择入口程序后再试。",
-                $"staged_entry={stagedEntryPath}",
-                failedStage: "核验输入快照");
+            var stagedEntryPath = Path.GetFullPath(Path.Combine(inputDir, normalizedEntryRel));
+            if (!IsPathStrictlyUnder(stagedEntryPath, Path.GetFullPath(inputDir)) || !File.Exists(stagedEntryPath))
+            {
+                throw new IsolatedTrialException(
+                    "staging_entry_missing",
+                    $"输入快照核验失败：未在暂存目录中找到入口程序“{normalizedEntryRel}”。",
+                    "请重新扫描软件文件夹并选择入口程序后再试。",
+                    $"staged_entry={stagedEntryPath}",
+                    failedStage: "核验输入快照");
+            }
         }
 
-        progress?.Report(new TrialStagingProgress("输入快照准备完成，正在启动 Windows 沙箱…", filesCopied, totalFiles, totalBytes, totalBytes, "", StagedEntrySha256: stagedEntrySha256));
-        return new StagedSnapshotSummary(filesCopied, relDirs.Count, totalBytes, normalizedEntryRel, stagedEntrySha256);
+        manifestFiles.Sort((a, b) =>
+        {
+            var c = StringComparer.OrdinalIgnoreCase.Compare(a.RelativePath, b.RelativePath);
+            return c != 0 ? c : StringComparer.Ordinal.Compare(a.RelativePath, b.RelativePath);
+        });
+        sourceFingerprint.Sort((a, b) =>
+        {
+            var c = StringComparer.OrdinalIgnoreCase.Compare(a.RelativePath, b.RelativePath);
+            return c != 0 ? c : StringComparer.Ordinal.Compare(a.RelativePath, b.RelativePath);
+        });
+
+        progress?.Report(new TrialStagingProgress(
+            completeStageLabel,
+            filesCopied,
+            totalFiles,
+            totalBytes,
+            totalBytes,
+            "",
+            StagedEntrySha256: stagedEntrySha256,
+            StagedManifestFiles: manifestFiles));
+        return new StagedSnapshotSummary(filesCopied, relDirs.Count, totalBytes, normalizedEntryRel, stagedEntrySha256, manifestFiles, sourceFingerprint);
     }
 
     private void EnsureSufficientStagingSpace(string stagingPath, long requiredBytes, string failedStage)
@@ -1599,11 +1813,20 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         }
 
         var wsbPath = capability.WsbExecutablePath;
-        var sessionId = !string.IsNullOrWhiteSpace(target.SessionId) && JsonTrialHistoryStore.IsValidSessionId(target.SessionId)
-            ? target.SessionId
-            : Guid.NewGuid().ToString("N")[..12];
-        var stagingRoot = Path.Combine(stagingBaseDirectory, sessionId);
-        var inputDir = Path.Combine(stagingRoot, "input");
+        var reusable = target.PreparedSnapshot is PreparedTrialSnapshot prep
+            && target.Kind == TrialInputKind.Folder
+            && IsVerifiedSessionStagingPath(prep.StagingRootPath, stagingBaseDirectory, prep.SessionId)
+            && Directory.Exists(prep.InputDirPath)
+            ? prep
+            : null;
+
+        var sessionId = reusable is not null
+            ? reusable.SessionId
+            : (!string.IsNullOrWhiteSpace(target.SessionId) && JsonTrialHistoryStore.IsValidSessionId(target.SessionId)
+                ? target.SessionId
+                : Guid.NewGuid().ToString("N")[..12]);
+        var stagingRoot = reusable?.StagingRootPath ?? Path.Combine(stagingBaseDirectory, sessionId);
+        var inputDir = reusable?.InputDirPath ?? Path.Combine(stagingRoot, "input");
         var bootstrapDir = Path.Combine(stagingRoot, "bootstrap");
 
         string? createdInstanceId = null;
@@ -1612,8 +1835,47 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
             Directory.CreateDirectory(inputDir);
             Directory.CreateDirectory(bootstrapDir);
 
-            // 1. Complete & verify input staging snapshot BEFORE starting Windows Sandbox!
-            var staged = await StageInputSnapshotAsync(target, inputDir, stagingProgress, cancellationToken).ConfigureAwait(false);
+            // 1. Reuse already-verified prepared snapshot when available, OR stage & verify fresh snapshot BEFORE starting Sandbox!
+            StagedSnapshotSummary staged;
+            if (reusable is not null)
+            {
+                var normalizedEntryRel = TrialFolderDiffEngine.NormalizeRelativePath(target.EntryRelativePath);
+                var stagedEntryPath = Path.GetFullPath(Path.Combine(inputDir, normalizedEntryRel));
+                if (!IsPathStrictlyUnder(stagedEntryPath, Path.GetFullPath(inputDir)) || !File.Exists(stagedEntryPath))
+                {
+                    throw new IsolatedTrialException(
+                        "staging_entry_missing",
+                        $"已准备快照核验失败：未在暂存目录中找到入口程序“{normalizedEntryRel}”。",
+                        "请重新选择或刷新软件文件夹后再试。",
+                        $"staged_entry={stagedEntryPath}",
+                        failedStage: "核验输入快照");
+                }
+                var entryManifest = reusable.ManifestFiles.FirstOrDefault(f =>
+                    string.Equals(TrialFolderDiffEngine.NormalizeRelativePath(f.RelativePath), normalizedEntryRel, StringComparison.OrdinalIgnoreCase));
+                var entrySha = entryManifest?.Sha256
+                    ?? await ComputeFileSha256Async(stagedEntryPath, cancellationToken).ConfigureAwait(false);
+                staged = new StagedSnapshotSummary(
+                    reusable.FileCount,
+                    reusable.DirectoryCount,
+                    reusable.TotalBytes,
+                    normalizedEntryRel,
+                    entrySha,
+                    reusable.ManifestFiles,
+                    reusable.SourceFingerprint);
+                stagingProgress?.Report(new TrialStagingProgress(
+                    "已复用已核验快照，正在启动 Windows 沙箱…",
+                    staged.FileCount,
+                    staged.FileCount,
+                    staged.TotalBytes,
+                    staged.TotalBytes,
+                    "",
+                    StagedEntrySha256: staged.EntrySha256,
+                    StagedManifestFiles: staged.ManifestFiles));
+            }
+            else
+            {
+                staged = await StageInputSnapshotAsync(target, inputDir, stagingProgress, cancellationToken).ConfigureAwait(false);
+            }
 
             // Write UTF-8 JSON target metadata (schema 2) + static pure-ASCII launcher script into bootstrapDir
             var targetJson = JsonSerializer.Serialize(new
@@ -1686,7 +1948,8 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                 staged.TotalBytes,
                 "",
                 StagedEntrySha256: staged.EntrySha256,
-                CreatedInstanceId: createdInstanceId));
+                CreatedInstanceId: createdInstanceId,
+                StagedManifestFiles: staged.ManifestFiles));
 
             // 3. Open interactive Sandbox window detached (NEVER redirect pipes or WaitForExit!)
             int? connectPid = LaunchDetachedConnect(wsbPath, createdInstanceId);
@@ -1755,7 +2018,8 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                 target.Kind,
                 staged.EntryRelativePath,
                 staged.FileCount,
-                staged.EntrySha256);
+                staged.EntrySha256,
+                staged.ManifestFiles);
         }
         catch (Exception ex)
         {
