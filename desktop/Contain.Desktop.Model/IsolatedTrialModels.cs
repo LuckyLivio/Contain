@@ -168,7 +168,9 @@ public sealed record TrialStagingProgress(
     int TotalFiles,
     long BytesCopied,
     long TotalBytes,
-    string CurrentRelativePath)
+    string CurrentRelativePath,
+    string? StagedEntrySha256 = null,
+    string? CreatedInstanceId = null)
 {
     public double Percent => TotalBytes > 0
         ? Math.Clamp(BytesCopied * 100.0 / TotalBytes, 0, 100)
@@ -187,9 +189,11 @@ public sealed record TrialLaunchTarget(
     TrialExecutableInfo EntryExecutable,
     int TotalFileCount,
     long TotalBytes,
-    string FormattedTotalSize)
+    string FormattedTotalSize,
+    int DirectoryCount = 0,
+    string? SessionId = null)
 {
-    public static TrialLaunchTarget FromSingleExecutable(TrialExecutableInfo executable)
+    public static TrialLaunchTarget FromSingleExecutable(TrialExecutableInfo executable, string? sessionId = null)
     {
         ArgumentNullException.ThrowIfNull(executable);
         return new TrialLaunchTarget(
@@ -200,10 +204,12 @@ public sealed record TrialLaunchTarget(
             executable,
             TotalFileCount: 1,
             TotalBytes: executable.SizeBytes,
-            FormattedTotalSize: executable.FormattedSize);
+            FormattedTotalSize: executable.FormattedSize,
+            DirectoryCount: 0,
+            SessionId: sessionId);
     }
 
-    public static TrialLaunchTarget FromFolder(TrialFolderInfo folder, TrialFolderEntryCandidate entry)
+    public static TrialLaunchTarget FromFolder(TrialFolderInfo folder, TrialFolderEntryCandidate entry, string? sessionId = null)
     {
         ArgumentNullException.ThrowIfNull(folder);
         ArgumentNullException.ThrowIfNull(entry);
@@ -215,7 +221,9 @@ public sealed record TrialLaunchTarget(
             entry.ToExecutableInfo(),
             TotalFileCount: folder.FileCount,
             TotalBytes: folder.TotalBytes,
-            FormattedTotalSize: folder.FormattedTotalSize);
+            FormattedTotalSize: folder.FormattedTotalSize,
+            DirectoryCount: folder.DirectoryCount,
+            SessionId: sessionId);
     }
 }
 
@@ -282,7 +290,8 @@ public enum TrialEndReason
 public sealed record TrialEvidenceEntry(
     string Timestamp,
     string Stage,
-    string Summary);
+    string Summary,
+    DateTimeOffset TimestampUtc = default);
 
 public sealed record SandboxStartResult(
     string SessionId,
@@ -293,7 +302,8 @@ public sealed record SandboxStartResult(
     DateTimeOffset OpenedAt,
     TrialInputKind InputKind = TrialInputKind.SingleFile,
     string EntryRelativePath = "",
-    int StagedFileCount = 1);
+    int StagedFileCount = 1,
+    string? EntrySha256 = null);
 
 public sealed record PendingTrialSessionRecord(
     int SchemaVersion,

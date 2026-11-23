@@ -21,5 +21,6 @@ public partial class IsolatedTrialView : UserControl
     private async void OnRecheckCapability(object sender, RoutedEventArgs e) => await Shell.RecheckSandboxCapabilityAsync();
     private void OnOpenWindowsFeatures(object sender, RoutedEventArgs e) => Shell.OpenWindowsFeaturesFromTrial();
     private void OnGoToPackaging(object sender, RoutedEventArgs e) => Shell.ShowEnvironmentCheck();
+    private void OnViewCurrentTrialRecord(object sender, RoutedEventArgs e) => Shell.ViewCurrentTrialRecord();
     private void OnCopyTechnical(object sender, RoutedEventArgs e) => Shell.CopyText(Shell.IsolatedTrial.TechnicalDetailsText);
 }

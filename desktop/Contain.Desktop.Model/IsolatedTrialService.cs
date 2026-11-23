@@ -1216,12 +1216,13 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         int FileCount,
         int DirectoryCount,
         long TotalBytes,
-        string EntryRelativePath);
+        string EntryRelativePath,
+        string? EntrySha256 = null);
 
     /// <summary>
     /// Copies a single EXE or verified portable folder snapshot into inputDir without following
     /// any reparse points, checking free disk space beforehand, supporting cancellation and live
-    /// progress, and verifying byte-length completeness for every copied file.
+    /// progress, hashing the exact staged entry bytes in one pass, and verifying byte-length completeness.
     /// </summary>
     public async Task<StagedSnapshotSummary> StageInputSnapshotAsync(
         TrialLaunchTarget target,
@@ -1251,7 +1252,7 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
             progress?.Report(new TrialStagingProgress("正在复制所选程序到本次暂存目录…", 0, 1, 0, len, target.EntryRelativePath));
 
             var dstPath = Path.Combine(inputDir, target.EntryRelativePath);
-            var copiedBytes = await CopyFileCheckedAsync(srcPath, dstPath, len, target.EntryRelativePath, progress, 0, 1, 0, len, cancellationToken).ConfigureAwait(false);
+            var (copiedBytes, entrySha256) = await CopyFileCheckedAsync(srcPath, dstPath, len, target.EntryRelativePath, progress, 0, 1, 0, len, computeSha256: true, cancellationToken).ConfigureAwait(false);
             if (copiedBytes != len || !File.Exists(dstPath) || new FileInfo(dstPath).Length != len)
             {
                 throw new IsolatedTrialException(
@@ -1261,8 +1262,8 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                     failedStage: "核验输入快照");
             }
 
-            progress?.Report(new TrialStagingProgress("输入快照准备完成，正在启动 Windows 沙箱…", 1, 1, len, len, ""));
-            return new StagedSnapshotSummary(1, 0, len, target.EntryRelativePath);
+            progress?.Report(new TrialStagingProgress("输入快照准备完成，正在启动 Windows 沙箱…", 1, 1, len, len, "", StagedEntrySha256: entrySha256));
+            return new StagedSnapshotSummary(1, 0, len, target.EntryRelativePath, entrySha256);
         }
 
         // Folder mode: strictly validate source folder & entry containment (re-checking reparse points for TOCTOU safety)
@@ -1376,8 +1377,10 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
             Directory.CreateDirectory(Path.Combine(inputDir, relDir));
         }
 
+        var normalizedEntryRel = target.EntryRelativePath.Replace('/', '\\').Trim();
         var filesCopied = 0;
         long bytesCopiedBeforeCurrent = 0;
+        string? stagedEntrySha256 = null;
         var lastReport = Stopwatch.StartNew();
 
         foreach (var (srcFile, relPath, expectedLen) in filesToCopy)
@@ -1393,7 +1396,8 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                 : null;
             if (reportForFile is not null) lastReport.Restart();
 
-            var written = await CopyFileCheckedAsync(
+            var isEntryFile = string.Equals(relPath, normalizedEntryRel, StringComparison.OrdinalIgnoreCase);
+            var (written, fileSha256) = await CopyFileCheckedAsync(
                 srcFile,
                 dstFile,
                 expectedLen,
@@ -1403,7 +1407,9 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                 totalFiles,
                 bytesCopiedBeforeCurrent,
                 totalBytes,
+                computeSha256: isEntryFile,
                 cancellationToken).ConfigureAwait(false);
+            if (isEntryFile) stagedEntrySha256 = fileSha256;
 
             long actualDstLen;
             try { actualDstLen = new FileInfo(dstFile).Length; }
@@ -1438,7 +1444,6 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         }
 
         // Final integrity check: exact entry EXE exists inside inputDir snapshot
-        var normalizedEntryRel = target.EntryRelativePath.Replace('/', '\\').Trim();
         var stagedEntryPath = Path.GetFullPath(Path.Combine(inputDir, normalizedEntryRel));
         if (!IsPathStrictlyUnder(stagedEntryPath, Path.GetFullPath(inputDir)) || !File.Exists(stagedEntryPath))
         {
@@ -1450,8 +1455,8 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                 failedStage: "核验输入快照");
         }
 
-        progress?.Report(new TrialStagingProgress("输入快照准备完成，正在启动 Windows 沙箱…", filesCopied, totalFiles, totalBytes, totalBytes, ""));
-        return new StagedSnapshotSummary(filesCopied, relDirs.Count, totalBytes, normalizedEntryRel);
+        progress?.Report(new TrialStagingProgress("输入快照准备完成，正在启动 Windows 沙箱…", filesCopied, totalFiles, totalBytes, totalBytes, "", StagedEntrySha256: stagedEntrySha256));
+        return new StagedSnapshotSummary(filesCopied, relDirs.Count, totalBytes, normalizedEntryRel, stagedEntrySha256);
     }
 
     private void EnsureSufficientStagingSpace(string stagingPath, long requiredBytes, string failedStage)
@@ -1487,7 +1492,7 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         }
     }
 
-    private static async Task<long> CopyFileCheckedAsync(
+    private static async Task<(long BytesCopied, string? Sha256Hex)> CopyFileCheckedAsync(
         string sourcePath,
         string destinationPath,
         long expectedLength,
@@ -1497,12 +1502,14 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         int totalFiles,
         long bytesCopiedBeforeFile,
         long totalBytes,
+        bool computeSha256,
         CancellationToken cancellationToken)
     {
         try
         {
             await using var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920, useAsync: true);
             await using var dest = new FileStream(destinationPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true);
+            using var hasher = computeSha256 ? IncrementalHash.CreateHash(HashAlgorithmName.SHA256) : null;
 
             var buffer = new byte[81920];
             long copied = 0;
@@ -1513,6 +1520,7 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                 var read = await source.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
                 if (read == 0) break;
                 await dest.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                hasher?.AppendData(buffer, 0, read);
                 copied += read;
 
                 if (progress is not null && sw.ElapsedMilliseconds >= 100)
@@ -1528,7 +1536,8 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                 }
             }
             await dest.FlushAsync(cancellationToken).ConfigureAwait(false);
-            return copied;
+            var digest = hasher is null ? null : Convert.ToHexString(hasher.GetHashAndReset()).ToLowerInvariant();
+            return (copied, digest);
         }
         catch (OperationCanceledException)
         {
@@ -1590,7 +1599,9 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         }
 
         var wsbPath = capability.WsbExecutablePath;
-        var sessionId = Guid.NewGuid().ToString("N")[..12];
+        var sessionId = !string.IsNullOrWhiteSpace(target.SessionId) && JsonTrialHistoryStore.IsValidSessionId(target.SessionId)
+            ? target.SessionId
+            : Guid.NewGuid().ToString("N")[..12];
         var stagingRoot = Path.Combine(stagingBaseDirectory, sessionId);
         var inputDir = Path.Combine(stagingRoot, "input");
         var bootstrapDir = Path.Combine(stagingRoot, "bootstrap");
@@ -1667,6 +1678,15 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                 ? $"{target.DisplayName} ({staged.EntryRelativePath})"
                 : target.EntryExecutable.FileName;
             SavePendingSession(CreatePendingRecord(sessionId, createdInstanceId, stagingRoot, recoveryDisplay));
+            stagingProgress?.Report(new TrialStagingProgress(
+                "沙箱实例已创建，等待桌面就绪…",
+                staged.FileCount,
+                staged.FileCount,
+                staged.TotalBytes,
+                staged.TotalBytes,
+                "",
+                StagedEntrySha256: staged.EntrySha256,
+                CreatedInstanceId: createdInstanceId));
 
             // 3. Open interactive Sandbox window detached (NEVER redirect pipes or WaitForExit!)
             int? connectPid = LaunchDetachedConnect(wsbPath, createdInstanceId);
@@ -1734,7 +1754,8 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
                 DateTimeOffset.Now,
                 target.Kind,
                 staged.EntryRelativePath,
-                staged.FileCount);
+                staged.FileCount,
+                staged.EntrySha256);
         }
         catch (Exception ex)
         {

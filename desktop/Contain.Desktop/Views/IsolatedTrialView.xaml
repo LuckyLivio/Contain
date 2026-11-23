@@ -137,6 +137,13 @@
 
                     <TextBlock Text="{Binding IsolatedTrial.FailureNextStep}" Style="{StaticResource MutedText}" Margin="0,10,0,0" TextWrapping="Wrap" Visibility="{Binding IsolatedTrial.FailureNextStep, Converter={StaticResource TextVisibility}}" AutomationProperties.AutomationId="TrialFailureNextStep" />
 
+                    <!-- Non-blocking history save warning (NEVER blocks ending/cleaning Sandbox) -->
+                    <Border Background="#FFF4E5" BorderBrush="#D99B26" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,10,0,0"
+                            Visibility="{Binding IsolatedTrial.HasHistorySaveError, Converter={StaticResource BoolVisibility}}"
+                            AutomationProperties.AutomationId="TrialHistorySaveErrorBanner">
+                        <TextBlock Text="{Binding IsolatedTrial.HistorySaveErrorMessage}" Foreground="#8A4B00" FontSize="12" TextWrapping="Wrap" />
+                    </Border>
+
                     <!-- Immediate primary actions right on the result / recovery / preparation card -->
                     <WrapPanel Margin="0,14,0,0">
                         <ui:Button Content="取消准备" Appearance="Secondary" Padding="18,10" Margin="0,0,10,0" Click="OnCancelPreparation" IsEnabled="{Binding IsolatedTrial.CanCancelPreparation}" Visibility="{Binding IsolatedTrial.IsPreparingInput, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="CancelTrialPreparationButton" />
@@ -150,8 +157,11 @@
                         <ui:Button Content="重试清理" Appearance="Primary" Padding="18,10" Margin="0,0,10,0" Click="OnRetryStagingCleanup" IsEnabled="{Binding IsolatedTrial.CanRetryStagingCleanup}" Visibility="{Binding IsolatedTrial.CanRetryStagingCleanup, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="RetryStagingCleanupButton">
                             <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowClockwise24" /></ui:Button.Icon>
                         </ui:Button>
-                        <ui:Button Content="再次试用" Appearance="Primary" Padding="20,10" Click="OnStartTrial" IsEnabled="{Binding IsolatedTrial.CanRetryTrial}" Visibility="{Binding IsolatedTrial.CanRetryTrial, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="RetryIsolatedTrialButton">
+                        <ui:Button Content="再次试用" Appearance="Primary" Padding="20,10" Margin="0,0,10,0" Click="OnStartTrial" IsEnabled="{Binding IsolatedTrial.CanRetryTrial}" Visibility="{Binding IsolatedTrial.CanRetryTrial, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="RetryIsolatedTrialButton">
                             <ui:Button.Icon><ui:SymbolIcon Symbol="Play24" /></ui:Button.Icon>
+                        </ui:Button>
+                        <ui:Button Content="查看本次记录" Appearance="Secondary" Padding="16,10" Click="OnViewCurrentTrialRecord" Visibility="{Binding IsolatedTrial.HasCurrentHistoryRecord, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="ViewCurrentTrialRecordButton">
+                            <ui:Button.Icon><ui:SymbolIcon Symbol="DocumentText24" /></ui:Button.Icon>
                         </ui:Button>
                     </WrapPanel>
                 </StackPanel>
@@ -184,6 +194,36 @@
             <!-- Unified target picker (Single EXE or Portable Software Folder) + Read-only inspection + Sandbox run -->
             <Border Style="{StaticResource Surface}">
                 <StackPanel>
+                    <!-- Replay-from-history confirmation notice (warns "文件已变化" or missing file/folder; never auto-starts) -->
+                    <Border CornerRadius="8" Padding="12,10" Margin="0,0,0,14" BorderThickness="1"
+                            Visibility="{Binding IsolatedTrial.HasReplayNotice, Converter={StaticResource BoolVisibility}}"
+                            AutomationProperties.AutomationId="TrialReplayNoticeBanner">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="#EAF5F1" />
+                                <Setter Property="BorderBrush" Value="#8DC4B7" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsolatedTrial.IsReplayNoticeWarning}" Value="True">
+                                        <Setter Property="Background" Value="#FFF4E5" />
+                                        <Setter Property="BorderBrush" Value="#D99B26" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="{Binding IsolatedTrial.ReplayNoticeText}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="TrialReplayNoticeText">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="#0E5A53" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsolatedTrial.IsReplayNoticeWarning}" Value="True">
+                                            <Setter Property="Foreground" Value="#8A4B00" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Border>
+
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                         <StackPanel>

@@ -850,6 +850,402 @@ internal static class IsolatedTrialChecks
             }
         });
 
+        await Check("trial history ignores file browsing/hashing, creates two independent records for two runs of same EXE, and searches newest-first", async () =>
+        {
+            using var temp = new TempDir();
+            var historyDir = Path.Combine(temp.Root, "IsolatedTrial", "History");
+            var exePath = Path.Combine(temp.Sub("app"), "RepeatTool.exe");
+            WriteMinimalPe(exePath, 0x8664, extraByte: 0x33);
+            var expectedHash = await WindowsSandboxTrialService.ComputeFileSha256Async(exePath);
+
+            var store = new JsonTrialHistoryStore(historyDir);
+            var historyVm = new TrialHistoryViewModel(store);
+            historyVm.Refresh();
+            True(!Directory.Exists(historyDir), "empty read-only Refresh never creates History directory");
+            Equal(0, historyVm.TotalCount, "empty history has 0 records");
+
+            var now = new DateTimeOffset(2026, 11, 23, 10, 0, 0, TimeSpan.FromHours(8));
+            var service = new ControlledTrialService
+            {
+                TargetStartFactory = (target, _, _) => Task.FromResult(new SandboxStartResult(
+                    target.SessionId ?? "sess00000001", InstanceA, @"C:\temp\" + (target.SessionId ?? "sess00000001"),
+                    @"C:\temp\input", 1001, now, target.Kind, target.EntryRelativePath, target.TotalFileCount, expectedHash))
+            };
+
+            using var vm = new IsolatedTrialViewModel(
+                service,
+                clock: () => now,
+                pollInterval: TimeSpan.FromHours(1),
+                historyStore: store,
+                onHistoryUpdated: r => historyVm.UpsertInMemory(r));
+
+            await vm.RefreshCapabilityAsync();
+            True(vm.SelectExecutable(exePath), "selected EXE");
+            var _ = await vm.ComputeSha256Async();
+            Equal(0, store.LoadAll().Count, "browsing and computing SHA-256 create 0 trial history records");
+            True(!Directory.Exists(historyDir), "still no history directory after browse/hash");
+
+            // First trial
+            True(await vm.StartTrialAsync(), "first trial starts");
+            var firstId = vm.CurrentHistorySessionId;
+            True(vm.HasCurrentHistoryRecord && !string.IsNullOrEmpty(firstId), "current history record available for 查看本次记录");
+            True(await vm.EndTrialAsync(), "first trial ends");
+
+            // Second trial of the exact same EXE 5 minutes later
+            now = now.AddMinutes(5);
+            True(await vm.StartTrialAsync(), "second trial starts");
+            var secondId = vm.CurrentHistorySessionId;
+            True(!string.Equals(firstId, secondId, StringComparison.Ordinal), "second trial generates distinct session_id");
+            True(await vm.EndTrialAsync(), "second trial ends");
+
+            // Simulate app restart via fresh TrialHistoryViewModel
+            var reloadedVm = new TrialHistoryViewModel(store);
+            reloadedVm.Refresh();
+            Equal(2, reloadedVm.TotalCount, "two independent runs persisted across restart");
+            Equal(secondId, reloadedVm.FilteredRecords[0].SessionId, "newest run ordered first");
+            Equal(firstId, reloadedVm.FilteredRecords[1].SessionId, "older run ordered second");
+            Equal(expectedHash, reloadedVm.FilteredRecords[0].Report.EntrySha256 ?? "", "recorded authoritative entry SHA-256");
+
+            // Search by software name or entry
+            reloadedVm.SearchQuery = "RepeatTool";
+            Equal(2, reloadedVm.FilteredRecords.Count, "search matches software name");
+            reloadedVm.SearchQuery = "NonExistentApp";
+            Equal(0, reloadedVm.FilteredRecords.Count, "non-matching search returns 0");
+            True(reloadedVm.IsSearchEmpty, "flags empty search result");
+            reloadedVm.ClearSearch();
+            Equal(2, reloadedVm.FilteredRecords.Count, "clearing search restores list");
+        });
+
+        await Check("single session keeps exactly 1 history record across unconfirmed stop, recheck, staging remaining, and retry cleanup", async () =>
+        {
+            using var temp = new TempDir();
+            var historyDir = Path.Combine(temp.Root, "HistoryLifecycle");
+            var exePath = Path.Combine(temp.Sub("app"), "LifecycleTool.exe");
+            WriteMinimalPe(exePath, 0x8664, extraByte: 0x44);
+
+            var store = new JsonTrialHistoryStore(historyDir);
+            var now = new DateTimeOffset(2026, 11, 23, 11, 0, 0, TimeSpan.FromHours(8));
+            var service = new ControlledTrialService
+            {
+                // Start without staged hash to verify "未记录" fallback
+                TargetStartFactory = (target, _, _) => Task.FromResult(new SandboxStartResult(
+                    target.SessionId!, InstanceA, @"C:\temp\" + target.SessionId!, @"C:\temp\input", 2001, now, target.Kind, target.EntryRelativePath, 1, EntrySha256: null)),
+                StopFactory = (_, _, _) => Task.FromResult(new SandboxStopResult(
+                    SandboxInstanceState.Unknown, TrialStagingState.Remaining,
+                    "暂时无法确认本次沙箱实例是否已结束，未删除关联信息。", "wsb list timeout")),
+                QueryFactory = (_, _, _) => Task.FromResult(new SandboxInstancePollResult(
+                    SandboxInstanceState.ConfirmedEnded, false, TrialStagingState.Remaining)),
+                CleanupOnlyFactory = (_, _) => Task.FromResult(new SandboxStopResult(
+                    SandboxInstanceState.ConfirmedEnded, TrialStagingState.Remaining, "仍有残留", "locked"))
+            };
+
+            using var vm = new IsolatedTrialViewModel(service, clock: () => now, pollInterval: TimeSpan.FromHours(1), historyStore: store);
+            await vm.RefreshCapabilityAsync();
+            True(vm.SelectExecutable(exePath), "selected");
+            True(await vm.StartTrialAsync(), "started");
+            var sid = vm.CurrentHistorySessionId;
+
+            // Stop times out -> Unknown + Remaining, EndedAtUtc must still be null
+            True(!await vm.EndTrialAsync(), "stop unconfirmed");
+            var afterUnknown = store.LoadAll();
+            Equal(1, afterUnknown.Count, "still 1 record after unconfirmed stop");
+            Equal(sid, afterUnknown[0].SessionId, "same session_id");
+            Equal("Unknown", afterUnknown[0].Report.SandboxInstanceState, "records Unknown sandbox state separately");
+            Equal("Remaining", afterUnknown[0].Report.HostStagingState, "records Remaining staging state separately");
+            True(afterUnknown[0].Report.EndedAtUtc is null, "unconfirmed session has no fake end timestamp");
+            Equal("未记录", afterUnknown[0].Report.DisplayEntrySha256, "missing hash honestly displays 未记录");
+
+            // Recheck confirms ended, staging still Remaining -> updates SAME record
+            now = now.AddMinutes(1);
+            True(await vm.RecheckPendingSessionAsync(), "recheck resolves ConfirmedEnded");
+            var afterRecheck = store.LoadAll();
+            Equal(1, afterRecheck.Count, "still 1 record after recheck");
+            Equal("ConfirmedEnded", afterRecheck[0].Report.SandboxInstanceState, "sandbox now ConfirmedEnded");
+            Equal("Remaining", afterRecheck[0].Report.HostStagingState, "staging still Remaining");
+            True(afterRecheck[0].Report.EndedAtUtc is not null, "end timestamp populated once confirmed ended");
+
+            // Retry cleanup succeeds -> updates SAME record
+            service.CleanupOnlyFactory = (_, _) => Task.FromResult(new SandboxStopResult(
+                SandboxInstanceState.ConfirmedEnded, TrialStagingState.Cleaned, "已清理"));
+            now = now.AddMinutes(1);
+            True(await vm.RetryStagingCleanupAsync(), "retry cleanup succeeds");
+            var afterClean = store.LoadAll();
+            Equal(1, afterClean.Count, "still strictly 1 record after retry cleanup");
+            Equal("ConfirmedEnded", afterClean[0].Report.SandboxInstanceState, "final sandbox ConfirmedEnded");
+            Equal("Cleaned", afterClean[0].Report.HostStagingState, "final staging Cleaned");
+            Equal("已确认结束", afterClean[0].Report.OverallResultLabel, "final overall result 已确认结束");
+        });
+
+        await Check("crash recovery hydrates and updates strictly 1 history record preserving original metadata and hash", async () =>
+        {
+            using var temp = new TempDir();
+            var historyDir = Path.Combine(temp.Root, "HistoryRecovery");
+            var appRoot = temp.Sub("便携 恢复样例");
+            var binDir = Path.Combine(appRoot, "bin");
+            Directory.CreateDirectory(binDir);
+            var exePath = Path.Combine(binDir, "App.exe");
+            WriteMinimalPe(exePath, 0x8664, extraByte: 0x55);
+            var expectedHash = await WindowsSandboxTrialService.ComputeFileSha256Async(exePath);
+
+            var store = new JsonTrialHistoryStore(historyDir);
+            var startedAt = new DateTimeOffset(2026, 11, 23, 12, 0, 0, TimeSpan.FromHours(8));
+            string crashedSessionId = "";
+
+            // Session 1: starts, acquires instanceId, then crashes (no EndTrialAsync called!)
+            var svc1 = new ControlledTrialService
+            {
+                TargetStartFactory = (target, progress, _) =>
+                {
+                    crashedSessionId = target.SessionId!;
+                    progress?.Report(new TrialStagingProgress("输入快照准备完成，正在启动 Windows 沙箱…", 1, 1, 128, 128, "", StagedEntrySha256: expectedHash));
+                    progress?.Report(new TrialStagingProgress("沙箱实例已创建，等待桌面就绪…", 1, 1, 128, 128, "", StagedEntrySha256: expectedHash, CreatedInstanceId: InstanceA));
+                    return Task.FromResult(new SandboxStartResult(crashedSessionId, InstanceA, @"C:\temp\" + crashedSessionId, @"C:\temp\in", 3001, startedAt, target.Kind, target.EntryRelativePath, target.TotalFileCount, expectedHash));
+                }
+            };
+            using (var vm1 = new IsolatedTrialViewModel(svc1, clock: () => startedAt, pollInterval: TimeSpan.FromHours(1), historyStore: store))
+            {
+                await vm1.RefreshCapabilityAsync();
+                True(await vm1.SelectFolderAsync(appRoot), "folder scanned");
+                True(await vm1.StartTrialAsync(), "started before simulated crash");
+            }
+
+            Equal(1, store.LoadAll().Count, "1 record persisted before crash");
+
+            // Session 2: fresh Contain restart recovers pending-session with same session_id
+            var pending = new PendingTrialSessionRecord(1, crashedSessionId, InstanceA, @"C:\temp\" + crashedSessionId, "便携 恢复样例 (bin\\App.exe)", startedAt.ToUniversalTime(), 99999, 123456);
+            var recoveredAt = startedAt.AddMinutes(3);
+            var svc2 = new ControlledTrialService
+            {
+                PendingLoadResult = new PendingSessionLoadResult(PendingSessionLoadStatus.Loaded, pending),
+                QueryFactory = (_, _, _) => Task.FromResult(new SandboxInstancePollResult(SandboxInstanceState.Running, true, TrialStagingState.Remaining))
+            };
+
+            using var vm2 = new IsolatedTrialViewModel(svc2, clock: () => recoveredAt, pollInterval: TimeSpan.FromHours(1), historyStore: store);
+            await vm2.CheckPendingSessionOnStartupAsync();
+            Equal(IsolatedTrialPhase.RecoveredRunning, vm2.Phase, "recovered as running");
+            Equal(1, store.LoadAll().Count, "still strictly 1 record during recovery");
+
+            True(await vm2.EndTrialAsync(), "ended recovered session");
+            var finalRecords = store.LoadAll();
+            Equal(1, finalRecords.Count, "strictly 1 record after crash + recovery + end");
+            var finalReport = finalRecords[0].Report;
+            Equal(crashedSessionId, finalReport.SessionId, "preserved exact session_id");
+            Equal(startedAt.ToUniversalTime(), finalReport.StartedAtUtc, "preserved original start time");
+            Equal(expectedHash, finalReport.EntrySha256 ?? "", "preserved exact staged entry SHA-256 across crash");
+            Equal("folder", finalReport.InputKind, "preserved folder input mode across crash");
+            Equal(@"bin\App.exe", finalReport.EntryRelativePath, "preserved relative entry path across crash");
+            Equal("ConfirmedEnded", finalReport.SandboxInstanceState, "final sandbox ConfirmedEnded");
+            Equal("Cleaned", finalReport.HostStagingState, "final staging Cleaned");
+            True(finalReport.Timeline.Any(t => t.Stage == "启动恢复检查") && finalReport.Timeline.Any(t => t.Stage == "试用已结束"),
+                "timeline merges pre-crash and post-recovery events");
+        });
+
+        await Check("staged snapshot hashing, same-name disambiguation, replay change warning (文件已变化), missing target, and immutable old history", async () =>
+        {
+            using var temp = new TempDir();
+            var historyDir = Path.Combine(temp.Root, "HistoryReplay");
+            var stagingBase = temp.Sub("staging-hash");
+            var dirA = temp.Sub("same-a");
+            var dirB = temp.Sub("same-b");
+            var exeA = Path.Combine(dirA, "SameName.exe");
+            var exeB = Path.Combine(dirB, "SameName.exe");
+            WriteMinimalPe(exeA, 0x8664, extraByte: 0x11);
+            WriteMinimalPe(exeB, 0x8664, extraByte: 0x22);
+
+            // Verify real StageInputSnapshotAsync computes authoritative staged entry SHA-256 in single pass
+            var realSvc = new WindowsSandboxTrialService(stagingBaseDirectory: stagingBase);
+            var targetA = TrialLaunchTarget.FromSingleExecutable(WindowsSandboxTrialService.InspectExecutableFile(exeA));
+            var targetB = TrialLaunchTarget.FromSingleExecutable(WindowsSandboxTrialService.InspectExecutableFile(exeB));
+            var snapA = await realSvc.StageInputSnapshotAsync(targetA, Path.Combine(stagingBase, "inA"));
+            var snapB = await realSvc.StageInputSnapshotAsync(targetB, Path.Combine(stagingBase, "inB"));
+            var expectedHashA = await WindowsSandboxTrialService.ComputeFileSha256Async(exeA);
+            var expectedHashB = await WindowsSandboxTrialService.ComputeFileSha256Async(exeB);
+            Equal(expectedHashA, snapA.EntrySha256 ?? "", "staged snapshot A hash equals exact file bytes");
+            Equal(expectedHashB, snapB.EntrySha256 ?? "", "staged snapshot B hash equals exact file bytes");
+            True(!string.Equals(snapA.EntrySha256, snapB.EntrySha256, StringComparison.Ordinal), "two same-name EXEs produce distinct staged hashes");
+
+            var store = new JsonTrialHistoryStore(historyDir);
+            var now = new DateTimeOffset(2026, 11, 23, 13, 0, 0, TimeSpan.FromHours(8));
+            var service = new ControlledTrialService
+            {
+                TargetStartFactory = async (target, _, ct) =>
+                {
+                    var digest = await WindowsSandboxTrialService.ComputeFileSha256Async(target.EntryExecutable.FullPath, ct);
+                    return new SandboxStartResult(target.SessionId!, InstanceA, @"C:\temp\" + target.SessionId!, @"C:\temp\in", 4001, now, target.Kind, target.EntryRelativePath, target.TotalFileCount, digest);
+                }
+            };
+
+            using var vm = new IsolatedTrialViewModel(service, clock: () => now, pollInterval: TimeSpan.FromHours(1), historyStore: store);
+            await vm.RefreshCapabilityAsync();
+
+            // Run A and B
+            True(vm.SelectExecutable(exeA), "selected exeA");
+            True(await vm.StartTrialAsync(), "started A");
+            var idA = vm.CurrentHistorySessionId;
+            True(await vm.EndTrialAsync(), "ended A");
+
+            now = now.AddMinutes(1);
+            True(vm.SelectExecutable(exeB), "selected exeB");
+            True(await vm.StartTrialAsync(), "started B");
+            var idB = vm.CurrentHistorySessionId;
+            True(await vm.EndTrialAsync(), "ended B");
+
+            var recA = store.LoadBySessionId(idA)!;
+            var recB = store.LoadBySessionId(idB)!;
+            True(!string.Equals(recA.Report.EntrySha256, recB.Report.EntrySha256, StringComparison.Ordinal), "history distinguishes two same-name EXEs by SHA-256");
+
+            // Replace exeA with different bytes! Old record must remain unchanged; replay must warn "文件已变化" and NOT auto-start
+            WriteMinimalPe(exeA, 0x8664, extraByte: 0x99);
+            var modifiedHashA = await WindowsSandboxTrialService.ComputeFileSha256Async(exeA);
+            var startCallsBeforeReplay = service.StartCalls;
+            True(await vm.PrepareReplayFromHistoryAsync(recA), "replay prepares confirmation screen");
+            Equal(startCallsBeforeReplay, service.StartCalls, "replay NEVER auto-starts Sandbox");
+            True(vm.HasReplayNotice && vm.IsReplayNoticeWarning && vm.ReplayNoticeText.Contains("文件已变化", StringComparison.Ordinal),
+                "replay explicitly warns 文件已变化 when source bytes changed");
+            Equal(expectedHashA, store.LoadBySessionId(idA)!.Report.EntrySha256 ?? "", "old history record's recorded SHA-256 remains untouched");
+
+            // Confirming Start after replay creates a NEW record with new SHA-256 while old record stays intact
+            now = now.AddMinutes(1);
+            True(await vm.StartTrialAsync(), "confirmed replay starts");
+            var idReplay = vm.CurrentHistorySessionId;
+            True(!string.Equals(idReplay, idA, StringComparison.Ordinal), "replay start creates new session_id");
+            True(await vm.EndTrialAsync(), "replay ends");
+            Equal(3, store.LoadAll().Count, "now 3 distinct records");
+            Equal(expectedHashA, store.LoadBySessionId(idA)!.Report.EntrySha256 ?? "", "original record still retains old SHA-256");
+            Equal(modifiedHashA, store.LoadBySessionId(idReplay)!.Report.EntrySha256 ?? "", "new replay record captures modified SHA-256");
+
+            // Deleting source file before replay allows clean re-selection with explicit missing notice
+            File.Delete(exeB);
+            True(!await vm.PrepareReplayFromHistoryAsync(recB), "deleted file reports missing");
+            True(vm.HasReplayNotice && vm.IsReplayNoticeWarning && vm.ReplayNoticeText.Contains("已移动、删除", StringComparison.Ordinal),
+                "missing file warns clearly and allows re-selecting");
+
+            // Folder mode replay re-scans directory and detects entry hash modification
+            var portDir = temp.Sub("PortableReplay");
+            var subBin = Path.Combine(portDir, "bin");
+            Directory.CreateDirectory(subBin);
+            var portExe = Path.Combine(subBin, "Demo.exe");
+            WriteMinimalPe(portExe, 0x8664, extraByte: 0x61);
+            File.WriteAllText(Path.Combine(portDir, "readme.txt"), "hello");
+            var origPortHash = await WindowsSandboxTrialService.ComputeFileSha256Async(portExe);
+
+            now = now.AddMinutes(1);
+            True(await vm.SelectFolderAsync(portDir), "scanned portable dir");
+            True(await vm.StartTrialAsync(), "started portable dir");
+            var portId = vm.CurrentHistorySessionId;
+            True(await vm.EndTrialAsync(), "ended portable dir");
+            var portRec = store.LoadBySessionId(portId)!;
+            Equal(origPortHash, portRec.Report.EntrySha256 ?? "", "portable record saved exact entry hash");
+
+            WriteMinimalPe(portExe, 0x8664, extraByte: 0x62);
+            File.WriteAllText(Path.Combine(portDir, "extra.txt"), "added-file");
+            True(await vm.PrepareReplayFromHistoryAsync(portRec), "folder replay re-scans directory");
+            Equal(3, vm.SelectedFolder?.FileCount ?? 0, "folder replay reflects updated live file count (3 files)");
+            Equal(@"bin\Demo.exe", vm.SelectedFolderEntry?.RelativePath ?? "", "folder replay auto-selects historical entry");
+            True(vm.IsReplayNoticeWarning && vm.ReplayNoticeText.Contains("文件已变化", StringComparison.Ordinal), "folder replay detects modified entry hash");
+        });
+
+        await Check("history persistence write failure shows warning but NEVER blocks ending or cleaning up Sandbox", async () =>
+        {
+            using var temp = new TempDir();
+            var exePath = Path.Combine(temp.Sub("app"), "Resilient.exe");
+            WriteMinimalPe(exePath, 0x8664);
+
+            var failingStore = new ThrowingHistoryStore();
+            var service = new ControlledTrialService();
+            using var vm = new IsolatedTrialViewModel(service, pollInterval: TimeSpan.FromHours(1), historyStore: failingStore);
+            await vm.RefreshCapabilityAsync();
+            True(vm.SelectExecutable(exePath), "selected");
+
+            True(await vm.StartTrialAsync(), "start succeeds even when history Save throws");
+            True(vm.HasHistorySaveError && vm.HistorySaveErrorMessage.Contains("记录保存失败", StringComparison.Ordinal),
+                "shows visible history save warning");
+
+            True(await vm.EndTrialAsync(), "EndTrialAsync STILL stops and cleans Sandbox cleanly despite history Save failures");
+            Equal(IsolatedTrialPhase.Ended, vm.Phase, "Ended phase reached");
+            Equal(SandboxInstanceState.ConfirmedEnded, vm.InstanceState, "Sandbox confirmed ended");
+            Equal(TrialStagingState.Cleaned, vm.StagingState, "Staging cleaned");
+            True(vm.HasHistorySaveError, "save warning remains visible to user");
+        });
+
+        await Check("sandbox-unavailable machine can browse history and export versioned JSON report free of host paths, usernames, and raw CLI", async () =>
+        {
+            using var temp = new TempDir();
+            var historyDir = Path.Combine(temp.Root, "HistoryExport");
+            var secretFolderName = "便携 导出测试";
+            var appRoot = temp.Sub(secretFolderName);
+            var binDir = Path.Combine(appRoot, "bin");
+            Directory.CreateDirectory(binDir);
+            var exePath = Path.Combine(binDir, "Tool.exe");
+            WriteMinimalPe(exePath, 0x8664, extraByte: 0x77);
+            var expectedHash = await WindowsSandboxTrialService.ComputeFileSha256Async(exePath);
+
+            var store = new JsonTrialHistoryStore(historyDir);
+            var now = new DateTimeOffset(2026, 11, 23, 14, 0, 0, TimeSpan.FromHours(8));
+            var service = new ControlledTrialService
+            {
+                TargetStartFactory = (target, _, _) => Task.FromResult(new SandboxStartResult(
+                    target.SessionId!, InstanceA, @"C:\Users\SecretHostUser\AppData\Local\Temp\Contain-IsolatedTrial\" + target.SessionId!,
+                    @"C:\Users\SecretHostUser\AppData\Local\Temp\input", 5001, now, target.Kind, target.EntryRelativePath, target.TotalFileCount, expectedHash)),
+                StopFactory = (_, _, _) => Task.FromResult(new SandboxStopResult(
+                    SandboxInstanceState.ConfirmedEnded, TrialStagingState.Cleaned,
+                    "已确认本次沙箱实例结束，并已清理本次宿主暂存目录。",
+                    @"raw diag: wsb.exe stop --id 11111111-2222-3333-4444-555555555555 C:\Users\SecretHostUser\secret"))
+            };
+
+            using (var vm = new IsolatedTrialViewModel(service, clock: () => now, pollInterval: TimeSpan.FromHours(1), historyStore: store))
+            {
+                await vm.RefreshCapabilityAsync();
+                True(await vm.SelectFolderAsync(appRoot), "scanned folder");
+                True(await vm.StartTrialAsync(), "started folder trial");
+                True(await vm.EndTrialAsync(), "ended folder trial");
+            }
+
+            // Simulate a Home-edition machine without Windows Sandbox opening TrialHistoryViewModel
+            var homeService = new ControlledTrialService
+            {
+                CapabilityReport = WindowsSandboxTrialService.ClassifyHostEnvironment(BaseSnapshot() with
+                {
+                    EditionId = "Core", ProductName = "Windows 11 Home", ProductType = 0x65
+                })
+            };
+            using var homeTrialVm = new IsolatedTrialViewModel(homeService, historyStore: store);
+            await homeTrialVm.RefreshCapabilityAsync();
+            True(homeTrialVm.IsCapabilityBlocked, "Home machine cannot start Sandbox");
+
+            var historyVm = new TrialHistoryViewModel(store);
+            historyVm.Refresh();
+            Equal(1, historyVm.TotalCount, "Home machine still loads existing trial history");
+            True(historyVm.OpenRecord(historyVm.FilteredRecords[0].SessionId), "opens record detail without Sandbox");
+
+            var exportPath = Path.Combine(temp.Root, "exported-report.json");
+            True(historyVm.ExportSelectedReport(exportPath), "exports versioned JSON report without Sandbox");
+            var exportedJson = File.ReadAllText(exportPath);
+            var parsed = JsonTrialHistoryStore.DeserializeReportJson(exportedJson)
+                ?? throw new InvalidOperationException("Failed to deserialize exported report JSON.");
+
+            Equal(1, parsed.SchemaVersion, "schema_version == 1");
+            Equal(TrialSessionReport.ProtocolName, parsed.Protocol, "protocol matches contain-isolated-trial-report-1");
+            Equal(historyVm.DetailTitle, parsed.SoftwareName, "detail view and JSON share exact software name");
+            Equal(historyVm.DetailEntryRelativePath, parsed.EntryRelativePath, "detail view and JSON share exact relative entry");
+            Equal(historyVm.DetailEntrySha256, parsed.EntrySha256 ?? "", "detail view and JSON share exact entry SHA-256");
+            Equal(historyVm.DetailSandboxStateLabel, parsed.SandboxInstanceStateLabel, "detail view and JSON share sandbox state");
+            Equal(historyVm.DetailStagingStateLabel, parsed.HostStagingStateLabel, "detail view and JSON share staging state");
+            True(parsed.FolderScope is not null && parsed.FolderScope.FileCount == 1, "folder scope preserved in JSON");
+
+            // Strict privacy assertions: NO host absolute paths, NO usernames, NO raw diagnostic CLI commands!
+            True(!exportedJson.Contains(temp.Root, StringComparison.OrdinalIgnoreCase), "exported JSON omits host temp root");
+            True(!exportedJson.Contains(appRoot, StringComparison.OrdinalIgnoreCase), "exported JSON omits host source folder path");
+            True(!exportedJson.Contains("SecretHostUser", StringComparison.OrdinalIgnoreCase), "exported JSON omits host staging username");
+            True(!exportedJson.Contains("wsb.exe", StringComparison.OrdinalIgnoreCase), "exported JSON omits raw diagnostic commands");
+            True(!exportedJson.Contains("local_hints", StringComparison.OrdinalIgnoreCase), "exported JSON omits local replay hints");
+            if (!string.IsNullOrWhiteSpace(Environment.UserName) && Environment.UserName.Length >= 3)
+            {
+                True(!exportedJson.Contains(Environment.UserName, StringComparison.OrdinalIgnoreCase),
+                    "exported JSON omits current Windows username");
+            }
+        });
+
         return passed;
 
         async Task Check(string name, Func<Task> body)
@@ -995,7 +1391,8 @@ internal static class IsolatedTrialChecks
             StartCalls++;
             if (TargetStartFactory is not null) return TargetStartFactory(target, stagingProgress, cancellationToken);
             if (StartFactory is not null) return StartFactory(target.EntryExecutable, cancellationToken);
-            return Task.FromResult(new SandboxStartResult("a1b2c3d4e5f6", InstanceA, @"C:\temp\a1b2c3d4e5f6", @"C:\temp\a1b2c3d4e5f6\input", 1001, DateTimeOffset.UtcNow, target.Kind, target.EntryRelativePath, target.TotalFileCount));
+            var sid = target.SessionId ?? "a1b2c3d4e5f6";
+            return Task.FromResult(new SandboxStartResult(sid, InstanceA, @"C:\temp\" + sid, @"C:\temp\" + sid + @"\input", 1001, DateTimeOffset.UtcNow, target.Kind, target.EntryRelativePath, target.TotalFileCount));
         }
 
         public Task<GuestProgramLaunchResult> LaunchProgramInSandboxAsync(
@@ -1037,5 +1434,14 @@ internal static class IsolatedTrialChecks
         public PendingSessionLoadResult LoadPendingSession() => PendingLoadResult;
 
         public void ClearPendingSession(string? expectedInstanceId = null, string? expectedSessionId = null) => ClearPendingCalls++;
+    }
+
+    private sealed class ThrowingHistoryStore : ITrialHistoryStore
+    {
+        public string HistoryDirectoryPath => @"C:\unwritable\history";
+        public IReadOnlyList<TrialHistoryRecord> LoadAll() => [];
+        public TrialHistoryRecord? LoadBySessionId(string sessionId) => null;
+        public void Save(TrialHistoryRecord record) => throw new IOException("simulated disk full on history directory");
+        public void ExportReport(TrialSessionReport report, string destinationPath) => throw new IOException("simulated export failure");
     }
 }

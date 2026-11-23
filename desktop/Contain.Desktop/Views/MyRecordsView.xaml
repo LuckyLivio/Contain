@@ -3,69 +3,197 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
     <Grid Margin="24,16,24,16">
-        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-        <Grid Margin="0,0,0,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Page header -->
+        <Grid Margin="0,0,0,14">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
             <StackPanel>
-                <TextBlock Text="我的记录" Style="{StaticResource PageTitle}" />
-                <TextBlock Text="找回安装记录，查看发生过的文件操作。" Style="{StaticResource MutedText}" />
+                <TextBlock Text="我的记录" Style="{StaticResource PageTitle}" Margin="0,0,0,4" />
+                <TextBlock Text="找回安装记录与隔离试用历史，查看文件操作或单次试用报告。" Style="{StaticResource MutedText}" />
             </StackPanel>
-            <ui:Button Grid.Column="1" Content="新建记录" Appearance="Primary" VerticalAlignment="Center" Margin="16,0,0,0" Click="OnNew" AutomationProperties.AutomationId="NewRecordButton">
+            <ui:Button Grid.Column="1" Content="新建记录" Appearance="Primary" VerticalAlignment="Center" Margin="16,0,0,0" Click="OnNew"
+                       Visibility="{Binding IsInstallRecordsCategory, Converter={StaticResource BoolVisibility}}"
+                       AutomationProperties.AutomationId="NewRecordButton">
                 <ui:Button.Icon><ui:SymbolIcon Symbol="DocumentAdd24" /></ui:Button.Icon>
             </ui:Button>
-        </Grid>
-        <Grid Grid.Row="1" Margin="0,0,0,16">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-            <StackPanel>
-                <TextBlock Text="{Binding Records.SourceTitle}" FontWeight="SemiBold" AutomationProperties.AutomationId="LibrarySource" />
-                <TextBlock Text="{Binding Records.SourceDescription}" Style="{StaticResource MutedText}" Margin="0,4,0,0" />
-            </StackPanel>
-            <ui:Button Grid.Column="1" Content="刷新" Appearance="Transparent" Click="OnRefresh" AutomationProperties.AutomationId="RefreshRecords">
-                <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowClockwise24" /></ui:Button.Icon>
+            <ui:Button Grid.Column="1" Content="前往隔离试用" Appearance="Primary" VerticalAlignment="Center" Margin="16,0,0,0" Click="OnGoToTrial"
+                       Visibility="{Binding IsTrialHistoryCategory, Converter={StaticResource BoolVisibility}}"
+                       AutomationProperties.AutomationId="GoToTrialFromHistoryButton">
+                <ui:Button.Icon><ui:SymbolIcon Symbol="Shield24" /></ui:Button.Icon>
             </ui:Button>
         </Grid>
-        <Border Grid.Row="2" Style="{StaticResource Surface}" Padding="8" Margin="0">
-            <Grid>
-                <ListBox x:Name="RecordList" ItemsSource="{Binding Records.Sessions}" AutomationProperties.AutomationId="RecordList" AutomationProperties.Name="安装记录列表"
-                         BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                         VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
-                         SelectionChanged="OnSelectionChanged">
-                    <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource RecordItem}">
-                            <Setter Property="AutomationProperties.AutomationId" Value="{Binding Id, StringFormat=record:{0}}" />
-                            <Setter Property="AutomationProperties.HelpText" Value="{Binding Id, StringFormat=record:{0}}" />
-                            <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
-                        </Style>
-                    </ListBox.ItemContainerStyle>
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="40" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                <ui:SymbolIcon Symbol="DocumentText24" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Top" Margin="0,4,12,0" />
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
-                                    <TextBlock Text="{Binding DisplayTime}" Style="{StaticResource MutedText}" Margin="0,6,0,0" />
-                                    <TextBlock Text="{Binding Disambiguation}" Style="{StaticResource MutedText}" ToolTip="{Binding Id}" Margin="0,4,0,0" Visibility="{Binding Disambiguation, Converter={StaticResource TextVisibility}}" />
-                                    <TextBlock Text="{Binding Coverage}" Style="{StaticResource MutedText}" Margin="0,4,0,0" />
-                                </StackPanel>
-                                <TextBlock Grid.Column="2" Text="{Binding State}" Margin="16,2,0,0" FontSize="12" VerticalAlignment="Top" />
-                            </Grid>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="420" Margin="24" Visibility="{Binding Records.IsEmpty, Converter={StaticResource BoolVisibility}}">
-                    <ui:SymbolIcon Symbol="DocumentMultiple24" FontSize="40" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,20" />
-                    <TextBlock Text="从第一条安装记录开始" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Center" />
-                    <TextBlock Text="选择一个 EXE 并开始记录。记录会保存到“我的记录”，以后随时可以回来查看。" Style="{StaticResource MutedText}" TextAlignment="Center" Margin="0,12,0,24" />
-                    <ui:Button Content="新建第一条记录" Appearance="Primary" HorizontalAlignment="Center" Click="OnNew" AutomationProperties.AutomationId="EmptyRecordsCTA" />
+
+        <!-- Category switcher: 安装记录 | 隔离试用 -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,14">
+            <ui:Button Content="安装记录" Padding="16,8" Margin="0,0,8,0" Click="OnSelectInstallCategory"
+                       AutomationProperties.AutomationId="InstallRecordsCategoryButton">
+                <ui:Button.Style>
+                    <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                        <Setter Property="Appearance" Value="Secondary" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsInstallRecordsCategory}" Value="True">
+                                <Setter Property="Appearance" Value="Primary" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ui:Button.Style>
+                <ui:Button.Icon><ui:SymbolIcon Symbol="DocumentText24" /></ui:Button.Icon>
+            </ui:Button>
+            <ui:Button Content="{Binding TrialHistory.TabHeaderText}" Padding="16,8" Click="OnSelectTrialCategory"
+                       AutomationProperties.AutomationId="TrialHistoryCategoryButton">
+                <ui:Button.Style>
+                    <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                        <Setter Property="Appearance" Value="Secondary" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsTrialHistoryCategory}" Value="True">
+                                <Setter Property="Appearance" Value="Primary" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ui:Button.Style>
+                <ui:Button.Icon><ui:SymbolIcon Symbol="Shield24" /></ui:Button.Icon>
+            </ui:Button>
+        </StackPanel>
+
+        <!-- Category 1: 安装记录 (existing SQLite install records, 100% preserved) -->
+        <Grid Grid.Row="2" Visibility="{Binding IsInstallRecordsCategory, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="InstallRecordsPanel">
+            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+            <Grid Margin="0,0,0,14">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="{Binding Records.SourceTitle}" FontWeight="SemiBold" AutomationProperties.AutomationId="LibrarySource" />
+                    <TextBlock Text="{Binding Records.SourceDescription}" Style="{StaticResource MutedText}" Margin="0,4,0,0" />
                 </StackPanel>
-                <Border Background="#F3FFFFFF" Visibility="{Binding Records.IsBusy, Converter={StaticResource BoolVisibility}}">
-                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <ProgressBar IsIndeterminate="True" Width="160" Height="4" />
-                        <TextBlock Text="正在读取记录…" Margin="0,16,0,0" />
-                    </StackPanel>
-                </Border>
+                <ui:Button Grid.Column="1" Content="刷新" Appearance="Transparent" Click="OnRefresh" AutomationProperties.AutomationId="RefreshRecords">
+                    <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowClockwise24" /></ui:Button.Icon>
+                </ui:Button>
             </Grid>
-        </Border>
+            <Border Grid.Row="1" Style="{StaticResource Surface}" Padding="8" Margin="0">
+                <Grid>
+                    <ListBox x:Name="RecordList" ItemsSource="{Binding Records.Sessions}" AutomationProperties.AutomationId="RecordList" AutomationProperties.Name="安装记录列表"
+                             BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                             SelectionChanged="OnSelectionChanged">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem" BasedOn="{StaticResource RecordItem}">
+                                <Setter Property="AutomationProperties.AutomationId" Value="{Binding Id, StringFormat=record:{0}}" />
+                                <Setter Property="AutomationProperties.HelpText" Value="{Binding Id, StringFormat=record:{0}}" />
+                                <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="40" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <ui:SymbolIcon Symbol="DocumentText24" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Top" Margin="0,4,12,0" />
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                                        <TextBlock Text="{Binding DisplayTime}" Style="{StaticResource MutedText}" Margin="0,6,0,0" />
+                                        <TextBlock Text="{Binding Disambiguation}" Style="{StaticResource MutedText}" ToolTip="{Binding Id}" Margin="0,4,0,0" Visibility="{Binding Disambiguation, Converter={StaticResource TextVisibility}}" />
+                                        <TextBlock Text="{Binding Coverage}" Style="{StaticResource MutedText}" Margin="0,4,0,0" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2" Text="{Binding State}" Margin="16,2,0,0" FontSize="12" VerticalAlignment="Top" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="420" Margin="24" Visibility="{Binding Records.IsEmpty, Converter={StaticResource BoolVisibility}}">
+                        <ui:SymbolIcon Symbol="DocumentMultiple24" FontSize="40" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,20" />
+                        <TextBlock Text="从第一条安装记录开始" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        <TextBlock Text="选择一个 EXE 并开始记录。记录会保存到“我的记录”，以后随时可以回来查看。" Style="{StaticResource MutedText}" TextAlignment="Center" Margin="0,12,0,24" />
+                        <ui:Button Content="新建第一条记录" Appearance="Primary" HorizontalAlignment="Center" Click="OnNew" AutomationProperties.AutomationId="EmptyRecordsCTA" />
+                    </StackPanel>
+                    <Border Background="#F3FFFFFF" Visibility="{Binding Records.IsBusy, Converter={StaticResource BoolVisibility}}">
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <ProgressBar IsIndeterminate="True" Width="160" Height="4" />
+                            <TextBlock Text="正在读取记录…" Margin="0,16,0,0" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Category 2: 隔离试用历史 (independent of Windows Sandbox availability) -->
+        <Grid Grid.Row="2" Visibility="{Binding IsTrialHistoryCategory, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="TrialHistoryPanel">
+            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+            <StackPanel Margin="0,0,0,12">
+                <DockPanel Margin="0,0,0,8">
+                    <ui:Button DockPanel.Dock="Right" Content="刷新" Appearance="Transparent" Margin="8,0,0,0" Click="OnRefreshTrialHistory" AutomationProperties.AutomationId="RefreshTrialHistoryButton">
+                        <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowClockwise24" /></ui:Button.Icon>
+                    </ui:Button>
+                    <ui:Button DockPanel.Dock="Right" Content="清除" Appearance="Transparent" Margin="8,0,0,0" Click="OnClearTrialSearch" AutomationProperties.AutomationId="ClearTrialHistorySearchButton" />
+                    <ui:TextBox x:Name="TrialSearchBox" Text="{Binding TrialHistory.SearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                                PlaceholderText="按软件名称、入口路径或版本搜索隔离试用历史"
+                                AutomationProperties.AutomationId="TrialHistorySearchBox" AutomationProperties.Name="搜索隔离试用历史" />
+                </DockPanel>
+                <TextBlock Text="按最近时间排列，独立保存在当前用户应用数据目录；即使本机未启用 Windows 沙盒，仍可浏览已有历史并导出单次报告。" Style="{StaticResource MutedText}" FontSize="12" />
+            </StackPanel>
+
+            <Border Grid.Row="1" Style="{StaticResource Surface}" Padding="8" Margin="0">
+                <Grid>
+                    <ListBox x:Name="TrialHistoryList" ItemsSource="{Binding TrialHistory.FilteredRecords}"
+                             AutomationProperties.AutomationId="TrialHistoryList" AutomationProperties.Name="隔离试用历史列表"
+                             BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                             SelectionChanged="OnTrialSelectionChanged">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem" BasedOn="{StaticResource RecordItem}">
+                                <Setter Property="AutomationProperties.AutomationId" Value="{Binding SessionId, StringFormat=trial-record:{0}}" />
+                                <Setter Property="AutomationProperties.HelpText" Value="{Binding SessionId, StringFormat=trial-record:{0}}" />
+                                <Setter Property="AutomationProperties.Name" Value="{Binding SoftwareName}" />
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="40" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <ui:SymbolIcon Symbol="Shield24" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Top" Margin="0,4,12,0" />
+                                    <StackPanel Grid.Column="1">
+                                        <WrapPanel VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding SoftwareName}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" Margin="0,0,8,0" />
+                                            <Border Background="#EAF5F1" CornerRadius="4" Padding="7,2" Margin="0,1,6,0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding InputKindLabel}" Foreground="#0E5A53" FontSize="11" FontWeight="SemiBold" />
+                                            </Border>
+                                            <Border Background="#EEF2F2" CornerRadius="4" Padding="7,2" Margin="0,1,0,0" VerticalAlignment="Center" Visibility="{Binding HasVersion, Converter={StaticResource BoolVisibility}}">
+                                                <TextBlock Text="{Binding DisplayVersion, StringFormat=版本 {0}}" Foreground="#354643" FontSize="11" />
+                                            </Border>
+                                        </WrapPanel>
+                                        <TextBlock Text="{Binding DisplayEntrySummary}" Style="{StaticResource MutedText}" FontSize="13" Margin="0,5,0,0" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                                        <TextBlock Text="{Binding DisplayStartedTime}" Style="{StaticResource MutedText}" FontSize="12" Margin="0,4,0,0" />
+                                    </StackPanel>
+                                    <Border Grid.Column="2" Background="#F2F6F5" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="6" Padding="10,4" Margin="16,2,0,0" VerticalAlignment="Top">
+                                        <TextBlock Text="{Binding OverallResultLabel}" FontSize="12" FontWeight="SemiBold" Foreground="#213934" />
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <!-- Empty history state -->
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="440" Margin="24"
+                                Visibility="{Binding TrialHistory.IsEmpty, Converter={StaticResource BoolVisibility}}"
+                                AutomationProperties.AutomationId="EmptyTrialHistoryState">
+                        <ui:SymbolIcon Symbol="Shield24" FontSize="40" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,18" />
+                        <TextBlock Text="还没有隔离试用历史" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        <TextBlock Text="每次点击“开始隔离试用”都会在此保留一条独立记录，便于稍后查看详情、导出版本化 JSON 报告或再次试用。仅浏览文件或计算 SHA-256 不会生成记录。" Style="{StaticResource MutedText}" TextAlignment="Center" Margin="0,12,0,22" />
+                        <ui:Button Content="前往隔离试用" Appearance="Primary" HorizontalAlignment="Center" Click="OnGoToTrial" AutomationProperties.AutomationId="EmptyTrialHistoryCTA" />
+                    </StackPanel>
+
+                    <!-- Empty search match state -->
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="400" Margin="24"
+                                Visibility="{Binding TrialHistory.IsSearchEmpty, Converter={StaticResource BoolVisibility}}"
+                                AutomationProperties.AutomationId="EmptyTrialHistorySearchState">
+                        <TextBlock Text="没有匹配的隔离试用记录" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        <TextBlock Text="请尝试更换软件名、入口相对路径关键词，或清除搜索条件。" Style="{StaticResource MutedText}" TextAlignment="Center" Margin="0,8,0,16" />
+                        <ui:Button Content="清除搜索" Appearance="Secondary" HorizontalAlignment="Center" Click="OnClearTrialSearch" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

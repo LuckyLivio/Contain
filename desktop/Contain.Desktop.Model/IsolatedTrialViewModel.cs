@@ -19,8 +19,32 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
     private readonly Func<DateTimeOffset> clock;
     private readonly TimeSpan pollInterval;
     private readonly TimeSpan recoveryQueryTimeout;
+    private readonly ITrialHistoryStore? historyStore;
+    private readonly Action<TrialHistoryRecord>? onHistoryUpdated;
     private readonly object opsGate = new();
     private readonly HashSet<Task> pendingOps = [];
+
+    private sealed class SessionHistoryContext
+    {
+        public required string SessionId { get; init; }
+        public required DateTimeOffset StartedAtUtc { get; init; }
+        public DateTimeOffset? EndedAtUtc { get; set; }
+        public required string SoftwareName { get; set; }
+        public required string Version { get; set; }
+        public required TrialInputKind InputKind { get; set; }
+        public required string EntryRelativePath { get; set; }
+        public required string EntryFileName { get; set; }
+        public required string EntryArchitecture { get; set; }
+        public long? EntrySizeBytes { get; set; }
+        public string? EntrySha256 { get; set; }
+        public TrialFolderScopeReport? FolderScope { get; set; }
+        public string LaunchOutcome { get; set; } = "not_attempted";
+        public string LaunchOutcomeLabel { get; set; } = "尚未启动入口";
+        public string LaunchSummary { get; set; } = "正在准备输入快照并等待沙箱就绪。";
+        public string SourcePathHint { get; set; } = "";
+        public string EntryPathHint { get; set; } = "";
+        public string? InstanceIdHint { get; set; }
+    }
 
     private bool disposed;
     private bool capabilityCheckedOnce;
@@ -90,18 +114,33 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
     private bool technicalDetailsExpanded;
     private string technicalDetailsText = "";
 
+    // Persistent trial history tracking (strictly 1 record per session; save failures never block Sandbox stop/cleanup)
+    private readonly object timelineGate = new();
+    private readonly List<TrialTimelineEventReport> reportTimeline = [];
+    private SessionHistoryContext? historyContext;
+    private TrialHistoryRecord? activeHistoryRecord;
+    private string historySaveError = "";
+
+    // Replay-from-history confirmation notice (never auto-starts Sandbox)
+    private string replayNoticeText = "";
+    private bool isReplayNoticeWarning;
+
     public IsolatedTrialViewModel(
         IIsolatedTrialService service,
         Action<Action>? dispatch = null,
         Func<DateTimeOffset>? clock = null,
         TimeSpan? pollInterval = null,
-        TimeSpan? recoveryQueryTimeout = null)
+        TimeSpan? recoveryQueryTimeout = null,
+        ITrialHistoryStore? historyStore = null,
+        Action<TrialHistoryRecord>? onHistoryUpdated = null)
     {
         this.service = service ?? throw new ArgumentNullException(nameof(service));
         this.dispatch = dispatch ?? (action => action());
         this.clock = clock ?? (() => DateTimeOffset.Now);
         this.pollInterval = pollInterval ?? TimeSpan.FromMilliseconds(1500);
         this.recoveryQueryTimeout = recoveryQueryTimeout ?? TimeSpan.FromSeconds(10);
+        this.historyStore = historyStore;
+        this.onHistoryUpdated = onHistoryUpdated;
     }
 
     public ObservableCollection<TrialEvidenceEntry> EvidenceItems { get; } = [];
@@ -451,6 +490,16 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
     }
     public string TechnicalDetailsText => technicalDetailsText;
 
+    // Persistent trial history & replay confirmation bindings
+    public bool HasCurrentHistoryRecord => activeHistoryRecord is not null;
+    public string CurrentHistorySessionId => activeHistoryRecord?.SessionId ?? "";
+    public TrialHistoryRecord? ActiveHistoryRecord => activeHistoryRecord;
+    public bool HasHistorySaveError => historySaveError.Length > 0;
+    public string HistorySaveErrorMessage => historySaveError;
+    public bool HasReplayNotice => replayNoticeText.Length > 0;
+    public string ReplayNoticeText => replayNoticeText;
+    public bool IsReplayNoticeWarning => isReplayNoticeWarning;
+
     public void CancelSelection() { }
 
     /// <summary>
@@ -505,7 +554,11 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         isCleanupWarning = false;
         failureNextStep = "";
         failureDiagnostic = "";
-        AddEvidence("启动恢复检查", $"读取到上次未结束会话记录（目标：{record.FileName}，实例：{record.InstanceId}），正在限时查询该确切实例状态。");
+        historySaveError = "";
+
+        HydrateOrInitRecoveryHistory(record);
+        AddEvidence("启动恢复检查", $"读取到上次未结束会话记录（目标：{lastSessionDisplayName}），正在限时查询该沙箱实例状态。");
+        PersistCurrentHistoryRecord();
         RebuildTechnicalDetails();
         NotifyAll();
 
@@ -515,7 +568,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
             var poll = await service.QueryInstanceStateAsync(record.InstanceId, record.StagingRootPath, timeoutCts.Token).ConfigureAwait(true);
             if (disposed) return;
 
-            await ApplyPendingQueryResultAsync(record.SessionId, record.InstanceId, record.StagingRootPath, record.FileName, poll).ConfigureAwait(true);
+            await ApplyPendingQueryResultAsync(record.SessionId, record.InstanceId, record.StagingRootPath, lastSessionDisplayName, poll).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -526,13 +579,87 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                 staging: TrialStagingState.Unconfirmed,
                 diagnostic: $"{ex.GetType().Name}: {ex.Message}",
                 evidenceStage: "恢复查询异常",
-                evidenceDetail: $"限时查询上次实例状态失败：{ex.Message}");
+                evidenceDetail: "限时查询上次沙箱实例状态失败，暂时无法确认实例状态。");
         }
         finally
         {
             operationBusy = false;
             NotifyAll();
         }
+    }
+
+    private void HydrateOrInitRecoveryHistory(PendingTrialSessionRecord record)
+    {
+        TrialHistoryRecord? existing = null;
+        try { existing = historyStore?.LoadBySessionId(record.SessionId); }
+        catch { existing = null; }
+
+        if (existing is not null)
+        {
+            var r = existing.Report;
+            lastSessionDisplayName = r.SoftwareName;
+            lastEntryRelativePath = r.EntryRelativePath;
+            lastSessionInputKind = r.IsFolderMode ? TrialInputKind.Folder : TrialInputKind.SingleFile;
+            lastSessionFileCount = r.FolderScope?.FileCount ?? 1;
+            lastSessionSizeText = r.FolderScope?.FormattedTotalSize ?? "";
+            historyContext = new SessionHistoryContext
+            {
+                SessionId = r.SessionId,
+                StartedAtUtc = r.StartedAtUtc,
+                EndedAtUtc = r.EndedAtUtc,
+                SoftwareName = r.SoftwareName,
+                Version = r.Version,
+                InputKind = r.IsFolderMode ? TrialInputKind.Folder : TrialInputKind.SingleFile,
+                EntryRelativePath = r.EntryRelativePath,
+                EntryFileName = r.EntryFileName,
+                EntryArchitecture = r.EntryArchitecture,
+                EntrySizeBytes = r.EntrySizeBytes,
+                EntrySha256 = r.EntrySha256Recorded ? r.EntrySha256 : null,
+                FolderScope = r.FolderScope,
+                LaunchOutcome = r.LaunchOutcome,
+                LaunchOutcomeLabel = r.LaunchOutcomeLabel,
+                LaunchSummary = r.LaunchSummary,
+                SourcePathHint = existing.LocalHints.SourcePathHint,
+                EntryPathHint = existing.LocalHints.EntryPathHint,
+                InstanceIdHint = string.IsNullOrWhiteSpace(record.InstanceId) ? existing.LocalHints.InstanceId : record.InstanceId
+            };
+            EvidenceItems.Clear();
+            lock (timelineGate)
+            {
+                reportTimeline.Clear();
+                foreach (var item in r.Timeline)
+                {
+                    EvidenceItems.Add(new TrialEvidenceEntry(item.DisplayTime, item.Stage, item.Summary, item.TimestampUtc));
+                    reportTimeline.Add(item);
+                }
+            }
+            activeHistoryRecord = existing;
+            return;
+        }
+
+        EvidenceItems.Clear();
+        lock (timelineGate) reportTimeline.Clear();
+        historyContext = new SessionHistoryContext
+        {
+            SessionId = record.SessionId,
+            StartedAtUtc = record.CreatedUtc.ToUniversalTime(),
+            EndedAtUtc = null,
+            SoftwareName = record.FileName,
+            Version = "未提供",
+            InputKind = TrialInputKind.SingleFile,
+            EntryRelativePath = record.FileName,
+            EntryFileName = record.FileName,
+            EntryArchitecture = "未记录",
+            EntrySizeBytes = null,
+            EntrySha256 = null,
+            FolderScope = null,
+            LaunchOutcome = "recovered_without_prior_history",
+            LaunchOutcomeLabel = "由未结束会话恢复",
+            LaunchSummary = "该记录在重新打开 Contain 后由未结束会话恢复建立，崩溃前的入口哈希或目录详情未留存。",
+            SourcePathHint = "",
+            EntryPathHint = "",
+            InstanceIdHint = record.InstanceId
+        };
     }
 
     public Task<bool> RecheckPendingSessionAsync()
@@ -569,7 +696,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                     staging: stagingState,
                     diagnostic: $"{ex.GetType().Name}: {ex.Message}",
                     evidenceStage: "重新检查失败",
-                    evidenceDetail: $"重新查询实例状态出错：{ex.Message}");
+                    evidenceDetail: "重新查询沙箱实例状态失败，暂时无法确认实例状态。");
                 return false;
             }
             finally
@@ -614,7 +741,8 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                 failureNextStep = "";
                 failureDiagnostic = "";
                 statusMessage = "检测到上次隔离试用仍在运行，可点击“结束这次试用”。";
-                AddEvidence("恢复确认：仍在运行", $"可靠查询确认实例 {instanceId} 仍在运行（暂存目录：{FormatStagingStateLabel(stagingState)}）。");
+                AddEvidence("恢复确认：仍在运行", $"可靠查询确认上次沙箱实例仍在运行（宿主暂存目录：{FormatStagingStateLabel(stagingState)}）。");
+                PersistCurrentHistoryRecord();
                 RebuildTechnicalDetails();
                 NotifyAll();
                 StartSessionMonitor(activeSession);
@@ -622,6 +750,8 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
 
             case SandboxInstanceState.ConfirmedEnded:
                 activeSession = null;
+                if (historyContext is not null && historyContext.EndedAtUtc is null)
+                    historyContext.EndedAtUtc = clock().ToUniversalTime();
                 if (stagingState == TrialStagingState.Remaining && !string.IsNullOrEmpty(stagingPath))
                 {
                     var cleanRes = await service.CleanupStagingOnlyAsync(stagingPath).ConfigureAwait(true);
@@ -641,7 +771,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                     isCleanupWarning = false;
                     failureNextStep = "";
                     statusMessage = "上次试用已确认结束，本次临时文件已清理。";
-                    AddEvidence("恢复确认：已结束并清理", $"可靠查询确认实例 {instanceId} 已不在运行列表中，暂存目录已清理，待恢复记录已移除。");
+                    AddEvidence("恢复确认：已结束并清理", "可靠查询确认上次沙箱实例已不在运行列表中，本次宿主暂存目录已清理，待恢复记录已移除。");
                 }
                 else
                 {
@@ -655,8 +785,9 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                     isCleanupWarning = true;
                     failureNextStep = "请确认没有其他程序占用临时目录后点击“重试清理”。";
                     statusMessage = "上次试用已结束，但临时文件仍有残留。";
-                    AddEvidence("恢复确认：暂存待清理", $"实例 {instanceId} 已确认结束，但暂存目录状态为：{FormatStagingStateLabel(stagingState)}。");
+                    AddEvidence("恢复确认：暂存待清理", $"已确认上次沙箱实例结束，但本次宿主暂存目录状态为：{FormatStagingStateLabel(stagingState)}。");
                 }
+                PersistCurrentHistoryRecord();
                 RebuildTechnicalDetails();
                 NotifyAll();
                 break;
@@ -668,7 +799,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                     staging: poll.StagingState,
                     diagnostic: poll.Diagnostic,
                     evidenceStage: "状态尚未确认",
-                    evidenceDetail: $"未能取得有效的实例列表以确认 {instanceId} 的状态（{poll.Diagnostic}），已保留恢复记录。");
+                    evidenceDetail: "未能取得有效的实例列表以确认沙箱状态，已保留恢复记录。");
                 break;
         }
     }
@@ -724,6 +855,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                     failureNextStep = "";
                     statusMessage = "本次临时文件已清理，待恢复记录已移除。";
                     AddEvidence("重试清理成功", "经核对的本次宿主暂存目录已清理，待恢复记录已移除。");
+                    PersistCurrentHistoryRecord();
                     RebuildTechnicalDetails();
                     NotifyAll();
                     return true;
@@ -734,7 +866,8 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                     : "本次临时文件清理状态尚未确认（路径未通过核验或无法访问），未删除目录。";
                 isCleanupWarning = true;
                 statusMessage = cleanupStatusText;
-                AddEvidence("重试清理未完成", $"暂存目录状态：{FormatStagingStateLabel(stagingState)}（{res.Diagnostic}）。");
+                AddEvidence("重试清理未完成", $"本次宿主暂存目录状态仍为：{FormatStagingStateLabel(stagingState)}。");
+                PersistCurrentHistoryRecord();
                 RebuildTechnicalDetails();
                 NotifyAll();
                 return false;
@@ -811,7 +944,9 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         NotifyAll();
     }
 
-    public bool SelectExecutable(string path)
+    public bool SelectExecutable(string path) => SelectExecutableCore(path, clearReplayNotice: true);
+
+    private bool SelectExecutableCore(string path, bool clearReplayNotice)
     {
         if (!CanSelectExecutable) return false;
 
@@ -819,6 +954,11 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         CancelActiveHash();
         selectionEpoch++;
         ResetHashStateOnly();
+        if (clearReplayNotice)
+        {
+            replayNoticeText = "";
+            isReplayNoticeWarning = false;
+        }
         inputKind = TrialInputKind.SingleFile;
         selectedFolder = null;
         selectedFolderEntry = null;
@@ -850,7 +990,9 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         }
     }
 
-    public Task<bool> SelectFolderAsync(string folderPath)
+    public Task<bool> SelectFolderAsync(string folderPath) => SelectFolderInternalAsync(folderPath, clearReplayNotice: true);
+
+    private Task<bool> SelectFolderInternalAsync(string folderPath, bool clearReplayNotice)
     {
         if (!CanSelectFolder) return Task.FromResult(false);
 
@@ -859,6 +1001,11 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         selectionEpoch++;
         var epoch = selectionEpoch;
         ResetHashStateOnly();
+        if (clearReplayNotice)
+        {
+            replayNoticeText = "";
+            isReplayNoticeWarning = false;
+        }
 
         inputKind = TrialInputKind.Folder;
         selectedExecutable = null;
@@ -877,6 +1024,204 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         NotifyAll();
 
         return Track(() => SelectFolderCoreAsync(folderPath ?? "", epoch, cts.Token));
+    }
+
+    /// <summary>
+    /// Prepares the confirmation screen on "隔离试用" from a historical record without auto-starting Sandbox.
+    /// Verifies file/folder existence, re-scans folder in folder mode, and explicitly warns "文件已变化"
+    /// when a recorded entry SHA-256 differs from the current file bytes on disk.
+    /// </summary>
+    public async Task<bool> PrepareReplayFromHistoryAsync(TrialHistoryRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        if (disposed) return false;
+
+        if (!CanSelectExecutable)
+        {
+            replayNoticeText = "当前已有正在进行或待处理的隔离试用，请先处理当前会话后再从历史记录再次试用。";
+            isReplayNoticeWarning = true;
+            statusMessage = replayNoticeText;
+            NotifyAll();
+            return false;
+        }
+
+        MaybeResetCompletedSessionDisplay();
+        var report = record.Report;
+        var hints = record.LocalHints;
+
+        if (!report.IsFolderMode)
+        {
+            var pathHint = !string.IsNullOrWhiteSpace(hints.EntryPathHint) ? hints.EntryPathHint : hints.SourcePathHint;
+            if (string.IsNullOrWhiteSpace(pathHint) || !File.Exists(pathHint))
+            {
+                CancelActiveFolderScan();
+                CancelActiveHash();
+                selectionEpoch++;
+                ResetHashStateOnly();
+                inputKind = TrialInputKind.SingleFile;
+                selectedExecutable = null;
+                selectedFolder = null;
+                selectedFolderEntry = null;
+                FolderEntryCandidates.Clear();
+                executablePathInput = "";
+                selectionError = "";
+                replayNoticeText = $"原文件“{report.EntryFileName}”已移动、删除或当前不可访问。请点击下方“选择 EXE”重新选择文件后再确认开始。";
+                isReplayNoticeWarning = true;
+                statusMessage = replayNoticeText;
+                RebuildTechnicalDetails();
+                NotifyAll();
+                return false;
+            }
+
+            var ok = SelectExecutableCore(pathHint, clearReplayNotice: false);
+            if (!ok || selectedExecutable is null)
+            {
+                replayNoticeText = $"原文件“{report.EntryFileName}”当前无法作为 Windows 可执行程序读取，请重新选择文件。";
+                isReplayNoticeWarning = true;
+                statusMessage = replayNoticeText;
+                NotifyAll();
+                return false;
+            }
+
+            var epoch = selectionEpoch;
+            if (report.EntrySha256Recorded && !string.IsNullOrWhiteSpace(report.EntrySha256))
+            {
+                try
+                {
+                    var currentHash = await service.ComputeSha256Async(selectedExecutable.FullPath).ConfigureAwait(true);
+                    if (disposed || epoch != selectionEpoch) return false;
+                    hashState = TrialHashState.Computed;
+                    computedSha256 = currentHash;
+                    hashErrorMessage = "";
+
+                    if (!string.Equals(currentHash, report.EntrySha256, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var currShort = currentHash.Length >= 12 ? currentHash[..12] + "…" : currentHash;
+                        replayNoticeText = $"文件已变化：当前“{report.EntryFileName}”的 SHA-256 与历史记录不一致（历史：{report.DisplayEntryShortSha256}，当前：{currShort}）。请确认后再点击“开始隔离试用”；确认开始后将生成新记录，原历史记录保持不变。";
+                        isReplayNoticeWarning = true;
+                    }
+                    else
+                    {
+                        replayNoticeText = $"已按历史记录载入单文件“{report.EntryFileName}”，当前文件 SHA-256 与历史记录一致。确认后点击“开始隔离试用”将生成一条新记录（不会自动启动沙箱）。";
+                        isReplayNoticeWarning = false;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (disposed || epoch != selectionEpoch) return false;
+                    replayNoticeText = $"已载入单文件“{report.EntryFileName}”，但校验当前 SHA-256 失败（{ex.Message}），请核对后再确认开始。";
+                    isReplayNoticeWarning = true;
+                }
+            }
+            else
+            {
+                replayNoticeText = $"已按历史记录载入单文件“{report.EntryFileName}”（历史记录未记录入口 SHA-256，无法自动比对文件是否变化）。确认后点击“开始隔离试用”将生成一条新记录。";
+                isReplayNoticeWarning = false;
+            }
+
+            statusMessage = replayNoticeText;
+            RebuildTechnicalDetails();
+            NotifyAll();
+            return true;
+        }
+        else
+        {
+            var folderHint = hints.SourcePathHint;
+            if (string.IsNullOrWhiteSpace(folderHint) || !Directory.Exists(folderHint))
+            {
+                CancelActiveFolderScan();
+                CancelActiveHash();
+                selectionEpoch++;
+                ResetHashStateOnly();
+                inputKind = TrialInputKind.Folder;
+                selectedExecutable = null;
+                selectedFolder = null;
+                selectedFolderEntry = null;
+                FolderEntryCandidates.Clear();
+                executablePathInput = "";
+                selectionError = "";
+                replayNoticeText = $"原软件文件夹“{report.SoftwareName}”已移动、删除或当前不可访问。请点击下方“选择软件文件夹”重新选择目录后再确认开始。";
+                isReplayNoticeWarning = true;
+                statusMessage = replayNoticeText;
+                RebuildTechnicalDetails();
+                NotifyAll();
+                return false;
+            }
+
+            var scanned = await SelectFolderInternalAsync(folderHint, clearReplayNotice: false).ConfigureAwait(true);
+            if (disposed) return false;
+            if (!scanned || selectedFolder is null)
+            {
+                replayNoticeText = $"重新扫描原软件文件夹“{report.SoftwareName}”失败，请检查目录状态或重新选择软件文件夹。";
+                isReplayNoticeWarning = true;
+                statusMessage = replayNoticeText;
+                NotifyAll();
+                return false;
+            }
+
+            var matched = SelectFolderEntryByRelativePath(report.EntryRelativePath);
+            if (!matched || selectedFolderEntry is null)
+            {
+                replayNoticeText = $"目录已变化：已重新扫描“{selectedFolder.FolderName}”（当前 {selectedFolder.FileCount:N0} 个文件，{selectedFolder.FormattedTotalSize}），但原入口“{report.EntryRelativePath}”已不存在或不再可运行。请在下方重新选择入口程序或改选软件文件夹。";
+                isReplayNoticeWarning = true;
+                statusMessage = replayNoticeText;
+                RebuildTechnicalDetails();
+                NotifyAll();
+                return true;
+            }
+
+            var epoch = selectionEpoch;
+            var scopeChanged = report.FolderScope is not null
+                && (selectedFolder.FileCount != report.FolderScope.FileCount || selectedFolder.TotalBytes != report.FolderScope.TotalBytes);
+
+            if (report.EntrySha256Recorded && !string.IsNullOrWhiteSpace(report.EntrySha256))
+            {
+                try
+                {
+                    var currentHash = await service.ComputeSha256Async(selectedFolderEntry.FullPath).ConfigureAwait(true);
+                    if (disposed || epoch != selectionEpoch) return false;
+                    hashState = TrialHashState.Computed;
+                    computedSha256 = currentHash;
+                    hashErrorMessage = "";
+
+                    if (!string.Equals(currentHash, report.EntrySha256, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var currShort = currentHash.Length >= 12 ? currentHash[..12] + "…" : currentHash;
+                        var scopeNote = scopeChanged ? $"，且目录范围已变化（当前 {selectedFolder.FileCount:N0} 个文件 / {selectedFolder.FormattedTotalSize}）" : "";
+                        replayNoticeText = $"文件已变化：已重新扫描“{selectedFolder.FolderName}”，入口“{selectedFolderEntry.RelativePath}”的 SHA-256 与历史记录不一致（历史：{report.DisplayEntryShortSha256}，当前：{currShort}）{scopeNote}。请确认后再点击“开始隔离试用”；确认开始后将生成新记录，原历史记录保持不变。";
+                        isReplayNoticeWarning = true;
+                    }
+                    else if (scopeChanged)
+                    {
+                        replayNoticeText = $"目录内容已变化：入口“{selectedFolderEntry.RelativePath}”的 SHA-256 与历史记录一致，但目录范围已变动（历史：{report.FolderScope!.FileCount:N0} 个文件 / {report.FolderScope.FormattedTotalSize}，当前：{selectedFolder.FileCount:N0} 个文件 / {selectedFolder.FormattedTotalSize}）。确认后点击“开始隔离试用”将生成一条新记录。";
+                        isReplayNoticeWarning = true;
+                    }
+                    else
+                    {
+                        replayNoticeText = $"已按历史记录重新扫描“{selectedFolder.FolderName}”并选中入口“{selectedFolderEntry.RelativePath}”，入口文件 SHA-256 与历史记录一致。确认后点击“开始隔离试用”将生成一条新记录（不会自动启动沙箱）。";
+                        isReplayNoticeWarning = false;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (disposed || epoch != selectionEpoch) return false;
+                    replayNoticeText = $"已重新扫描“{selectedFolder.FolderName}”并选中入口“{selectedFolderEntry.RelativePath}”，但校验当前入口 SHA-256 失败（{ex.Message}），请核对后再确认开始。";
+                    isReplayNoticeWarning = true;
+                }
+            }
+            else
+            {
+                replayNoticeText = scopeChanged
+                    ? $"目录内容已变化：已重新扫描“{selectedFolder.FolderName}”并选中入口“{selectedFolderEntry.RelativePath}”（历史记录未记录入口 SHA-256）。确认后点击“开始隔离试用”将生成一条新记录。"
+                    : $"已按历史记录重新扫描“{selectedFolder.FolderName}”并选中入口“{selectedFolderEntry.RelativePath}”（历史记录未记录入口 SHA-256）。确认后点击“开始隔离试用”将生成一条新记录。";
+                isReplayNoticeWarning = scopeChanged;
+            }
+
+            statusMessage = replayNoticeText;
+            RebuildTechnicalDetails();
+            NotifyAll();
+            return true;
+        }
     }
 
     private async Task<bool> SelectFolderCoreAsync(string folderPath, long epoch, CancellationToken token)
@@ -1131,21 +1476,25 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         if (!CanStartTrial)
             return Task.FromResult(false);
 
+        var sessionId = Guid.NewGuid().ToString("N")[..12];
         TrialLaunchTarget target;
         if (inputKind == TrialInputKind.Folder)
         {
             if (selectedFolder is null || selectedFolderEntry is null)
                 return Task.FromResult(false);
-            target = TrialLaunchTarget.FromFolder(selectedFolder, selectedFolderEntry);
+            target = TrialLaunchTarget.FromFolder(selectedFolder, selectedFolderEntry) with { SessionId = sessionId };
         }
         else
         {
             if (selectedExecutable is null)
                 return Task.FromResult(false);
-            target = TrialLaunchTarget.FromSingleExecutable(selectedExecutable);
+            target = TrialLaunchTarget.FromSingleExecutable(selectedExecutable) with { SessionId = sessionId };
         }
 
         isRecoveredContext = false;
+        replayNoticeText = "";
+        isReplayNoticeWarning = false;
+        historySaveError = "";
         phase = IsolatedTrialPhase.PreparingInput;
         endReason = TrialEndReason.None;
         instanceState = SandboxInstanceState.NotCreated;
@@ -1153,7 +1502,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         activeSession = null;
         lastLaunchResult = null;
         observedOwnedWindow = false;
-        lastSessionId = "";
+        lastSessionId = sessionId;
         lastInstanceId = "";
         lastStagingPath = "";
         lastSessionDisplayName = target.DisplayName;
@@ -1171,6 +1520,31 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
             ? $"正在准备软件目录“{target.DisplayName}”的输入快照（共 {target.TotalFileCount:N0} 个文件，{target.FormattedTotalSize}）…"
             : $"正在准备“{target.DisplayName}”的输入快照…";
         EvidenceItems.Clear();
+        lock (timelineGate) reportTimeline.Clear();
+
+        historyContext = new SessionHistoryContext
+        {
+            SessionId = sessionId,
+            StartedAtUtc = clock().ToUniversalTime(),
+            EndedAtUtc = null,
+            SoftwareName = target.DisplayName,
+            Version = target.EntryExecutable.DisplayVersion,
+            InputKind = target.Kind,
+            EntryRelativePath = target.EntryRelativePath,
+            EntryFileName = target.EntryExecutable.FileName,
+            EntryArchitecture = target.EntryExecutable.ArchitectureLabel,
+            EntrySizeBytes = target.EntryExecutable.SizeBytes,
+            EntrySha256 = null, // Populated authoritatively from exact staged entry bytes!
+            FolderScope = target.Kind == TrialInputKind.Folder
+                ? new TrialFolderScopeReport(target.TotalFileCount, target.DirectoryCount, target.TotalBytes, target.FormattedTotalSize)
+                : null,
+            LaunchOutcome = "not_attempted",
+            LaunchOutcomeLabel = "尚未启动入口",
+            LaunchSummary = "正在准备输入快照并等待沙箱就绪。",
+            SourcePathHint = target.SourcePath,
+            EntryPathHint = target.EntryExecutable.FullPath,
+            InstanceIdHint = null
+        };
 
         sessionHeadline = target.Kind == TrialInputKind.Folder
             ? $"正在准备软件目录快照：“{target.DisplayName}”"
@@ -1184,6 +1558,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
             ? $"已锁定便携软件目录“{target.DisplayName}”（{target.TotalFileCount:N0} 个文件，{target.FormattedTotalSize}），入口相对路径“{target.EntryRelativePath}”，配置关闭网络与剪贴板共享、只读映射输入快照。"
             : $"已锁定单文件目标“{target.DisplayName}”（{target.FormattedTotalSize}），配置关闭网络与剪贴板共享、只读映射输入目录。";
         AddEvidence("启动准备", prepNote);
+        PersistCurrentHistoryRecord();
 
         startCts?.Dispose();
         startCts = new CancellationTokenSource();
@@ -1207,6 +1582,22 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                     stagingProgressPercent = p.Percent;
                     isStagingProgressIndeterminate = p.TotalBytes <= 0 && p.TotalFiles <= 0;
 
+                    if (historyContext is not null && !string.IsNullOrWhiteSpace(p.StagedEntrySha256))
+                        historyContext.EntrySha256 = p.StagedEntrySha256;
+
+                    if (!string.IsNullOrWhiteSpace(p.CreatedInstanceId))
+                    {
+                        lastInstanceId = p.CreatedInstanceId;
+                        instanceState = SandboxInstanceState.Running;
+                        stagingState = TrialStagingState.Active;
+                        if (historyContext is not null)
+                            historyContext.InstanceIdHint = p.CreatedInstanceId;
+                        PersistCurrentHistoryRecord();
+                        RebuildTechnicalDetails();
+                        NotifyAll();
+                        return;
+                    }
+
                     if (p.Stage.Contains("正在启动 Windows 沙箱", StringComparison.Ordinal))
                     {
                         phase = IsolatedTrialPhase.StartingSandbox;
@@ -1217,6 +1608,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                         stagingProgressText = "";
                         statusMessage = sessionHeadline;
                         AddEvidence("快照已就绪", $"输入快照复制并核验完成（{p.FilesCopied:N0} 个文件，{WindowsSandboxTrialService.FormatByteSize(p.BytesCopied)}），正在启动沙箱。");
+                        PersistCurrentHistoryRecord();
                         RebuildTechnicalDetails();
                         NotifyAll();
                     }
@@ -1247,6 +1639,16 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
             lastSessionFileCount = session.StagedFileCount;
             if (!string.IsNullOrWhiteSpace(session.EntryRelativePath))
                 lastEntryRelativePath = session.EntryRelativePath;
+            if (historyContext is not null)
+            {
+                if (!string.IsNullOrWhiteSpace(session.EntrySha256))
+                    historyContext.EntrySha256 = session.EntrySha256;
+                historyContext.InstanceIdHint = session.InstanceId;
+                historyContext.EntryRelativePath = lastEntryRelativePath;
+                if (historyContext.FolderScope is not null)
+                    historyContext.FolderScope = historyContext.FolderScope with { FileCount = session.StagedFileCount };
+                historyContext.LaunchSummary = "沙箱已打开，正在沙箱内启动入口程序。";
+            }
             instanceState = SandboxInstanceState.Running;
             stagingState = TrialStagingState.Active;
             stagingProgressText = "";
@@ -1258,7 +1660,8 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                 ? $"正在将“{target.DisplayName}”（{session.StagedFileCount:N0} 个文件）复制到来宾可写目录并启动入口“{lastEntryRelativePath}”，请稍候。"
                 : $"正在将“{lastEntryRelativePath}”复制到来宾可写目录并启动，请稍候。";
             statusMessage = sessionHeadline;
-            AddEvidence("沙箱已打开", $"实例 {session.InstanceId} 已创建并响应 ExistingLogin 就绪检测（只读目录 C:\\ContainTrialInput 已挂载，连接进程 PID {(session.ConnectProcessId?.ToString(CultureInfo.InvariantCulture) ?? "已启动")}）。");
+            AddEvidence("沙箱已打开", "沙箱实例已创建并响应就绪检测（只读输入目录已挂载）。");
+            PersistCurrentHistoryRecord();
             RebuildTechnicalDetails();
             NotifyAll();
 
@@ -1279,6 +1682,12 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                     sessionSummary = target.Kind == TrialInputKind.Folder
                         ? $"已启动入口：{entryLabel}（已带入目录“{target.DisplayName}”，共 {session.StagedFileCount:N0} 个文件，{target.FormattedTotalSize}）。请切换到已打开的 Windows 沙箱窗口中操作；若入口为安装器，安装器退出后仍可在同一沙箱继续使用已装好的软件。完成后直接关闭沙箱窗口，或点击下方“结束试用”。"
                         : $"已启动入口：{entryLabel}。请切换到已打开的 Windows 沙箱窗口中操作；若所选程序是安装器，安装完成并退出后仍可在同一沙箱继续使用已装好的软件。完成后直接关闭沙箱窗口，或点击下方“结束试用”。";
+                    if (historyContext is not null)
+                    {
+                        historyContext.LaunchOutcome = "started_and_running";
+                        historyContext.LaunchOutcomeLabel = "已启动入口（观察到入口进程运行）";
+                        historyContext.LaunchSummary = launch.Summary;
+                    }
                     AddEvidence($"已启动入口：{entryLabel}", launch.Summary);
                     break;
 
@@ -1286,6 +1695,12 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                     phase = IsolatedTrialPhase.ProgramExitedAfterStart;
                     sessionHeadline = "沙箱运行中（入口进程已正常退出）";
                     sessionSummary = $"已启动入口：{entryLabel}（启动后已正常退出，返回码 0）。沙箱窗口仍保持打开，你可以继续在同一沙箱中使用已安装软件或查看结果；完成后直接关闭沙箱窗口或点击“结束试用”。";
+                    if (historyContext is not null)
+                    {
+                        historyContext.LaunchOutcome = "started_and_exited_zero";
+                        historyContext.LaunchOutcomeLabel = "已启动入口（启动后正常退出）";
+                        historyContext.LaunchSummary = launch.Summary;
+                    }
                     AddEvidence($"已启动入口：{entryLabel}（已正常退出）", launch.Summary);
                     break;
 
@@ -1295,6 +1710,12 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                     sessionSummary = target.Kind == TrialInputKind.Folder
                         ? $"已启动入口：{entryLabel}，但启动后立即异常退出。请切换到沙箱窗口查看具体原因；完成后请关闭沙箱窗口或点击“结束试用”。"
                         : $"已启动入口：{entryLabel}，但启动后立即异常退出。若该程序依赖同目录其他文件，请改用“选择软件文件夹”；若需联网下载，在离线沙箱中可能无法运行。完成后请关闭沙箱窗口或点击“结束试用”。";
+                    if (historyContext is not null)
+                    {
+                        historyContext.LaunchOutcome = "started_and_exited_nonzero";
+                        historyContext.LaunchOutcomeLabel = "已启动入口（启动后异常退出）";
+                        historyContext.LaunchSummary = launch.Summary;
+                    }
                     AddEvidence($"入口启动后异常退出：{entryLabel}", launch.Summary);
                     break;
 
@@ -1303,11 +1724,18 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                     sessionHeadline = $"沙箱已打开，但未能启动入口：{entryLabel}";
                     sessionSummary = "可展开下方“技术详情”查看来宾返回码，或直接点击“结束试用”关闭沙箱。";
                     failureDiagnostic = launch.Diagnostic;
+                    if (historyContext is not null)
+                    {
+                        historyContext.LaunchOutcome = "failed_to_launch";
+                        historyContext.LaunchOutcomeLabel = "沙箱已打开，但入口未能启动";
+                        historyContext.LaunchSummary = launch.Summary;
+                    }
                     AddEvidence("入口启动受阻", launch.Summary);
                     break;
             }
 
             statusMessage = $"{sessionHeadline} · 已启动入口：{entryLabel}";
+            PersistCurrentHistoryRecord();
             RebuildTechnicalDetails();
             NotifyAll();
 
@@ -1333,12 +1761,21 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
             stagingState = rb?.StagingState ?? (string.IsNullOrEmpty(error.StagingRootPath) ? TrialStagingState.NotCreated : TrialStagingState.Unconfirmed);
             failureDiagnostic = error.Diagnostic;
             var stageTag = string.IsNullOrWhiteSpace(error.FailedStage) ? "" : $"（发生在“{error.FailedStage}”阶段）";
+            if (historyContext is not null && !string.IsNullOrEmpty(error.CreatedInstanceId))
+                historyContext.InstanceIdHint = error.CreatedInstanceId;
 
             if (string.Equals(error.Code, "preparation_cancelled", StringComparison.Ordinal)
                 && instanceState is SandboxInstanceState.NotCreated or SandboxInstanceState.ConfirmedEnded)
             {
                 endReason = TrialEndReason.PreparationCancelled;
                 phase = IsolatedTrialPhase.Ended;
+                if (historyContext is not null)
+                {
+                    historyContext.EndedAtUtc ??= clock().ToUniversalTime();
+                    historyContext.LaunchOutcome = "preparation_cancelled";
+                    historyContext.LaunchOutcomeLabel = "已取消准备";
+                    historyContext.LaunchSummary = "在启动沙箱前已取消输入准备，未运行所选入口。";
+                }
                 if (stagingState is TrialStagingState.Cleaned or TrialStagingState.NotCreated)
                 {
                     sessionHeadline = "已取消准备";
@@ -1356,10 +1793,20 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                     failureNextStep = "请确认无程序占用后点击“重试清理”。";
                 }
                 statusMessage = sessionHeadline;
-                AddEvidence("取消准备", $"{error.Message}（暂存={FormatStagingStateLabel(stagingState)}）");
+                AddEvidence("取消准备", $"已在启动沙箱前取消输入准备（暂存：{FormatStagingStateLabel(stagingState)}）。");
+                PersistCurrentHistoryRecord();
                 RebuildTechnicalDetails();
                 NotifyAll();
                 return false;
+            }
+
+            if (historyContext is not null)
+            {
+                historyContext.LaunchOutcome = "start_failed";
+                historyContext.LaunchOutcomeLabel = "未能启动沙箱";
+                historyContext.LaunchSummary = $"未能建立隔离试用会话{stageTag}（错误码：{error.Code}），所选程序未在宿主机上运行。";
+                if (instanceState is SandboxInstanceState.NotCreated or SandboxInstanceState.ConfirmedEnded)
+                    historyContext.EndedAtUtc ??= clock().ToUniversalTime();
             }
 
             if (instanceState is SandboxInstanceState.Running or SandboxInstanceState.Unknown)
@@ -1399,7 +1846,8 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
             }
 
             statusMessage = sessionHeadline;
-            AddEvidence("启动失败", $"{error.Message}{stageTag}（错误码：{error.Code}；回滚：实例={FormatInstanceStateLabel(instanceState)}，暂存={FormatStagingStateLabel(stagingState)}）");
+            AddEvidence("启动失败", $"未能建立隔离试用会话{stageTag}（错误码：{error.Code}；实例：{FormatInstanceStateLabel(instanceState)}，暂存：{FormatStagingStateLabel(stagingState)}）。");
+            PersistCurrentHistoryRecord();
             RebuildTechnicalDetails();
             NotifyAll();
             return false;
@@ -1412,6 +1860,14 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
             instanceState = string.IsNullOrEmpty(lastInstanceId) ? SandboxInstanceState.NotCreated : SandboxInstanceState.Unknown;
             stagingState = TrialStagingState.Unconfirmed;
             phase = instanceState == SandboxInstanceState.Unknown ? IsolatedTrialPhase.Unconfirmed : IsolatedTrialPhase.Failed;
+            if (historyContext is not null)
+            {
+                historyContext.LaunchOutcome = "start_failed";
+                historyContext.LaunchOutcomeLabel = "启动过程发生异常";
+                historyContext.LaunchSummary = "启动隔离试用时发生未预期异常，所选程序未在宿主机上运行。";
+                if (instanceState == SandboxInstanceState.NotCreated)
+                    historyContext.EndedAtUtc ??= clock().ToUniversalTime();
+            }
             sessionHeadline = instanceState == SandboxInstanceState.Unknown
                 ? "启动异常，且暂时无法确认临时沙箱状态"
                 : "启动隔离试用时发生未预期错误";
@@ -1421,7 +1877,8 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
             failureNextStep = "请展开“技术详情”核对后点击“重新检查”或“重新检测”。";
             failureDiagnostic = $"{error.GetType().Name}: {error.Message}";
             statusMessage = sessionHeadline;
-            AddEvidence("启动异常", $"{error.GetType().Name}: {error.Message}");
+            AddEvidence("启动异常", $"启动隔离试用时发生异常（实例：{FormatInstanceStateLabel(instanceState)}，暂存：{FormatStagingStateLabel(stagingState)}）。");
+            PersistCurrentHistoryRecord();
             RebuildTechnicalDetails();
             NotifyAll();
             return false;
@@ -1547,6 +2004,8 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                     activeSession = null;
                     observedOwnedWindow = false;
                     phase = IsolatedTrialPhase.Ended;
+                    if (historyContext is not null && historyContext.EndedAtUtc is null)
+                        historyContext.EndedAtUtc = clock().ToUniversalTime();
 
                     if (result.StagingState is TrialStagingState.Cleaned or TrialStagingState.NotCreated)
                     {
@@ -1576,6 +2035,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                         statusMessage = "试用已结束，但临时文件尚未完全清理。";
                         AddEvidence("实例已结束，暂存待清理", result.Summary);
                     }
+                    PersistCurrentHistoryRecord();
                     RebuildTechnicalDetails();
                     NotifyAll();
                     return result.IsFullyCleaned;
@@ -1592,6 +2052,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                     failureNextStep = "请点击“结束这次试用”重试，或手动关闭对应的 Windows 沙箱窗口。";
                     statusMessage = sessionHeadline;
                     AddEvidence("停止未生效（仍在运行）", result.Summary);
+                    PersistCurrentHistoryRecord();
                     RebuildTechnicalDetails();
                     NotifyAll();
                     StartSessionMonitor(session);
@@ -1619,7 +2080,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
                     staging: TrialStagingState.Unconfirmed,
                     diagnostic: $"{error.GetType().Name}: {error.Message}",
                     evidenceStage: "结束过程异常",
-                    evidenceDetail: $"结束试用时抛出异常：{error.Message}");
+                    evidenceDetail: "结束本次隔离试用时发生异常，暂时无法确认实例状态。");
                 return false;
             }
             finally
@@ -1649,6 +2110,7 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         failureDiagnostic = diagnostic;
         statusMessage = sessionHeadline;
         AddEvidence(evidenceStage, evidenceDetail);
+        PersistCurrentHistoryRecord();
         RebuildTechnicalDetails();
         NotifyAll();
     }
@@ -1676,6 +2138,29 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
             {
                 using var shutdownCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                 var stopRes = await service.StopAndCleanupAsync(sessionToClean.InstanceId, sessionToClean.StagingRootPath, shutdownCts.Token).ConfigureAwait(false);
+                instanceState = stopRes.InstanceState;
+                stagingState = stopRes.StagingState;
+                if (stopRes.InstanceState is SandboxInstanceState.ConfirmedEnded or SandboxInstanceState.NotCreated)
+                {
+                    phase = IsolatedTrialPhase.Ended;
+                    endReason = TrialEndReason.EndedByContain;
+                    if (historyContext is not null && historyContext.EndedAtUtc is null)
+                        historyContext.EndedAtUtc = clock().ToUniversalTime();
+                }
+                else if (stopRes.InstanceState == SandboxInstanceState.Unknown)
+                {
+                    phase = IsolatedTrialPhase.Unconfirmed;
+                }
+
+                var now = clock();
+                var closeEvent = new TrialTimelineEventReport(
+                    now.ToUniversalTime(),
+                    now.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture),
+                    "窗口关闭结束试用",
+                    stopRes.Summary);
+                lock (timelineGate) reportTimeline.Add(closeEvent);
+                PersistCurrentHistoryRecord(notifyShell: false);
+
                 if (stopRes.IsFullyCleaned)
                 {
                     service.ClearPendingSession(sessionToClean.InstanceId, sessionToClean.SessionId);
@@ -1780,14 +2265,113 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         failureDiagnostic = "";
         stagingProgressText = "";
         stagingProgressPercent = 0;
+        historyContext = null;
+        activeHistoryRecord = null;
+        historySaveError = "";
         EvidenceItems.Clear();
+        lock (timelineGate) reportTimeline.Clear();
     }
 
     private void AddEvidence(string stage, string summary)
     {
-        var ts = clock().ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture);
-        EvidenceItems.Add(new TrialEvidenceEntry(ts, stage, summary));
+        var now = clock();
+        var utc = now.ToUniversalTime();
+        var ts = now.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+        EvidenceItems.Add(new TrialEvidenceEntry(ts, stage, summary, utc));
+        lock (timelineGate)
+        {
+            reportTimeline.Add(new TrialTimelineEventReport(utc, ts, stage, summary));
+        }
     }
+
+    private void PersistCurrentHistoryRecord(bool notifyShell = true)
+    {
+        var ctx = historyContext;
+        if (ctx is null) return;
+
+        IReadOnlyList<TrialTimelineEventReport> timelineSnapshot;
+        lock (timelineGate) timelineSnapshot = [.. reportTimeline];
+
+        var hasSha = !string.IsNullOrWhiteSpace(ctx.EntrySha256);
+        var report = new TrialSessionReport(
+            SchemaVersion: TrialSessionReport.CurrentSchemaVersion,
+            Protocol: TrialSessionReport.ProtocolName,
+            SessionId: ctx.SessionId,
+            StartedAtUtc: ctx.StartedAtUtc,
+            EndedAtUtc: ctx.EndedAtUtc,
+            SoftwareName: ctx.SoftwareName,
+            Version: string.IsNullOrWhiteSpace(ctx.Version) ? "未提供" : ctx.Version,
+            InputKind: ctx.InputKind == TrialInputKind.Folder ? "folder" : "single_file",
+            InputKindLabel: ctx.InputKind == TrialInputKind.Folder ? "软件文件夹" : "单文件",
+            EntryRelativePath: ctx.EntryRelativePath,
+            EntryFileName: ctx.EntryFileName,
+            EntryArchitecture: string.IsNullOrWhiteSpace(ctx.EntryArchitecture) ? "未记录" : ctx.EntryArchitecture,
+            EntrySizeBytes: ctx.EntrySizeBytes,
+            EntrySha256: hasSha ? ctx.EntrySha256 : null,
+            EntrySha256Recorded: hasSha,
+            FolderScope: ctx.FolderScope,
+            IsolationPolicy: new TrialIsolationPolicyReport("Disable", "Disable", true, true),
+            LaunchOutcome: ctx.LaunchOutcome,
+            LaunchOutcomeLabel: ctx.LaunchOutcomeLabel,
+            LaunchSummary: ctx.LaunchSummary,
+            SandboxInstanceState: instanceState.ToString(),
+            SandboxInstanceStateLabel: FormatInstanceStateLabel(instanceState),
+            HostStagingState: stagingState.ToString(),
+            HostStagingStateLabel: FormatStagingStateLabel(stagingState),
+            OverallResultLabel: ComputeOverallResultLabel(),
+            EvidenceScopeNote: TrialSessionReport.DefaultEvidenceScopeNote,
+            Timeline: timelineSnapshot);
+
+        var hints = new TrialReplayHints(
+            ctx.SourcePathHint,
+            ctx.EntryPathHint,
+            string.IsNullOrWhiteSpace(ctx.InstanceIdHint)
+                ? (string.IsNullOrEmpty(lastInstanceId) ? null : lastInstanceId)
+                : ctx.InstanceIdHint);
+
+        var record = new TrialHistoryRecord(
+            TrialHistoryRecord.CurrentRecordSchemaVersion,
+            clock().ToUniversalTime(),
+            report,
+            hints);
+
+        activeHistoryRecord = record;
+
+        if (historyStore is null)
+        {
+            historySaveError = "";
+            if (notifyShell) onHistoryUpdated?.Invoke(record);
+            return;
+        }
+
+        try
+        {
+            historyStore.Save(record);
+            historySaveError = "";
+            if (notifyShell) onHistoryUpdated?.Invoke(record);
+        }
+        catch (Exception ex)
+        {
+            // History write failure MUST NEVER block stopping or cleaning up the Sandbox!
+            historySaveError = $"记录保存失败：{ex.Message}（不影响结束本次沙箱或清理临时文件）";
+        }
+    }
+
+    private string ComputeOverallResultLabel() => phase switch
+    {
+        IsolatedTrialPhase.Ended when endReason == TrialEndReason.PreparationCancelled =>
+            stagingState is TrialStagingState.Cleaned or TrialStagingState.NotCreated ? "已取消准备" : "已取消准备（暂存待清理）",
+        IsolatedTrialPhase.Ended =>
+            stagingState is TrialStagingState.Cleaned or TrialStagingState.NotCreated ? "已确认结束" : "已结束（暂存待清理）",
+        IsolatedTrialPhase.Unconfirmed => "状态尚未确认",
+        IsolatedTrialPhase.RecoveredRunning => "仍在运行（待结束）",
+        IsolatedTrialPhase.ProgramStarted or IsolatedTrialPhase.ProgramExitedAfterStart or IsolatedTrialPhase.SandboxOpened => "运行中",
+        IsolatedTrialPhase.PreparingInput or IsolatedTrialPhase.StartingSandbox or IsolatedTrialPhase.Recovering => "准备中",
+        IsolatedTrialPhase.Stopping => "正在结束",
+        IsolatedTrialPhase.Failed =>
+            stagingState is TrialStagingState.Remaining or TrialStagingState.Unconfirmed ? "启动失败（暂存待清理）" : "未能启动",
+        _ => "状态未知"
+    };
 
     private void RebuildTechnicalDetails()
     {
@@ -1999,5 +2583,13 @@ public sealed class IsolatedTrialViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(LastStagingCleaned));
         OnPropertyChanged(nameof(CanShowTechnicalDetails));
         OnPropertyChanged(nameof(TechnicalDetailsText));
+        OnPropertyChanged(nameof(HasCurrentHistoryRecord));
+        OnPropertyChanged(nameof(CurrentHistorySessionId));
+        OnPropertyChanged(nameof(ActiveHistoryRecord));
+        OnPropertyChanged(nameof(HasHistorySaveError));
+        OnPropertyChanged(nameof(HistorySaveErrorMessage));
+        OnPropertyChanged(nameof(HasReplayNotice));
+        OnPropertyChanged(nameof(ReplayNoticeText));
+        OnPropertyChanged(nameof(IsReplayNoticeWarning));
     }
 }

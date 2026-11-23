@@ -2,10 +2,10 @@
   #error "SourcePayloadDir must be provided via /DSourcePayloadDir=..."
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.6.0-beta.4"
+  #define AppVersion "0.6.0-beta.5"
 #endif
 #ifndef VersionInfoVersion
-  #define VersionInfoVersion "0.6.0.4"
+  #define VersionInfoVersion "0.6.0.5"
 #endif
 #ifndef OutputDir
   #define OutputDir "output"

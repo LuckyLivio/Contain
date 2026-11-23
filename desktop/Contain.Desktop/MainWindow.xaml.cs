@@ -14,17 +14,19 @@ namespace Contain.Desktop;
 
 public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 {
-    private enum ActiveSection { Records, NewRecord, EnvironmentCheck, PackageCheck, IsolatedTrial }
+    private enum ActiveSection { Records, TrialRecordDetails, NewRecord, EnvironmentCheck, PackageCheck, IsolatedTrial }
 
     private readonly PersonalRecords personalRecords;
     private readonly MyRecordsView recordsView = new();
     private readonly NewRecordView newRecordView = new();
     private readonly RecordDetailsView detailsView = new();
+    private readonly TrialRecordDetailsView trialDetailsView = new();
     private readonly EnvironmentCheckView environmentView = new();
     private readonly PackageCheckView packageView = new();
     private readonly IsolatedTrialView isolatedTrialView = new();
     private readonly DispatcherTimer timer;
     private ActiveSection activeSection = ActiveSection.Records;
+    private bool isTrialHistoryCategory;
     private string localError = "";
     private string localStatus = "";
     private long navigationVersion;
@@ -49,10 +51,15 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         var appDataRoot = Path.GetDirectoryName(Path.GetDirectoryName(personalRecords.DatabasePath))
             ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Contain");
         var pendingSessionFile = Path.Combine(appDataRoot, "IsolatedTrial", "pending-session.json");
+        var trialHistoryStore = new JsonTrialHistoryStore(Path.Combine(appDataRoot, "IsolatedTrial", "History"));
+        TrialHistory = new TrialHistoryViewModel(trialHistoryStore);
         IsolatedTrial = new IsolatedTrialViewModel(
             new WindowsSandboxTrialService(pendingSessionFilePath: pendingSessionFile),
-            dispatch: action => Dispatcher.BeginInvoke(action));
+            dispatch: action => Dispatcher.BeginInvoke(action),
+            historyStore: trialHistoryStore,
+            onHistoryUpdated: record => Dispatcher.BeginInvoke(() => TrialHistory.UpsertInMemory(record)));
         Records.PropertyChanged += OnModelChanged;
+        TrialHistory.PropertyChanged += OnModelChanged;
         Install.PropertyChanged += OnModelChanged;
         EnvironmentCheck.PropertyChanged += OnModelChanged;
         PackageCheck.PropertyChanged += OnModelChanged;
@@ -70,14 +77,25 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     }
 
     public RecordsViewModel Records { get; }
+    public TrialHistoryViewModel TrialHistory { get; }
     public InstallViewModel Install { get; }
     public EnvironmentCheckViewModel EnvironmentCheck { get; }
     public PackageCheckViewModel PackageCheck { get; }
     public IsolatedTrialViewModel IsolatedTrial { get; }
+    public bool IsTrialHistoryCategory => isTrialHistoryCategory;
+    public bool IsInstallRecordsCategory => !isTrialHistoryCategory;
     public bool ShowPendingTrialBanner =>
         IsolatedTrial.HasPendingRecoveryBanner && activeSection != ActiveSection.IsolatedTrial;
     public string WindowTitle => "Contain · " + ProductVersion.Version;
-    public string ErrorMessage => localError.Length > 0 ? localError : activeSection is ActiveSection.EnvironmentCheck or ActiveSection.PackageCheck or ActiveSection.IsolatedTrial ? "" : Records.ErrorMessage;
+    public string ErrorMessage => localError.Length > 0
+        ? localError
+        : activeSection switch
+        {
+            ActiveSection.EnvironmentCheck or ActiveSection.PackageCheck or ActiveSection.IsolatedTrial => "",
+            ActiveSection.TrialRecordDetails => TrialHistory.ErrorMessage,
+            ActiveSection.Records when isTrialHistoryCategory => TrialHistory.ErrorMessage,
+            _ => Records.ErrorMessage
+        };
     public string StatusMessage => localStatus.Length > 0
         ? localStatus
         : activeSection switch
@@ -85,6 +103,8 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
             ActiveSection.EnvironmentCheck => EnvironmentCheck.StatusMessage,
             ActiveSection.PackageCheck => PackageCheck.StatusMessage,
             ActiveSection.IsolatedTrial => IsolatedTrial.StatusMessage,
+            ActiveSection.TrialRecordDetails => TrialHistory.StatusMessage,
+            ActiveSection.Records when isTrialHistoryCategory => TrialHistory.StatusMessage,
             _ => Records.StatusMessage
         };
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -93,6 +113,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     {
         if (loaded) return;
         loaded = true;
+        TrialHistory.Refresh();
         ShowRecords();
         await RunUiAsync(async () =>
         {
@@ -107,7 +128,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(Records.ErrorMessage) or nameof(Records.StatusMessage) or nameof(EnvironmentCheck.StatusMessage) or nameof(PackageCheck.StatusMessage) or nameof(IsolatedTrial.StatusMessage))
+        if (e.PropertyName is nameof(Records.ErrorMessage) or nameof(Records.StatusMessage) or nameof(TrialHistory.ErrorMessage) or nameof(TrialHistory.StatusMessage) or nameof(EnvironmentCheck.StatusMessage) or nameof(PackageCheck.StatusMessage) or nameof(IsolatedTrial.StatusMessage))
         {
             localError = "";
             localStatus = "";
@@ -122,7 +143,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         navigationVersion++;
         activeSection = section;
         Navigation.ReplaceContent(page, this);
-        RecordsNavigation.IsActive = section == ActiveSection.Records;
+        RecordsNavigation.IsActive = section is ActiveSection.Records or ActiveSection.TrialRecordDetails;
         NewNavigation.IsActive = section == ActiveSection.NewRecord;
         EnvironmentNavigation.IsActive = section == ActiveSection.EnvironmentCheck;
         PackageNavigation.IsActive = section == ActiveSection.PackageCheck;
@@ -146,6 +167,79 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         if (GuardTaskNavigation()) return;
         recordsView.PrepareForShow();
         SetPage(recordsView, ActiveSection.Records);
+    }
+
+    private void SetTrialHistoryCategory(bool showTrial)
+    {
+        if (isTrialHistoryCategory == showTrial) return;
+        isTrialHistoryCategory = showTrial;
+        Changed(nameof(IsTrialHistoryCategory));
+        Changed(nameof(IsInstallRecordsCategory));
+        Changed(nameof(ErrorMessage));
+        Changed(nameof(StatusMessage));
+    }
+
+    public void ShowInstallRecordsCategory()
+    {
+        if (GuardTaskNavigation()) return;
+        SetTrialHistoryCategory(false);
+        ShowRecords();
+    }
+
+    public void ShowTrialHistoryCategory()
+    {
+        if (GuardTaskNavigation()) return;
+        TrialHistory.Refresh();
+        SetTrialHistoryCategory(true);
+        ShowRecords();
+    }
+
+    public void RefreshTrialHistory() => RunUiOperation(() => TrialHistory.Refresh());
+
+    public void OpenTrialRecord(string sessionId)
+    {
+        if (GuardTaskNavigation()) return;
+        SetTrialHistoryCategory(true);
+        if (TrialHistory.OpenRecord(sessionId))
+            SetPage(trialDetailsView, ActiveSection.TrialRecordDetails);
+    }
+
+    public void ViewCurrentTrialRecord()
+    {
+        var id = IsolatedTrial.CurrentHistorySessionId;
+        if (string.IsNullOrWhiteSpace(id)) return;
+        OpenTrialRecord(id);
+    }
+
+    public async Task NavigateToIsolatedTrialAsync()
+    {
+        ShowIsolatedTrial();
+        await RunUiAsync(() => IsolatedTrial.EnsureCapabilityCheckedAsync());
+    }
+
+    public async Task ReplaySelectedTrialRecordAsync()
+    {
+        var record = TrialHistory.SelectedRecord;
+        if (record is null) return;
+        ShowIsolatedTrial();
+        await RunUiAsync(() => IsolatedTrial.PrepareReplayFromHistoryAsync(record));
+        await RunUiAsync(() => IsolatedTrial.EnsureCapabilityCheckedAsync());
+    }
+
+    public void ExportSelectedTrialReport()
+    {
+        if (!TrialHistory.HasSelectedRecord) return;
+        var dialog = new SaveFileDialog
+        {
+            Title = "导出本次隔离试用报告（版本化 JSON）",
+            Filter = "JSON 报告|*.json",
+            DefaultExt = ".json",
+            FileName = TrialHistory.SuggestedExportFileName,
+            OverwritePrompt = true,
+            CheckPathExists = true
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        RunUiOperation(() => TrialHistory.ExportSelectedReport(dialog.FileName));
     }
 
     public void ShowNewRecord()
@@ -188,6 +282,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     private async void OnMyRecords(object sender, RoutedEventArgs e)
     {
         if (GuardTaskNavigation()) return;
+        TrialHistory.Refresh();
         ShowRecords();
         if (!Records.IsPersonalLibrary || Records.Sessions.Count == 0) await RunUiAsync(() => Records.LoadPersonalAsync());
     }
@@ -215,6 +310,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
             CheckFileExists = true, Multiselect = false
         };
         if (dialog.ShowDialog(this) != true) return;
+        SetTrialHistoryCategory(false);
         ShowRecords();
         await RunUiAsync(() => Records.OpenDatabaseAsync(dialog.FileName));
     }
@@ -483,6 +579,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     {
         timer.Stop();
         Records.PropertyChanged -= OnModelChanged;
+        TrialHistory.PropertyChanged -= OnModelChanged;
         Install.PropertyChanged -= OnModelChanged;
         EnvironmentCheck.PropertyChanged -= OnModelChanged;
         PackageCheck.PropertyChanged -= OnModelChanged;
