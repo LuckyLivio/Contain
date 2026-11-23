@@ -306,6 +306,10 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 
     public Task RecheckSandboxCapabilityAsync() => RunUiAsync(() => IsolatedTrial.RefreshCapabilityAsync());
 
+    public Task ComputeTrialSha256Async() => RunUiAsync(() => IsolatedTrial.ComputeSha256Async());
+
+    public void OpenWindowsFeaturesFromTrial() => RunUiOperation(() => IsolatedTrial.OpenWindowsFeatures());
+
     private void RunUiOperation(Action operation)
     {
         localError = "";

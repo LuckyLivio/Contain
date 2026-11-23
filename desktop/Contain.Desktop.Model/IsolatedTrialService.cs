@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics.X86;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
@@ -104,6 +106,77 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
     public TrialExecutableInfo InspectExecutable(string executablePath) =>
         InspectExecutableFile(executablePath);
 
+    public Task<string> ComputeSha256Async(string executablePath, CancellationToken cancellationToken = default) =>
+        ComputeFileSha256Async(executablePath, cancellationToken);
+
+    public static async Task<string> ComputeFileSha256Async(string executablePath, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(executablePath) || executablePath.Contains('\0'))
+            throw new IsolatedTrialException("invalid_path", "无法计算 SHA-256：文件路径无效。");
+
+        var fullPath = Path.GetFullPath(executablePath.Trim().Trim('"'));
+        if (!File.Exists(fullPath))
+            throw new IsolatedTrialException("file_missing", "无法计算 SHA-256：文件不存在或已被移走。");
+
+        try
+        {
+            await using var stream = new FileStream(
+                fullPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete,
+                81920,
+                useAsync: true);
+            using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            var buffer = new byte[81920];
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var read = await stream.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
+                if (read == 0) break;
+                hasher.AppendData(buffer, 0, read);
+            }
+            return Convert.ToHexString(hasher.GetHashAndReset()).ToLowerInvariant();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new IsolatedTrialException(
+                "hash_read_failed",
+                $"读取文件计算 SHA-256 失败：{ex.Message}",
+                "请确认文件未被其他程序独占锁定后重试。",
+                $"{ex.GetType().Name}: {ex.Message}",
+                ex);
+        }
+    }
+
+    public void OpenWindowsFeatures()
+    {
+        if (!OperatingSystem.IsWindows())
+            throw new IsolatedTrialException("unsupported_platform", "当前非 Windows 系统，无法打开“Windows 功能”。");
+
+        var exe = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "optionalfeatures.exe");
+        if (!File.Exists(exe))
+            throw new IsolatedTrialException("optionalfeatures_missing", "未找到 optionalfeatures.exe，请在系统“设置 → 系统 → 可选功能”中自行查看。");
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is Win32Exception or IOException or InvalidOperationException)
+        {
+            throw new IsolatedTrialException(
+                "optionalfeatures_launch_failed",
+                $"无法打开“启用或关闭 Windows 功能”：{ex.Message}",
+                "请通过开始菜单搜索“启用或关闭 Windows 功能”自行打开。",
+                $"{ex.GetType().Name}: {ex.Message}",
+                ex);
+        }
+    }
+
     public static TrialExecutableInfo InspectExecutableFile(string executablePath)
     {
         if (string.IsNullOrWhiteSpace(executablePath) || executablePath.Contains('\0'))
@@ -129,10 +202,18 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
 
         var arch = ReadPeArchitecture(fullPath);
         if (arch == TrialExecutableArch.Unknown)
-            throw new IsolatedTrialException("invalid_pe", "所选文件不是有效的 Windows PE 可执行程序，无法在沙箱中试用。");
+            throw new IsolatedTrialException("invalid_pe", "所选文件不是有效的 Windows PE 可执行程序。");
 
-        if (arch == TrialExecutableArch.Arm64)
-            throw new IsolatedTrialException("unsupported_arch", "检测到 ARM64 可执行文件；本轮隔离试用仅支持 Windows x64 单文件程序。");
+        string? productVersion = null;
+        string? fileVersion = null;
+        try
+        {
+            var versionInfo = FileVersionInfo.GetVersionInfo(fullPath);
+            productVersion = NormalizeVersionText(versionInfo.ProductVersion);
+            fileVersion = NormalizeVersionText(versionInfo.FileVersion);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
 
         var parentDir = Path.GetDirectoryName(fullPath);
         var siblingCount = 0;
@@ -157,6 +238,7 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         {
             TrialExecutableArch.X64 => "Windows x64 (PE32+)",
             TrialExecutableArch.X86 => "Windows x86 (32 位，本轮以 x64 单文件为主)",
+            TrialExecutableArch.Arm64 => "Windows ARM64（仅可查看信息，不适用于 x64 沙箱运行）",
             _ => "未知架构"
         };
 
@@ -167,8 +249,17 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
             FormatByteSize(info.Length),
             arch,
             archLabel,
+            productVersion,
+            fileVersion,
             siblingCount > 0,
             siblingCount);
+    }
+
+    private static string? NormalizeVersionText(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var trimmed = raw.Trim();
+        return trimmed.Length > 0 ? trimmed : null;
     }
 
     public static TrialExecutableArch ReadPeArchitecture(string path)
@@ -294,91 +385,398 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
 
     public async Task<SandboxCapabilityReport> ProbeCapabilityAsync(CancellationToken cancellationToken = default)
     {
-        if (!OperatingSystem.IsWindows() || RuntimeInformation.OSArchitecture != Architecture.X64 || !Environment.Is64BitProcess)
+        var snapshot = await CollectHostEnvironmentSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        return ClassifyHostEnvironment(snapshot);
+    }
+
+    private async Task<HostSandboxEnvironmentSnapshot> CollectHostEnvironmentSnapshotAsync(CancellationToken cancellationToken)
+    {
+        var isWindows = OperatingSystem.IsWindows();
+        var isNativeX64 = isWindows && RuntimeInformation.OSArchitecture == Architecture.X64 && Environment.Is64BitProcess;
+        if (!isNativeX64)
+        {
+            return new HostSandboxEnvironmentSnapshot(
+                isWindows, false, null, null, null, false, false, null,
+                null, null, [], null, null, null,
+                null, null, false, null, null, false, null, false);
+        }
+
+        // 1. Read Windows Edition using ordinary-user readable registry + GetProductInfo
+        var editionRead = TryReadHklmString(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion", "EditionID");
+        var productNameRead = TryReadHklmString(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion", "ProductName");
+        uint? productType = GetProductInfo(10, 0, 0, 0, out var pt) ? pt : null;
+
+        // 2. Check direct Group Policy evidence under Windows Sandbox policy key
+        var policyAllowMapped = TryReadHklmDword(@"SOFTWARE\Policies\Microsoft\Windows\Sandbox", "AllowMappedFolders");
+        var policyDisableSandbox = TryReadHklmDword(@"SOFTWARE\Policies\Microsoft\Windows\Sandbox", "DisableSandbox");
+        var policyAllowSandbox = TryReadHklmDword(@"SOFTWARE\Policies\Microsoft\Windows\Sandbox", "AllowSandbox");
+        bool? policyExplicitlyDisabled = null;
+        string? policyEvidence = null;
+        if (policyAllowMapped.Value == 0)
+        {
+            policyExplicitlyDisabled = true;
+            policyEvidence = @"HKLM\SOFTWARE\Policies\Microsoft\Windows\Sandbox\AllowMappedFolders = 0";
+        }
+        else if (policyDisableSandbox.Value == 1)
+        {
+            policyExplicitlyDisabled = true;
+            policyEvidence = @"HKLM\SOFTWARE\Policies\Microsoft\Windows\Sandbox\DisableSandbox = 1";
+        }
+        else if (policyAllowSandbox.Value == 0)
+        {
+            policyExplicitlyDisabled = true;
+            policyEvidence = @"HKLM\SOFTWARE\Policies\Microsoft\Windows\Sandbox\AllowSandbox = 0";
+        }
+        var policyQueryDenied = policyAllowMapped.AccessDenied || policyDisableSandbox.AccessDenied || policyAllowSandbox.AccessDenied;
+
+        // 3. Check direct hardware virtualization evidence without elevation:
+        //    When Hyper-V is active, CPUID leaf 1 ECX bit 31 (HypervisorPresent) is 1 and
+        //    PF_VIRT_FIRMWARE_ENABLED is masked to false by the hypervisor. Only flag
+        //    virtualization disabled when BOTH HypervisorPresent == false AND PF_VIRT_FIRMWARE_ENABLED == false.
+        bool? hypervisorPresent = null;
+        if (X86Base.IsSupported)
+        {
+            var (_, _, ecx, _) = X86Base.CpuId(1, 0);
+            hypervisorPresent = (ecx & unchecked((int)0x80000000)) != 0;
+        }
+        bool? virtFirmwareEnabled = IsProcessorFeaturePresent(21); // PF_VIRT_FIRMWARE_ENABLED
+
+        // 4. Check direct pending-reboot key readability
+        var rebootCheck = TryCheckHklmKeyExists(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending");
+
+        // 5. Check WindowsSandbox.exe and wsb.exe CLI
+        var sandboxGuiPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsSandbox.exe");
+        var hasSandboxGui = File.Exists(sandboxGuiPath);
+        var wsbPath = ResolveWsbExecutablePath();
+
+        bool? wsbHelpOk = null;
+        string? wsbHelpOut = null;
+        List<string> missingOps = [];
+        string? wsbVersion = null;
+        bool? wsbListOk = null;
+        string? wsbListDiag = null;
+
+        if (wsbPath is not null)
+        {
+            var help = await RunWsbCommandAsync(wsbPath, ["--help"], TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
+            wsbHelpOk = !help.TimedOut && help.ExitCode == 0;
+            wsbHelpOut = CombineDiagnostic(help);
+            if (wsbHelpOk == true)
+            {
+                var helpText = help.Stdout + "\n" + help.Stderr;
+                missingOps = RequiredSubcommands
+                    .Where(op => !helpText.Contains(op, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                if (missingOps.Count == 0)
+                {
+                    var versionRes = await RunWsbCommandAsync(wsbPath, ["--version"], TimeSpan.FromSeconds(8), cancellationToken).ConfigureAwait(false);
+                    wsbVersion = !versionRes.TimedOut && versionRes.ExitCode == 0 && !string.IsNullOrWhiteSpace(versionRes.Stdout)
+                        ? versionRes.Stdout.Trim().Split('\n')[0].Trim()
+                        : "unknown";
+
+                    var listRes = await RunWsbCommandAsync(wsbPath, ["list", "--raw"], TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
+                    wsbListOk = !listRes.TimedOut && listRes.ExitCode == 0 && listRes.Stdout.TrimStart().StartsWith('{');
+                    if (wsbListOk != true)
+                        wsbListDiag = CombineDiagnostic(listRes);
+                }
+            }
+        }
+
+        return new HostSandboxEnvironmentSnapshot(
+            isWindows,
+            isNativeX64,
+            editionRead.Value,
+            productNameRead.Value,
+            productType,
+            editionRead.AccessDenied,
+            hasSandboxGui,
+            wsbPath,
+            wsbHelpOk,
+            wsbHelpOut,
+            missingOps,
+            wsbVersion,
+            wsbListOk,
+            wsbListDiag,
+            policyExplicitlyDisabled,
+            policyEvidence,
+            policyQueryDenied,
+            hypervisorPresent,
+            virtFirmwareEnabled,
+            false,
+            rebootCheck.Exists,
+            rebootCheck.AccessDenied);
+    }
+
+    public static SandboxCapabilityReport ClassifyHostEnvironment(HostSandboxEnvironmentSnapshot s)
+    {
+        ArgumentNullException.ThrowIfNull(s);
+        var editionSummary = FormatEditionSummary(s.EditionId, s.ProductName, s.ProductType);
+        var permissionNote = BuildPermissionNote(s);
+
+        if (!s.IsWindows || !s.IsNativeX64)
         {
             return new SandboxCapabilityReport(
                 SandboxCapabilityStatus.UnsupportedPlatform,
                 "当前系统不是原生 Windows x64 环境",
-                "隔离试用需要原生 64 位 Windows x64 宿主机与 Windows 沙盒（Windows Sandbox）支持。",
-                "请在启用了 Windows 沙盒的 Windows 11 x64 电脑上运行 Contain。");
+                "隔离试用需要原生 64 位 Windows x64 宿主机与 Windows 沙盒支持。Contain 的其他功能不受影响，本页仍可查看本地 .exe 信息与计算 SHA-256。",
+                "如需在沙箱中试运行程序，请在受支持的 Windows x64 电脑上运行 Contain。",
+                SandboxCapabilityPrimaryAction.GoToProjectPackaging,
+                "前往打包项目",
+                WindowsEditionSummary: editionSummary,
+                PermissionNote: permissionNote);
         }
 
-        var wsbPath = ResolveWsbExecutablePath();
-        var sandboxGuiPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsSandbox.exe");
-        var hasSandboxGui = File.Exists(sandboxGuiPath);
-
-        if (wsbPath is null)
+        // 1. Direct Home Edition check (Home editions do not include Windows Sandbox)
+        if (IsHomeEdition(s.EditionId, s.ProductType) && !s.HasWindowsSandboxExe && s.WsbExecutablePath is null)
         {
-            if (!hasSandboxGui)
+            return new SandboxCapabilityReport(
+                SandboxCapabilityStatus.HomeEditionUnsupported,
+                "当前 Windows 家庭版不支持 Windows 沙盒",
+                $"已检测到当前系统为 Windows 家庭版（{editionSummary ?? "Home / Core"}），系统本身不提供 Windows 沙盒功能。Contain 的「打包项目」「我的记录」「检查交付包」，以及本页的只读文件信息查看与 SHA-256 计算均可正常使用。",
+                "你可以继续在本页查看本地 .exe 的架构、产品版本与 SHA-256，或切换到「打包项目」等其他功能。",
+                SandboxCapabilityPrimaryAction.GoToProjectPackaging,
+                "前往打包项目",
+                WindowsEditionSummary: editionSummary,
+                PermissionNote: permissionNote);
+        }
+
+        // 2. Direct Group Policy evidence explicitly blocking Sandbox or MappedFolders
+        if (s.PolicyExplicitlyDisabled == true)
+        {
+            return new SandboxCapabilityReport(
+                SandboxCapabilityStatus.PolicyBlocked,
+                "系统策略当前阻止了隔离试用所需的沙盒能力",
+                $"已检测到明确的组策略限制（{s.PolicyEvidence}）。Contain 不会修改系统策略；「打包项目」「我的记录」「检查交付包」以及本页只读文件查看与 SHA-256 计算均可正常使用。",
+                "如为受管设备，请联系管理员或自行确认组策略配置，调整后再点击“重新检测”。",
+                SandboxCapabilityPrimaryAction.Recheck,
+                "重新检测",
+                WsbExecutablePath: s.WsbExecutablePath,
+                WsbVersion: s.WsbVersion,
+                WindowsEditionSummary: editionSummary,
+                PermissionNote: permissionNote,
+                Diagnostic: s.PolicyEvidence ?? "");
+        }
+
+        // 3. wsb.exe present: check subcommands and live `wsb list --raw`
+        if (!string.IsNullOrEmpty(s.WsbExecutablePath))
+        {
+            if (s.WsbHelpSucceeded == true && s.MissingWsbSubcommands.Count > 0)
             {
                 return new SandboxCapabilityReport(
-                    SandboxCapabilityStatus.FeatureNotEnabled,
-                    "本机尚未启用 Windows 沙盒（Windows Sandbox）",
-                    "未检测到 WindowsSandbox.exe 与 wsb.exe。通常是因为系统尚未开启“Windows 沙盒”可选功能，或当前系统版本（如 Windows 家庭版）不支持该功能。",
-                    "如需使用，请由你自行打开“启用或关闭 Windows 功能”勾选“Windows 沙盒”（需开启硬件虚拟化），并在合适时机重启电脑后点击“重新检测”。Contain 不会自动修改系统功能或重启电脑。");
+                    SandboxCapabilityStatus.CliUnavailable,
+                    "沙盒可用，但缺少隔离试用所需的 wsb 命令",
+                    $"检测到 wsb.exe，但缺少按实例控制必需的子命令：{string.Join("、", s.MissingWsbSubcommands)}。你仍可在本页查看 .exe 文件信息与计算 SHA-256。",
+                    "请更新 Windows 11 的 Windows 沙盒组件后点击“重新检测”。",
+                    SandboxCapabilityPrimaryAction.Recheck,
+                    "重新检测",
+                    WsbExecutablePath: s.WsbExecutablePath,
+                    WindowsEditionSummary: editionSummary,
+                    PermissionNote: permissionNote,
+                    Diagnostic: s.WsbHelpOutput ?? "");
+            }
+
+            if (s.WsbHelpSucceeded == true && s.WsbListSucceeded == true)
+            {
+                return new SandboxCapabilityReport(
+                    SandboxCapabilityStatus.Ready,
+                    "Windows 沙盒已就绪",
+                    $"已核验本机支持按实例创建、连接、来宾执行与按 ID 结束（wsb {s.WsbVersion ?? "unknown"}）。",
+                    "选择一个本地单文件 Windows x64 .exe，即可查看文件信息或在断网、禁剪贴板的临时沙箱中试运行。",
+                    SandboxCapabilityPrimaryAction.None,
+                    "",
+                    WsbExecutablePath: s.WsbExecutablePath,
+                    WsbVersion: s.WsbVersion,
+                    WindowsEditionSummary: editionSummary,
+                    PermissionNote: permissionNote);
+            }
+
+            // wsb.exe exists, but help or list failed -> use ONLY direct evidence, never guess
+            var failDiag = !string.IsNullOrWhiteSpace(s.WsbListDiagnostic) ? s.WsbListDiagnostic : (s.WsbHelpOutput ?? "");
+            if (IsPolicyBlockedDiagnostic(failDiag))
+            {
+                return new SandboxCapabilityReport(
+                    SandboxCapabilityStatus.PolicyBlocked,
+                    "系统策略阻止调用 Windows 沙盒命令行",
+                    "调用 wsb.exe 时返回了策略限制错误。Contain 不会修改系统策略，你仍可在本页查看文件信息与计算 SHA-256。",
+                    "请确认设备策略是否允许运行 Windows 沙盒，完成后点击“重新检测”。",
+                    SandboxCapabilityPrimaryAction.Recheck,
+                    "重新检测",
+                    WsbExecutablePath: s.WsbExecutablePath,
+                    WsbVersion: s.WsbVersion,
+                    WindowsEditionSummary: editionSummary,
+                    PermissionNote: permissionNote,
+                    Diagnostic: failDiag);
+            }
+
+            if (s.HypervisorPresent == false && s.VirtualizationFirmwareEnabled == false)
+            {
+                return new SandboxCapabilityReport(
+                    SandboxCapabilityStatus.VirtualizationDisabled,
+                    "检测到硬件虚拟化未开启，无法启动 Windows 沙盒",
+                    "直接探测显示当前未运行虚拟化管理程序且处理器固件虚拟化未启用。本页仍可查看本地 .exe 文件信息与计算 SHA-256。",
+                    "如需使用隔离试用，请由你自行在主板 BIOS/UEFI 中开启虚拟化（Intel VT-x / AMD-V）并重启电脑，再回来点击“重新检测”。",
+                    SandboxCapabilityPrimaryAction.Recheck,
+                    "重新检测",
+                    WsbExecutablePath: s.WsbExecutablePath,
+                    WsbVersion: s.WsbVersion,
+                    WindowsEditionSummary: editionSummary,
+                    PermissionNote: permissionNote,
+                    Diagnostic: failDiag);
+            }
+
+            if (s.RebootPending == true)
+            {
+                return new SandboxCapabilityReport(
+                    SandboxCapabilityStatus.RebootPending,
+                    "Windows 沙盒尚未就绪，且系统存在待完成重启",
+                    "已检测到 wsb.exe 但当前无法查询沙盒实例，同时系统存在未完成的重启挂起标记。你仍可在本页查看文件信息与计算 SHA-256。",
+                    "如你刚启用或更新过 Windows 沙盒，请在合适时机自行重启电脑后再点击“重新检测”。Contain 不会自动重启电脑。",
+                    SandboxCapabilityPrimaryAction.Recheck,
+                    "重新检测",
+                    WsbExecutablePath: s.WsbExecutablePath,
+                    WsbVersion: s.WsbVersion,
+                    WindowsEditionSummary: editionSummary,
+                    PermissionNote: permissionNote,
+                    Diagnostic: failDiag);
             }
 
             return new SandboxCapabilityReport(
-                SandboxCapabilityStatus.CliUnavailable,
-                "缺少按实例管理沙箱所需的 wsb.exe 命令行工具",
-                "检测到 WindowsSandbox.exe，但未找到支持按实例创建、连接、执行与结束的 wsb.exe CLI（Windows 11 24H2 及以上版本的 Windows 沙盒提供）。",
-                "请确认已安装最新版本的 Windows 沙盒并重启完成后再点击“重新检测”。Contain 不会自动修改系统功能或重启电脑。");
+                SandboxCapabilityStatus.Undetermined,
+                "检测到 wsb.exe，但沙盒当前无法响应（原因尚未确定）",
+                "执行 wsb.exe 未返回有效结果，且普通用户权限下未观测到虚拟化关闭或明确组策略禁用的直接证据。Contain 不会猜测原因，也不影响你使用本页的只读文件查看和其他功能。",
+                "请展开“技术详情”查看原始返回信息；确认 Windows 沙盒本身可单独启动后再点击“重新检测”。",
+                SandboxCapabilityPrimaryAction.Recheck,
+                "重新检测",
+                WsbExecutablePath: s.WsbExecutablePath,
+                WsbVersion: s.WsbVersion,
+                WindowsEditionSummary: editionSummary,
+                PermissionNote: permissionNote,
+                Diagnostic: failDiag);
         }
 
-        // Verify required subcommands from `wsb --help`
-        var help = await RunWsbCommandAsync(wsbPath, ["--help"], TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
-        if (help.TimedOut || help.ExitCode != 0)
-        {
-            return new SandboxCapabilityReport(
-                SandboxCapabilityStatus.PolicyOrRuntimeBlocked,
-                "无法调用 Windows 沙盒命令行（wsb.exe）",
-                "执行 wsb --help 失败或超时，可能是系统策略限制、沙盒组件未完成初始化或权限不足。",
-                "请确认系统未通过组策略禁用 Windows 沙盒，且上次启用功能后的重启已完成，随后点击“重新检测”。",
-                WsbExecutablePath: wsbPath,
-                Diagnostic: CombineDiagnostic(help));
-        }
-
-        var helpText = help.Stdout + "\n" + help.Stderr;
-        var missingOps = RequiredSubcommands
-            .Where(op => !helpText.Contains(op, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        if (missingOps.Count > 0)
+        // 4. WindowsSandbox.exe exists, but wsb.exe CLI is absent
+        if (s.HasWindowsSandboxExe)
         {
             return new SandboxCapabilityReport(
                 SandboxCapabilityStatus.CliUnavailable,
-                "当前 Windows 沙盒 CLI 缺少所需的实例控制能力",
-                $"wsb.exe 缺少必需子命令：{string.Join("、", missingOps)}，无法安全地按实例创建、连接和结束隔离试用。",
-                "请更新 Windows 11 的 Windows 沙盒组件后重新检测。",
-                WsbExecutablePath: wsbPath,
-                Diagnostic: helpText.Trim());
+                "本机已有 Windows 沙盒，但缺少所需的 wsb 命令",
+                "检测到 WindowsSandbox.exe，但未找到按实例创建、连接和结束所需的 wsb.exe CLI（Windows 11 24H2 及以上版本的 Windows 沙盒提供）。本页的只读文件查看与 SHA-256 计算不受影响。",
+                "请更新 Windows 沙盒组件或升级到提供 wsb.exe 的 Windows 11 版本后点击“重新检测”。",
+                SandboxCapabilityPrimaryAction.Recheck,
+                "重新检测",
+                WindowsEditionSummary: editionSummary,
+                PermissionNote: permissionNote);
         }
 
-        var versionRes = await RunWsbCommandAsync(wsbPath, ["--version"], TimeSpan.FromSeconds(8), cancellationToken).ConfigureAwait(false);
-        var wsbVersion = !versionRes.TimedOut && versionRes.ExitCode == 0 && !string.IsNullOrWhiteSpace(versionRes.Stdout)
-            ? versionRes.Stdout.Trim().Split('\n')[0].Trim()
-            : "unknown";
-
-        // Verify live runtime query via `wsb list --raw`
-        var listRes = await RunWsbCommandAsync(wsbPath, ["list", "--raw"], TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
-        if (listRes.TimedOut || listRes.ExitCode != 0 || !listRes.Stdout.TrimStart().StartsWith('{'))
+        // 5. Neither WindowsSandbox.exe nor wsb.exe exists
+        if (s.HypervisorPresent == false && s.VirtualizationFirmwareEnabled == false)
         {
             return new SandboxCapabilityReport(
-                SandboxCapabilityStatus.PolicyOrRuntimeBlocked,
-                "Windows 沙盒运行服务当前不可用或被策略阻止",
-                "执行 wsb list --raw 未能返回有效实例列表。可能原因包括未开启 BIOS 硬件虚拟化、组策略禁用 Windows 沙盒，或容器管理服务未就绪。",
-                "请检查硬件虚拟化、Windows 沙盒功能状态或组策略；如需启用或重启电脑，请由你自行操作后点击“重新检测”。",
-                WsbExecutablePath: wsbPath,
-                WsbVersion: wsbVersion,
-                Diagnostic: CombineDiagnostic(listRes));
+                SandboxCapabilityStatus.VirtualizationDisabled,
+                "检测到硬件虚拟化未开启，暂无法使用 Windows 沙盒",
+                "未检测到 Windows 沙盒组件，且直接探测显示硬件虚拟化未启用。Contain 的「打包项目」「我的记录」「检查交付包」以及本页的只读文件信息与 SHA-256 计算均可正常使用。",
+                "如需使用隔离试用，请先由你自行在 BIOS/UEFI 中开启虚拟化，再开启“Windows 沙盒”功能并重启电脑，完成后点击“重新检测”。",
+                SandboxCapabilityPrimaryAction.Recheck,
+                "重新检测",
+                WindowsEditionSummary: editionSummary,
+                PermissionNote: permissionNote);
+        }
+
+        if (IsSupportedSandboxEdition(s.EditionId, s.ProductType))
+        {
+            var rebootHint = s.RebootPending == true
+                ? "另检测到系统当前有待完成的重启；如果你刚勾选过“Windows 沙盒”，重启后即可生效。"
+                : "";
+            return new SandboxCapabilityReport(
+                SandboxCapabilityStatus.SupportedFeatureNotEnabled,
+                "当前系统支持 Windows 沙盒，但功能尚未启用",
+                $"已确认为受支持的 Windows 版本（{editionSummary ?? s.EditionId}），目前未检测到 WindowsSandbox.exe 与 wsb.exe。{rebootHint}Contain 不会自动修改系统功能或重启电脑；在此之前你仍可在本页查看文件信息并计算 SHA-256。",
+                "如需使用隔离试用，点击下方“打开 Windows 功能”，自行勾选“Windows 沙盒”并在合适时机重启电脑，完成后回到本页点击“重新检测”。",
+                SandboxCapabilityPrimaryAction.OpenWindowsFeatures,
+                "打开 Windows 功能",
+                WindowsEditionSummary: editionSummary,
+                PermissionNote: permissionNote);
         }
 
         return new SandboxCapabilityReport(
-            SandboxCapabilityStatus.Ready,
-            "Windows 沙盒已就绪",
-            $"已核验本机支持按实例创建、连接、来宾执行与按 ID 结束操作（wsb {wsbVersion}）。",
-            "选择一个本地单文件 Windows x64 .exe，即可在断网、禁用剪贴板的临时沙箱中试用。",
-            WsbExecutablePath: wsbPath,
-            WsbVersion: wsbVersion);
+            SandboxCapabilityStatus.Undetermined,
+            "未能确认 Windows 沙盒状态（原因尚未确定）",
+            "未检测到 WindowsSandbox.exe 与 wsb.exe，且当前未能获取足够的系统版本或功能证据，无法区分是系统版本不支持还是功能尚未启用。Contain 不会擅自修改系统；「打包项目」「我的记录」「检查交付包」以及本页只读文件查看与 SHA-256 计算均可正常使用。",
+            "确认当前 Windows 版本支持并已启用“Windows 沙盒”后，可点击“重新检测”。",
+            SandboxCapabilityPrimaryAction.Recheck,
+            "重新检测",
+            WindowsEditionSummary: editionSummary,
+            PermissionNote: permissionNote ?? "普通用户权限下未能读取完整的系统版本信息，未对不可用原因做猜测。");
+    }
+
+    internal static bool IsHomeEdition(string? editionId, uint? productType)
+    {
+        if (!string.IsNullOrWhiteSpace(editionId))
+        {
+            var e = editionId.Trim();
+            if (e.Equals("Core", StringComparison.OrdinalIgnoreCase)
+                || e.StartsWith("Core", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        // PRODUCT_CORE_N (0x62), PRODUCT_CORE_COUNTRYSPECIFIC (0x63), PRODUCT_CORE_SINGLELANGUAGE (0x64),
+        // PRODUCT_CORE (0x65), PRODUCT_CORE_CONNECTED (0x67)
+        return productType is 0x62 or 0x63 or 0x64 or 0x65 or 0x67;
+    }
+
+    internal static bool IsSupportedSandboxEdition(string? editionId, uint? productType)
+    {
+        if (IsHomeEdition(editionId, productType)) return false;
+        if (!string.IsNullOrWhiteSpace(editionId))
+        {
+            var e = editionId.Trim();
+            if (e.StartsWith("Professional", StringComparison.OrdinalIgnoreCase)
+                || e.StartsWith("Enterprise", StringComparison.OrdinalIgnoreCase)
+                || e.StartsWith("Education", StringComparison.OrdinalIgnoreCase)
+                || e.StartsWith("IoTEnterprise", StringComparison.OrdinalIgnoreCase)
+                || e.Equals("ServerRdsh", StringComparison.OrdinalIgnoreCase)
+                || e.Equals("CloudEdition", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        // PRODUCT_ENTERPRISE (0x04), PRODUCT_PROFESSIONAL (0x30), PRODUCT_PROFESSIONAL_N (0x31),
+        // PRODUCT_EDUCATION (0x79), PRODUCT_EDUCATION_N (0x7A), PRODUCT_ENTERPRISE_S (0x7D),
+        // PRODUCT_PRO_WORKSTATION (0xA1), PRODUCT_PRO_WORKSTATION_N (0xA2), PRODUCT_IOTENTERPRISE (0xBC)
+        return productType is 0x04 or 0x1B or 0x30 or 0x31 or 0x48 or 0x79 or 0x7A or 0x7D or 0x7E or 0xA1 or 0xA2 or 0xBC or 0xBF;
+    }
+
+    private static bool IsPolicyBlockedDiagnostic(string? diagnostic)
+    {
+        if (string.IsNullOrWhiteSpace(diagnostic)) return false;
+        return diagnostic.Contains("0x800704EC", StringComparison.OrdinalIgnoreCase)
+            || diagnostic.Contains("ERROR_ACCESS_DISABLED_BY_POLICY", StringComparison.OrdinalIgnoreCase)
+            || diagnostic.Contains("disabled by policy", StringComparison.OrdinalIgnoreCase)
+            || diagnostic.Contains("组策略", StringComparison.Ordinal);
+    }
+
+    private static string? FormatEditionSummary(string? editionId, string? productName, uint? productType)
+    {
+        if (!string.IsNullOrWhiteSpace(productName) && !string.IsNullOrWhiteSpace(editionId))
+            return $"{productName.Trim()} ({editionId.Trim()})";
+        if (!string.IsNullOrWhiteSpace(editionId))
+            return editionId.Trim();
+        if (!string.IsNullOrWhiteSpace(productName))
+            return productName.Trim();
+        return productType is uint pt ? $"ProductType 0x{pt:X}" : null;
+    }
+
+    private static string? BuildPermissionNote(HostSandboxEnvironmentSnapshot s)
+    {
+        var denied = new List<string>();
+        if (s.EditionQueryDenied) denied.Add("系统版本注册表");
+        if (s.PolicyQueryDenied) denied.Add("组策略注册表");
+        if (s.VirtualizationQueryDenied) denied.Add("虚拟化状态");
+        if (s.RebootPendingQueryDenied) denied.Add("待重启标记");
+        if (denied.Count == 0) return null;
+        return $"当前以普通用户权限运行，以下项因权限受限未能读取：{string.Join("、", denied)}（未对其做猜测）。";
     }
 
     public async Task<SandboxStartResult> StartSandboxAsync(
@@ -386,6 +784,13 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(executable);
+        if (!executable.IsRunnableInX64Sandbox)
+        {
+            throw new IsolatedTrialException(
+                "unsupported_arch",
+                $"“{executable.FileName}”为 {executable.ArchitectureLabel}，不能在 Windows x64 沙箱中运行。",
+                "本页已保留该文件的只读信息与 SHA-256 计算功能；如需沙箱试运行，请选择 Windows x64 单文件程序。");
+        }
         var capability = await ProbeCapabilityAsync(cancellationToken).ConfigureAwait(false);
         if (!capability.IsReady || string.IsNullOrEmpty(capability.WsbExecutablePath))
         {
@@ -1016,6 +1421,81 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
         }
     }
 
+    private readonly record struct RegStringResult(string? Value, bool AccessDenied);
+    private readonly record struct RegDwordResult(int? Value, bool AccessDenied);
+    private readonly record struct RegExistsResult(bool? Exists, bool AccessDenied);
+
+    private static readonly IntPtr HkeyLocalMachine = unchecked((IntPtr)0x80000002);
+    private const uint KeyQueryValue = 0x0001;
+    private const uint KeyWow6464Key = 0x0100;
+    private const int ErrorSuccess = 0;
+    private const int ErrorFileNotFound = 2;
+    private const int ErrorAccessDenied = 5;
+    private const uint RegSz = 1;
+    private const uint RegExpandSz = 2;
+    private const uint RegDword = 4;
+
+    private static RegStringResult TryReadHklmString(string subKey, string valueName)
+    {
+        if (!OperatingSystem.IsWindows()) return new(null, false);
+        var openErr = RegOpenKeyExW(HkeyLocalMachine, subKey, 0, KeyQueryValue | KeyWow6464Key, out var hKey);
+        if (openErr == ErrorAccessDenied) return new(null, true);
+        if (openErr != ErrorSuccess || hKey == IntPtr.Zero) return new(null, false);
+        try
+        {
+            uint size = 0;
+            var qErr = RegQueryValueExW(hKey, valueName, IntPtr.Zero, out var type, IntPtr.Zero, ref size);
+            if (qErr == ErrorAccessDenied) return new(null, true);
+            if (qErr != ErrorSuccess || size == 0 || size > 4096 || (type != RegSz && type != RegExpandSz))
+                return new(null, false);
+
+            var buf = Marshal.AllocHGlobal(checked((int)size));
+            try
+            {
+                qErr = RegQueryValueExW(hKey, valueName, IntPtr.Zero, out type, buf, ref size);
+                if (qErr == ErrorAccessDenied) return new(null, true);
+                if (qErr != ErrorSuccess || size < 2) return new(null, false);
+                var str = Marshal.PtrToStringUni(buf, checked((int)(size / 2)))?.TrimEnd('\0').Trim();
+                return new(string.IsNullOrEmpty(str) ? null : str, false);
+            }
+            finally { Marshal.FreeHGlobal(buf); }
+        }
+        finally { _ = RegCloseKey(hKey); }
+    }
+
+    private static RegDwordResult TryReadHklmDword(string subKey, string valueName)
+    {
+        if (!OperatingSystem.IsWindows()) return new(null, false);
+        var openErr = RegOpenKeyExW(HkeyLocalMachine, subKey, 0, KeyQueryValue | KeyWow6464Key, out var hKey);
+        if (openErr == ErrorAccessDenied) return new(null, true);
+        if (openErr != ErrorSuccess || hKey == IntPtr.Zero) return new(null, false);
+        try
+        {
+            uint size = 4;
+            var buf = Marshal.AllocHGlobal(4);
+            try
+            {
+                var qErr = RegQueryValueExW(hKey, valueName, IntPtr.Zero, out var type, buf, ref size);
+                if (qErr == ErrorAccessDenied) return new(null, true);
+                if (qErr != ErrorSuccess || type != RegDword || size != 4) return new(null, false);
+                return new(Marshal.ReadInt32(buf), false);
+            }
+            finally { Marshal.FreeHGlobal(buf); }
+        }
+        finally { _ = RegCloseKey(hKey); }
+    }
+
+    private static RegExistsResult TryCheckHklmKeyExists(string subKey)
+    {
+        if (!OperatingSystem.IsWindows()) return new(null, false);
+        var openErr = RegOpenKeyExW(HkeyLocalMachine, subKey, 0, KeyQueryValue | KeyWow6464Key, out var hKey);
+        if (openErr == ErrorAccessDenied) return new(null, true);
+        if (openErr == ErrorFileNotFound) return new(false, false);
+        if (openErr != ErrorSuccess || hKey == IntPtr.Zero) return new(null, false);
+        _ = RegCloseKey(hKey);
+        return new(true, false);
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct UnicodeString
     {
@@ -1030,6 +1510,39 @@ public sealed class WindowsSandboxTrialService : IIsolatedTrialService
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CloseHandle(IntPtr hObject);
+
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsProcessorFeaturePresent(uint processorFeature);
+
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetProductInfo(
+        uint dwOSMajorVersion,
+        uint dwOSMinorVersion,
+        uint dwSpMajorVersion,
+        uint dwSpMinorVersion,
+        out uint pdwReturnedProductType);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode)]
+    private static extern int RegOpenKeyExW(
+        IntPtr hKey,
+        string lpSubKey,
+        uint ulOptions,
+        uint samDesired,
+        out IntPtr phkResult);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode)]
+    private static extern int RegQueryValueExW(
+        IntPtr hKey,
+        string lpValueName,
+        IntPtr lpReserved,
+        out uint lpType,
+        IntPtr lpData,
+        ref uint lpcbData);
+
+    [DllImport("advapi32.dll")]
+    private static extern int RegCloseKey(IntPtr hKey);
 
     [DllImport("ntdll.dll")]
     private static extern int NtQueryInformationProcess(

@@ -6,9 +6,21 @@ public enum SandboxCapabilityStatus
     Checking,
     Ready,
     UnsupportedPlatform,
-    FeatureNotEnabled,
+    HomeEditionUnsupported,
+    SupportedFeatureNotEnabled,
     CliUnavailable,
-    PolicyOrRuntimeBlocked
+    VirtualizationDisabled,
+    PolicyBlocked,
+    RebootPending,
+    Undetermined
+}
+
+public enum SandboxCapabilityPrimaryAction
+{
+    None,
+    OpenWindowsFeatures,
+    GoToProjectPackaging,
+    Recheck
 }
 
 public sealed record SandboxCapabilityReport(
@@ -16,12 +28,44 @@ public sealed record SandboxCapabilityReport(
     string Headline,
     string Detail,
     string NextStep,
+    SandboxCapabilityPrimaryAction PrimaryAction = SandboxCapabilityPrimaryAction.Recheck,
+    string PrimaryActionLabel = "重新检测",
     string? WsbExecutablePath = null,
     string? WsbVersion = null,
+    string? WindowsEditionSummary = null,
+    string? PermissionNote = null,
     string Diagnostic = "")
 {
     public bool IsReady => Status == SandboxCapabilityStatus.Ready;
 }
+
+/// <summary>
+/// Pure-data snapshot of non-elevated host Windows Sandbox evidence used for deterministic
+/// capability classification without guessing.
+/// </summary>
+public sealed record HostSandboxEnvironmentSnapshot(
+    bool IsWindows,
+    bool IsNativeX64,
+    string? EditionId,
+    string? ProductName,
+    uint? ProductType,
+    bool EditionQueryDenied,
+    bool HasWindowsSandboxExe,
+    string? WsbExecutablePath,
+    bool? WsbHelpSucceeded,
+    string? WsbHelpOutput,
+    IReadOnlyList<string> MissingWsbSubcommands,
+    string? WsbVersion,
+    bool? WsbListSucceeded,
+    string? WsbListDiagnostic,
+    bool? PolicyExplicitlyDisabled,
+    string? PolicyEvidence,
+    bool PolicyQueryDenied,
+    bool? HypervisorPresent,
+    bool? VirtualizationFirmwareEnabled,
+    bool VirtualizationQueryDenied,
+    bool? RebootPending,
+    bool RebootPendingQueryDenied);
 
 public enum TrialExecutableArch
 {
@@ -38,8 +82,28 @@ public sealed record TrialExecutableInfo(
     string FormattedSize,
     TrialExecutableArch Architecture,
     string ArchitectureLabel,
+    string? ProductVersion,
+    string? FileVersion,
     bool HasSiblingFiles,
-    int SiblingFileCount);
+    int SiblingFileCount)
+{
+    public bool IsRunnableInX64Sandbox => Architecture is TrialExecutableArch.X64 or TrialExecutableArch.X86;
+
+    public string DisplayVersion =>
+        !string.IsNullOrWhiteSpace(ProductVersion)
+            ? ProductVersion
+            : !string.IsNullOrWhiteSpace(FileVersion)
+                ? FileVersion
+                : "未提供";
+}
+
+public enum TrialHashState
+{
+    Idle,
+    Computing,
+    Computed,
+    Failed
+}
 
 public enum IsolatedTrialPhase
 {
@@ -124,6 +188,17 @@ public interface IIsolatedTrialService
 {
     Task<SandboxCapabilityReport> ProbeCapabilityAsync(CancellationToken cancellationToken = default);
     TrialExecutableInfo InspectExecutable(string executablePath);
+
+    /// <summary>
+    /// Computes the lowercase hex SHA-256 digest of a local file strictly read-only without executing it.
+    /// </summary>
+    Task<string> ComputeSha256Async(string executablePath, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Opens the built-in Windows "Turn Windows features on or off" dialog (`optionalfeatures.exe`)
+    /// so the user can decide whether to enable Windows Sandbox and reboot later.
+    /// </summary>
+    void OpenWindowsFeatures();
 
     /// <summary>
     /// Creates an isolated staging folder with ONLY the selected EXE, starts a new offline

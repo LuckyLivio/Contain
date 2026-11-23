@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Xml.Linq;
 using Contain.Desktop.Model;
 
@@ -12,7 +13,7 @@ internal static class IsolatedTrialChecks
     {
         var passed = new List<string>();
 
-        await Check("executable inspection validates x64 PE, rejects non-PE/ARM64/non-exe, preserves special chars and sibling hint", () =>
+        await Check("executable inspection validates PE, allows read-only ARM64 inspection, and preserves special chars + neutral sibling hint", () =>
         {
             using var temp = new TempDir();
             var dir = temp.Sub("试用 样例 & 目录");
@@ -24,11 +25,16 @@ internal static class IsolatedTrialChecks
             var info = WindowsSandboxTrialService.InspectExecutableFile(x64Exe);
             Equal("隔离 样例 & 测试.exe", info.FileName, "exact file name with Chinese, spaces and ampersand");
             Equal(TrialExecutableArch.X64, info.Architecture, "detected x64 PE");
+            True(info.IsRunnableInX64Sandbox, "x64 PE runnable in x64 sandbox");
+            Equal("未提供", info.DisplayVersion, "missing version resource reports 未提供");
             True(info.HasSiblingFiles && info.SiblingFileCount == 1, "sibling file noticed without including it");
 
+            // ARM64 PE can still be inspected read-only (name, size, arch, SHA-256), but is marked non-runnable in x64 Sandbox
             var arm64Exe = Path.Combine(dir, "arm64.exe");
             WriteMinimalPe(arm64Exe, 0xAA64);
-            ThrowsCode(() => WindowsSandboxTrialService.InspectExecutableFile(arm64Exe), "unsupported_arch");
+            var armInfo = WindowsSandboxTrialService.InspectExecutableFile(arm64Exe);
+            Equal(TrialExecutableArch.Arm64, armInfo.Architecture, "detected ARM64 PE");
+            True(!armInfo.IsRunnableInX64Sandbox, "ARM64 PE blocked from x64 sandbox launch");
 
             var fakeExe = Path.Combine(dir, "not-a-pe.exe");
             File.WriteAllText(fakeExe, new string('A', 256));
@@ -37,6 +43,199 @@ internal static class IsolatedTrialChecks
             ThrowsCode(() => WindowsSandboxTrialService.InspectExecutableFile(sibling), "not_exe");
             ThrowsCode(() => WindowsSandboxTrialService.InspectExecutableFile(Path.Combine(dir, "missing.exe")), "file_missing");
             return Task.CompletedTask;
+        });
+
+        await Check("host environment classifier accurately distinguishes Ready, ProNotEnabled, Home, CliUnavailable, VirtDisabled, Policy, RebootPending, and Undetermined", () =>
+        {
+            // Ready (even when Hyper-V masks PF_VIRT_FIRMWARE_ENABLED to false while HypervisorPresent=true)
+            var ready = WindowsSandboxTrialService.ClassifyHostEnvironment(BaseSnapshot() with
+            {
+                EditionId = "Professional",
+                ProductName = "Windows 11 Pro",
+                ProductType = 0x30,
+                HasWindowsSandboxExe = true,
+                WsbExecutablePath = @"C:\wsb.exe",
+                WsbHelpSucceeded = true,
+                WsbVersion = "0.8.114.0",
+                WsbListSucceeded = true,
+                HypervisorPresent = true,
+                VirtualizationFirmwareEnabled = false
+            });
+            Equal(SandboxCapabilityStatus.Ready, ready.Status, "ready with active hypervisor");
+            Equal(SandboxCapabilityPrimaryAction.None, ready.PrimaryAction, "ready has no blocked action");
+
+            // Supported edition (Pro) without Sandbox binaries -> SupportedFeatureNotEnabled + OpenWindowsFeatures
+            var proNotEnabled = WindowsSandboxTrialService.ClassifyHostEnvironment(BaseSnapshot() with
+            {
+                EditionId = "Professional",
+                ProductName = "Windows 11 Pro",
+                ProductType = 0x30,
+                HypervisorPresent = true,
+                VirtualizationFirmwareEnabled = false
+            });
+            Equal(SandboxCapabilityStatus.SupportedFeatureNotEnabled, proNotEnabled.Status, "Pro missing binaries -> SupportedFeatureNotEnabled");
+            Equal(SandboxCapabilityPrimaryAction.OpenWindowsFeatures, proNotEnabled.PrimaryAction, "Pro not enabled offers Open Windows Features");
+
+            // Home edition -> HomeEditionUnsupported + GoToProjectPackaging
+            var home = WindowsSandboxTrialService.ClassifyHostEnvironment(BaseSnapshot() with
+            {
+                EditionId = "Core",
+                ProductName = "Windows 11 Home",
+                ProductType = 0x65
+            });
+            Equal(SandboxCapabilityStatus.HomeEditionUnsupported, home.Status, "Core -> HomeEditionUnsupported");
+            Equal(SandboxCapabilityPrimaryAction.GoToProjectPackaging, home.PrimaryAction, "Home offers GoToProjectPackaging");
+            True(home.Detail.Contains("打包项目", StringComparison.Ordinal) && home.Detail.Contains("SHA-256", StringComparison.Ordinal),
+                "Home explains available Contain features");
+
+            // Sandbox GUI present without wsb.exe -> CliUnavailable
+            var noCli = WindowsSandboxTrialService.ClassifyHostEnvironment(BaseSnapshot() with
+            {
+                EditionId = "Professional",
+                HasWindowsSandboxExe = true,
+                WsbExecutablePath = null
+            });
+            Equal(SandboxCapabilityStatus.CliUnavailable, noCli.Status, "WindowsSandbox.exe without wsb.exe -> CliUnavailable");
+
+            // wsb.exe missing required subcommands -> CliUnavailable
+            var partialCli = WindowsSandboxTrialService.ClassifyHostEnvironment(BaseSnapshot() with
+            {
+                EditionId = "Professional",
+                HasWindowsSandboxExe = true,
+                WsbExecutablePath = @"C:\wsb.exe",
+                WsbHelpSucceeded = true,
+                MissingWsbSubcommands = ["connect", "stop"]
+            });
+            Equal(SandboxCapabilityStatus.CliUnavailable, partialCli.Status, "incomplete wsb subcommands -> CliUnavailable");
+
+            // Direct evidence of hardware virtualization disabled (BOTH HypervisorPresent=false AND VirtFirmware=false)
+            var virtOff = WindowsSandboxTrialService.ClassifyHostEnvironment(BaseSnapshot() with
+            {
+                EditionId = "Professional",
+                HypervisorPresent = false,
+                VirtualizationFirmwareEnabled = false
+            });
+            Equal(SandboxCapabilityStatus.VirtualizationDisabled, virtOff.Status, "both hypervisor & firmware virt false -> VirtualizationDisabled");
+
+            // Direct evidence of Group Policy blocking mapped folders -> PolicyBlocked
+            var policy = WindowsSandboxTrialService.ClassifyHostEnvironment(BaseSnapshot() with
+            {
+                EditionId = "Enterprise",
+                PolicyExplicitlyDisabled = true,
+                PolicyEvidence = @"HKLM\SOFTWARE\Policies\Microsoft\Windows\Sandbox\AllowMappedFolders = 0"
+            });
+            Equal(SandboxCapabilityStatus.PolicyBlocked, policy.Status, "explicit policy -> PolicyBlocked");
+
+            // Direct RebootPending when wsb.exe exists but fails list -> RebootPending
+            var reboot = WindowsSandboxTrialService.ClassifyHostEnvironment(BaseSnapshot() with
+            {
+                EditionId = "Professional",
+                HasWindowsSandboxExe = true,
+                WsbExecutablePath = @"C:\wsb.exe",
+                WsbHelpSucceeded = true,
+                WsbListSucceeded = false,
+                WsbListDiagnostic = "exit=1",
+                HypervisorPresent = true,
+                RebootPending = true
+            });
+            Equal(SandboxCapabilityStatus.RebootPending, reboot.Status, "wsb failure + RebootPending -> RebootPending");
+
+            // Missing binaries + edition unreadable (access denied) -> Undetermined with honest PermissionNote (never guesses)
+            var undetermined = WindowsSandboxTrialService.ClassifyHostEnvironment(BaseSnapshot() with
+            {
+                EditionId = null,
+                ProductName = null,
+                ProductType = null,
+                EditionQueryDenied = true,
+                PolicyQueryDenied = true
+            });
+            Equal(SandboxCapabilityStatus.Undetermined, undetermined.Status, "unreadable edition -> Undetermined");
+            True(!string.IsNullOrWhiteSpace(undetermined.PermissionNote) && undetermined.PermissionNote.Contains("普通用户权限", StringComparison.Ordinal),
+                "honestly explains query permission limitation");
+            return Task.CompletedTask;
+        });
+
+        await Check("sandbox-unavailable user can still inspect EXE metadata, compute/copy SHA-256, and stale hash never lands on switched file", async () =>
+        {
+            using var temp = new TempDir();
+            var dir = temp.Sub("inspect");
+            var exeA = Path.Combine(dir, "fileA.exe");
+            var exeB = Path.Combine(dir, "fileB.exe");
+            WriteMinimalPe(exeA, 0x8664, extraByte: 0x11);
+            WriteMinimalPe(exeB, 0x8664, extraByte: 0x22);
+            var expectedHashB = await WindowsSandboxTrialService.ComputeFileSha256Async(exeB);
+            Equal(64, expectedHashB.Length, "real SHA-256 is 64 hex chars");
+
+            var slowHashGate = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var hashCall = 0;
+            var service = new ControlledTrialService
+            {
+                CapabilityReport = WindowsSandboxTrialService.ClassifyHostEnvironment(BaseSnapshot() with
+                {
+                    EditionId = "Professional",
+                    ProductName = "Windows 11 Pro",
+                    ProductType = 0x30,
+                    HypervisorPresent = true
+                }),
+                HashFactory = (path, ct) =>
+                {
+                    var n = Interlocked.Increment(ref hashCall);
+                    if (n == 1) return slowHashGate.Task;
+                    return WindowsSandboxTrialService.ComputeFileSha256Async(path, ct);
+                }
+            };
+
+            using var vm = new IsolatedTrialViewModel(service);
+            await vm.RefreshCapabilityAsync();
+            True(vm.IsCapabilityBlocked && vm.ShowOpenWindowsFeaturesButton, "Pro not enabled shows Open Windows Features");
+            True(vm.CanSelectExecutable, "file inspection remains enabled without Sandbox");
+
+            // Open Windows Features delegates cleanly without launching any EXE
+            vm.OpenWindowsFeatures();
+            Equal(1, service.OpenWindowsFeaturesCalls, "OpenWindowsFeatures invoked once");
+
+            // Select File A and start slow hash
+            True(vm.SelectExecutable(exeA), "selected File A without Sandbox");
+            True(!vm.CanStartTrial, "Start stays disabled without Sandbox");
+            True(vm.CanComputeSha256, "Compute SHA-256 enabled without Sandbox");
+            True(vm.SiblingFilesNoticeText.StartsWith("仅带入所选文件", StringComparison.Ordinal), "neutral sibling hint text");
+
+            var hashTaskA = vm.ComputeSha256Async();
+            True(vm.IsComputingSha256, "hash computing state active");
+            True(vm.CanSelectExecutable, "UI remains responsive to switch file while hashing");
+
+            // Switch to File B while File A's hash is still in flight
+            True(vm.SelectExecutable(exeB), "switched to File B mid-hash");
+            True(!vm.IsComputingSha256 && !vm.HasComputedSha256 && vm.ComputedSha256 == "", "old hash state cleared on switch");
+
+            // Resolve File A's late hash -> MUST be discarded and never appear on File B!
+            slowHashGate.SetResult("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+            var lateRes = await hashTaskA;
+            True(lateRes is null, "stale hash returned null");
+            True(!vm.HasComputedSha256 && vm.ComputedSha256 == "", "stale hash from File A never contaminates File B");
+
+            // Compute real SHA-256 on File B
+            var digestB = await vm.ComputeSha256Async();
+            Equal(expectedHashB, digestB ?? "", "File B computed exact real SHA-256");
+            Equal(expectedHashB, vm.ComputedSha256, "ViewModel exposes File B SHA-256");
+            True(vm.CanCopySha256, "Copy SHA-256 enabled");
+            Equal(0, service.StartCalls, "no sandbox or host EXE ever started");
+        });
+
+        await Check("ARM64 EXE allows file viewing and SHA-256 even when Sandbox is ready, while blocking x64 Sandbox run", async () =>
+        {
+            using var temp = new TempDir();
+            var armExe = Path.Combine(temp.Sub("arm"), "tool-arm64.exe");
+            WriteMinimalPe(armExe, 0xAA64);
+
+            var service = new ControlledTrialService();
+            using var vm = new IsolatedTrialViewModel(service);
+            await vm.RefreshCapabilityAsync();
+            True(vm.IsCapabilityReady, "sandbox ready");
+            True(vm.SelectExecutable(armExe), "ARM64 file still inspectable");
+            True(vm.HasRunCompatibilityWarning, "shows real warning for ARM64 run incompatibility");
+            True(!vm.CanStartTrial, "blocks Start for ARM64");
+            True(vm.CanComputeSha256, "still allows SHA-256 calculation");
         });
 
         await Check("sandbox XML config enforces offline, no clipboard, read-only mounts and escapes special characters", () =>
@@ -61,7 +260,7 @@ internal static class IsolatedTrialChecks
             return Task.CompletedTask;
         });
 
-        await Check("wsb JSON parsers and exact per-instance remote session command-line matcher reject wrong IDs", () =>
+        await Check("wsb JSON parsers, single-instance conflict detector, and exact per-instance command-line matcher reject wrong IDs", () =>
         {
             Equal(InstanceA, WindowsSandboxTrialService.ParseStartedInstanceId($$"""{"Id":"{{InstanceA}}"}"""), "parse start ID");
             True(WindowsSandboxTrialService.ParseStartedInstanceId("""{"Id":"not-a-guid"}""") is null, "reject non-guid ID");
@@ -96,30 +295,7 @@ internal static class IsolatedTrialChecks
             return Task.CompletedTask;
         });
 
-        await Check("blocked capability keeps Start disabled and surfaces actionable guidance", async () =>
-        {
-            using var temp = new TempDir();
-            var exePath = Path.Combine(temp.Sub("app"), "demo.exe");
-            WriteMinimalPe(exePath, 0x8664);
-
-            var service = new ControlledTrialService
-            {
-                CapabilityReport = new SandboxCapabilityReport(
-                    SandboxCapabilityStatus.FeatureNotEnabled,
-                    "本机尚未启用 Windows 沙盒（Windows Sandbox）",
-                    "未检测到 WindowsSandbox.exe。",
-                    "请由你自行在 Windows 功能中启用并在重启后点击“重新检测”。")
-            };
-
-            using var vm = new IsolatedTrialViewModel(service);
-            await vm.RefreshCapabilityAsync();
-            True(vm.IsCapabilityBlocked && !vm.IsCapabilityReady, "capability blocked");
-            True(vm.SelectExecutable(exePath), "can still inspect selected exe");
-            True(!vm.CanStartTrial, "cannot start when capability blocked");
-            True(vm.Capability.NextStep.Contains("重新检测", StringComparison.Ordinal), "shows next step");
-        });
-
-        await Check("separates SandboxOpened from ProgramStarted and blocks duplicate rapid Start clicks", async () =>
+        await Check("separates SandboxOpened from ProgramStarted, blocks duplicate rapid Start clicks, and surfaces concise ended result", async () =>
         {
             using var temp = new TempDir();
             var exePath = Path.Combine(temp.Sub("app"), "trial.exe");
@@ -143,15 +319,12 @@ internal static class IsolatedTrialChecks
             True(!await duplicate, "rapid second click synchronously rejected");
             Equal(1, service.StartCalls, "only one sandbox start initiated");
             Equal(IsolatedTrialPhase.StartingSandbox, vm.Phase, "starting phase");
-            Equal("正在创建并连接沙箱…", vm.SandboxStageBadge, "sandbox starting badge");
-            Equal("等待沙箱就绪", vm.ProgramStageBadge, "program waiting badge");
             True(!vm.CanStartTrial && !vm.CanSelectExecutable, "inputs locked while starting");
 
             startGate.SetResult(new SandboxStartResult("sess-1", InstanceA, @"C:\temp\sess-1", @"C:\temp\sess-1\input", 4242, DateTimeOffset.UtcNow));
             await WaitUntilAsync(() => vm.Phase == IsolatedTrialPhase.SandboxOpened);
             Equal("沙箱已打开", vm.SandboxStageBadge, "sandbox opened badge");
             Equal("正在沙箱内启动程序…", vm.ProgramStageBadge, "program not yet marked started while launcher runs");
-            True(vm.ActiveInstanceIdText.Contains(InstanceA, StringComparison.Ordinal), "shows exact instance ID");
 
             launchGate.SetResult(new GuestProgramLaunchResult(
                 GuestProgramLaunchOutcome.StartedAndRunning,
@@ -165,10 +338,40 @@ internal static class IsolatedTrialChecks
 
             True(await vm.EndTrialAsync(), "end trial from Contain succeeds");
             Equal(IsolatedTrialPhase.Ended, vm.Phase, "ended phase");
-            Equal(TrialEndReason.EndedByContain, vm.EndReason, "ended by Contain");
+            Equal("试用已结束", vm.SessionHeadline, "concise ended headline");
+            Equal("本次临时文件已清理", vm.CleanupStatusText, "clear cleanup confirmation");
+            True(!vm.IsCleanupWarning && vm.CanRetryTrial, "cleanup succeeded and Retry enabled");
+            True(vm.TechnicalDetailsText.Contains(InstanceA, StringComparison.Ordinal)
+                && vm.TechnicalDetailsText.Contains("ExistingLogin", StringComparison.Ordinal),
+                "UUID and ExistingLogin live in collapsible Technical Details");
             Equal(1, service.StoppedInstances.Count, "stopped exactly one instance");
             Equal(InstanceA, service.StoppedInstances[0], "stopped strictly the owned instance ID");
-            True(vm.LastStagingCleaned && vm.CanStartTrial, "staging cleaned and ready for next trial");
+        });
+
+        await Check("failed staging cleanup surfaces truthful warning instead of claiming cleaned", async () =>
+        {
+            using var temp = new TempDir();
+            var exePath = Path.Combine(temp.Sub("app"), "locked-staging.exe");
+            WriteMinimalPe(exePath, 0x8664);
+
+            var service = new ControlledTrialService
+            {
+                StopFactory = (id, path, _) => Task.FromResult(new SandboxStopResult(
+                    InstanceStopped: true,
+                    StagingCleaned: false,
+                    Summary: "已结束本次沙箱实例，但宿主机暂存目录暂未完全删除。",
+                    Diagnostic: "sharing violation"))
+            };
+
+            using var vm = new IsolatedTrialViewModel(service, pollInterval: TimeSpan.FromHours(1));
+            await vm.RefreshCapabilityAsync();
+            True(vm.SelectExecutable(exePath), "selected exe");
+            True(await vm.StartTrialAsync(), "started");
+            True(!await vm.EndTrialAsync(), "EndTrialAsync reflects incomplete cleanup");
+            Equal(IsolatedTrialPhase.Ended, vm.Phase, "ended phase");
+            True(vm.IsCleanupWarning, "shows truthful cleanup warning");
+            True(vm.CleanupStatusText.Contains("尚未完全清理", StringComparison.Ordinal), "explains cleanup incomplete");
+            True(!vm.LastStagingCleaned, "LastStagingCleaned is false");
         });
 
         await Check("launch failure inside open sandbox keeps SandboxOpened distinct from ProgramStarted", async () =>
@@ -209,7 +412,6 @@ internal static class IsolatedTrialChecks
                 PollFactory = (_, _) =>
                 {
                     var n = Interlocked.Increment(ref pollCount);
-                    // Poll 1: owned window observed open; Poll 2: owned window closed while VM lingers
                     return Task.FromResult(new SandboxInstancePollResult(true, n == 1));
                 }
             };
@@ -221,10 +423,11 @@ internal static class IsolatedTrialChecks
 
             await WaitUntilAsync(() => vm.Phase == IsolatedTrialPhase.Ended, timeoutMs: 3000);
             Equal(TrialEndReason.SandboxWindowClosed, vm.EndReason, "detected external window close");
-            Equal("会话已结束", vm.SandboxStageBadge, "badge shows ended");
+            Equal("试用已结束", vm.SessionHeadline, "concise ended headline after external close");
+            Equal("本次临时文件已清理", vm.CleanupStatusText, "cleanup confirmed after external close");
             Equal(1, service.StoppedInstances.Count, "stopped owned instance after window close");
             Equal(InstanceA, service.StoppedInstances[0], "stopped exact owned ID");
-            True(vm.LastStagingCleaned && vm.CanStartTrial, "cleaned staging and recovered for Session 2");
+            True(vm.LastStagingCleaned && vm.CanRetryTrial, "cleaned staging and Retry ready");
         });
 
         await Check("startup failure surfaces reason and next step, rolls back, and recovers on retry", async () =>
@@ -258,7 +461,7 @@ internal static class IsolatedTrialChecks
             Equal(IsolatedTrialPhase.Failed, vm.Phase, "failed phase");
             True(vm.SessionHeadline.Contains("退出码 1", StringComparison.Ordinal), "shows concrete failure reason");
             True(vm.FailureNextStep.Contains("重新点击", StringComparison.Ordinal), "shows recovery next step");
-            True(vm.CanStartTrial, "can immediately retry after failure");
+            True(vm.CanStartTrial && vm.CanRetryTrial, "can immediately retry after failure");
 
             True(await vm.StartTrialAsync(), "second start succeeds after recovery");
             Equal(IsolatedTrialPhase.ProgramStarted, vm.Phase, "recovered cleanly");
@@ -278,7 +481,31 @@ internal static class IsolatedTrialChecks
         }
     }
 
-    private static void WriteMinimalPe(string path, ushort machine)
+    private static HostSandboxEnvironmentSnapshot BaseSnapshot() => new(
+        IsWindows: true,
+        IsNativeX64: true,
+        EditionId: null,
+        ProductName: null,
+        ProductType: null,
+        EditionQueryDenied: false,
+        HasWindowsSandboxExe: false,
+        WsbExecutablePath: null,
+        WsbHelpSucceeded: null,
+        WsbHelpOutput: null,
+        MissingWsbSubcommands: [],
+        WsbVersion: null,
+        WsbListSucceeded: null,
+        WsbListDiagnostic: null,
+        PolicyExplicitlyDisabled: null,
+        PolicyEvidence: null,
+        PolicyQueryDenied: false,
+        HypervisorPresent: null,
+        VirtualizationFirmwareEnabled: null,
+        VirtualizationQueryDenied: false,
+        RebootPending: false,
+        RebootPendingQueryDenied: false);
+
+    private static void WriteMinimalPe(string path, ushort machine, byte extraByte = 0)
     {
         var bytes = new byte[0x80];
         bytes[0] = (byte)'M';
@@ -289,6 +516,7 @@ internal static class IsolatedTrialChecks
         bytes[0x42] = 0;
         bytes[0x43] = 0;
         BitConverter.TryWriteBytes(bytes.AsSpan(0x44, 2), machine);
+        bytes[0x7F] = extraByte;
         File.WriteAllBytes(path, bytes);
     }
 
@@ -351,14 +579,20 @@ internal static class IsolatedTrialChecks
             "Windows 沙盒已就绪",
             "synthetic ready",
             "ready",
+            SandboxCapabilityPrimaryAction.None,
+            "",
             @"C:\synthetic\wsb.exe",
-            "0.8.114.0");
+            "0.8.114.0",
+            "Windows 11 Pro (Professional)");
 
+        public Func<string, CancellationToken, Task<string>>? HashFactory { get; set; }
         public Func<TrialExecutableInfo, CancellationToken, Task<SandboxStartResult>>? StartFactory { get; set; }
         public Func<SandboxStartResult, TrialExecutableInfo, CancellationToken, Task<GuestProgramLaunchResult>>? LaunchFactory { get; set; }
         public Func<SandboxStartResult, CancellationToken, Task<SandboxInstancePollResult>>? PollFactory { get; set; }
+        public Func<string?, string?, CancellationToken, Task<SandboxStopResult>>? StopFactory { get; set; }
 
         public int StartCalls { get; private set; }
+        public int OpenWindowsFeaturesCalls { get; private set; }
         public List<string> StoppedInstances { get; } = [];
         public List<string> CleanedStagingPaths { get; } = [];
 
@@ -367,6 +601,13 @@ internal static class IsolatedTrialChecks
 
         public TrialExecutableInfo InspectExecutable(string executablePath) =>
             WindowsSandboxTrialService.InspectExecutableFile(executablePath);
+
+        public Task<string> ComputeSha256Async(string executablePath, CancellationToken cancellationToken = default) =>
+            HashFactory is not null
+                ? HashFactory(executablePath, cancellationToken)
+                : WindowsSandboxTrialService.ComputeFileSha256Async(executablePath, cancellationToken);
+
+        public void OpenWindowsFeatures() => OpenWindowsFeaturesCalls++;
 
         public Task<SandboxStartResult> StartSandboxAsync(TrialExecutableInfo executable, CancellationToken cancellationToken = default)
         {
@@ -391,6 +632,7 @@ internal static class IsolatedTrialChecks
         {
             if (!string.IsNullOrEmpty(instanceId)) StoppedInstances.Add(instanceId);
             if (!string.IsNullOrEmpty(stagingRootPath)) CleanedStagingPaths.Add(stagingRootPath);
+            if (StopFactory is not null) return StopFactory(instanceId, stagingRootPath, cancellationToken);
             return Task.FromResult(new SandboxStopResult(true, true, "已结束本次沙箱实例并清理暂存目录。"));
         }
     }
