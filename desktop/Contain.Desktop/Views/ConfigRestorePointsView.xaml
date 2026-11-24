@@ -198,6 +198,194 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- Interrupted Operation Reconciliation Card (read-only startup/refresh verdict; NEVER auto-writes target!) -->
+                    <Border CornerRadius="10" Padding="13,9" Margin="0,0,0,9" BorderThickness="1.5"
+                            Visibility="{Binding ConfigRestorePoints.ShowRecoveryCard, Converter={StaticResource BoolVisibility}}"
+                            AutomationProperties.AutomationId="ConfigRecoveryCard">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="#EAF5F1" />
+                                <Setter Property="BorderBrush" Value="#5C9F8E" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ConfigRestorePoints.IsRecoveryInfo}" Value="True">
+                                        <Setter Property="Background" Value="#EEF5FC" />
+                                        <Setter Property="BorderBrush" Value="#4B7AA8" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding ConfigRestorePoints.IsRecoveryWarning}" Value="True">
+                                        <Setter Property="Background" Value="#FFF8EB" />
+                                        <Setter Property="BorderBrush" Value="#D99B26" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel>
+                            <DockPanel Margin="0,0,0,4">
+                                <Border DockPanel.Dock="Right" CornerRadius="4" Padding="7,2" Margin="8,0,0,0" VerticalAlignment="Center">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="#D6EDE5" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ConfigRestorePoints.IsRecoveryInfo}" Value="True">
+                                                    <Setter Property="Background" Value="#DCEAF7" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ConfigRestorePoints.IsRecoveryWarning}" Value="True">
+                                                    <Setter Property="Background" Value="#FDE8C8" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock Text="{Binding ConfigRestorePoints.RecoveryStatusBadge}" FontSize="11" FontWeight="SemiBold"
+                                               AutomationProperties.AutomationId="ConfigRecoveryStatusBadge">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="#0E5A53" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ConfigRestorePoints.IsRecoveryInfo}" Value="True">
+                                                        <Setter Property="Foreground" Value="#1B466C" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding ConfigRestorePoints.IsRecoveryWarning}" Value="True">
+                                                        <Setter Property="Foreground" Value="#7A4300" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Border>
+                                <TextBlock Text="{Binding ConfigRestorePoints.RecoveryHeadline}" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap"
+                                           AutomationProperties.AutomationId="ConfigRecoveryHeadline">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="#0E5A53" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ConfigRestorePoints.IsRecoveryInfo}" Value="True">
+                                                    <Setter Property="Foreground" Value="#173A5A" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ConfigRestorePoints.IsRecoveryWarning}" Value="True">
+                                                    <Setter Property="Foreground" Value="#5C3100" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </DockPanel>
+
+                            <Border Background="White" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="6" Padding="8,4" Margin="0,0,0,5">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Left" Text="核对目标：" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Top" />
+                                    <TextBlock Text="{Binding ConfigRestorePoints.RecoveryTargetPath}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="11" FontWeight="SemiBold"
+                                               TextWrapping="Wrap" AutomationProperties.AutomationId="ConfigRecoveryTargetPath" />
+                                </DockPanel>
+                            </Border>
+
+                            <TextBlock Text="{Binding ConfigRestorePoints.RecoveryDetail}" FontSize="12" LineHeight="17" TextWrapping="Wrap" Margin="0,0,0,4"
+                                       AutomationProperties.AutomationId="ConfigRecoveryDetail" />
+                            <TextBlock Text="{Binding ConfigRestorePoints.RecoveryDiskStateSummary}" FontSize="11.5" FontWeight="SemiBold" Foreground="#213934" TextWrapping="Wrap" Margin="0,0,0,2"
+                                       AutomationProperties.AutomationId="ConfigRecoveryDiskState" />
+                            <TextBlock Text="{Binding ConfigRestorePoints.RecoveryOriginalCopySummary}" FontSize="11.5" Foreground="#354643" TextWrapping="Wrap" Margin="0,0,0,7"
+                                       AutomationProperties.AutomationId="ConfigRecoveryOriginalCopyState" />
+
+                            <WrapPanel Orientation="Horizontal">
+                                <ui:Button Content="预览并撤销恢复…" Appearance="Primary" Padding="11,5.5" Margin="0,0,6,4" FontSize="12"
+                                           Click="OnUndoFromRecovery"
+                                           Visibility="{Binding ConfigRestorePoints.CanUndoFromRecovery, Converter={StaticResource BoolVisibility}}"
+                                           AutomationProperties.AutomationId="RecoveryUndoPreviewButton">
+                                    <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowUndo24" /></ui:Button.Icon>
+                                </ui:Button>
+                                <ui:Button Content="查看原副本" Appearance="Secondary" Padding="10,5.5" Margin="0,0,6,4" FontSize="12"
+                                           Click="OnViewOriginalCopy"
+                                           Visibility="{Binding ConfigRestorePoints.CanViewOriginalCopyFromRecovery, Converter={StaticResource BoolVisibility}}"
+                                           AutomationProperties.AutomationId="RecoveryViewOriginalCopyButton">
+                                    <ui:Button.Icon><ui:SymbolIcon Symbol="Eye24" /></ui:Button.Icon>
+                                </ui:Button>
+                                <ui:Button Content="另存原副本…" Appearance="Secondary" Padding="10,5.5" Margin="0,0,6,4" FontSize="12"
+                                           Click="OnExportOriginalCopy"
+                                           Visibility="{Binding ConfigRestorePoints.CanExportOriginalCopyFromRecovery, Converter={StaticResource BoolVisibility}}"
+                                           AutomationProperties.AutomationId="RecoveryExportOriginalCopyButton">
+                                    <ui:Button.Icon><ui:SymbolIcon Symbol="Save24" /></ui:Button.Icon>
+                                </ui:Button>
+                                <ui:Button Content="重新核对" Appearance="Secondary" Padding="10,5.5" Margin="0,0,6,4" FontSize="12"
+                                           Click="OnRecheckRecovery"
+                                           Visibility="{Binding ConfigRestorePoints.CanRecheckRecovery, Converter={StaticResource BoolVisibility}}"
+                                           AutomationProperties.AutomationId="RecoveryRecheckButton">
+                                    <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowClockwise24" /></ui:Button.Icon>
+                                </ui:Button>
+                                <ui:Button Content="{Binding ConfigRestorePoints.DismissRecoveryButtonText}" Appearance="Transparent" Padding="10,5.5" Margin="0,0,0,4" FontSize="12"
+                                           Click="OnDismissRecovery"
+                                           AutomationProperties.AutomationId="RecoveryDismissButton" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Inline Original Copy Preview Panel ("查看原副本" + "另存原副本…") -->
+                    <StackPanel Visibility="{Binding ConfigRestorePoints.IsViewingOriginalCopy, Converter={StaticResource BoolVisibility}}"
+                                AutomationProperties.AutomationId="ConfigOriginalCopyPreviewPanel">
+                        <Border Background="#F2F7F6" BorderBrush="#2E7D72" BorderThickness="1.5" CornerRadius="10" Padding="14,10" Margin="0,0,0,10">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,5">
+                                    <Border DockPanel.Dock="Right" Background="#D6EDE5" CornerRadius="4" Padding="7,2" VerticalAlignment="Center">
+                                        <TextBlock Text="覆盖前原副本（只读预览）" Foreground="#0E5A53" FontSize="11" FontWeight="SemiBold"
+                                                   AutomationProperties.AutomationId="ConfigOriginalCopyBadge" />
+                                    </Border>
+                                    <TextBlock Text="{Binding ConfigRestorePoints.OriginalCopyPreviewTitle}" FontSize="15" FontWeight="SemiBold" Foreground="#0E4A44"
+                                               TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                                               AutomationProperties.AutomationId="ConfigOriginalCopyTitle" />
+                                </DockPanel>
+
+                                <Border Background="White" BorderBrush="#BFDCD5" BorderThickness="1" CornerRadius="6" Padding="8,4" Margin="0,0,0,5">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Left" Text="原目标路径：" FontSize="11.5" FontWeight="SemiBold" Foreground="#0E5A53" VerticalAlignment="Top" />
+                                        <TextBlock Text="{Binding ConfigRestorePoints.OriginalCopyTargetPath}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="11.5" FontWeight="SemiBold"
+                                                   TextWrapping="Wrap" AutomationProperties.AutomationId="ConfigOriginalCopyTargetPath" />
+                                    </DockPanel>
+                                </Border>
+
+                                <TextBlock Text="{Binding ConfigRestorePoints.OriginalCopyMetaSummary}" FontSize="11.5" Foreground="#214E48" TextWrapping="Wrap" Margin="0,0,0,8"
+                                           AutomationProperties.AutomationId="ConfigOriginalCopyMeta" />
+
+                                <WrapPanel Orientation="Horizontal">
+                                    <ui:Button Content="另存原副本…" Appearance="Primary" Padding="12,6" Margin="0,0,8,4" FontSize="12.5"
+                                               Click="OnExportOriginalCopy" IsEnabled="{Binding ConfigRestorePoints.CanExportFromOriginalCopyPreview}"
+                                               AutomationProperties.AutomationId="OriginalCopySaveAsButton">
+                                        <ui:Button.Icon><ui:SymbolIcon Symbol="Save24" /></ui:Button.Icon>
+                                    </ui:Button>
+                                    <ui:Button Content="关闭预览" Appearance="Secondary" Padding="10,6" Margin="0,0,0,4" FontSize="12.5"
+                                               Click="OnCloseOriginalCopyPreview"
+                                               AutomationProperties.AutomationId="CloseOriginalCopyPreviewButton" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Surface}" Padding="14,9" Margin="0">
+                            <StackPanel>
+                                <TextBlock Text="原副本完整内容（已通过 SHA-256 完整性校验）" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,6" />
+                                <Border BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="6" Background="White"
+                                        Visibility="{Binding ConfigRestorePoints.HasOriginalCopyText, Converter={StaticResource BoolVisibility}}">
+                                    <ItemsControl ItemsSource="{Binding ConfigRestorePoints.OriginalCopyLines}" AutomationProperties.AutomationId="ConfigOriginalCopyLinesList">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Padding="8,2.5" BorderBrush="#F0F3F2" BorderThickness="0,0,0,1">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="46" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="{Binding LineNumberDisplay}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="11.5" Foreground="#7A8C87" Margin="0,0,8,0" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding Text}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" Foreground="#213934" TextWrapping="Wrap" />
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Border>
+                                <Border Background="#F7F9F9" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="6" Padding="10,8"
+                                        Visibility="{Binding ConfigRestorePoints.ShowOriginalCopyFallback, Converter={StaticResource BoolVisibility}}">
+                                    <TextBlock Text="{Binding ConfigRestorePoints.OriginalCopyFallbackNote}" Style="{StaticResource MutedText}" FontSize="12"
+                                               AutomationProperties.AutomationId="ConfigOriginalCopyFallbackText" />
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
                     <!-- Always-explicit Undo Bar (names ACTUAL undo target file + warns if user selected a different file!) -->
                     <Border Background="#EEF5FB" BorderBrush="#9BBAD8" BorderThickness="1" CornerRadius="8" Padding="10,7" Margin="0,0,0,8"
                             Visibility="{Binding ConfigRestorePoints.ShowUndoBar, Converter={StaticResource BoolVisibility}}"
@@ -229,7 +417,7 @@
                     </Border>
 
                     <!-- LIGHTWEIGHT UNDO PREVIEW PANEL (Current -> After Undo, actual target path, conflict protection, Cancel does NOT consume undo!) -->
-                    <StackPanel Visibility="{Binding ConfigRestorePoints.IsPreviewingUndo, Converter={StaticResource BoolVisibility}}"
+                    <StackPanel Visibility="{Binding ConfigRestorePoints.ShowUndoPreviewPanel, Converter={StaticResource BoolVisibility}}"
                                 AutomationProperties.AutomationId="ConfigUndoPreviewPanel">
                         <Border CornerRadius="10" Padding="14,10" Margin="0,0,0,10" BorderThickness="1.5"
                                 AutomationProperties.AutomationId="ConfigUndoPreviewCard">
@@ -303,15 +491,27 @@
                                 <TextBlock Text="{Binding ConfigRestorePoints.UndoPreviewActionSummary}" FontSize="12" Foreground="#213934" LineHeight="18" Margin="0,0,0,8"
                                            AutomationProperties.AutomationId="ConfigUndoPreviewActionSummary" />
 
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:Button Content="{Binding ConfigRestorePoints.ConfirmUndoButtonText}" Appearance="Primary" Padding="12,6" Margin="0,0,8,0" FontSize="12.5"
+                                <WrapPanel Orientation="Horizontal">
+                                    <ui:Button Content="{Binding ConfigRestorePoints.ConfirmUndoButtonText}" Appearance="Primary" Padding="12,6" Margin="0,0,8,4" FontSize="12.5"
                                                Click="OnConfirmUndoRestore" IsEnabled="{Binding ConfigRestorePoints.CanConfirmUndo}"
                                                AutomationProperties.AutomationId="ConfirmUndoButton">
                                         <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowUndo24" /></ui:Button.Icon>
                                     </ui:Button>
-                                    <ui:Button Content="取消（保留撤销记录）" Appearance="Secondary" Padding="10,6" FontSize="12.5" Click="OnCancelUndoPreview"
+                                    <ui:Button Content="查看原副本" Appearance="Secondary" Padding="10,6" Margin="0,0,8,4" FontSize="12.5"
+                                               Click="OnViewOriginalCopy"
+                                               Visibility="{Binding ConfigRestorePoints.CanViewOriginalCopyFromUndoPreview, Converter={StaticResource BoolVisibility}}"
+                                               AutomationProperties.AutomationId="UndoConflictViewOriginalCopyButton">
+                                        <ui:Button.Icon><ui:SymbolIcon Symbol="Eye24" /></ui:Button.Icon>
+                                    </ui:Button>
+                                    <ui:Button Content="另存原副本…" Appearance="Secondary" Padding="10,6" Margin="0,0,8,4" FontSize="12.5"
+                                               Click="OnExportOriginalCopy"
+                                               Visibility="{Binding ConfigRestorePoints.CanExportOriginalCopyFromUndoPreview, Converter={StaticResource BoolVisibility}}"
+                                               AutomationProperties.AutomationId="UndoConflictExportOriginalCopyButton">
+                                        <ui:Button.Icon><ui:SymbolIcon Symbol="Save24" /></ui:Button.Icon>
+                                    </ui:Button>
+                                    <ui:Button Content="取消（保留撤销记录）" Appearance="Secondary" Padding="10,6" Margin="0,0,0,4" FontSize="12.5" Click="OnCancelUndoPreview"
                                                AutomationProperties.AutomationId="CancelUndoPreviewButton" />
-                                </StackPanel>
+                                </WrapPanel>
                             </StackPanel>
                         </Border>
 

@@ -30,6 +30,7 @@ public enum ConfigRestoreOutcomeKind
 {
     Succeeded,
     RefreshedDueToExternalEdit,
+    VerificationFailedBackupPreserved,
     Failed
 }
 
@@ -46,9 +47,32 @@ public enum ConfigUndoPreviewStatus
 public enum ConfigUndoOutcomeKind
 {
     Succeeded,
+    SucceededMetadataPending,
     ExternalEditConflict,
     TargetDeletedConflict,
     Failed
+}
+
+public enum ConfigRecoveryStatus
+{
+    None,
+    RestoreNotApplied,
+    RestoreAppliedNeedsReview,
+    UndoAlreadyApplied,
+    UndoNotApplied,
+    ExternalVersionCDetected,
+    TargetMissingAfterInterruption,
+    NeedsVerification
+}
+
+public static class ConfigOperationStates
+{
+    public const string RestorePrepared = "restore_prepared";
+    public const string RestoreCompleted = "restore_completed";
+    public const string RestoreAborted = "restore_aborted";
+    public const string UndoPrepared = "undo_prepared";
+    public const string UndoCompleted = "undo_completed";
+    public const string ArchivedAfterConflict = "archived_after_conflict";
 }
 
 public sealed record ConfigRestorePointRecord
@@ -110,6 +134,9 @@ public sealed record ConfigRestorePointRecord
         : $"{ParentFolderName}\\{TargetFileName}";
 
     [JsonIgnore]
+    public string DisplayDirectory => TargetDirectory;
+
+    [JsonIgnore]
     public string DisplayCreatedTime => CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
     [JsonIgnore]
@@ -159,11 +186,41 @@ public sealed record ConfigUndoSnapshot
     [JsonPropertyName("pre_restore_blob_relative_path")]
     public string PreRestoreBlobRelativePath { get; init; } = "";
 
+    [JsonPropertyName("pre_restore_encoding_label")]
+    public string PreRestoreEncodingLabel { get; init; } = "";
+
+    [JsonPropertyName("pre_restore_line_ending_label")]
+    public string PreRestoreLineEndingLabel { get; init; } = "";
+
+    [JsonPropertyName("restored_backup_byte_length")]
+    public long RestoredBackupByteLength { get; init; } = -1;
+
     [JsonPropertyName("restored_backup_sha256")]
     public string RestoredBackupSha256 { get; init; } = "";
 
+    [JsonPropertyName("operation_state")]
+    public string OperationState { get; init; } = "";
+
+    [JsonPropertyName("undo_started_at_utc")]
+    public DateTimeOffset? UndoStartedAtUtc { get; init; }
+
+    [JsonPropertyName("completed_at_utc")]
+    public DateTimeOffset? CompletedAtUtc { get; init; }
+
+    [JsonPropertyName("reconciled_at_utc")]
+    public DateTimeOffset? ReconciledAtUtc { get; init; }
+
+    [JsonPropertyName("reconciled_note")]
+    public string ReconciledNote { get; init; } = "";
+
     [JsonPropertyName("consumed")]
     public bool Consumed { get; init; }
+
+    [JsonIgnore]
+    public bool IsLegacyRecord => string.IsNullOrWhiteSpace(OperationState);
+
+    [JsonIgnore]
+    public bool IsPendingInterruption => OperationState is ConfigOperationStates.RestorePrepared or ConfigOperationStates.UndoPrepared;
 
     [JsonIgnore]
     public string DisplayPreRestoreShortSha => PreRestoreSha256.Length >= 12 ? PreRestoreSha256[..12] + "…" : PreRestoreSha256;
@@ -252,6 +309,15 @@ public sealed record ConfigDiffLine(
         : $"{Prefix} {Text}";
 }
 
+public sealed record ConfigCopyPreviewLine(
+    int? LineNumber,
+    string Text)
+{
+    public string LineNumberDisplay => LineNumber.HasValue
+        ? LineNumber.Value.ToString(CultureInfo.InvariantCulture).PadLeft(4)
+        : "   …";
+}
+
 public sealed record ConfigComparisonResult(
     ConfigRestorePointRecord Point,
     ConfigDiffDirection Direction,
@@ -278,7 +344,9 @@ public sealed record ConfigRestoreResult(
     string ActualSha256,
     bool ExistingFilePreserved,
     ConfigUndoSnapshot? UndoSnapshot,
-    ConfigComparisonResult? RefreshedComparison);
+    ConfigComparisonResult? RefreshedComparison,
+    bool OriginalCopyPreserved = false,
+    bool RefreshFailed = false);
 
 public sealed record ConfigUndoPreviewResult(
     ConfigUndoSnapshot UndoSnapshot,
@@ -298,7 +366,8 @@ public sealed record ConfigUndoPreviewResult(
     int RemovedLineCount,
     int AddedLineCount,
     bool IsDiffTruncated,
-    IReadOnlyList<ConfigDiffLine> DiffLines)
+    IReadOnlyList<ConfigDiffLine> DiffLines,
+    bool HasValidOriginalCopy = false)
 {
     public bool CanConfirm => Status is ConfigUndoPreviewStatus.ReadyToRestorePreviousBytes or ConfigUndoPreviewStatus.ReadyToRemoveRecreatedFile;
     public bool IsConflictOrError => !CanConfirm;
@@ -316,7 +385,50 @@ public sealed record ConfigUndoResult(
     string ExpectedSha256,
     string ActualSha256,
     bool ExistingFilePreserved,
-    ConfigUndoPreviewResult? RefreshedUndoPreview = null);
+    ConfigUndoPreviewResult? RefreshedUndoPreview = null,
+    bool MetadataPersisted = true);
+
+public sealed record ConfigRecoveryReport(
+    ConfigRecoveryStatus Status,
+    ConfigUndoSnapshot OperationRecord,
+    ConfigLiveFileSnapshot LiveSnapshot,
+    string StatusBadge,
+    string Headline,
+    string Detail,
+    string DiskStateSummary,
+    string OriginalCopySummary,
+    bool HasValidOriginalCopy,
+    bool CanOfferUndoPreview,
+    bool RequiresExplicitArchive,
+    bool LocalMetadataUpdated);
+
+public sealed record ConfigOriginalCopyPreview(
+    ConfigUndoSnapshot UndoSnapshot,
+    bool IsValid,
+    string ErrorMessage,
+    long ByteLength,
+    string Sha256,
+    string EncodingLabel,
+    string LineEndingLabel,
+    bool IsTextAvailable,
+    string FallbackNote,
+    bool IsTruncated,
+    IReadOnlyList<ConfigCopyPreviewLine> Lines)
+{
+    public string DisplaySize => ConfigFormatting.FormatByteSize(ByteLength);
+    public string DisplayShortSha256 => Sha256.Length >= 12 ? Sha256[..12] + "…" : Sha256;
+    public string DisplayFormatSummary => string.IsNullOrWhiteSpace(LineEndingLabel) || LineEndingLabel == "不适用"
+        ? EncodingLabel
+        : $"{EncodingLabel} · {LineEndingLabel}";
+}
+
+public sealed record ConfigOriginalCopyExportResult(
+    bool Succeeded,
+    string DestinationPath,
+    long ByteLength,
+    string Sha256,
+    string Headline,
+    string Detail);
 
 public static class ConfigFormatting
 {
@@ -338,5 +450,14 @@ public static class ConfigFormatting
         var trimmed = dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var parent = Path.GetFileName(trimmed);
         return string.IsNullOrWhiteSpace(parent) ? fileName : $"{parent}\\{fileName}";
+    }
+
+    public static string BuildSuggestedOriginalCopyFileName(string? targetPath)
+    {
+        if (string.IsNullOrWhiteSpace(targetPath)) return "config.before-restore.bak";
+        var name = Path.GetFileNameWithoutExtension(targetPath);
+        var ext = Path.GetExtension(targetPath);
+        if (string.IsNullOrWhiteSpace(name)) return "config.before-restore" + ext;
+        return $"{name}.before-restore{ext}";
     }
 }

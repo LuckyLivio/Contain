@@ -91,6 +91,8 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     public bool IsInstallRecordsCategory => !isTrialHistoryCategory;
     public bool ShowPendingTrialBanner =>
         IsolatedTrial.HasPendingRecoveryBanner && activeSection != ActiveSection.IsolatedTrial;
+    public bool ShowConfigRecoveryBanner =>
+        ConfigRestorePoints.HasPendingRecoveryShellBanner && activeSection != ActiveSection.ConfigRestorePoints;
     public string WindowTitle => "Contain · " + ProductVersion.Version;
     public string ErrorMessage => localError.Length > 0
         ? localError
@@ -130,6 +132,8 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         });
         // Non-blocking background check for any unfinished trial left by an abnormal Contain exit.
         _ = RunUiAsync(() => IsolatedTrial.CheckPendingSessionOnStartupAsync());
+        // Read-only startup check for any interrupted config restore/undo operation (never writes/deletes user files).
+        ConfigRestorePoints.CheckInterruptedOperationOnStartup();
     }
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
@@ -142,6 +146,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         Changed(nameof(ErrorMessage));
         Changed(nameof(StatusMessage));
         Changed(nameof(ShowPendingTrialBanner));
+        Changed(nameof(ShowConfigRecoveryBanner));
     }
 
     private void SetPage(UIElement page, ActiveSection section)
@@ -158,6 +163,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         Changed(nameof(ErrorMessage));
         Changed(nameof(StatusMessage));
         Changed(nameof(ShowPendingTrialBanner));
+        Changed(nameof(ShowConfigRecoveryBanner));
     }
 
     private bool GuardTaskNavigation()
@@ -479,6 +485,24 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     public void BeginUndoConfigRestorePreview() => RunUiOperation(() => ConfigRestorePoints.BeginUndoPreview());
     public void ConfirmUndoConfigRestore() => RunUiOperation(() => ConfigRestorePoints.ConfirmUndoRestore());
     public void CancelUndoConfigRestorePreview() => RunUiOperation(() => ConfigRestorePoints.CancelUndoPreview());
+    public void RecheckConfigRecovery() => RunUiOperation(() => ConfigRestorePoints.RecheckRecovery());
+    public void BeginUndoFromConfigRecovery() => RunUiOperation(() => ConfigRestorePoints.BeginUndoPreviewFromRecovery());
+    public void DismissOrArchiveConfigRecovery() => RunUiOperation(() => ConfigRestorePoints.DismissOrArchiveRecovery());
+    public void ViewConfigOriginalCopy() => RunUiOperation(() => ConfigRestorePoints.BeginViewOriginalCopy());
+    public void CloseConfigOriginalCopyPreview() => RunUiOperation(() => ConfigRestorePoints.CloseOriginalCopyPreview());
+    public void ExportConfigOriginalCopy()
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title = "另存覆盖前原副本（原始字节）",
+            Filter = "配置文件|*.json;*.ini;*.toml;*.yaml;*.yml;*.xml;*.cfg;*.conf;*.config;*.env;*.properties;*.bak|所有文件|*.*",
+            FileName = ConfigRestorePoints.SuggestedOriginalCopyFileName,
+            OverwritePrompt = true,
+            CheckPathExists = true
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        RunUiOperation(() => ConfigRestorePoints.ExportOriginalCopy(dialog.FileName));
+    }
 
     private void RunUiOperation(Action operation)
     {

@@ -24,6 +24,15 @@ internal static class ConfigRestorePointChecks
         Run(passed, "config_undo_conflict_on_post_restore_external_edit_preview_and_mid_preview", UndoConflictOnPostRestoreExternalEdit);
         Run(passed, "config_undo_conflict_on_post_restore_active_deletion_preview_and_mid_preview", UndoConflictOnPostRestoreActiveDeletion);
         Run(passed, "config_rejects_directories_missing_and_device_paths", RejectsInvalidPaths);
+        Run(passed, "config_beta3_boundary1_post_replace_readback_and_refresh_failure_preserve_original_b", Beta3Boundary1PostReplaceReadbackAndRefreshFailures);
+        Run(passed, "config_beta3_boundary2_undo_completion_mark_save_failure_and_idempotent_restarts", Beta3Boundary2UndoMarkSaveFailureAndIdempotentRestarts);
+        Run(passed, "config_beta3_moment1_crash_after_b_saved_before_target_replaced", Beta3Moment1CrashBeforeTargetReplaced);
+        Run(passed, "config_beta3_moment2_crash_after_target_replaced_with_a_before_result_saved", Beta3Moment2CrashAfterTargetReplacedBeforeResultSaved);
+        Run(passed, "config_beta3_moment3_crash_after_undo_wrote_b_before_consumed_saved", Beta3Moment3CrashAfterUndoWroteBBeforeConsumedSaved);
+        Run(passed, "config_beta3_interrupted_then_external_edit_to_c_view_and_save_as_original_b", Beta3InterruptedThenExternalEditToCAndOriginalCopyRecovery);
+        Run(passed, "config_beta3_originally_missing_file_interrupted_recreate_undo_and_external_c", Beta3OriginallyMissingFileInterruptions);
+        Run(passed, "config_beta3_insufficient_evidence_shows_needs_verification_without_touching_target", Beta3InsufficientEvidenceShowsNeedsVerification);
+        Run(passed, "config_beta3_backward_compatibility_with_beta1_and_beta2_points_and_undo_records", Beta3BackwardCompatibilityWithBeta1AndBeta2);
         return Task.FromResult<IReadOnlyList<string>>(passed);
     }
 
@@ -490,6 +499,694 @@ internal static class ConfigRestorePointChecks
         Assert(!svc.InspectCandidateFile(dir.Path).IsValid, "Directory rejected");
         Assert(!svc.InspectCandidateFile(Path.Combine(dir.Path, "does-not-exist.json")).IsValid, "Missing file rejected");
         Assert(!svc.InspectCandidateFile(@"\\.\PhysicalDrive0").IsValid, "Device path rejected");
+    }
+
+    private static (byte[] BytesA, byte[] BytesB, byte[] BytesC, string ShaA, string ShaB, string ShaC) CreateLightDarkHighContrastFixtures()
+    {
+        var bytesA = EncodeUtf8Bom("{\r\n  \"appName\": \"示例配置\",\r\n  \"theme\": \"light\",\r\n  \"shortcut\": \"Ctrl+Shift+P\"\r\n}\r\n");
+        var bytesB = EncodeUtf8Bom("{\r\n  \"appName\": \"示例配置\",\r\n  \"theme\": \"dark\",\r\n  \"shortcut\": \"Ctrl+Alt+K\"\r\n}\r\n");
+        var bytesC = EncodeUtf8Bom("{\r\n  \"appName\": \"示例配置\",\r\n  \"theme\": \"high-contrast\",\r\n  \"shortcut\": \"Ctrl+Alt+H\"\r\n}\r\n");
+        return (bytesA, bytesB, bytesC, Sha256Hex(bytesA), Sha256Hex(bytesB), Sha256Hex(bytesC));
+    }
+
+    private static void Beta3Boundary1PostReplaceReadbackAndRefreshFailures()
+    {
+        var (bytesA, bytesB, _, shaA, shaB, _) = CreateLightDarkHighContrastFixtures();
+
+        // Subcase 1a: Target replaced with A, then post-write readback verification throws IOException!
+        {
+            using var dir = new TempDir();
+            var store = Path.Combine(dir.Path, "store");
+            var cfg = Path.Combine(dir.Path, "app", "settings.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(cfg)!);
+            File.WriteAllBytes(cfg, bytesA);
+
+            var hooks = new DelegateHooks
+            {
+                OnAfterTargetReplacedBeforeVerify = (_, _) => throw new IOException("Simulated readback lock after File.Replace")
+            };
+            var vm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store, hooks));
+            vm.Refresh();
+            vm.SelectCandidateFile(cfg);
+            vm.NoteInput = "边界1a 回读校验失败";
+            vm.CreateRestorePoint();
+
+            File.WriteAllBytes(cfg, bytesB);
+            vm.RefreshSelectedComparison();
+            vm.BeginRestoreConfirmation();
+            vm.ConfirmRestore();
+
+            // Disk is A, and B's undo copy MUST STILL EXIST & pass SHA-256!
+            Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaA, "1a: Target was replaced with A");
+            var blobs = Directory.GetFiles(Path.Combine(store, "Undo"), "*.bin");
+            Assert(blobs.Length == 1 && Sha256Hex(File.ReadAllBytes(blobs[0])) == shaB, "1a: Original copy B MUST be preserved intact");
+            Assert(vm.HasRecoveryCard && vm.RecoveryStatus == ConfigRecoveryStatus.RestoreAppliedNeedsReview, "1a: Recovery immediately verifies A & preserves B");
+
+            // Full reopen -> can still undo via preview back to B!
+            var reopen = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+            reopen.CheckInterruptedOperationOnStartup();
+            reopen.Refresh();
+            Assert(reopen.CanUndoLastRestore, "1a reopen: Undo available");
+            reopen.BeginUndoPreview();
+            Assert(reopen.CanConfirmUndo && reopen.UndoDiffLines.Any(l => l.Kind == ConfigDiffLineKind.Added && l.Text.Contains("\"theme\": \"dark\"")),
+                "1a reopen: Undo preview shows writing back dark (B)");
+            reopen.ConfirmUndoRestore();
+            Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB && File.ReadAllBytes(cfg).SequenceEqual(bytesB), "1a reopen: Restored B byte-for-byte");
+        }
+
+        // Subcase 1b: Target replaced with A & restore_completed saved, then CompareRestorePoint refresh throws!
+        {
+            using var dir = new TempDir();
+            var store = Path.Combine(dir.Path, "store");
+            var cfg = Path.Combine(dir.Path, "app", "settings.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(cfg)!);
+            File.WriteAllBytes(cfg, bytesA);
+
+            var hooks = new DelegateHooks
+            {
+                OnBeforePostRestoreRefresh = (_, _) => throw new InvalidOperationException("Simulated post-restore UI refresh exception")
+            };
+            var vm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store, hooks));
+            vm.Refresh();
+            vm.SelectCandidateFile(cfg);
+            vm.CreateRestorePoint();
+
+            File.WriteAllBytes(cfg, bytesB);
+            vm.RefreshSelectedComparison();
+            vm.BeginRestoreConfirmation();
+            vm.ConfirmRestore();
+
+            Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaA, "1b: Target replaced with A");
+            Assert(!vm.IsOperationBannerError && vm.IsOperationBannerWarning, "1b: Succeeded with non-fatal refresh warning");
+            Assert(vm.CanUndoLastRestore, "1b: Undo copy preserved and active");
+            var blobs = Directory.GetFiles(Path.Combine(store, "Undo"), "*.bin");
+            Assert(blobs.Length == 1 && Sha256Hex(File.ReadAllBytes(blobs[0])) == shaB, "1b: B blob intact");
+
+            var reopen = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+            reopen.CheckInterruptedOperationOnStartup();
+            reopen.Refresh();
+            Assert(!reopen.HasRecoveryCard && reopen.CanUndoLastRestore, "1b reopen: Clean completed restore with active undo");
+            reopen.BeginUndoPreview();
+            reopen.ConfirmUndoRestore();
+            Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB, "1b reopen: Undo cleanly restores B");
+        }
+    }
+
+    private static void Beta3Boundary2UndoMarkSaveFailureAndIdempotentRestarts()
+    {
+        var (bytesA, bytesB, _, shaA, shaB, _) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var store = Path.Combine(dir.Path, "store");
+        var cfg = Path.Combine(dir.Path, "app", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(cfg)!);
+        File.WriteAllBytes(cfg, bytesA);
+
+        var hooks = new DelegateHooks
+        {
+            OnAfterUndoTargetUpdatedBeforeMarkCompleted = (_, _) => throw new IOException("Simulated failure saving undo_completed flag")
+        };
+        var vm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store, hooks));
+        vm.Refresh();
+        vm.SelectCandidateFile(cfg);
+        vm.CreateRestorePoint();
+
+        File.WriteAllBytes(cfg, bytesB);
+        vm.RefreshSelectedComparison();
+        vm.BeginRestoreConfirmation();
+        vm.ConfirmRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaA, "Restored A");
+
+        vm.BeginUndoPreview();
+        vm.ConfirmUndoRestore();
+
+        // Disk IS B, warning explains completion mark failed, and NO stale Undo bar is shown!
+        Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB, "Target written back to B");
+        Assert(vm.IsOperationBannerWarning && vm.OperationBannerHeadline.Contains("完成标记暂未保存"), "Honest warning instead of silent swallow");
+        Assert(!vm.ShowUndoBar && !vm.CanUndoLastRestore, "Must NOT keep showing stale undo bar");
+
+        var mtimeAfterUndo = File.GetLastWriteTimeUtc(cfg);
+        File.SetAttributes(cfg, FileAttributes.ReadOnly); // Prove startup check NEVER writes target!
+        try
+        {
+            // Reopen #1: Read-only reconciliation verifies B, shows actual result, finalizes local metadata
+            var reopen1 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+            reopen1.CheckInterruptedOperationOnStartup();
+            Assert(reopen1.HasPendingRecoveryShellBanner && reopen1.RecoveryStatus == ConfigRecoveryStatus.UndoAlreadyApplied,
+                "Reopen #1 startup check identifies UndoAlreadyApplied");
+            reopen1.Refresh();
+            Assert(reopen1.ShowRecoveryCard && reopen1.RecoveryStatus == ConfigRecoveryStatus.UndoAlreadyApplied,
+                "Reopen #1 Refresh preserves session recovery card for user review");
+            Assert(!reopen1.ShowUndoBar && !reopen1.CanUndoLastRestore, "Reopen #1 shows NO stale undo bar");
+            Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB && File.GetLastWriteTimeUtc(cfg) == mtimeAfterUndo,
+                "Reopen #1 performed ZERO writes to target");
+
+            // Reopen #2: Second launch stays completely clean and performs ZERO writes!
+            var reopen2 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+            reopen2.CheckInterruptedOperationOnStartup();
+            reopen2.Refresh();
+            Assert(!reopen2.HasRecoveryCard && !reopen2.ShowUndoBar && !reopen2.CanUndoLastRestore,
+                "Reopen #2 is clean with no repeated alerts or undo bar");
+            Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB && File.GetLastWriteTimeUtc(cfg) == mtimeAfterUndo,
+                "Reopen #2 performed ZERO writes to target");
+        }
+        finally
+        {
+            File.SetAttributes(cfg, FileAttributes.Normal);
+        }
+    }
+
+    private static void Beta3Moment1CrashBeforeTargetReplaced()
+    {
+        var (bytesA, bytesB, _, _, shaB, _) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var store = Path.Combine(dir.Path, "store");
+        var cfg = Path.Combine(dir.Path, "app", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(cfg)!);
+        File.WriteAllBytes(cfg, bytesA);
+
+        var hooks = new DelegateHooks
+        {
+            OnAfterRestorePrepared = (_, _) => throw new OperationCanceledException("Simulated hard process crash after B saved, before replace")
+        };
+        var vm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store, hooks));
+        vm.Refresh();
+        vm.SelectCandidateFile(cfg);
+        vm.CreateRestorePoint();
+
+        File.WriteAllBytes(cfg, bytesB);
+        vm.RefreshSelectedComparison();
+        vm.BeginRestoreConfirmation();
+
+        var crashed = false;
+        try { vm.ConfirmRestore(); } catch (OperationCanceledException) { crashed = true; }
+        Assert(crashed, "Simulated crash triggered at exact Moment 1 seam");
+        Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB, "Target is still B before replace");
+        var mtimeBeforeReopen = File.GetLastWriteTimeUtc(cfg);
+
+        // Reopen #1: Disk is still B, NO false successful restore, NO false Undo bar!
+        var reopen1 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+        reopen1.CheckInterruptedOperationOnStartup();
+        reopen1.Refresh();
+        Assert(reopen1.ShowRecoveryCard && reopen1.RecoveryStatus == ConfigRecoveryStatus.RestoreNotApplied,
+            $"Moment 1 expected RestoreNotApplied, got {reopen1.RecoveryStatus}");
+        Assert(!reopen1.ShowUndoBar && !reopen1.CanUndoLastRestore && !reopen1.CanUndoFromRecovery,
+            "Moment 1 MUST NOT show a false successful restore or active undo button");
+        Assert(reopen1.ComparisonStatus == ConfigComparisonStatus.Changed && reopen1.CanBeginRestore,
+            "Moment 1 still shows A vs B changed so user can retry restore");
+        Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB && File.GetLastWriteTimeUtc(cfg) == mtimeBeforeReopen,
+            "Moment 1 reopen did NOT write target");
+
+        // Reopen #2: Clean state, still B
+        var reopen2 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+        reopen2.CheckInterruptedOperationOnStartup();
+        reopen2.Refresh();
+        Assert(!reopen2.HasRecoveryCard && !reopen2.ShowUndoBar, "Moment 1 second reopen is completely clean");
+        Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB, "Target remains B");
+    }
+
+    private static void Beta3Moment2CrashAfterTargetReplacedBeforeResultSaved()
+    {
+        var (bytesA, bytesB, _, shaA, shaB, _) = CreateLightDarkHighContrastFixtures();
+
+        foreach (var crashPoint in new[] { "before_verify", "before_save_completed" })
+        {
+            using var dir = new TempDir();
+            var store = Path.Combine(dir.Path, "store");
+            var cfg = Path.Combine(dir.Path, "app", "settings.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(cfg)!);
+            File.WriteAllBytes(cfg, bytesA);
+
+            var hooks = new DelegateHooks
+            {
+                OnAfterTargetReplacedBeforeVerify = crashPoint == "before_verify"
+                    ? (_, _) => throw new OperationCanceledException("Simulated crash right after replace, before verify")
+                    : null,
+                OnBeforeSaveRestoreCompleted = crashPoint == "before_save_completed"
+                    ? (_, _) => throw new OperationCanceledException("Simulated crash right after verify, before restore_completed saved")
+                    : null
+            };
+            var vm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store, hooks));
+            vm.Refresh();
+            vm.SelectCandidateFile(cfg);
+            vm.CreateRestorePoint();
+
+            File.WriteAllBytes(cfg, bytesB);
+            vm.RefreshSelectedComparison();
+            vm.BeginRestoreConfirmation();
+
+            var crashed = false;
+            try { vm.ConfirmRestore(); } catch (OperationCanceledException) { crashed = true; }
+            Assert(crashed, $"Moment 2 ({crashPoint}) crash triggered");
+            Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaA, $"Moment 2 ({crashPoint}) disk is already A");
+            var mtimeBeforeReopen = File.GetLastWriteTimeUtc(cfg);
+
+            // Reopen -> Read-only check verifies disk is A, B is intact, offers Undo Preview back to B!
+            var reopen = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+            reopen.CheckInterruptedOperationOnStartup();
+            reopen.Refresh();
+            Assert(reopen.ShowRecoveryCard && reopen.RecoveryStatus == ConfigRecoveryStatus.RestoreAppliedNeedsReview,
+                $"Moment 2 ({crashPoint}) expected RestoreAppliedNeedsReview, got {reopen.RecoveryStatus}");
+            Assert(reopen.CanUndoFromRecovery && reopen.CanViewOriginalCopyFromRecovery,
+                $"Moment 2 ({crashPoint}) offers undo preview and view original copy");
+            Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaA && File.GetLastWriteTimeUtc(cfg) == mtimeBeforeReopen,
+                $"Moment 2 ({crashPoint}) startup check never modified target");
+
+            reopen.BeginUndoPreviewFromRecovery();
+            Assert(reopen.ShowUndoPreviewPanel && reopen.CanConfirmUndo, $"Moment 2 ({crashPoint}) undo preview opens cleanly");
+            Assert(reopen.UndoDiffLines.Any(l => l.Kind == ConfigDiffLineKind.Removed && l.Text.Contains("\"theme\": \"light\"")),
+                "Moment 2 undo preview removes light");
+            Assert(reopen.UndoDiffLines.Any(l => l.Kind == ConfigDiffLineKind.Added && l.Text.Contains("\"theme\": \"dark\"")),
+                "Moment 2 undo preview writes back dark");
+
+            reopen.ConfirmUndoRestore();
+            Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB && File.ReadAllBytes(cfg).SequenceEqual(bytesB),
+                $"Moment 2 ({crashPoint}) confirmed undo restored exact bytes of B");
+            Assert(!reopen.HasRecoveryCard && !reopen.CanUndoLastRestore, $"Moment 2 ({crashPoint}) closed cleanly");
+        }
+    }
+
+    private static void Beta3Moment3CrashAfterUndoWroteBBeforeConsumedSaved()
+    {
+        var (bytesA, bytesB, _, shaA, shaB, _) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var store = Path.Combine(dir.Path, "store");
+        var cfg = Path.Combine(dir.Path, "app", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(cfg)!);
+        File.WriteAllBytes(cfg, bytesA);
+
+        var hooks = new DelegateHooks
+        {
+            OnAfterUndoTargetUpdatedBeforeMarkCompleted = (_, _) => throw new OperationCanceledException("Simulated crash after undo wrote B, before undo_completed saved")
+        };
+        var vm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store, hooks));
+        vm.Refresh();
+        vm.SelectCandidateFile(cfg);
+        vm.CreateRestorePoint();
+
+        File.WriteAllBytes(cfg, bytesB);
+        vm.RefreshSelectedComparison();
+        vm.BeginRestoreConfirmation();
+        vm.ConfirmRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaA, "Restored A");
+
+        vm.BeginUndoPreview();
+        var crashed = false;
+        try { vm.ConfirmUndoRestore(); } catch (OperationCanceledException) { crashed = true; }
+        Assert(crashed, "Moment 3 crash triggered");
+        Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB, "Disk already has B");
+        var mtime = File.GetLastWriteTimeUtc(cfg);
+
+        File.SetAttributes(cfg, FileAttributes.ReadOnly);
+        try
+        {
+            var reopen1 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+            reopen1.CheckInterruptedOperationOnStartup();
+            reopen1.Refresh();
+            Assert(reopen1.ShowRecoveryCard && reopen1.RecoveryStatus == ConfigRecoveryStatus.UndoAlreadyApplied,
+                "Moment 3 Reopen #1 reports actual UndoAlreadyApplied result");
+            Assert(!reopen1.ShowUndoBar && !reopen1.CanUndoLastRestore, "Moment 3 Reopen #1 has no stale Undo bar");
+            Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB && File.GetLastWriteTimeUtc(cfg) == mtime, "Reopen #1 zero disk write");
+
+            var reopen2 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+            reopen2.CheckInterruptedOperationOnStartup();
+            reopen2.Refresh();
+            Assert(!reopen2.HasRecoveryCard && !reopen2.ShowUndoBar, "Moment 3 Reopen #2 clean");
+            Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB && File.GetLastWriteTimeUtc(cfg) == mtime, "Reopen #2 zero disk write");
+        }
+        finally
+        {
+            File.SetAttributes(cfg, FileAttributes.Normal);
+        }
+    }
+
+    private static void Beta3InterruptedThenExternalEditToCAndOriginalCopyRecovery()
+    {
+        var (bytesA, bytesB, bytesC, _, shaB, shaC) = CreateLightDarkHighContrastFixtures();
+
+        // Test BOTH restore_prepared + external C AND undo_prepared + external C, plus active deletion after interruption!
+        foreach (var phase in new[] { "restore_interrupted_then_c", "undo_interrupted_then_c", "restore_interrupted_then_deleted" })
+        {
+            using var dir = new TempDir();
+            var store = Path.Combine(dir.Path, "store");
+            var cfg = Path.Combine(dir.Path, "app", "settings.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(cfg)!);
+            File.WriteAllBytes(cfg, bytesA);
+
+            var hooks = new DelegateHooks
+            {
+                OnBeforeSaveRestoreCompleted = phase.StartsWith("restore_", StringComparison.Ordinal)
+                    ? (_, _) => throw new OperationCanceledException("Crash before restore_completed")
+                    : null,
+                OnAfterUndoPrepared = phase == "undo_interrupted_then_c"
+                    ? (_, _) => throw new OperationCanceledException("Crash after undo_prepared")
+                    : null
+            };
+            var vm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store, hooks));
+            vm.Refresh();
+            vm.SelectCandidateFile(cfg);
+            vm.CreateRestorePoint();
+
+            File.WriteAllBytes(cfg, bytesB);
+            vm.RefreshSelectedComparison();
+            vm.BeginRestoreConfirmation();
+            if (phase.StartsWith("restore_", StringComparison.Ordinal))
+            {
+                try { vm.ConfirmRestore(); } catch (OperationCanceledException) { }
+            }
+            else
+            {
+                vm.ConfirmRestore();
+                vm.BeginUndoPreview();
+                try { vm.ConfirmUndoRestore(); } catch (OperationCanceledException) { }
+            }
+
+            if (phase == "restore_interrupted_then_deleted")
+                File.Delete(cfg);
+            else
+                File.WriteAllBytes(cfg, bytesC);
+
+            var reopen = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+            reopen.CheckInterruptedOperationOnStartup();
+            reopen.Refresh();
+
+            var expectedStatus = phase == "restore_interrupted_then_deleted"
+                ? ConfigRecoveryStatus.TargetMissingAfterInterruption
+                : ConfigRecoveryStatus.ExternalVersionCDetected;
+            Assert(reopen.ShowRecoveryCard && reopen.RecoveryStatus == expectedStatus,
+                $"{phase}: expected {expectedStatus}, got {reopen.RecoveryStatus}");
+            Assert(!reopen.CanUndoFromRecovery && !reopen.ShowUndoBar, $"{phase}: does NOT offer blind undo over C/deleted");
+            Assert(reopen.CanViewOriginalCopyFromRecovery && reopen.CanExportOriginalCopyFromRecovery,
+                $"{phase}: offers View & Save As original copy B");
+
+            // Check C or Deleted state preserved untouched!
+            if (phase == "restore_interrupted_then_deleted")
+                Assert(!File.Exists(cfg), "Deleted file NOT recreated on startup");
+            else
+                Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaC, $"{phase}: C preserved byte-for-byte");
+
+            // View original copy B inline!
+            reopen.BeginViewOriginalCopy();
+            Assert(reopen.IsViewingOriginalCopy && reopen.OriginalCopyPreview is { IsValid: true } && reopen.OriginalCopyPreview.Sha256 == shaB,
+                $"{phase}: View original copy shows verified B");
+            Assert(reopen.OriginalCopyLines.Any(l => l.Text.Contains("\"theme\": \"dark\"")),
+                $"{phase}: Inline original copy preview displays dark (B)");
+
+            // Exporting directly onto active target path MUST be refused to protect C!
+            var blockedExport = reopen.ExportOriginalCopy(cfg);
+            Assert(blockedExport is { Succeeded: false }, $"{phase}: Export refuses overwriting active target path");
+
+            // Exporting to separate path writes exact B bytes (BOM + CRLF intact)!
+            var exportDest = Path.Combine(dir.Path, "recovered", "settings.before-restore.json");
+            var exported = reopen.ExportOriginalCopy(exportDest);
+            Assert(exported is { Succeeded: true } && exported.Sha256 == shaB, $"{phase}: Export succeeded with verified shaB");
+            Assert(File.ReadAllBytes(exportDest).SequenceEqual(bytesB), $"{phase}: Exported file equals exact bytes of B");
+            if (phase != "restore_interrupted_then_deleted")
+                Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaC, $"{phase}: Target C STILL untouched after export");
+
+            reopen.CloseOriginalCopyPreview();
+            Assert(reopen.ShowRecoveryCard, $"{phase}: Closing copy preview returns cleanly to recovery card");
+
+            // Explicit archive dismisses alert without touching C or deleting B blob!
+            reopen.DismissOrArchiveRecovery();
+            Assert(!reopen.HasRecoveryCard, $"{phase}: Archived cleanly");
+            Assert(Directory.GetFiles(Path.Combine(store, "Undo"), "*.bin").Length == 1, $"{phase}: B blob still retained safely on disk");
+        }
+    }
+
+    private static void Beta3OriginallyMissingFileInterruptions()
+    {
+        var bytesA = EncodeUtf8Bom("[ui]\r\ntheme=light\r\n");
+        var bytesC = EncodeUtf8Bom("[ui]\r\ntheme=custom-c\r\n");
+        var shaA = Sha256Hex(bytesA);
+        var shaC = Sha256Hex(bytesC);
+
+        // (a) Moment 1 on originally missing file: crash before recreate -> still missing, no false restore!
+        {
+            using var dir = new TempDir();
+            var store = Path.Combine(dir.Path, "store");
+            var ini = Path.Combine(dir.Path, "cfg", "settings.ini");
+            Directory.CreateDirectory(Path.GetDirectoryName(ini)!);
+            File.WriteAllBytes(ini, bytesA);
+
+            var hooks = new DelegateHooks { OnAfterRestorePrepared = (_, _) => throw new OperationCanceledException("Crash pre-recreate") };
+            var vm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store, hooks));
+            vm.Refresh(); vm.SelectCandidateFile(ini); vm.CreateRestorePoint();
+            File.Delete(ini);
+            vm.RefreshSelectedComparison(); vm.BeginRestoreConfirmation();
+            try { vm.ConfirmRestore(); } catch (OperationCanceledException) { }
+            Assert(!File.Exists(ini), "Missing (a): still missing");
+
+            var reopen = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+            reopen.CheckInterruptedOperationOnStartup(); reopen.Refresh();
+            Assert(reopen.RecoveryStatus == ConfigRecoveryStatus.RestoreNotApplied && !reopen.ShowUndoBar,
+                "Missing (a): RestoreNotApplied and no false undo");
+        }
+
+        // (b) Moment 2 + Moment 3 on originally missing file: recreated A -> crash -> reopen -> Undo Preview removes -> crash before mark -> reopen!
+        {
+            using var dir = new TempDir();
+            var store = Path.Combine(dir.Path, "store");
+            var ini = Path.Combine(dir.Path, "cfg", "settings.ini");
+            Directory.CreateDirectory(Path.GetDirectoryName(ini)!);
+            File.WriteAllBytes(ini, bytesA);
+
+            var hooks1 = new DelegateHooks { OnBeforeSaveRestoreCompleted = (_, _) => throw new OperationCanceledException("Crash post-recreate") };
+            var vm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store, hooks1));
+            vm.Refresh(); vm.SelectCandidateFile(ini); vm.CreateRestorePoint();
+            File.Delete(ini);
+            vm.RefreshSelectedComparison(); vm.BeginRestoreConfirmation();
+            try { vm.ConfirmRestore(); } catch (OperationCanceledException) { }
+            Assert(File.Exists(ini) && Sha256Hex(File.ReadAllBytes(ini)) == shaA, "Missing (b): recreated A");
+
+            // Reopen with Undo-mark crash hook -> verify recovery -> Undo preview forecasts removal -> crash before consumed saved!
+            var hooks2 = new DelegateHooks { OnAfterUndoTargetUpdatedBeforeMarkCompleted = (_, _) => throw new OperationCanceledException("Crash post-delete") };
+            var reopen1 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store, hooks2));
+            reopen1.CheckInterruptedOperationOnStartup(); reopen1.Refresh();
+            Assert(reopen1.RecoveryStatus == ConfigRecoveryStatus.RestoreAppliedNeedsReview && reopen1.CanUndoFromRecovery,
+                "Missing (b): Verified recreated A on reopen");
+            reopen1.BeginUndoPreviewFromRecovery();
+            Assert(reopen1.IsUndoPreviewRemoveRecreated && reopen1.CanConfirmUndo, "Missing (b): Undo preview forecasts removal");
+            try { reopen1.ConfirmUndoRestore(); } catch (OperationCanceledException) { }
+            Assert(!File.Exists(ini), "Missing (b): Recreated file deleted");
+
+            // Reopen #2 -> UndoAlreadyApplied (missing confirmed), Reopen #3 clean!
+            var reopen2 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+            reopen2.CheckInterruptedOperationOnStartup(); reopen2.Refresh();
+            Assert(reopen2.RecoveryStatus == ConfigRecoveryStatus.UndoAlreadyApplied && !reopen2.ShowUndoBar,
+                "Missing (c): Verified recreated file removal on reopen");
+            Assert(!File.Exists(ini), "Missing (c): Still missing");
+
+            var reopen3 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+            reopen3.CheckInterruptedOperationOnStartup(); reopen3.Refresh();
+            Assert(!reopen3.HasRecoveryCard && !reopen3.ShowUndoBar && !File.Exists(ini), "Missing (c): 2nd reopen clean");
+        }
+
+        // (d) Originally missing file recreated, interrupted, THEN externally edited to C -> preserve C, NEVER auto-delete!
+        {
+            using var dir = new TempDir();
+            var store = Path.Combine(dir.Path, "store");
+            var ini = Path.Combine(dir.Path, "cfg", "settings.ini");
+            Directory.CreateDirectory(Path.GetDirectoryName(ini)!);
+            File.WriteAllBytes(ini, bytesA);
+
+            var hooks = new DelegateHooks { OnBeforeSaveRestoreCompleted = (_, _) => throw new OperationCanceledException("Crash post-recreate") };
+            var vm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store, hooks));
+            vm.Refresh(); vm.SelectCandidateFile(ini); vm.CreateRestorePoint();
+            File.Delete(ini);
+            vm.RefreshSelectedComparison(); vm.BeginRestoreConfirmation();
+            try { vm.ConfirmRestore(); } catch (OperationCanceledException) { }
+
+            File.WriteAllBytes(ini, bytesC);
+            var reopen = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+            reopen.CheckInterruptedOperationOnStartup(); reopen.Refresh();
+            Assert(reopen.RecoveryStatus == ConfigRecoveryStatus.ExternalVersionCDetected && !reopen.CanUndoFromRecovery && !reopen.CanViewOriginalCopyFromRecovery,
+                "Missing (d): Detects C on recreated file with no pre-restore copy");
+            Assert(File.Exists(ini) && Sha256Hex(File.ReadAllBytes(ini)) == shaC, "Missing (d): C preserved untouched");
+        }
+    }
+
+    private static void Beta3InsufficientEvidenceShowsNeedsVerification()
+    {
+        var (bytesA, bytesB, _, shaA, shaB, _) = CreateLightDarkHighContrastFixtures();
+
+        // (a) Target locked exclusively (unreadable) during startup check -> "待核对", B still viewable; unlock -> Recheck resolves!
+        {
+            using var dir = new TempDir();
+            var store = Path.Combine(dir.Path, "store");
+            var cfg = Path.Combine(dir.Path, "app", "settings.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(cfg)!);
+            File.WriteAllBytes(cfg, bytesA);
+
+            var hooks = new DelegateHooks { OnBeforeSaveRestoreCompleted = (_, _) => throw new OperationCanceledException("Crash") };
+            var vm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store, hooks));
+            vm.Refresh(); vm.SelectCandidateFile(cfg); vm.CreateRestorePoint();
+            File.WriteAllBytes(cfg, bytesB);
+            vm.RefreshSelectedComparison(); vm.BeginRestoreConfirmation();
+            try { vm.ConfirmRestore(); } catch (OperationCanceledException) { }
+
+            var reopen = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+            using (var exclusiveLock = new FileStream(cfg, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                reopen.CheckInterruptedOperationOnStartup();
+                reopen.Refresh();
+                Assert(reopen.RecoveryStatus == ConfigRecoveryStatus.NeedsVerification && reopen.RecoveryStatusBadge == "待核对",
+                    $"Locked target must show 待核对, got {reopen.RecoveryStatus}/{reopen.RecoveryStatusBadge}");
+                Assert(reopen.CanViewOriginalCopyFromRecovery && reopen.CanRecheckRecovery,
+                    "待核对 still allows viewing B copy and clicking Recheck");
+            }
+            reopen.RecheckRecovery();
+            Assert(reopen.RecoveryStatus == ConfigRecoveryStatus.RestoreAppliedNeedsReview && reopen.CanUndoFromRecovery,
+                "Recheck after unlock resolves to RestoreAppliedNeedsReview");
+            Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaA, "Target remained A throughout");
+        }
+
+        // (b) Corrupt / incomplete metadata -> "待核对", target untouched!
+        {
+            using var dir = new TempDir();
+            var store = Path.Combine(dir.Path, "store");
+            var undoDir = Path.Combine(store, "Undo");
+            Directory.CreateDirectory(undoDir);
+            File.WriteAllText(Path.Combine(undoDir, "broken0001.json"), "{ invalid-json", Utf8NoBom);
+
+            var reopen = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+            reopen.CheckInterruptedOperationOnStartup();
+            reopen.Refresh();
+            Assert(reopen.ShowRecoveryCard && reopen.RecoveryStatus == ConfigRecoveryStatus.NeedsVerification && reopen.RecoveryStatusBadge == "待核对",
+                "Corrupt undo metadata must display 待核对");
+        }
+
+        // (c) Target is A under restore_prepared, but B blob corrupted -> "待核对", cannot blind undo!
+        {
+            using var dir = new TempDir();
+            var store = Path.Combine(dir.Path, "store");
+            var cfg = Path.Combine(dir.Path, "app", "settings.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(cfg)!);
+            File.WriteAllBytes(cfg, bytesA);
+
+            var hooks = new DelegateHooks { OnBeforeSaveRestoreCompleted = (_, _) => throw new OperationCanceledException("Crash") };
+            var vm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store, hooks));
+            vm.Refresh(); vm.SelectCandidateFile(cfg); vm.CreateRestorePoint();
+            File.WriteAllBytes(cfg, bytesB);
+            vm.RefreshSelectedComparison(); vm.BeginRestoreConfirmation();
+            try { vm.ConfirmRestore(); } catch (OperationCanceledException) { }
+
+            var blob = Directory.GetFiles(Path.Combine(store, "Undo"), "*.bin").Single();
+            var tampered = File.ReadAllBytes(blob);
+            tampered[0] ^= 0xFF;
+            File.WriteAllBytes(blob, tampered);
+
+            var reopen = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+            reopen.CheckInterruptedOperationOnStartup();
+            reopen.Refresh();
+            Assert(reopen.RecoveryStatus == ConfigRecoveryStatus.NeedsVerification && reopen.RecoveryStatusBadge == "待核对",
+                "Corrupted B blob must display 待核对");
+            Assert(!reopen.CanUndoFromRecovery && !reopen.CanViewOriginalCopyFromRecovery, "Corrupted B blob blocks undo & view");
+            Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaA, "Target A untouched");
+        }
+    }
+
+    private static void Beta3BackwardCompatibilityWithBeta1AndBeta2()
+    {
+        var (bytesA, bytesB, bytesC, shaA, shaB, shaC) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var store = Path.Combine(dir.Path, "store");
+        var cfg = Path.Combine(dir.Path, "legacy-app", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(cfg)!);
+        Directory.CreateDirectory(Path.Combine(store, "Points"));
+        Directory.CreateDirectory(Path.Combine(store, "Blobs"));
+        Directory.CreateDirectory(Path.Combine(store, "Undo"));
+
+        // Write EXACT Beta.1/Beta.2 JSON format (NO operation_state or Beta.3 fields!)
+        File.WriteAllBytes(Path.Combine(store, "Blobs", "legacypt0001.bin"), bytesA);
+        File.WriteAllText(Path.Combine(store, "Points", "legacypt0001.json"), $$"""
+            {
+              "schema_version": 1,
+              "point_id": "legacypt0001",
+              "created_at_utc": "2026-11-24T01:00:00+00:00",
+              "note": "Beta.1/Beta.2 历史还原点",
+              "target_path": {{System.Text.Json.JsonSerializer.Serialize(Path.GetFullPath(cfg))}},
+              "target_file_name": "settings.json",
+              "target_directory": {{System.Text.Json.JsonSerializer.Serialize(Path.GetDirectoryName(Path.GetFullPath(cfg))!)}},
+              "parent_folder_name": "legacy-app",
+              "byte_length": {{bytesA.LongLength}},
+              "sha256": "{{shaA}}",
+              "backup_blob_relative_path": "Blobs\\legacypt0001.bin",
+              "encoding_label": "UTF-8（含 BOM）",
+              "line_ending_label": "CRLF (Windows)"
+            }
+            """, Utf8NoBom);
+
+        File.WriteAllBytes(Path.Combine(store, "Undo", "legacyun0001.bin"), bytesB);
+        var legacyUndoJson = $$"""
+            {
+              "schema_version": 1,
+              "undo_id": "legacyun0001",
+              "created_at_utc": "2026-11-24T01:05:00+00:00",
+              "restored_point_id": "legacypt0001",
+              "restored_point_note": "Beta.1/Beta.2 历史还原点",
+              "target_path": {{System.Text.Json.JsonSerializer.Serialize(Path.GetFullPath(cfg))}},
+              "target_existed_before_restore": true,
+              "pre_restore_byte_length": {{bytesB.LongLength}},
+              "pre_restore_sha256": "{{shaB}}",
+              "pre_restore_blob_relative_path": "Undo\\legacyun0001.bin",
+              "restored_backup_sha256": "{{shaA}}",
+              "consumed": false
+            }
+            """;
+        var legacyUndoPath = Path.Combine(store, "Undo", "legacyun0001.json");
+        File.WriteAllText(legacyUndoPath, legacyUndoJson, Utf8NoBom);
+
+        // (a) Disk == C on legacy Beta.2 active record -> Undo conflict preview + View/Save As B!
+        File.WriteAllBytes(cfg, bytesC);
+        var vmC = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+        vmC.CheckInterruptedOperationOnStartup();
+        vmC.Refresh();
+        Assert(vmC.TotalCount == 1 && !vmC.HasRecoveryCard && vmC.CanUndoLastRestore, "Legacy active record loads seamlessly");
+        vmC.BeginUndoPreview();
+        Assert(vmC.IsUndoPreviewConflict && !vmC.CanConfirmUndo && vmC.CanViewOriginalCopyFromUndoPreview,
+            "Legacy record on C blocks undo and enables View/Save As original copy B");
+        vmC.BeginViewOriginalCopy();
+        Assert(vmC.IsViewingOriginalCopy && vmC.OriginalCopyPreview is { IsValid: true } && vmC.OriginalCopyPreview.Sha256 == shaB,
+            "Can inspect B from legacy Beta.2 undo conflict");
+        Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaC, "C untouched");
+
+        // (b) Disk == B on legacy Beta.2 unclosed record (legacy Boundary 2 / Moment 1) -> 待核对, NO broken Undo bar!
+        File.WriteAllBytes(cfg, bytesB);
+        var vmB = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+        vmB.CheckInterruptedOperationOnStartup();
+        vmB.Refresh();
+        Assert(vmB.ShowRecoveryCard && vmB.RecoveryStatus == ConfigRecoveryStatus.NeedsVerification && vmB.RecoveryStatusBadge == "待核对",
+            "Legacy unclosed record with disk==B surfaces 待核对");
+        Assert(!vmB.ShowUndoBar && !vmB.CanUndoLastRestore, "Legacy unclosed record with disk==B hides broken undo bar");
+
+        // (c) Disk == A on legacy Beta.2 active record -> normal active undo works and restores B!
+        File.WriteAllBytes(cfg, bytesA);
+        var vmA = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+        vmA.CheckInterruptedOperationOnStartup();
+        vmA.Refresh();
+        Assert(!vmA.HasRecoveryCard && vmA.CanUndoLastRestore, "Legacy normal active record needs no recovery alarm");
+        vmA.BeginUndoPreview();
+        Assert(vmA.CanConfirmUndo, "Legacy undo preview ready");
+        vmA.ConfirmUndoRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB && File.ReadAllBytes(cfg).SequenceEqual(bytesB),
+            "Legacy Beta.1/Beta.2 undo cleanly restores B byte-for-byte");
+    }
+
+    private sealed class DelegateHooks : IConfigRestoreOperationHooks
+    {
+        public Action<string, string>? OnAfterRestorePrepared { get; init; }
+        public Action<string, string>? OnAfterTargetReplacedBeforeVerify { get; init; }
+        public Action<string, string>? OnBeforeSaveRestoreCompleted { get; init; }
+        public Action<string, string>? OnBeforePostRestoreRefresh { get; init; }
+        public Action<string, string>? OnAfterUndoPrepared { get; init; }
+        public Action<string, string>? OnAfterUndoTargetUpdatedBeforeMarkCompleted { get; init; }
+
+        public void AfterRestorePrepared(string undoId, string targetPath) => OnAfterRestorePrepared?.Invoke(undoId, targetPath);
+        public void AfterTargetReplacedBeforeVerify(string undoId, string targetPath) => OnAfterTargetReplacedBeforeVerify?.Invoke(undoId, targetPath);
+        public void BeforeSaveRestoreCompleted(string undoId, string targetPath) => OnBeforeSaveRestoreCompleted?.Invoke(undoId, targetPath);
+        public void BeforePostRestoreRefresh(string undoId, string targetPath) => OnBeforePostRestoreRefresh?.Invoke(undoId, targetPath);
+        public void AfterUndoPrepared(string undoId, string targetPath) => OnAfterUndoPrepared?.Invoke(undoId, targetPath);
+        public void AfterUndoTargetUpdatedBeforeMarkCompleted(string undoId, string targetPath) => OnAfterUndoTargetUpdatedBeforeMarkCompleted?.Invoke(undoId, targetPath);
     }
 
     private static byte[] EncodeUtf8Bom(string text)

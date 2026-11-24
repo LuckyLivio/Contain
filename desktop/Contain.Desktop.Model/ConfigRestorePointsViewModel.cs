@@ -4,7 +4,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace Contain.Desktop.Model;
 
 /// <summary>
-/// ViewModel for the "配置还原点" single-file config backup, directional diff, restore preview, and undo preview workflow.
+/// ViewModel for the "配置还原点" single-file config backup, directional diff, restore/undo preview,
+/// and crash-interruption recovery workflow.
 /// Runs completely locally with normal user privileges and requires NO Windows Sandbox.
 /// </summary>
 public sealed class ConfigRestorePointsViewModel : ObservableObject
@@ -30,6 +31,12 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     private ConfigUndoPreviewResult? undoPreview;
     private ConfigLiveFileSnapshot? confirmedUndoLiveSnapshot;
 
+    // Interrupted operation reconciliation & original-copy recovery state
+    private ConfigRecoveryReport? activeRecoveryReport;
+    private bool isViewingOriginalCopy;
+    private ConfigOriginalCopyPreview? originalCopyPreview;
+    private ConfigUndoSnapshot? originalCopySource;
+
     private bool hasOperationBanner;
     private bool isOperationBannerError;
     private bool isOperationBannerWarning;
@@ -47,6 +54,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     public ObservableCollection<ConfigRestorePointRecord> FilteredPoints { get; } = [];
     public ObservableCollection<ConfigDiffLine> DiffLines { get; } = [];
     public ObservableCollection<ConfigDiffLine> UndoDiffLines { get; } = [];
+    public ObservableCollection<ConfigCopyPreviewLine> OriginalCopyLines { get; } = [];
 
     public string TargetFilePathInput
     {
@@ -109,9 +117,9 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     }
 
     public bool HasSelectedPoint => selectedPoint is not null && comparison is not null;
-    public bool HasNoSelectedPoint => !HasSelectedPoint && !isPreviewingUndo;
-    public bool ShowSelectedPointPanels => HasSelectedPoint && !isPreviewingUndo;
-    public bool ShowDetailHeaderCard => HasSelectedPoint && !isConfirmingRestore && !isPreviewingUndo;
+    public bool HasNoSelectedPoint => !HasSelectedPoint && !IsPreviewingUndo && !IsViewingOriginalCopy && !HasRecoveryCard;
+    public bool ShowSelectedPointPanels => HasSelectedPoint && !IsPreviewingUndo && !IsViewingOriginalCopy;
+    public bool ShowDetailHeaderCard => HasSelectedPoint && !isConfirmingRestore && !IsPreviewingUndo && !IsViewingOriginalCopy;
     public ConfigComparisonResult? Comparison => comparison;
     public ConfigUndoPreviewResult? UndoPreview => undoPreview;
 
@@ -174,6 +182,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         !busy &&
         !isConfirmingRestore &&
         !isPreviewingUndo &&
+        !isViewingOriginalCopy &&
         comparison is { BackupIntegrityValid: true } c &&
         c.Status is ConfigComparisonStatus.Changed or ConfigComparisonStatus.Missing;
 
@@ -206,10 +215,60 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     public string MidConfirmWarningText => midConfirmWarning;
     public bool CanConfirmRestore => !busy && isConfirmingRestore && comparison is { BackupIntegrityValid: true } && comparison.Status is ConfigComparisonStatus.Changed or ConfigComparisonStatus.Missing;
 
+    // Interruption recovery card & shell banner properties
+    public ConfigRecoveryReport? ActiveRecoveryReport => activeRecoveryReport;
+    public bool HasRecoveryCard => activeRecoveryReport is not null && activeRecoveryReport.Status != ConfigRecoveryStatus.None;
+    public bool ShowRecoveryCard => HasRecoveryCard && !IsPreviewingUndo && !IsViewingOriginalCopy;
+    public bool HasPendingRecoveryShellBanner => HasRecoveryCard;
+    public string PendingRecoveryShellBannerText => activeRecoveryReport is null
+        ? ""
+        : $"{activeRecoveryReport.StatusBadge}：{activeRecoveryReport.Headline}（启动检查未修改目标文件）";
+
+    public ConfigRecoveryStatus RecoveryStatus => activeRecoveryReport?.Status ?? ConfigRecoveryStatus.None;
+    public string RecoveryStatusBadge => activeRecoveryReport?.StatusBadge ?? "";
+    public string RecoveryHeadline => activeRecoveryReport?.Headline ?? "";
+    public string RecoveryDetail => activeRecoveryReport?.Detail ?? "";
+    public string RecoveryTargetPath => activeRecoveryReport?.OperationRecord.TargetPath ?? "";
+    public string RecoveryDiskStateSummary => activeRecoveryReport?.DiskStateSummary ?? "";
+    public string RecoveryOriginalCopySummary => activeRecoveryReport?.OriginalCopySummary ?? "";
+    public bool IsRecoveryWarning => activeRecoveryReport?.Status is ConfigRecoveryStatus.ExternalVersionCDetected or ConfigRecoveryStatus.TargetMissingAfterInterruption or ConfigRecoveryStatus.NeedsVerification;
+    public bool IsRecoveryInfo => activeRecoveryReport?.Status is ConfigRecoveryStatus.RestoreAppliedNeedsReview or ConfigRecoveryStatus.UndoNotApplied;
+    public bool IsRecoveryResolved => activeRecoveryReport?.Status is ConfigRecoveryStatus.RestoreNotApplied or ConfigRecoveryStatus.UndoAlreadyApplied;
+    public bool CanUndoFromRecovery => !busy && activeRecoveryReport is { CanOfferUndoPreview: true };
+    public bool CanViewOriginalCopyFromRecovery => !busy && activeRecoveryReport is { HasValidOriginalCopy: true };
+    public bool CanExportOriginalCopyFromRecovery => !busy && activeRecoveryReport is { HasValidOriginalCopy: true };
+    public bool CanRecheckRecovery => !busy && activeRecoveryReport is { RequiresExplicitArchive: true };
+    public string DismissRecoveryButtonText => activeRecoveryReport is { RequiresExplicitArchive: true }
+        ? "已知悉并归档"
+        : "确认并收起";
+
+    // Inline original copy preview ("查看原副本")
+    public bool IsViewingOriginalCopy => isViewingOriginalCopy && originalCopyPreview is not null;
+    public ConfigOriginalCopyPreview? OriginalCopyPreview => originalCopyPreview;
+    public string OriginalCopyPreviewTitle => originalCopyPreview is null
+        ? ""
+        : $"覆盖前原副本：{originalCopyPreview.UndoSnapshot.DisplayTargetScopedName}";
+    public string OriginalCopyTargetPath => originalCopyPreview?.UndoSnapshot.TargetPath ?? "";
+    public string OriginalCopyMetaSummary => originalCopyPreview is { IsValid: true } p
+        ? $"大小与编码：{p.DisplaySize} · {p.DisplayFormatSummary} · SHA-256：{p.Sha256}"
+        : (originalCopyPreview?.ErrorMessage ?? "");
+    public bool HasOriginalCopyText => originalCopyPreview is { IsValid: true, IsTextAvailable: true } && OriginalCopyLines.Count > 0;
+    public bool ShowOriginalCopyFallback => originalCopyPreview is not null && !HasOriginalCopyText && !string.IsNullOrWhiteSpace(originalCopyPreview.FallbackNote);
+    public string OriginalCopyFallbackNote => originalCopyPreview?.FallbackNote ?? "";
+    public bool CanExportFromOriginalCopyPreview => !busy && originalCopyPreview is { IsValid: true };
+    public string SuggestedOriginalCopyFileName
+    {
+        get
+        {
+            var src = ResolveActiveOriginalCopySource();
+            return ConfigFormatting.BuildSuggestedOriginalCopyFileName(src?.TargetPath);
+        }
+    }
+
     // Undo bar & lightweight Undo Preview properties
     public ConfigUndoSnapshot? LatestUndo => latestUndo;
     public bool CanUndoLastRestore => !busy && latestUndo is { Consumed: false };
-    public bool ShowUndoBar => CanUndoLastRestore && !isPreviewingUndo;
+    public bool ShowUndoBar => CanUndoLastRestore && !IsPreviewingUndo && !IsViewingOriginalCopy && !(ShowRecoveryCard && CanUndoFromRecovery);
     public string UndoTargetScopedName => latestUndo is { Consumed: false } u ? u.DisplayTargetScopedName : "";
     public string UndoTargetFullPath => latestUndo is { Consumed: false } u ? u.TargetPath : "";
     public bool IsUndoTargetDifferentFromSelected =>
@@ -232,6 +291,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         : "";
 
     public bool IsPreviewingUndo => isPreviewingUndo && undoPreview is not null;
+    public bool ShowUndoPreviewPanel => IsPreviewingUndo && !IsViewingOriginalCopy;
     public string UndoPreviewTitle => undoPreview is null ? "" : $"撤销预览：{undoPreview.UndoSnapshot.DisplayTargetScopedName}";
     public string UndoPreviewDirectionLabel => undoPreview?.DirectionLabel ?? "当前文件 → 撤销后";
     public string UndoPreviewTargetPath => undoPreview?.UndoSnapshot.TargetPath ?? "";
@@ -241,6 +301,8 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     public bool IsUndoPreviewConflict => undoPreview?.IsConflictOrError == true;
     public bool IsUndoPreviewRemoveRecreated => undoPreview?.Status == ConfigUndoPreviewStatus.ReadyToRemoveRecreatedFile;
     public bool CanConfirmUndo => !busy && undoPreview is { CanConfirm: true };
+    public bool CanViewOriginalCopyFromUndoPreview => !busy && undoPreview is { IsConflictOrError: true, HasValidOriginalCopy: true };
+    public bool CanExportOriginalCopyFromUndoPreview => !busy && undoPreview is { IsConflictOrError: true, HasValidOriginalCopy: true };
     public string ConfirmUndoButtonText => IsUndoPreviewRemoveRecreated
         ? "确认撤销（移除重建文件）"
         : "确认撤销（写回覆盖前版本）";
@@ -274,20 +336,55 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     public string ErrorMessage => errorMessage;
     public bool HasError => errorMessage.Length > 0;
 
+    /// <summary>
+    /// Runs at Contain startup. Strictly read-only against user target files; reconciles any
+    /// interrupted restore/undo records and surfaces a shell banner if attention is needed.
+    /// </summary>
+    public void CheckInterruptedOperationOnStartup()
+    {
+        try
+        {
+            var report = service.ReconcileLatestOperation();
+            if (report is not null)
+                activeRecoveryReport = report;
+            latestUndo = service.LoadLatestActiveUndo();
+            NotifyAll();
+        }
+        catch
+        {
+            // Non-fatal startup probe; full Refresh surfaces any storage errors.
+        }
+    }
+
     public void Refresh()
     {
         errorMessage = "";
         try
         {
+            var freshReport = service.ReconcileLatestOperation();
+            if (freshReport is not null)
+                activeRecoveryReport = freshReport;
+            else if (activeRecoveryReport is { RequiresExplicitArchive: true })
+                activeRecoveryReport = null;
+
             var points = service.LoadAllPoints();
             allPoints.Clear();
             allPoints.AddRange(points);
 
             latestUndo = service.LoadLatestActiveUndo();
             ClearUndoPreviewCore();
+            ClearOriginalCopyPreviewCore();
 
             if (selectedPoint is not null)
                 selectedPoint = allPoints.FirstOrDefault(p => string.Equals(p.PointId, selectedPoint.PointId, StringComparison.OrdinalIgnoreCase));
+
+            if (selectedPoint is null && activeRecoveryReport is not null)
+            {
+                selectedPoint = allPoints.FirstOrDefault(p =>
+                    string.Equals(p.PointId, activeRecoveryReport.OperationRecord.RestoredPointId, StringComparison.OrdinalIgnoreCase))
+                    ?? allPoints.FirstOrDefault(p =>
+                        string.Equals(p.TargetPath, activeRecoveryReport.OperationRecord.TargetPath, StringComparison.OrdinalIgnoreCase));
+            }
 
             ApplyFilter();
 
@@ -299,15 +396,160 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
             else
                 ClearComparisonCore();
 
-            statusMessage = allPoints.Count == 0
-                ? "还没有配置还原点。选择一个本地配置文件即可创建第一份原始字节备份。"
-                : $"已加载 {allPoints.Count} 个配置还原点。";
+            statusMessage = activeRecoveryReport is not null
+                ? activeRecoveryReport.Headline
+                : (allPoints.Count == 0
+                    ? "还没有配置还原点。选择一个本地配置文件即可创建第一份原始字节备份。"
+                    : $"已加载 {allPoints.Count} 个配置还原点。");
             NotifyAll();
         }
         catch (Exception ex)
         {
             errorMessage = $"加载配置还原点失败：{ex.Message}";
             statusMessage = errorMessage;
+            NotifyAll();
+        }
+    }
+
+    public void RecheckRecovery()
+    {
+        if (busy) return;
+        errorMessage = "";
+        ClearOperationBanner();
+        ClearOriginalCopyPreviewCore();
+        try
+        {
+            var fresh = service.ReconcileLatestOperation();
+            activeRecoveryReport = fresh;
+            latestUndo = service.LoadLatestActiveUndo();
+            if (selectedPoint is not null)
+                RefreshSelectedComparisonCore(ConfigDiffDirection.BackupToCurrent, preserveConfirmation: false);
+            statusMessage = fresh is not null
+                ? $"已重新核对：{fresh.StatusBadge}。"
+                : "已重新核对，当前没有待处理的中断操作。";
+        }
+        catch (Exception ex)
+        {
+            SetOperationBanner("重新核对失败", ex.Message, isError: true, isWarning: false);
+            errorMessage = ex.Message;
+            statusMessage = errorMessage;
+        }
+        finally
+        {
+            NotifyAll();
+        }
+    }
+
+    public void BeginUndoPreviewFromRecovery()
+    {
+        if (busy || activeRecoveryReport is not { CanOfferUndoPreview: true }) return;
+        var targetUndo = latestUndo ?? activeRecoveryReport.OperationRecord;
+        latestUndo = targetUndo;
+        BeginUndoPreview();
+    }
+
+    public void DismissOrArchiveRecovery()
+    {
+        if (busy || activeRecoveryReport is null) return;
+        errorMessage = "";
+        ClearOriginalCopyPreviewCore();
+        try
+        {
+            if (activeRecoveryReport.RequiresExplicitArchive)
+            {
+                service.ArchiveRecoveryRecord(activeRecoveryReport.OperationRecord, $"用户确认并归档（{activeRecoveryReport.StatusBadge}）。");
+                SetOperationBanner(
+                    "已归档该中断记录",
+                    "已收起核对提示；你的当前配置文件与本地覆盖前原副本均未被删除或修改。",
+                    isError: false,
+                    isWarning: false);
+            }
+            activeRecoveryReport = null;
+            latestUndo = service.LoadLatestActiveUndo();
+            statusMessage = "已收起操作中断核对提示。";
+        }
+        catch (Exception ex)
+        {
+            SetOperationBanner("归档中断记录失败", ex.Message, isError: true, isWarning: false);
+            errorMessage = ex.Message;
+            statusMessage = errorMessage;
+        }
+        finally
+        {
+            NotifyAll();
+        }
+    }
+
+    public void BeginViewOriginalCopy(ConfigUndoSnapshot? explicitSource = null)
+    {
+        if (busy) return;
+        var source = explicitSource ?? ResolveActiveOriginalCopySource();
+        if (source is null) return;
+
+        errorMessage = "";
+        ClearOperationBanner();
+        try
+        {
+            var preview = service.InspectOriginalCopy(source);
+            originalCopySource = source;
+            originalCopyPreview = preview;
+            isViewingOriginalCopy = true;
+            OriginalCopyLines.Clear();
+            foreach (var line in preview.Lines)
+                OriginalCopyLines.Add(line);
+            statusMessage = preview.IsValid
+                ? $"正在查看覆盖前原副本“{source.DisplayTargetScopedName}”（SHA-256：{preview.DisplayShortSha256}，已校验完整）。"
+                : preview.ErrorMessage;
+        }
+        catch (Exception ex)
+        {
+            ClearOriginalCopyPreviewCore();
+            SetOperationBanner("查看原副本失败", ex.Message, isError: true, isWarning: false);
+            errorMessage = ex.Message;
+            statusMessage = errorMessage;
+        }
+        finally
+        {
+            NotifyAll();
+        }
+    }
+
+    public void CloseOriginalCopyPreview()
+    {
+        if (!isViewingOriginalCopy) return;
+        ClearOriginalCopyPreviewCore();
+        statusMessage = "已关闭原副本预览。";
+        NotifyAll();
+    }
+
+    public ConfigOriginalCopyExportResult? ExportOriginalCopy(string destinationPath, ConfigUndoSnapshot? explicitSource = null)
+    {
+        if (busy) return null;
+        var source = explicitSource ?? ResolveActiveOriginalCopySource();
+        if (source is null) return null;
+
+        busy = true;
+        errorMessage = "";
+        NotifyAll();
+        try
+        {
+            var result = service.ExportOriginalCopy(source, destinationPath);
+            SetOperationBanner(result.Headline, result.Detail, isError: !result.Succeeded, isWarning: false);
+            if (!result.Succeeded)
+                errorMessage = result.Detail;
+            statusMessage = result.Headline;
+            return result;
+        }
+        catch (Exception ex)
+        {
+            SetOperationBanner("另存原副本失败", ex.Message, isError: true, isWarning: false);
+            errorMessage = ex.Message;
+            statusMessage = errorMessage;
+            return null;
+        }
+        finally
+        {
+            busy = false;
             NotifyAll();
         }
     }
@@ -326,6 +568,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         errorMessage = "";
         ClearOperationBanner();
         ClearUndoPreviewCore();
+        ClearOriginalCopyPreviewCore();
         NotifyAll();
 
         try
@@ -370,6 +613,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         confirmedLiveSnapshot = null;
         midConfirmWarning = "";
         ClearUndoPreviewCore();
+        ClearOriginalCopyPreviewCore();
         errorMessage = "";
         if (selectedPoint is not null)
         {
@@ -388,6 +632,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         if (selectedPoint is null) return;
         errorMessage = "";
         ClearUndoPreviewCore();
+        ClearOriginalCopyPreviewCore();
         RefreshSelectedComparisonCore(ConfigDiffDirection.BackupToCurrent, preserveConfirmation: false);
         statusMessage = $"已重新核对“{selectedPoint.DisplayScopedName}”：{comparison?.StatusHeadline}";
         NotifyAll();
@@ -399,6 +644,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         errorMessage = "";
         ClearOperationBanner();
         ClearUndoPreviewCore();
+        ClearOriginalCopyPreviewCore();
         midConfirmWarning = "";
 
         // Entering restore confirmation flips diff direction to "当前文件 → 恢复后"!
@@ -468,8 +714,9 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
                 case ConfigRestoreOutcomeKind.Succeeded:
                     isConfirmingRestore = false;
                     confirmedLiveSnapshot = null;
+                    activeRecoveryReport = null;
                     latestUndo = result.UndoSnapshot;
-                    SetOperationBanner(result.Headline, result.Detail, isError: false, isWarning: false);
+                    SetOperationBanner(result.Headline, result.Detail, isError: false, isWarning: result.RefreshFailed);
                     statusMessage = $"{result.Headline}（SHA-256：{selectedPoint.DisplayShortSha256}）。";
                     break;
 
@@ -490,6 +737,16 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
                     statusMessage = result.Headline;
                     break;
 
+                case ConfigRestoreOutcomeKind.VerificationFailedBackupPreserved:
+                    isConfirmingRestore = false;
+                    confirmedLiveSnapshot = null;
+                    // Run read-only reconciliation immediately so user gets full recovery options & original copy access!
+                    activeRecoveryReport = service.ReconcileLatestOperation();
+                    latestUndo = service.LoadLatestActiveUndo();
+                    SetOperationBanner(result.Headline, result.Detail, isError: false, isWarning: true);
+                    statusMessage = result.Headline;
+                    break;
+
                 case ConfigRestoreOutcomeKind.Failed:
                 default:
                     isConfirmingRestore = false;
@@ -500,7 +757,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
                     break;
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             isConfirmingRestore = false;
             confirmedLiveSnapshot = null;
@@ -520,6 +777,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         if (!CanUndoLastRestore || latestUndo is null) return;
         errorMessage = "";
         ClearOperationBanner();
+        ClearOriginalCopyPreviewCore();
         isConfirmingRestore = false;
         confirmedLiveSnapshot = null;
         midConfirmWarning = "";
@@ -549,6 +807,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     {
         if (!isPreviewingUndo) return;
         ClearUndoPreviewCore();
+        ClearOriginalCopyPreviewCore();
         if (selectedPoint is not null)
             RefreshSelectedComparisonCore(ConfigDiffDirection.BackupToCurrent, preserveConfirmation: false);
         statusMessage = "已取消撤销预览，未写入磁盘，撤销记录已保留。";
@@ -569,8 +828,22 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
             {
                 case ConfigUndoOutcomeKind.Succeeded:
                     ClearUndoPreviewCore();
+                    ClearOriginalCopyPreviewCore();
+                    activeRecoveryReport = null;
                     latestUndo = service.LoadLatestActiveUndo();
                     SetOperationBanner(result.Headline, result.Detail, isError: false, isWarning: false);
+                    statusMessage = result.Headline;
+                    if (selectedPoint is not null)
+                        RefreshSelectedComparisonCore(ConfigDiffDirection.BackupToCurrent, preserveConfirmation: false);
+                    break;
+
+                case ConfigUndoOutcomeKind.SucceededMetadataPending:
+                    ClearUndoPreviewCore();
+                    ClearOriginalCopyPreviewCore();
+                    activeRecoveryReport = null;
+                    // Do NOT show a stale Undo bar! LoadLatestActiveUndo excludes undo_prepared records.
+                    latestUndo = service.LoadLatestActiveUndo();
+                    SetOperationBanner(result.Headline, result.Detail, isError: false, isWarning: true);
                     statusMessage = result.Headline;
                     if (selectedPoint is not null)
                         RefreshSelectedComparisonCore(ConfigDiffDirection.BackupToCurrent, preserveConfirmation: false);
@@ -595,7 +868,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
                     break;
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             SetOperationBanner("撤销失败", ex.Message, isError: true, isWarning: false);
             errorMessage = ex.Message;
@@ -609,6 +882,17 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     }
 
     public void ClearSearch() => SearchQuery = "";
+
+    private ConfigUndoSnapshot? ResolveActiveOriginalCopySource()
+    {
+        if (originalCopySource is not null && isViewingOriginalCopy)
+            return originalCopySource;
+        if (isPreviewingUndo && undoPreview is not null)
+            return undoPreview.UndoSnapshot;
+        if (activeRecoveryReport is not null)
+            return activeRecoveryReport.OperationRecord;
+        return latestUndo;
+    }
 
     private void InspectCandidateInput()
     {
@@ -695,6 +979,14 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         UndoDiffLines.Clear();
     }
 
+    private void ClearOriginalCopyPreviewCore()
+    {
+        isViewingOriginalCopy = false;
+        originalCopyPreview = null;
+        originalCopySource = null;
+        OriginalCopyLines.Clear();
+    }
+
     private void SetOperationBanner(string headline, string detail, bool isError, bool isWarning)
     {
         hasOperationBanner = true;
@@ -776,6 +1068,36 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         OnPropertyChanged(nameof(HasMidConfirmWarning));
         OnPropertyChanged(nameof(MidConfirmWarningText));
         OnPropertyChanged(nameof(CanConfirmRestore));
+        OnPropertyChanged(nameof(ActiveRecoveryReport));
+        OnPropertyChanged(nameof(HasRecoveryCard));
+        OnPropertyChanged(nameof(ShowRecoveryCard));
+        OnPropertyChanged(nameof(HasPendingRecoveryShellBanner));
+        OnPropertyChanged(nameof(PendingRecoveryShellBannerText));
+        OnPropertyChanged(nameof(RecoveryStatus));
+        OnPropertyChanged(nameof(RecoveryStatusBadge));
+        OnPropertyChanged(nameof(RecoveryHeadline));
+        OnPropertyChanged(nameof(RecoveryDetail));
+        OnPropertyChanged(nameof(RecoveryTargetPath));
+        OnPropertyChanged(nameof(RecoveryDiskStateSummary));
+        OnPropertyChanged(nameof(RecoveryOriginalCopySummary));
+        OnPropertyChanged(nameof(IsRecoveryWarning));
+        OnPropertyChanged(nameof(IsRecoveryInfo));
+        OnPropertyChanged(nameof(IsRecoveryResolved));
+        OnPropertyChanged(nameof(CanUndoFromRecovery));
+        OnPropertyChanged(nameof(CanViewOriginalCopyFromRecovery));
+        OnPropertyChanged(nameof(CanExportOriginalCopyFromRecovery));
+        OnPropertyChanged(nameof(CanRecheckRecovery));
+        OnPropertyChanged(nameof(DismissRecoveryButtonText));
+        OnPropertyChanged(nameof(IsViewingOriginalCopy));
+        OnPropertyChanged(nameof(OriginalCopyPreview));
+        OnPropertyChanged(nameof(OriginalCopyPreviewTitle));
+        OnPropertyChanged(nameof(OriginalCopyTargetPath));
+        OnPropertyChanged(nameof(OriginalCopyMetaSummary));
+        OnPropertyChanged(nameof(HasOriginalCopyText));
+        OnPropertyChanged(nameof(ShowOriginalCopyFallback));
+        OnPropertyChanged(nameof(OriginalCopyFallbackNote));
+        OnPropertyChanged(nameof(CanExportFromOriginalCopyPreview));
+        OnPropertyChanged(nameof(SuggestedOriginalCopyFileName));
         OnPropertyChanged(nameof(LatestUndo));
         OnPropertyChanged(nameof(CanUndoLastRestore));
         OnPropertyChanged(nameof(ShowUndoBar));
@@ -787,6 +1109,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         OnPropertyChanged(nameof(UndoButtonText));
         OnPropertyChanged(nameof(UndoContextText));
         OnPropertyChanged(nameof(IsPreviewingUndo));
+        OnPropertyChanged(nameof(ShowUndoPreviewPanel));
         OnPropertyChanged(nameof(UndoPreviewTitle));
         OnPropertyChanged(nameof(UndoPreviewDirectionLabel));
         OnPropertyChanged(nameof(UndoPreviewTargetPath));
@@ -796,6 +1119,8 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         OnPropertyChanged(nameof(IsUndoPreviewConflict));
         OnPropertyChanged(nameof(IsUndoPreviewRemoveRecreated));
         OnPropertyChanged(nameof(CanConfirmUndo));
+        OnPropertyChanged(nameof(CanViewOriginalCopyFromUndoPreview));
+        OnPropertyChanged(nameof(CanExportOriginalCopyFromUndoPreview));
         OnPropertyChanged(nameof(ConfirmUndoButtonText));
         OnPropertyChanged(nameof(UndoPreviewFormatTransition));
         OnPropertyChanged(nameof(HasUndoTextDiff));
