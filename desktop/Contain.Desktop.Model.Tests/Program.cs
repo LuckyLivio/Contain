@@ -16,6 +16,7 @@ internal static class Program
             passed.AddRange(await EnvironmentChecks.RunAsync());
             passed.AddRange(await PackageChecks.RunAsync());
             passed.AddRange(await IsolatedTrialChecks.RunAsync());
+            passed.AddRange(await ConfigRestorePointChecks.RunAsync());
         }
         catch (Exception error)
         {
