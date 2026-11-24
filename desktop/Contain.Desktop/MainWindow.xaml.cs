@@ -504,6 +504,57 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         RunUiOperation(() => ConfigRestorePoints.ExportOriginalCopy(dialog.FileName));
     }
 
+    public void BeginExportConfigRestorePoint() => RunUiOperation(() => ConfigRestorePoints.BeginExportRestorePoint());
+    public void PickConfigExportPackagePath()
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title = "选择配置还原点迁移包保存位置（.contain-config-point）",
+            Filter = "Contain 配置还原点迁移包|*.contain-config-point|所有文件|*.*",
+            DefaultExt = ConfigPortablePackageConstants.FileExtension,
+            FileName = ConfigRestorePoints.SuggestedPortablePackageFileName,
+            OverwritePrompt = true,
+            CheckPathExists = true
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        RunUiOperation(() => ConfigRestorePoints.SelectExportPackagePath(dialog.FileName));
+    }
+    public void ConfirmExportConfigRestorePoint() => RunUiOperation(() => ConfigRestorePoints.ConfirmExportRestorePoint());
+    public void CancelExportConfigRestorePoint() => RunUiOperation(() => ConfigRestorePoints.CancelExportRestorePoint());
+
+    public void OpenConfigImportWorkspace() => RunUiOperation(() => ConfigRestorePoints.OpenImportWorkspace());
+    public void PickConfigImportPackage()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "选择要导入的配置还原点迁移包",
+            Filter = "Contain 配置还原点迁移包|*.contain-config-point|所有文件|*.*",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        RunUiOperation(() => ConfigRestorePoints.OpenImportPackage(dialog.FileName));
+    }
+    public void PickConfigImportTarget()
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title = "选择本机目标配置文件（已有文件或待新建路径）",
+            Filter = "常见配置文件|*.json;*.ini;*.toml;*.yaml;*.yml;*.xml;*.cfg;*.conf;*.config;*.env;*.properties|所有文件|*.*",
+            FileName = string.IsNullOrWhiteSpace(ConfigRestorePoints.ImportedPackageDisplayFileName)
+                ? "settings.json"
+                : ConfigRestorePoints.ImportedPackageDisplayFileName,
+            OverwritePrompt = false,
+            CreatePrompt = false,
+            CheckPathExists = false
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        RunUiOperation(() => ConfigRestorePoints.SelectImportTargetPath(dialog.FileName));
+    }
+    public void RecheckConfigImportTarget() => RunUiOperation(() => ConfigRestorePoints.RecheckImportTarget());
+    public void ConfirmConfigImportRestore() => RunUiOperation(() => ConfigRestorePoints.ConfirmImportRestore());
+    public void CancelConfigImport() => RunUiOperation(() => ConfigRestorePoints.CancelImport());
+
     private void RunUiOperation(Action operation)
     {
         localError = "";

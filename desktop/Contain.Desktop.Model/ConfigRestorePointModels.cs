@@ -444,6 +444,137 @@ public sealed record ConfigOriginalCopyExportResult(
     string Headline,
     string Detail);
 
+public static class ConfigPortablePackageConstants
+{
+    public const int CurrentSchemaVersion = 1;
+    public const string FormatId = "contain-config-restore-point-package";
+    public const string FileExtension = ".contain-config-point";
+    public const long MaxRawPayloadBytes = 32L * 1024 * 1024;
+    public const long MaxPackageFileBytes = 48L * 1024 * 1024;
+}
+
+/// <summary>
+/// Single-file versioned portable migration package for a saved config restore point.
+/// Deliberately excludes source-machine paths, undo history, and host identifiers.
+/// </summary>
+public sealed record ConfigPortablePackageFile
+{
+    [JsonPropertyName("schema_version")]
+    public int SchemaVersion { get; init; } = ConfigPortablePackageConstants.CurrentSchemaVersion;
+
+    [JsonPropertyName("format")]
+    public string Format { get; init; } = ConfigPortablePackageConstants.FormatId;
+
+    [JsonPropertyName("exported_at_utc")]
+    public DateTimeOffset ExportedAtUtc { get; init; }
+
+    [JsonPropertyName("created_at_utc")]
+    public DateTimeOffset CreatedAtUtc { get; init; }
+
+    [JsonPropertyName("display_file_name")]
+    public string DisplayFileName { get; init; } = "";
+
+    [JsonPropertyName("note")]
+    public string Note { get; init; } = "";
+
+    [JsonPropertyName("byte_length")]
+    public long ByteLength { get; init; }
+
+    [JsonPropertyName("sha256")]
+    public string Sha256 { get; init; } = "";
+
+    [JsonPropertyName("encoding_label")]
+    public string EncodingLabel { get; init; } = "";
+
+    [JsonPropertyName("line_ending_label")]
+    public string LineEndingLabel { get; init; } = "";
+
+    [JsonPropertyName("payload_base64")]
+    public string PayloadBase64 { get; init; } = "";
+}
+
+public sealed record ConfigPortablePackageExportResult(
+    bool Succeeded,
+    string DestinationPath,
+    string DisplayFileName,
+    long ByteLength,
+    string Sha256,
+    string Headline,
+    string Detail);
+
+public sealed record ConfigPortablePackageInspection(
+    bool IsValid,
+    string PackagePath,
+    int SchemaVersion,
+    string Format,
+    DateTimeOffset ExportedAtUtc,
+    DateTimeOffset CreatedAtUtc,
+    string DisplayFileName,
+    string Note,
+    long ByteLength,
+    string Sha256,
+    string EncodingLabel,
+    string LineEndingLabel,
+    byte[] RawBytes,
+    string ErrorMessage = "")
+{
+    public string DisplaySize => ConfigFormatting.FormatByteSize(ByteLength);
+    public string DisplayShortSha256 => Sha256.Length >= 12 ? Sha256[..12] + "…" : Sha256;
+    public string DisplayFormatSummary => string.IsNullOrWhiteSpace(LineEndingLabel) || LineEndingLabel == "不适用"
+        ? EncodingLabel
+        : $"{EncodingLabel} · {LineEndingLabel}";
+    public string DisplayCreatedTime => CreatedAtUtc == default
+        ? "未知"
+        : CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+    public string DisplayNote => string.IsNullOrWhiteSpace(Note) ? "无备注" : Note;
+}
+
+public enum ConfigImportTargetStatus
+{
+    None,
+    ReadyToOverwrite,
+    ReadyToCreate,
+    IdenticalToTarget,
+    TargetBusyInAnotherWindow,
+    TargetReadFailed,
+    InvalidTargetPath
+}
+
+public sealed record ConfigImportPreviewResult(
+    ConfigPortablePackageInspection Package,
+    string TargetPath,
+    ConfigImportTargetStatus Status,
+    ConfigLiveFileSnapshot LiveSnapshot,
+    string DirectionLabel,
+    string Headline,
+    string Detail,
+    string ActionSummary,
+    bool IsTextDiffAvailable,
+    bool HasFormatOnlyDifference,
+    string DiffFallbackNote,
+    int RemovedLineCount,
+    int AddedLineCount,
+    bool IsDiffTruncated,
+    IReadOnlyList<ConfigDiffLine> DiffLines)
+{
+    public bool CanConfirm => Status is ConfigImportTargetStatus.ReadyToOverwrite or ConfigImportTargetStatus.ReadyToCreate;
+    public bool IsErrorOrBlocked => Status is ConfigImportTargetStatus.TargetBusyInAnotherWindow or ConfigImportTargetStatus.TargetReadFailed or ConfigImportTargetStatus.InvalidTargetPath;
+}
+
+public sealed record ConfigImportRestoreResult(
+    ConfigRestoreOutcomeKind Outcome,
+    string Headline,
+    string Detail,
+    string TargetPath,
+    string ExpectedSha256,
+    string ActualSha256,
+    bool ExistingFilePreserved,
+    ConfigRestorePointRecord? ImportedPoint,
+    ConfigUndoSnapshot? UndoSnapshot,
+    ConfigImportPreviewResult? RefreshedImportPreview = null,
+    bool OriginalCopyPreserved = false,
+    bool RefreshFailed = false);
+
 public sealed record ConfigTargetLockInfo
 {
     [JsonPropertyName("schema_version")]
@@ -500,5 +631,16 @@ public static class ConfigFormatting
         var ext = Path.GetExtension(targetPath);
         if (string.IsNullOrWhiteSpace(name)) return "config.before-restore" + ext;
         return $"{name}.before-restore{ext}";
+    }
+
+    public static string BuildSuggestedPortablePackageFileName(string? fileName)
+    {
+        var leaf = string.IsNullOrWhiteSpace(fileName) ? "config" : Path.GetFileName(fileName.Trim());
+        if (string.IsNullOrWhiteSpace(leaf)) leaf = "config";
+        foreach (var bad in Path.GetInvalidFileNameChars())
+            leaf = leaf.Replace(bad, '_');
+        if (leaf.EndsWith(ConfigPortablePackageConstants.FileExtension, StringComparison.OrdinalIgnoreCase))
+            return leaf;
+        return leaf + ConfigPortablePackageConstants.FileExtension;
     }
 }

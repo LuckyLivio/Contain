@@ -29,6 +29,10 @@ public interface IConfigRestorePointService
     void ArchiveRecoveryRecord(ConfigUndoSnapshot undoSnapshot, string reason);
     ConfigOriginalCopyPreview InspectOriginalCopy(ConfigUndoSnapshot undoSnapshot);
     ConfigOriginalCopyExportResult ExportOriginalCopy(ConfigUndoSnapshot undoSnapshot, string destinationPath);
+    ConfigPortablePackageExportResult ExportRestorePointPackage(ConfigRestorePointRecord point, string destinationPath);
+    ConfigPortablePackageInspection InspectPortablePackage(string packagePath);
+    ConfigImportPreviewResult PreviewImportedPackageTarget(ConfigPortablePackageInspection package, string rawTargetPath);
+    ConfigImportRestoreResult ImportAndRestorePackage(ConfigPortablePackageInspection package, string rawTargetPath, ConfigLiveFileSnapshot expectedLiveSnapshot);
     ConfigUndoSnapshot? LoadLatestActiveUndo();
     ConfigUndoPreviewResult InspectUndoPreview(ConfigUndoSnapshot undoSnapshot);
     ConfigUndoResult UndoRestore(ConfigUndoSnapshot undoSnapshot, ConfigLiveFileSnapshot? expectedLiveSnapshot = null);
@@ -831,205 +835,216 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                     RefreshedComparison: TryCompareSafely(point, ConfigDiffDirection.BackupToCurrent));
             }
 
-            // STEP R1: Persist & verify original copy (B) + "restore_prepared" intent BEFORE touching target!
-            ConfigUndoSnapshot preparedUndo;
-            string? undoBlobPath = null;
-            string? undoMetaPath = null;
-            try
-            {
-                Directory.CreateDirectory(undoDir);
-                var undoId = Guid.NewGuid().ToString("N")[..12];
-                targetLock.UpdateUndoId(undoId);
-                var undoBlobRel = "";
-                if (freshLive.Exists && freshLiveBytes is not null)
-                {
-                    undoBlobRel = Path.Combine("Undo", undoId + ".bin");
-                    undoBlobPath = Path.Combine(StorageRoot, undoBlobRel);
-                    WriteBytesAtomically(undoBlobPath, freshLiveBytes);
-                    var savedUndoSha = ComputeFileSha256Hex(undoBlobPath);
-                    if (!string.Equals(savedUndoSha, freshLive.Sha256, StringComparison.OrdinalIgnoreCase))
-                        throw new IOException("撤销副本写入后哈希校验不一致。");
-                }
+            return ExecutePhasedRestoreUnderLock(point, targetPath, backupBytes, freshLive, freshLiveBytes, targetLock);
+        }
+    }
 
-                preparedUndo = new ConfigUndoSnapshot
-                {
-                    SchemaVersion = 1,
-                    UndoId = undoId,
-                    CreatedAtUtc = DateTimeOffset.UtcNow,
-                    RestoredPointId = point.PointId,
-                    RestoredPointNote = point.Note,
-                    TargetPath = targetPath,
-                    TargetExistedBeforeRestore = freshLive.Exists,
-                    PreRestoreByteLength = freshLive.Exists ? freshLive.ByteLength : 0,
-                    PreRestoreSha256 = freshLive.Exists ? freshLive.Sha256 : "",
-                    PreRestoreBlobRelativePath = undoBlobRel,
-                    PreRestoreEncodingLabel = freshLive.Exists ? freshLive.EncodingLabel : "",
-                    PreRestoreLineEndingLabel = freshLive.Exists ? freshLive.LineEndingLabel : "",
-                    RestoredBackupByteLength = point.ByteLength,
-                    RestoredBackupSha256 = point.Sha256,
-                    OperationState = ConfigOperationStates.RestorePrepared,
-                    OwnerPid = Environment.ProcessId,
-                    OwnerProcessStartUtcTicks = CurrentProcessStartUtcTicks,
-                    LockFileRelativePath = targetLock.RelativePath,
-                    Consumed = false
-                };
-
-                undoMetaPath = Path.Combine(undoDir, undoId + ".json");
-                WriteJsonAtomically(undoMetaPath, preparedUndo);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+    private ConfigRestoreResult ExecutePhasedRestoreUnderLock(
+        ConfigRestorePointRecord point,
+        string targetPath,
+        byte[] backupBytes,
+        ConfigLiveFileSnapshot freshLive,
+        byte[]? freshLiveBytes,
+        TargetOperationLock targetLock)
+    {
+        // STEP R1: Persist & verify original copy (B) + "restore_prepared" intent BEFORE touching target!
+        ConfigUndoSnapshot preparedUndo;
+        string? undoBlobPath = null;
+        string? undoMetaPath = null;
+        try
+        {
+            Directory.CreateDirectory(undoDir);
+            var undoId = Guid.NewGuid().ToString("N")[..12];
+            targetLock.UpdateUndoId(undoId);
+            var undoBlobRel = "";
+            if (freshLive.Exists && freshLiveBytes is not null)
             {
-                // Target was NEVER touched yet; safe to remove half-prepared undo artifacts.
-                if (undoBlobPath is not null) TryDeleteFile(undoBlobPath);
-                if (undoMetaPath is not null) TryDeleteFile(undoMetaPath);
-                return new ConfigRestoreResult(
-                    Outcome: ConfigRestoreOutcomeKind.Failed,
-                    Headline: "恢复失败：无法保存覆盖前的撤销副本",
-                    Detail: $"为保障可撤销，覆盖已被取消；原文件未被修改。（{ex.Message}）",
-                    TargetPath: targetPath,
-                    ExpectedSha256: point.Sha256,
-                    ActualSha256: freshLive.Sha256,
-                    ExistingFilePreserved: true,
-                    UndoSnapshot: null,
-                    RefreshedComparison: null);
+                undoBlobRel = Path.Combine("Undo", undoId + ".bin");
+                undoBlobPath = Path.Combine(StorageRoot, undoBlobRel);
+                WriteBytesAtomically(undoBlobPath, freshLiveBytes);
+                var savedUndoSha = ComputeFileSha256Hex(undoBlobPath);
+                if (!string.Equals(savedUndoSha, freshLive.Sha256, StringComparison.OrdinalIgnoreCase))
+                    throw new IOException("撤销副本写入后哈希校验不一致。");
             }
 
-            // Deterministic interruption seam: B copy & restore_prepared saved, target NOT replaced yet!
-            operationHooks?.AfterRestorePrepared(preparedUndo.UndoId, targetPath);
-
-            // STEP R2: Replace or recreate target with backup A (isolated catch: NEVER delete B unless target is provably untouched!)
-            try
+            preparedUndo = new ConfigUndoSnapshot
             {
-                SafeWriteRawBytesToTarget(targetPath, backupBytes, point.Sha256, targetCurrentlyExists: freshLive.Exists);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                var afterFailLive = CaptureLiveSnapshot(targetPath, out _);
-                var intact = afterFailLive.MatchesContentOf(freshLive);
-                if (intact)
-                {
-                    // Target is provably still at pre-restore state -> record restore_aborted so reopen never shows a false restore.
-                    TryPersistUndoMetadata(preparedUndo with
-                    {
-                        OperationState = ConfigOperationStates.RestoreAborted,
-                        Consumed = true,
-                        CompletedAtUtc = DateTimeOffset.UtcNow,
-                        ReconciledNote = "写入目标失败，已核对原文件未被修改。"
-                    });
-                }
-
-                var reason = DescribeWriteFailure(ex);
-                var intactNote = intact
-                    ? "已核对现有文件未被修改，内容完整保留。"
-                    : "目标状态未能确认仍等于覆盖前版本，已完整保住覆盖前原始副本；请使用「重新核对」或查看/另存原副本。";
-
-                return new ConfigRestoreResult(
-                    Outcome: intact ? ConfigRestoreOutcomeKind.Failed : ConfigRestoreOutcomeKind.VerificationFailedBackupPreserved,
-                    Headline: intact ? "恢复失败：目标文件未能写入" : "恢复中断：写入异常，覆盖前原副本已保住",
-                    Detail: $"{reason} {intactNote}",
-                    TargetPath: targetPath,
-                    ExpectedSha256: point.Sha256,
-                    ActualSha256: afterFailLive.Sha256,
-                    ExistingFilePreserved: intact,
-                    UndoSnapshot: intact ? null : preparedUndo,
-                    RefreshedComparison: TryCompareSafely(point, ConfigDiffDirection.BackupToCurrent),
-                    OriginalCopyPreserved: !intact && freshLive.Exists);
-            }
-
-            // STEP R3: Post-replace readback verification (ISOLATED catch: NEVER deletes B's saved copy!)
-            string postSha;
-            try
-            {
-                operationHooks?.AfterTargetReplacedBeforeVerify(preparedUndo.UndoId, targetPath);
-                postSha = ComputeFileSha256Hex(targetPath);
-                if (!string.Equals(postSha, point.Sha256, StringComparison.OrdinalIgnoreCase))
-                    throw new IOException($"写入完成但目标文件 SHA-256 核对不一致（期望 {point.Sha256}，实际 {postSha}）。");
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // Target replacement ALREADY executed! MUST preserve undoBlobPath & preparedUndo (restore_prepared) intact!
-                var afterVerifyLive = CaptureLiveSnapshot(targetPath, out _);
-                var copyNote = freshLive.Exists
-                    ? "覆盖前的原始副本（B）已完整保住且未被删除，可随时核对、撤销或另存原副本。"
-                    : "已保留“恢复前原文件缺失”的操作记录，可随时核对或通过撤销预览移除重建文件。";
-                return new ConfigRestoreResult(
-                    Outcome: ConfigRestoreOutcomeKind.VerificationFailedBackupPreserved,
-                    Headline: "目标已替换但回读校验失败（原副本已保住）",
-                    Detail: $"目标文件替换后回读校验未通过（{ex.Message}）。{copyNote}",
-                    TargetPath: targetPath,
-                    ExpectedSha256: point.Sha256,
-                    ActualSha256: afterVerifyLive.Sha256,
-                    ExistingFilePreserved: false,
-                    UndoSnapshot: preparedUndo,
-                    RefreshedComparison: TryCompareSafely(point, ConfigDiffDirection.BackupToCurrent),
-                    OriginalCopyPreserved: freshLive.Exists);
-            }
-
-            // STEP R4: Persist "restore_completed" state (ISOLATED catch: NEVER deletes B's saved copy!)
-            var completedUndo = preparedUndo with
-            {
-                OperationState = ConfigOperationStates.RestoreCompleted,
-                CompletedAtUtc = DateTimeOffset.UtcNow
+                SchemaVersion = 1,
+                UndoId = undoId,
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+                RestoredPointId = point.PointId,
+                RestoredPointNote = point.Note,
+                TargetPath = targetPath,
+                TargetExistedBeforeRestore = freshLive.Exists,
+                PreRestoreByteLength = freshLive.Exists ? freshLive.ByteLength : 0,
+                PreRestoreSha256 = freshLive.Exists ? freshLive.Sha256 : "",
+                PreRestoreBlobRelativePath = undoBlobRel,
+                PreRestoreEncodingLabel = freshLive.Exists ? freshLive.EncodingLabel : "",
+                PreRestoreLineEndingLabel = freshLive.Exists ? freshLive.LineEndingLabel : "",
+                RestoredBackupByteLength = point.ByteLength,
+                RestoredBackupSha256 = point.Sha256,
+                OperationState = ConfigOperationStates.RestorePrepared,
+                OwnerPid = Environment.ProcessId,
+                OwnerProcessStartUtcTicks = CurrentProcessStartUtcTicks,
+                LockFileRelativePath = targetLock.RelativePath,
+                Consumed = false
             };
-            try
+
+            undoMetaPath = Path.Combine(undoDir, undoId + ".json");
+            WriteJsonAtomically(undoMetaPath, preparedUndo);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Target was NEVER touched yet; safe to remove half-prepared undo artifacts.
+            if (undoBlobPath is not null) TryDeleteFile(undoBlobPath);
+            if (undoMetaPath is not null) TryDeleteFile(undoMetaPath);
+            return new ConfigRestoreResult(
+                Outcome: ConfigRestoreOutcomeKind.Failed,
+                Headline: "恢复失败：无法保存覆盖前的撤销副本",
+                Detail: $"为保障可撤销，覆盖已被取消；原文件未被修改。（{ex.Message}）",
+                TargetPath: targetPath,
+                ExpectedSha256: point.Sha256,
+                ActualSha256: freshLive.Sha256,
+                ExistingFilePreserved: true,
+                UndoSnapshot: null,
+                RefreshedComparison: null);
+        }
+
+        // Deterministic interruption seam: B copy & restore_prepared saved, target NOT replaced yet!
+        operationHooks?.AfterRestorePrepared(preparedUndo.UndoId, targetPath);
+
+        // STEP R2: Replace or recreate target with backup A (isolated catch: NEVER delete B unless target is provably untouched!)
+        try
+        {
+            SafeWriteRawBytesToTarget(targetPath, backupBytes, point.Sha256, targetCurrentlyExists: freshLive.Exists);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            var afterFailLive = CaptureLiveSnapshot(targetPath, out _);
+            var intact = afterFailLive.MatchesContentOf(freshLive);
+            if (intact)
             {
-                operationHooks?.BeforeSaveRestoreCompleted(preparedUndo.UndoId, targetPath);
-                WriteJsonAtomically(undoMetaPath, completedUndo);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // Target IS verified as A and B's copy IS on disk in restore_prepared; next check/reopen reconciles cleanly!
-                var copyNote = freshLive.Exists
-                    ? "覆盖前原始副本已完整保住，重开 Contain 或点击「重新核对」后仍可预览撤销。"
-                    : "重建记录已保留，重开 Contain 或点击「重新核对」后仍可预览移除。";
-                return new ConfigRestoreResult(
-                    Outcome: ConfigRestoreOutcomeKind.VerificationFailedBackupPreserved,
-                    Headline: "目标已恢复为备份版本，但完成状态暂未保存（原副本已保住）",
-                    Detail: $"目标文件已写入备份并核验 SHA-256 一致（{postSha[..12]}…），但更新本地操作状态失败（{ex.Message}）。{copyNote}",
-                    TargetPath: targetPath,
-                    ExpectedSha256: point.Sha256,
-                    ActualSha256: postSha,
-                    ExistingFilePreserved: true,
-                    UndoSnapshot: preparedUndo,
-                    RefreshedComparison: TryCompareSafely(point, ConfigDiffDirection.BackupToCurrent),
-                    OriginalCopyPreserved: freshLive.Exists);
+                // Target is provably still at pre-restore state -> record restore_aborted so reopen never shows a false restore.
+                TryPersistUndoMetadata(preparedUndo with
+                {
+                    OperationState = ConfigOperationStates.RestoreAborted,
+                    Consumed = true,
+                    CompletedAtUtc = DateTimeOffset.UtcNow,
+                    ReconciledNote = "写入目标失败，已核对原文件未被修改。"
+                });
             }
 
-            // STEP R5: Refresh comparison OUTSIDE any destructive catch — failure here NEVER loses B or invalidates the completed restore!
-            ConfigComparisonResult? refreshedComparison = null;
-            var refreshFailed = false;
-            string refreshError = "";
-            try
-            {
-                operationHooks?.BeforePostRestoreRefresh(completedUndo.UndoId, targetPath);
-                refreshedComparison = CompareRestorePoint(point, ConfigDiffDirection.BackupToCurrent);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                refreshFailed = true;
-                refreshError = ex.Message;
-            }
-
-            var baseDetail = freshLive.Exists
-                ? $"已将备份原始字节写入目标文件并校验 SHA-256 一致（{point.Sha256[..12]}…），保留了原始 BOM 与换行格式。覆盖前版本已保存，可点击撤销进入预览。"
-                : $"已在原路径按备份原始字节重新创建文件并校验 SHA-256 一致（{point.Sha256[..12]}…）。可点击撤销预览并移除本次重建的文件。";
-            var finalDetail = refreshFailed
-                ? $"{baseDetail}（提示：恢复后刷新对比视图失败：{refreshError}，可点击「重新检查」刷新，原副本不受影响。）"
-                : baseDetail;
+            var reason = DescribeWriteFailure(ex);
+            var intactNote = intact
+                ? "已核对现有文件未被修改，内容完整保留。"
+                : "目标状态未能确认仍等于覆盖前版本，已完整保住覆盖前原始副本；请使用「重新核对」或查看/另存原副本。";
 
             return new ConfigRestoreResult(
-                Outcome: ConfigRestoreOutcomeKind.Succeeded,
-                Headline: "已恢复到所选还原点",
-                Detail: finalDetail,
+                Outcome: intact ? ConfigRestoreOutcomeKind.Failed : ConfigRestoreOutcomeKind.VerificationFailedBackupPreserved,
+                Headline: intact ? "恢复失败：目标文件未能写入" : "恢复中断：写入异常，覆盖前原副本已保住",
+                Detail: $"{reason} {intactNote}",
+                TargetPath: targetPath,
+                ExpectedSha256: point.Sha256,
+                ActualSha256: afterFailLive.Sha256,
+                ExistingFilePreserved: intact,
+                UndoSnapshot: intact ? null : preparedUndo,
+                RefreshedComparison: TryCompareSafely(point, ConfigDiffDirection.BackupToCurrent),
+                OriginalCopyPreserved: !intact && freshLive.Exists);
+        }
+
+        // STEP R3: Post-replace readback verification (ISOLATED catch: NEVER deletes B's saved copy!)
+        string postSha;
+        try
+        {
+            operationHooks?.AfterTargetReplacedBeforeVerify(preparedUndo.UndoId, targetPath);
+            postSha = ComputeFileSha256Hex(targetPath);
+            if (!string.Equals(postSha, point.Sha256, StringComparison.OrdinalIgnoreCase))
+                throw new IOException($"写入完成但目标文件 SHA-256 核对不一致（期望 {point.Sha256}，实际 {postSha}）。");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Target replacement ALREADY executed! MUST preserve undoBlobPath & preparedUndo (restore_prepared) intact!
+            var afterVerifyLive = CaptureLiveSnapshot(targetPath, out _);
+            var copyNote = freshLive.Exists
+                ? "覆盖前的原始副本（B）已完整保住且未被删除，可随时核对、撤销或另存原副本。"
+                : "已保留“恢复前原文件缺失”的操作记录，可随时核对或通过撤销预览移除重建文件。";
+            return new ConfigRestoreResult(
+                Outcome: ConfigRestoreOutcomeKind.VerificationFailedBackupPreserved,
+                Headline: "目标已替换但回读校验失败（原副本已保住）",
+                Detail: $"目标文件替换后回读校验未通过（{ex.Message}）。{copyNote}",
+                TargetPath: targetPath,
+                ExpectedSha256: point.Sha256,
+                ActualSha256: afterVerifyLive.Sha256,
+                ExistingFilePreserved: false,
+                UndoSnapshot: preparedUndo,
+                RefreshedComparison: TryCompareSafely(point, ConfigDiffDirection.BackupToCurrent),
+                OriginalCopyPreserved: freshLive.Exists);
+        }
+
+        // STEP R4: Persist "restore_completed" state (ISOLATED catch: NEVER deletes B's saved copy!)
+        var completedUndo = preparedUndo with
+        {
+            OperationState = ConfigOperationStates.RestoreCompleted,
+            CompletedAtUtc = DateTimeOffset.UtcNow
+        };
+        try
+        {
+            operationHooks?.BeforeSaveRestoreCompleted(preparedUndo.UndoId, targetPath);
+            WriteJsonAtomically(undoMetaPath, completedUndo);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Target IS verified as A and B's copy IS on disk in restore_prepared; next check/reopen reconciles cleanly!
+            var copyNote = freshLive.Exists
+                ? "覆盖前原始副本已完整保住，重开 Contain 或点击「重新核对」后仍可预览撤销。"
+                : "重建记录已保留，重开 Contain 或点击「重新核对」后仍可预览移除。";
+            return new ConfigRestoreResult(
+                Outcome: ConfigRestoreOutcomeKind.VerificationFailedBackupPreserved,
+                Headline: "目标已恢复为备份版本，但完成状态暂未保存（原副本已保住）",
+                Detail: $"目标文件已写入备份并核验 SHA-256 一致（{postSha[..12]}…），但更新本地操作状态失败（{ex.Message}）。{copyNote}",
                 TargetPath: targetPath,
                 ExpectedSha256: point.Sha256,
                 ActualSha256: postSha,
                 ExistingFilePreserved: true,
-                UndoSnapshot: completedUndo,
-                RefreshedComparison: refreshedComparison,
-                OriginalCopyPreserved: freshLive.Exists,
-                RefreshFailed: refreshFailed);
+                UndoSnapshot: preparedUndo,
+                RefreshedComparison: TryCompareSafely(point, ConfigDiffDirection.BackupToCurrent),
+                OriginalCopyPreserved: freshLive.Exists);
         }
+
+        // STEP R5: Refresh comparison OUTSIDE any destructive catch — failure here NEVER loses B or invalidates the completed restore!
+        ConfigComparisonResult? refreshedComparison = null;
+        var refreshFailed = false;
+        string refreshError = "";
+        try
+        {
+            operationHooks?.BeforePostRestoreRefresh(completedUndo.UndoId, targetPath);
+            refreshedComparison = CompareRestorePoint(point, ConfigDiffDirection.BackupToCurrent);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            refreshFailed = true;
+            refreshError = ex.Message;
+        }
+
+        var baseDetail = freshLive.Exists
+            ? $"已将备份原始字节写入目标文件并校验 SHA-256 一致（{point.Sha256[..12]}…），保留了原始 BOM 与换行格式。覆盖前版本已保存，可点击撤销进入预览。"
+            : $"已在目标路径按备份原始字节创建文件并校验 SHA-256 一致（{point.Sha256[..12]}…）。可点击撤销预览并移除本次新建的文件。";
+        var finalDetail = refreshFailed
+            ? $"{baseDetail}（提示：恢复后刷新对比视图失败：{refreshError}，可点击「重新检查」刷新，原副本不受影响。）"
+            : baseDetail;
+
+        return new ConfigRestoreResult(
+            Outcome: ConfigRestoreOutcomeKind.Succeeded,
+            Headline: "已恢复到所选还原点",
+            Detail: finalDetail,
+            TargetPath: targetPath,
+            ExpectedSha256: point.Sha256,
+            ActualSha256: postSha,
+            ExistingFilePreserved: true,
+            UndoSnapshot: completedUndo,
+            RefreshedComparison: refreshedComparison,
+            OriginalCopyPreserved: freshLive.Exists,
+            RefreshFailed: refreshFailed);
     }
 
     public IReadOnlyList<ConfigRecoveryReport> ReconcileOperationsOnStartup()
@@ -1318,6 +1333,646 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 Headline: "另存原副本失败",
                 Detail: DescribeWriteFailure(ex));
         }
+    }
+
+    public ConfigPortablePackageExportResult ExportRestorePointPackage(ConfigRestorePointRecord point, string destinationPath)
+    {
+        ArgumentNullException.ThrowIfNull(point);
+
+        if (!TryNormalizeRegularFilePath(destinationPath, mustExist: false, out var normalizedDest, out var pathError))
+        {
+            return new ConfigPortablePackageExportResult(
+                Succeeded: false,
+                DestinationPath: destinationPath ?? "",
+                DisplayFileName: point.TargetFileName,
+                ByteLength: 0,
+                Sha256: "",
+                Headline: "导出还原点失败：保存路径无效",
+                Detail: pathError);
+        }
+
+        if (!string.IsNullOrWhiteSpace(point.TargetPath))
+        {
+            try
+            {
+                if (string.Equals(normalizedDest, Path.GetFullPath(point.TargetPath), StringComparison.OrdinalIgnoreCase))
+                {
+                    return new ConfigPortablePackageExportResult(
+                        Succeeded: false,
+                        DestinationPath: normalizedDest,
+                        DisplayFileName: point.TargetFileName,
+                        ByteLength: 0,
+                        Sha256: "",
+                        Headline: "已阻止覆盖原配置文件",
+                        Detail: "迁移包应另存为独立的 .contain-config-point 文件，不能直接覆盖当前配置文件。");
+                }
+            }
+            catch
+            {
+                // Ignore malformed historical target path; export relies strictly on the saved backup blob.
+            }
+        }
+
+        // Always read & verify the SAVED backup blob (A), regardless of whether the source file was modified to C or deleted!
+        if (!TryReadValidatedBackupBlob(point, out var backupBytes, out var blobError))
+        {
+            return new ConfigPortablePackageExportResult(
+                Succeeded: false,
+                DestinationPath: normalizedDest,
+                DisplayFileName: point.TargetFileName,
+                ByteLength: 0,
+                Sha256: "",
+                Headline: "导出还原点失败：本地备份文件校验未通过",
+                Detail: blobError);
+        }
+
+        var displayFileName = SanitizeDisplayFileName(point.TargetFileName);
+        if (string.IsNullOrWhiteSpace(displayFileName))
+            displayFileName = "config.dat";
+
+        var inspection = ConfigTextDecoder.Inspect(backupBytes);
+        var package = new ConfigPortablePackageFile
+        {
+            SchemaVersion = ConfigPortablePackageConstants.CurrentSchemaVersion,
+            Format = ConfigPortablePackageConstants.FormatId,
+            ExportedAtUtc = DateTimeOffset.UtcNow,
+            CreatedAtUtc = point.CreatedAtUtc,
+            DisplayFileName = displayFileName,
+            Note = point.Note ?? "",
+            ByteLength = backupBytes.LongLength,
+            Sha256 = point.Sha256.ToLowerInvariant(),
+            EncodingLabel = string.IsNullOrWhiteSpace(point.EncodingLabel) ? inspection.EncodingLabel : point.EncodingLabel,
+            LineEndingLabel = string.IsNullOrWhiteSpace(point.LineEndingLabel) ? inspection.LineEndingLabel : point.LineEndingLabel,
+            PayloadBase64 = Convert.ToBase64String(backupBytes)
+        };
+
+        try
+        {
+            WriteJsonAtomically(normalizedDest, package);
+            var verified = InspectPortablePackage(normalizedDest);
+            if (!verified.IsValid ||
+                verified.ByteLength != backupBytes.LongLength ||
+                !string.Equals(verified.Sha256, point.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new IOException(string.IsNullOrWhiteSpace(verified.ErrorMessage)
+                    ? "迁移包写出后回读校验不一致。"
+                    : verified.ErrorMessage);
+            }
+
+            return new ConfigPortablePackageExportResult(
+                Succeeded: true,
+                DestinationPath: normalizedDest,
+                DisplayFileName: displayFileName,
+                ByteLength: backupBytes.LongLength,
+                Sha256: verified.Sha256,
+                Headline: "已导出配置还原点迁移包",
+                Detail: $"已将还原点保存的备份版本（{displayFileName}，{ConfigFormatting.FormatByteSize(backupBytes.LongLength)}，SHA-256：{verified.DisplayShortSha256}）导出至：{normalizedDest}。迁移包不包含源机目录路径或撤销记录，请妥善保管其中可能包含的账号、令牌或私人配置内容。");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return new ConfigPortablePackageExportResult(
+                Succeeded: false,
+                DestinationPath: normalizedDest,
+                DisplayFileName: displayFileName,
+                ByteLength: 0,
+                Sha256: "",
+                Headline: "导出还原点失败",
+                Detail: DescribeWriteFailure(ex));
+        }
+    }
+
+    public ConfigPortablePackageInspection InspectPortablePackage(string packagePath)
+    {
+        if (!TryNormalizeRegularFilePath(packagePath, mustExist: true, out var normalizedPath, out var pathError))
+            return InvalidPackage(packagePath ?? "", pathError);
+
+        try
+        {
+            var info = new FileInfo(normalizedPath);
+            if (info.Length == 0)
+                return InvalidPackage(normalizedPath, "迁移包文件为空，无法识别。");
+            if (info.Length > ConfigPortablePackageConstants.MaxPackageFileBytes)
+                return InvalidPackage(normalizedPath, $"迁移包体积超过安全限制（{ConfigFormatting.FormatByteSize(info.Length)}），已拒绝读取。");
+
+            var rawText = Utf8NoBom.GetString(ReadAllBytesShared(normalizedPath));
+            using var doc = JsonDocument.Parse(rawText);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return InvalidPackage(normalizedPath, "迁移包格式无法识别：根内容不是有效的 JSON 对象。");
+
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("format", out var fmtProp) || fmtProp.ValueKind != JsonValueKind.String)
+                return InvalidPackage(normalizedPath, "未知文件格式：缺少 Contain 配置还原点迁移包格式标识（format）。");
+
+            var format = fmtProp.GetString() ?? "";
+            if (!string.Equals(format, ConfigPortablePackageConstants.FormatId, StringComparison.Ordinal))
+                return InvalidPackage(normalizedPath, $"不支持的迁移包格式“{format}”；请选择 Contain 导出的 .contain-config-point 迁移包。");
+
+            if (!root.TryGetProperty("schema_version", out var verProp) ||
+                verProp.ValueKind != JsonValueKind.Number ||
+                !verProp.TryGetInt32(out var schemaVersion))
+            {
+                return InvalidPackage(normalizedPath, "迁移包缺少有效的格式版本号（schema_version）。");
+            }
+
+            if (schemaVersion != ConfigPortablePackageConstants.CurrentSchemaVersion)
+                return InvalidPackage(normalizedPath, $"不支持的迁移包格式版本 v{schemaVersion}（当前仅支持 v{ConfigPortablePackageConstants.CurrentSchemaVersion}），请升级 Contain 后重试。");
+
+            var parsed = JsonSerializer.Deserialize<ConfigPortablePackageFile>(rawText, JsonOptions);
+            if (parsed is null)
+                return InvalidPackage(normalizedPath, "迁移包结构解析失败，文件可能已损坏。");
+
+            if (string.IsNullOrWhiteSpace(parsed.DisplayFileName) || !IsSafeLeafFileName(parsed.DisplayFileName))
+                return InvalidPackage(normalizedPath, "迁移包中的显示文件名缺失或包含非法路径字符，已拒绝导入。");
+
+            if (parsed.ByteLength < 0 || parsed.ByteLength > ConfigPortablePackageConstants.MaxRawPayloadBytes)
+                return InvalidPackage(normalizedPath, $"迁移包声明的字节长度无效（{parsed.ByteLength}）。");
+
+            if (!IsValidSha256Hex(parsed.Sha256))
+                return InvalidPackage(normalizedPath, "迁移包缺少有效的 64 位 SHA-256 校验摘要，文件可能已损坏。");
+
+            if (parsed.PayloadBase64 is null || (parsed.ByteLength > 0 && parsed.PayloadBase64.Length == 0))
+                return InvalidPackage(normalizedPath, "迁移包缺少配置原始字节内容（payload_base64）。");
+
+            byte[] rawBytes;
+            try
+            {
+                rawBytes = parsed.PayloadBase64.Length == 0 ? [] : Convert.FromBase64String(parsed.PayloadBase64);
+            }
+            catch (FormatException)
+            {
+                return InvalidPackage(normalizedPath, "迁移包内容已损坏：原始字节载荷（Base64）无法解码。");
+            }
+
+            if (rawBytes.LongLength != parsed.ByteLength)
+            {
+                return InvalidPackage(
+                    normalizedPath,
+                    $"迁移包长度不符：声明 {parsed.ByteLength} 字节，实际解码为 {rawBytes.LongLength} 字节。已阻止导入，本机目标文件未被修改。");
+            }
+
+            var actualSha = ComputeSha256Hex(rawBytes);
+            if (!string.Equals(actualSha, parsed.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                return InvalidPackage(
+                    normalizedPath,
+                    $"迁移包内容校验失败：声明 SHA-256 为 {parsed.Sha256[..12]}…，实际内容为 {actualSha[..12]}…。文件可能已损坏或被修改，已阻止导入。");
+            }
+
+            var textInfo = ConfigTextDecoder.Inspect(rawBytes);
+            return new ConfigPortablePackageInspection(
+                IsValid: true,
+                PackagePath: normalizedPath,
+                SchemaVersion: schemaVersion,
+                Format: format,
+                ExportedAtUtc: parsed.ExportedAtUtc,
+                CreatedAtUtc: parsed.CreatedAtUtc,
+                DisplayFileName: parsed.DisplayFileName.Trim(),
+                Note: parsed.Note ?? "",
+                ByteLength: rawBytes.LongLength,
+                Sha256: actualSha,
+                EncodingLabel: textInfo.EncodingLabel,
+                LineEndingLabel: textInfo.LineEndingLabel,
+                RawBytes: rawBytes);
+        }
+        catch (JsonException ex)
+        {
+            return InvalidPackage(normalizedPath, $"未知或损坏的迁移包格式（JSON 解析失败：{ex.Message}）。");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return InvalidPackage(normalizedPath, $"无法读取迁移包文件：{ex.Message}");
+        }
+    }
+
+    public ConfigImportPreviewResult PreviewImportedPackageTarget(ConfigPortablePackageInspection package, string rawTargetPath)
+    {
+        ArgumentNullException.ThrowIfNull(package);
+
+        if (!package.IsValid)
+        {
+            return new ConfigImportPreviewResult(
+                Package: package,
+                TargetPath: rawTargetPath ?? "",
+                Status: ConfigImportTargetStatus.InvalidTargetPath,
+                LiveSnapshot: new ConfigLiveFileSnapshot(false, false, 0, "", 0, "", "", package.ErrorMessage),
+                DirectionLabel: "本机当前 → 恢复后",
+                Headline: "迁移包未通过校验",
+                Detail: package.ErrorMessage,
+                ActionSummary: "请先选择有效的 .contain-config-point 迁移包。",
+                IsTextDiffAvailable: false,
+                HasFormatOnlyDifference: false,
+                DiffFallbackNote: package.ErrorMessage,
+                RemovedLineCount: 0,
+                AddedLineCount: 0,
+                IsDiffTruncated: false,
+                DiffLines: []);
+        }
+
+        if (!TryNormalizeRegularFilePath(rawTargetPath, mustExist: false, out var targetPath, out var pathError))
+        {
+            return new ConfigImportPreviewResult(
+                Package: package,
+                TargetPath: rawTargetPath ?? "",
+                Status: ConfigImportTargetStatus.InvalidTargetPath,
+                LiveSnapshot: new ConfigLiveFileSnapshot(false, false, 0, "", 0, "", "", pathError),
+                DirectionLabel: "本机当前 → 恢复后",
+                Headline: "目标路径无效",
+                Detail: pathError,
+                ActionSummary: "请通过文件选择器指定本机上的普通配置文件路径（已有文件或待新建路径）。",
+                IsTextDiffAvailable: false,
+                HasFormatOnlyDifference: false,
+                DiffFallbackNote: pathError,
+                RemovedLineCount: 0,
+                AddedLineCount: 0,
+                IsDiffTruncated: false,
+                DiffLines: []);
+        }
+
+        var live = CaptureLiveSnapshot(targetPath, out var liveBytes);
+
+        if (IsTargetBusyInAnotherWindow(targetPath, out var busyLock))
+        {
+            var pidNote = busyLock is { OwnerPid: > 0 } ? $"（PID {busyLock.OwnerPid}）" : "";
+            return new ConfigImportPreviewResult(
+                Package: package,
+                TargetPath: targetPath,
+                Status: ConfigImportTargetStatus.TargetBusyInAnotherWindow,
+                LiveSnapshot: live,
+                DirectionLabel: "本机当前 → 恢复后（其他窗口正在操作）",
+                Headline: $"另一个 Contain 窗口{pidNote}正在操作此目标文件",
+                Detail: "为避免并发写入冲突，当前不可导入恢复到该文件；请待对方完成后点击刷新或重新预览。",
+                ActionSummary: "尚未写入磁盘，目标文件保持原样。",
+                IsTextDiffAvailable: false,
+                HasFormatOnlyDifference: false,
+                DiffFallbackNote: "另一个 Contain 窗口正持有此目标文件的写锁。",
+                RemovedLineCount: 0,
+                AddedLineCount: 0,
+                IsDiffTruncated: false,
+                DiffLines: []);
+        }
+
+        if (!live.Exists)
+        {
+            var detail = $"本机当前路径尚无此文件 → 确认后将在以下完整路径按原始字节新建文件：{targetPath}（{package.DisplaySize}，{package.DisplayFormatSummary}，SHA-256：{package.DisplayShortSha256}）。";
+            return new ConfigImportPreviewResult(
+                Package: package,
+                TargetPath: targetPath,
+                Status: ConfigImportTargetStatus.ReadyToCreate,
+                LiveSnapshot: live,
+                DirectionLabel: "本机当前（缺失） → 恢复后（将新建）",
+                Headline: "目标文件当前缺失，确认后将新建该文件",
+                Detail: detail,
+                ActionSummary: "将使用本机新记录保存此还原点并按原始字节新建目标文件；若后续撤销，预览会预告移除本次新建的文件。取消不会写入磁盘。",
+                IsTextDiffAvailable: false,
+                HasFormatOnlyDifference: false,
+                DiffFallbackNote: $"将新建完整路径：{targetPath}\n待写入大小与格式：{package.DisplaySize}（{package.DisplayFormatSummary}）\n待写入 SHA-256：{package.Sha256}",
+                RemovedLineCount: 0,
+                AddedLineCount: 0,
+                IsDiffTruncated: false,
+                DiffLines: []);
+        }
+
+        if (!live.IsReadable || liveBytes is null)
+        {
+            return new ConfigImportPreviewResult(
+                Package: package,
+                TargetPath: targetPath,
+                Status: ConfigImportTargetStatus.TargetReadFailed,
+                LiveSnapshot: live,
+                DirectionLabel: "本机当前 → 恢复后（读取失败）",
+                Headline: "无法读取本机目标文件",
+                Detail: string.IsNullOrWhiteSpace(live.ReadError) ? "目标文件可能正被其他程序独占占用或权限受限。" : live.ReadError,
+                ActionSummary: "覆盖前需要读取并保存本机当前版本以便撤销，当前不可执行写入。",
+                IsTextDiffAvailable: false,
+                HasFormatOnlyDifference: false,
+                DiffFallbackNote: $"读取失败原因：{live.ReadError}；迁移包内容 {package.DisplaySize}，SHA-256：{package.Sha256}。",
+                RemovedLineCount: 0,
+                AddedLineCount: 0,
+                IsDiffTruncated: false,
+                DiffLines: []);
+        }
+
+        if (live.ByteLength == package.ByteLength &&
+            string.Equals(live.Sha256, package.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            return new ConfigImportPreviewResult(
+                Package: package,
+                TargetPath: targetPath,
+                Status: ConfigImportTargetStatus.IdenticalToTarget,
+                LiveSnapshot: live,
+                DirectionLabel: "本机当前 → 恢复后（内容一致）",
+                Headline: "本机目标文件已与迁移包完全一致",
+                Detail: $"字节数（{package.DisplaySize}）、编码 BOM、换行格式与 SHA-256（{package.DisplayShortSha256}）均逐字节一致，当前无需覆盖写入。",
+                ActionSummary: "未修改目标文件；如需迁移到其他配置路径，可在上方重新选择目标文件。",
+                IsTextDiffAvailable: false,
+                HasFormatOnlyDifference: false,
+                DiffFallbackNote: "本机当前文件与迁移包内容逐字节一致，无需重复写入。",
+                RemovedLineCount: 0,
+                AddedLineCount: 0,
+                IsDiffTruncated: false,
+                DiffLines: []);
+        }
+
+        var liveText = ConfigTextDecoder.Inspect(liveBytes);
+        var pkgText = ConfigTextDecoder.Inspect(package.RawBytes);
+        var actionSummary = "覆盖前自动保存本机撤销副本（B）并创建本机还原点，恢复后可随时逐字节撤销；取消不写入磁盘。";
+
+        if (!liveText.IsRecognizedText || !pkgText.IsRecognizedText)
+        {
+            var reason = !liveText.IsRecognizedText ? liveText.UnrecognizedReason : pkgText.UnrecognizedReason;
+            return new ConfigImportPreviewResult(
+                Package: package,
+                TargetPath: targetPath,
+                Status: ConfigImportTargetStatus.ReadyToOverwrite,
+                LiveSnapshot: live,
+                DirectionLabel: "本机当前 → 恢复后",
+                Headline: "本机当前 → 恢复后：按原始字节覆盖目标文件",
+                Detail: $"编码无法可靠识别（本机当前 {live.DisplaySize}，{live.DisplayShortSha256} → 恢复后 {package.DisplaySize}，{package.DisplayShortSha256}）；确认后将按原始字节精确写入。",
+                ActionSummary: actionSummary,
+                IsTextDiffAvailable: false,
+                HasFormatOnlyDifference: false,
+                DiffFallbackNote: $"{reason} 不会重新编码，始终写入迁移包的原始字节。",
+                RemovedLineCount: 0,
+                AddedLineCount: 0,
+                IsDiffTruncated: false,
+                DiffLines: []);
+        }
+
+        var diff = ConfigLineDiffer.Compute(liveText.Lines, pkgText.Lines);
+        if (diff.RemovedCount == 0 && diff.AddedCount == 0)
+        {
+            return new ConfigImportPreviewResult(
+                Package: package,
+                TargetPath: targetPath,
+                Status: ConfigImportTargetStatus.ReadyToOverwrite,
+                LiveSnapshot: live,
+                DirectionLabel: "本机当前 → 恢复后",
+                Headline: "本机当前 → 恢复后：仅编码 BOM 或换行格式变化",
+                Detail: $"文本行内容相同，但编码或换行将变化（本机当前：{live.DisplayFormatSummary} → 恢复后：{package.DisplayFormatSummary}）。",
+                ActionSummary: actionSummary,
+                IsTextDiffAvailable: false,
+                HasFormatOnlyDifference: true,
+                DiffFallbackNote: "文本行无增删，确认后将严格按迁移包原始字节保留 BOM 与换行格式。",
+                RemovedLineCount: 0,
+                AddedLineCount: 0,
+                IsDiffTruncated: false,
+                DiffLines: []);
+        }
+
+        return new ConfigImportPreviewResult(
+            Package: package,
+            TargetPath: targetPath,
+            Status: ConfigImportTargetStatus.ReadyToOverwrite,
+            LiveSnapshot: live,
+            DirectionLabel: "本机当前 → 恢复后",
+            Headline: $"本机当前 → 恢复后：将移除 {diff.RemovedCount} 行本机内容、写入 {diff.AddedCount} 行迁移包内容",
+            Detail: $"本机当前 {live.DisplaySize}（{live.DisplayFormatSummary}，{live.DisplayShortSha256}）→ 恢复后 {package.DisplaySize}（{package.DisplayFormatSummary}，{package.DisplayShortSha256}）。",
+            ActionSummary: actionSummary,
+            IsTextDiffAvailable: true,
+            HasFormatOnlyDifference: false,
+            DiffFallbackNote: diff.Truncated ? $"差异较长，仅展示前 {ConfigLineDiffer.MaxDisplayedRows} 行；确认后仍将完整写入迁移包的全部原始字节。" : "",
+            RemovedLineCount: diff.RemovedCount,
+            AddedLineCount: diff.AddedCount,
+            IsDiffTruncated: diff.Truncated,
+            DiffLines: diff.Lines);
+    }
+
+    public ConfigImportRestoreResult ImportAndRestorePackage(
+        ConfigPortablePackageInspection package,
+        string rawTargetPath,
+        ConfigLiveFileSnapshot expectedLiveSnapshot)
+    {
+        ArgumentNullException.ThrowIfNull(package);
+        ArgumentNullException.ThrowIfNull(expectedLiveSnapshot);
+
+        if (!package.IsValid ||
+            package.RawBytes.LongLength != package.ByteLength ||
+            !string.Equals(ComputeSha256Hex(package.RawBytes), package.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            return new ConfigImportRestoreResult(
+                Outcome: ConfigRestoreOutcomeKind.Failed,
+                Headline: "导入恢复已阻止：迁移包校验未通过",
+                Detail: string.IsNullOrWhiteSpace(package.ErrorMessage) ? "迁移包内容完整性校验失败，目标文件未被修改。" : package.ErrorMessage,
+                TargetPath: rawTargetPath ?? "",
+                ExpectedSha256: package.Sha256,
+                ActualSha256: "",
+                ExistingFilePreserved: true,
+                ImportedPoint: null,
+                UndoSnapshot: null);
+        }
+
+        if (!TryNormalizeRegularFilePath(rawTargetPath, mustExist: false, out var targetPath, out var pathError))
+        {
+            return new ConfigImportRestoreResult(
+                Outcome: ConfigRestoreOutcomeKind.Failed,
+                Headline: "导入恢复失败：目标路径无效",
+                Detail: $"{pathError} 现有路径未被修改。",
+                TargetPath: rawTargetPath ?? "",
+                ExpectedSha256: package.Sha256,
+                ActualSha256: "",
+                ExistingFilePreserved: true,
+                ImportedPoint: null,
+                UndoSnapshot: null);
+        }
+
+        // Reuse v0.7.0 cross-process per-target exclusive write lock!
+        if (!TryAcquireTargetLock(targetPath, "restore", "", out var targetLock, out var busyLock) || targetLock is null)
+        {
+            var pidNote = busyLock is { OwnerPid: > 0 } ? $"（PID {busyLock.OwnerPid}）" : "";
+            var opLabel = busyLock?.OperationKind == "undo" ? "撤销" : "恢复";
+            return new ConfigImportRestoreResult(
+                Outcome: ConfigRestoreOutcomeKind.BusyInAnotherWindow,
+                Headline: "操作已暂缓：另一个 Contain 窗口正在操作此文件",
+                Detail: $"检测到另一个 Contain 窗口{pidNote}正在对该配置文件执行{opLabel}。为避免并发写冲突，本次未写入目标文件，请待对方完成后再刷新重试。",
+                TargetPath: targetPath,
+                ExpectedSha256: package.Sha256,
+                ActualSha256: "",
+                ExistingFilePreserved: true,
+                ImportedPoint: null,
+                UndoSnapshot: null,
+                RefreshedImportPreview: PreviewImportedPackageTarget(package, targetPath));
+        }
+
+        using (targetLock)
+        {
+            // Re-read live target AFTER acquiring lock to catch any external edit during preview!
+            var freshLive = CaptureLiveSnapshot(targetPath, out var freshLiveBytes);
+            if (!freshLive.MatchesContentOf(expectedLiveSnapshot))
+            {
+                var refreshedPreview = PreviewImportedPackageTarget(package, targetPath);
+                var alreadyIdentical = refreshedPreview.Status == ConfigImportTargetStatus.IdenticalToTarget;
+                return new ConfigImportRestoreResult(
+                    Outcome: ConfigRestoreOutcomeKind.RefreshedDueToExternalEdit,
+                    Headline: alreadyIdentical
+                        ? "目标文件已与迁移包一致（未重复写入）"
+                        : "目标文件在确认期间已被外部修改",
+                    Detail: alreadyIdentical
+                        ? "确认前重新读取目标文件，发现磁盘内容已等于该迁移包，本次未重复写入，已刷新最新状态。"
+                        : "为保住目标文件的最新改动，本次尚未写入磁盘。已刷新「本机当前 → 恢复后」差异，请核对后再次确认。",
+                    TargetPath: targetPath,
+                    ExpectedSha256: package.Sha256,
+                    ActualSha256: freshLive.Sha256,
+                    ExistingFilePreserved: true,
+                    ImportedPoint: null,
+                    UndoSnapshot: null,
+                    RefreshedImportPreview: refreshedPreview);
+            }
+
+            if (freshLive.Exists && (!freshLive.IsReadable || freshLiveBytes is null))
+            {
+                return new ConfigImportRestoreResult(
+                    Outcome: ConfigRestoreOutcomeKind.Failed,
+                    Headline: "导入恢复失败：覆盖前无法读取并保存本机当前版本",
+                    Detail: $"无法保住本机当前文件副本（{freshLive.ReadError}），因此未执行覆盖；现有文件未被修改。",
+                    TargetPath: targetPath,
+                    ExpectedSha256: package.Sha256,
+                    ActualSha256: "",
+                    ExistingFilePreserved: true,
+                    ImportedPoint: null,
+                    UndoSnapshot: null,
+                    RefreshedImportPreview: PreviewImportedPackageTarget(package, targetPath));
+            }
+
+            // Create a brand-new LOCAL restore point identity bound to THIS receiving machine's targetPath!
+            // Source-machine target path and undo history are NEVER imported.
+            ConfigRestorePointRecord localPoint;
+            string? pointBlobPath = null;
+            string? pointMetaPath = null;
+            try
+            {
+                Directory.CreateDirectory(pointsDir);
+                Directory.CreateDirectory(blobsDir);
+
+                var pointId = Guid.NewGuid().ToString("N")[..12];
+                var blobRel = Path.Combine("Blobs", pointId + ".bin");
+                pointBlobPath = Path.Combine(StorageRoot, blobRel);
+                WriteBytesAtomically(pointBlobPath, package.RawBytes);
+                var savedSha = ComputeFileSha256Hex(pointBlobPath);
+                if (!string.Equals(savedSha, package.Sha256, StringComparison.OrdinalIgnoreCase))
+                    throw new IOException("导入还原点副本写入后 SHA-256 校验不一致。");
+
+                var dirPath = Path.GetDirectoryName(targetPath) ?? "";
+                var parentFolder = Path.GetFileName(dirPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                localPoint = new ConfigRestorePointRecord
+                {
+                    SchemaVersion = 1,
+                    PointId = pointId,
+                    CreatedAtUtc = DateTimeOffset.UtcNow,
+                    Note = string.IsNullOrWhiteSpace(package.Note) ? $"导入自迁移包（{package.DisplayFileName}）" : package.Note.Trim(),
+                    TargetPath = targetPath,
+                    TargetFileName = Path.GetFileName(targetPath),
+                    TargetDirectory = dirPath,
+                    ParentFolderName = string.IsNullOrWhiteSpace(parentFolder) ? dirPath : parentFolder,
+                    ByteLength = package.RawBytes.LongLength,
+                    Sha256 = package.Sha256,
+                    BackupBlobRelativePath = blobRel,
+                    EncodingLabel = package.EncodingLabel,
+                    LineEndingLabel = package.LineEndingLabel
+                };
+
+                pointMetaPath = Path.Combine(pointsDir, pointId + ".json");
+                WriteJsonAtomically(pointMetaPath, localPoint);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                if (pointBlobPath is not null) TryDeleteFile(pointBlobPath);
+                if (pointMetaPath is not null) TryDeleteFile(pointMetaPath);
+                return new ConfigImportRestoreResult(
+                    Outcome: ConfigRestoreOutcomeKind.Failed,
+                    Headline: "导入恢复失败：无法在本机保存导入的还原点",
+                    Detail: $"目标文件未被修改。（{ex.Message}）",
+                    TargetPath: targetPath,
+                    ExpectedSha256: package.Sha256,
+                    ActualSha256: freshLive.Sha256,
+                    ExistingFilePreserved: true,
+                    ImportedPoint: null,
+                    UndoSnapshot: null);
+            }
+
+            // Execute the EXACT SAME v0.7.0 phased crash-safe restore core under the held targetLock!
+            var restoreRes = ExecutePhasedRestoreUnderLock(localPoint, targetPath, package.RawBytes, freshLive, freshLiveBytes, targetLock);
+
+            // If restore failed before modifying the target (provably untouched), roll back the tentative local point so no clutter remains.
+            if (restoreRes.Outcome == ConfigRestoreOutcomeKind.Failed && restoreRes.ExistingFilePreserved)
+            {
+                if (pointBlobPath is not null) TryDeleteFile(pointBlobPath);
+                if (pointMetaPath is not null) TryDeleteFile(pointMetaPath);
+                return new ConfigImportRestoreResult(
+                    Outcome: ConfigRestoreOutcomeKind.Failed,
+                    Headline: restoreRes.Headline,
+                    Detail: restoreRes.Detail,
+                    TargetPath: targetPath,
+                    ExpectedSha256: package.Sha256,
+                    ActualSha256: restoreRes.ActualSha256,
+                    ExistingFilePreserved: true,
+                    ImportedPoint: null,
+                    UndoSnapshot: null,
+                    RefreshedImportPreview: PreviewImportedPackageTarget(package, targetPath));
+            }
+
+            var headline = restoreRes.Outcome == ConfigRestoreOutcomeKind.Succeeded
+                ? (freshLive.Exists ? "已导入还原点并恢复目标文件" : "已导入还原点并新建目标文件")
+                : restoreRes.Headline;
+
+            return new ConfigImportRestoreResult(
+                Outcome: restoreRes.Outcome,
+                Headline: headline,
+                Detail: restoreRes.Detail,
+                TargetPath: restoreRes.TargetPath,
+                ExpectedSha256: restoreRes.ExpectedSha256,
+                ActualSha256: restoreRes.ActualSha256,
+                ExistingFilePreserved: restoreRes.ExistingFilePreserved,
+                ImportedPoint: localPoint,
+                UndoSnapshot: restoreRes.UndoSnapshot,
+                OriginalCopyPreserved: restoreRes.OriginalCopyPreserved,
+                RefreshFailed: restoreRes.RefreshFailed);
+        }
+    }
+
+    private static ConfigPortablePackageInspection InvalidPackage(string path, string error) =>
+        new(
+            IsValid: false,
+            PackagePath: path,
+            SchemaVersion: 0,
+            Format: "",
+            ExportedAtUtc: default,
+            CreatedAtUtc: default,
+            DisplayFileName: "",
+            Note: "",
+            ByteLength: 0,
+            Sha256: "",
+            EncodingLabel: "",
+            LineEndingLabel: "",
+            RawBytes: [],
+            ErrorMessage: error);
+
+    private static string SanitizeDisplayFileName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "";
+        var leaf = Path.GetFileName(name.Trim());
+        if (string.IsNullOrWhiteSpace(leaf) || leaf is "." or "..") return "";
+        foreach (var bad in Path.GetInvalidFileNameChars())
+            leaf = leaf.Replace(bad, '_');
+        return leaf.Trim();
+    }
+
+    private static bool IsSafeLeafFileName(string name)
+    {
+        var trimmed = name.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed) || trimmed is "." or "..") return false;
+        if (trimmed.Contains('\\') || trimmed.Contains('/') || trimmed.Contains(':') || trimmed.Contains("..")) return false;
+        return trimmed.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;
+    }
+
+    private static bool IsValidSha256Hex(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length != 64) return false;
+        foreach (var ch in value)
+        {
+            var ok = (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F');
+            if (!ok) return false;
+        }
+        return true;
     }
 
     public ConfigUndoSnapshot? LoadLatestActiveUndo()
@@ -2741,6 +3396,12 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
         if (Directory.Exists(fullPath))
         {
             error = "所选路径是文件夹而非文件；第一版仅支持单个本地配置文件。";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(Path.GetFileName(fullPath)))
+        {
+            error = "路径缺少具体文件名；请指定单个本地配置文件路径。";
             return false;
         }
 

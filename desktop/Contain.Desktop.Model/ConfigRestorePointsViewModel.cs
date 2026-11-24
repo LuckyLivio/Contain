@@ -37,6 +37,19 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     private ConfigOriginalCopyPreview? originalCopyPreview;
     private ConfigUndoSnapshot? originalCopySource;
 
+    // Portable restore point export ("导出还原点…") state
+    private bool isExportingPackage;
+    private string exportPackagePathInput = "";
+
+    // Portable restore point import ("导入还原点…") state
+    private bool isImportingPackage;
+    private string importPackagePathInput = "";
+    private string importTargetPathInput = "";
+    private ConfigPortablePackageInspection? importedPackage;
+    private ConfigImportPreviewResult? importPreview;
+    private ConfigLiveFileSnapshot? confirmedImportLiveSnapshot;
+    private string importMidConfirmWarning = "";
+
     private bool hasOperationBanner;
     private bool isOperationBannerError;
     private bool isOperationBannerWarning;
@@ -55,6 +68,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     public ObservableCollection<ConfigDiffLine> DiffLines { get; } = [];
     public ObservableCollection<ConfigDiffLine> UndoDiffLines { get; } = [];
     public ObservableCollection<ConfigCopyPreviewLine> OriginalCopyLines { get; } = [];
+    public ObservableCollection<ConfigDiffLine> ImportDiffLines { get; } = [];
 
     public string TargetFilePathInput
     {
@@ -117,9 +131,10 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     }
 
     public bool HasSelectedPoint => selectedPoint is not null && comparison is not null;
-    public bool HasNoSelectedPoint => !HasSelectedPoint && !IsPreviewingUndo && !IsViewingOriginalCopy && !HasRecoveryCard;
-    public bool ShowSelectedPointPanels => HasSelectedPoint && !IsPreviewingUndo && !IsViewingOriginalCopy;
-    public bool ShowDetailHeaderCard => HasSelectedPoint && !isConfirmingRestore && !IsPreviewingUndo && !IsViewingOriginalCopy;
+    public bool ShowCreateCard => !isImportingPackage;
+    public bool HasNoSelectedPoint => !HasSelectedPoint && !IsPreviewingUndo && !IsViewingOriginalCopy && !HasRecoveryCard && !isImportingPackage;
+    public bool ShowSelectedPointPanels => HasSelectedPoint && !IsPreviewingUndo && !IsViewingOriginalCopy && !isImportingPackage;
+    public bool ShowDetailHeaderCard => HasSelectedPoint && !isConfirmingRestore && !isExportingPackage && !IsPreviewingUndo && !IsViewingOriginalCopy && !isImportingPackage;
     public ConfigComparisonResult? Comparison => comparison;
     public ConfigUndoPreviewResult? UndoPreview => undoPreview;
 
@@ -181,11 +196,143 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     public bool CanBeginRestore =>
         !busy &&
         !isConfirmingRestore &&
+        !isExportingPackage &&
         !isPreviewingUndo &&
         !isViewingOriginalCopy &&
+        !isImportingPackage &&
         !IsSelectedTargetBusyInAnotherWindow &&
         comparison is { BackupIntegrityValid: true } c &&
         c.Status is ConfigComparisonStatus.Changed or ConfigComparisonStatus.Missing;
+
+    // Portable Restore Point Export ("导出还原点…" — exports saved backup A, distinct from "另存原副本…" for pre-restore B)
+    public bool CanBeginExportRestorePoint =>
+        !busy &&
+        !isConfirmingRestore &&
+        !isExportingPackage &&
+        !isPreviewingUndo &&
+        !isViewingOriginalCopy &&
+        !isImportingPackage &&
+        selectedPoint is not null &&
+        comparison is { BackupIntegrityValid: true };
+
+    public bool IsExportingPackage => isExportingPackage && selectedPoint is not null;
+    public bool ShowExportPackageCard => ShowSelectedPointPanels && IsExportingPackage;
+    public string ExportPackagePathInput
+    {
+        get => exportPackagePathInput;
+        set
+        {
+            var next = value ?? "";
+            if (string.Equals(exportPackagePathInput, next, StringComparison.Ordinal)) return;
+            exportPackagePathInput = next;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CanConfirmExportPackage));
+        }
+    }
+    public bool CanConfirmExportPackage => !busy && IsExportingPackage && !string.IsNullOrWhiteSpace(exportPackagePathInput);
+    public string SuggestedPortablePackageFileName => ConfigFormatting.BuildSuggestedPortablePackageFileName(selectedPoint?.TargetFileName);
+    public string ExportPackageTitle => selectedPoint is null ? "" : $"导出还原点迁移包：{selectedPoint.DisplayScopedName}";
+    public string ExportPackageVersionSummary
+    {
+        get
+        {
+            if (selectedPoint is null) return "";
+            var diskNote = comparison?.Status switch
+            {
+                ConfigComparisonStatus.Changed => "（当前磁盘文件已有修改，导出仍使用建点时保存的备份版本）",
+                ConfigComparisonStatus.Missing => "（当前磁盘文件已缺失，导出仍使用建点时保存的备份版本）",
+                ConfigComparisonStatus.ReadFailed => "（当前磁盘文件不可读，导出仍使用建点时保存的备份版本）",
+                _ => "（导出的是所选还原点保存的原始字节备份，并非恢复冲突时的「覆盖前原副本」）"
+            };
+            return $"导出版本：{selectedPoint.TargetFileName} · {selectedPoint.DisplaySize} · {selectedPoint.DisplayFormatSummary} · SHA-256：{selectedPoint.DisplayShortSha256} {diskNote}";
+        }
+    }
+    public string ExportPackagePrivacyNotice =>
+        "隐私提醒：配置文件可能包含令牌、账号、密钥或私人路径。Contain 会原样保留文件原始字节以确保恢复逐字节一致；迁移包不包含源机目录路径或撤销记录，传输前请妥善保管。";
+
+    // Portable Restore Point Import ("导入还原点…")
+    public bool CanOpenImportWorkspace => !busy;
+    public bool IsImportingPackage => isImportingPackage;
+    public bool ShowImportPanel => isImportingPackage;
+    public string ImportPackagePathInput
+    {
+        get => importPackagePathInput;
+        set
+        {
+            var next = value ?? "";
+            if (string.Equals(importPackagePathInput, next, StringComparison.Ordinal)) return;
+            importPackagePathInput = next;
+            OnPropertyChanged();
+            InspectImportedPackageInput();
+        }
+    }
+    public string ImportTargetPathInput
+    {
+        get => importTargetPathInput;
+        set
+        {
+            var next = value ?? "";
+            if (string.Equals(importTargetPathInput, next, StringComparison.Ordinal)) return;
+            importTargetPathInput = next;
+            OnPropertyChanged();
+            RefreshImportTargetPreviewCore();
+        }
+    }
+    public ConfigPortablePackageInspection? ImportedPackage => importedPackage;
+    public ConfigImportPreviewResult? ImportPreview => importPreview;
+    public bool HasValidImportedPackage => importedPackage is { IsValid: true };
+    public bool HasInvalidImportedPackage => importedPackage is { IsValid: false } && !string.IsNullOrWhiteSpace(importedPackage.ErrorMessage);
+    public string ImportedPackageErrorMessage => importedPackage?.ErrorMessage ?? "";
+    public string ImportedPackageDisplayFileName => importedPackage is { IsValid: true } p ? p.DisplayFileName : "";
+    public string ImportedPackageVerifiedHeadline => importedPackage is { IsValid: true } p
+        ? $"校验通过（v{p.SchemaVersion}）· {p.DisplayFileName} · {p.DisplaySize} · {p.DisplayFormatSummary} · SHA-256：{p.DisplayShortSha256}"
+        : "";
+    public string ImportedPackageVerifiedMeta => importedPackage is { IsValid: true } p
+        ? $"备注：{p.DisplayNote} · 包内文件名仅作展示，写入位置由下方本机目标决定"
+        : "";
+
+    public bool HasImportPreview => HasValidImportedPackage && importPreview is not null;
+    public bool IsImportReadyToCreate => importPreview?.Status == ConfigImportTargetStatus.ReadyToCreate;
+    public bool IsImportReadyToOverwrite => importPreview?.Status == ConfigImportTargetStatus.ReadyToOverwrite;
+    public bool IsImportIdentical => importPreview?.Status == ConfigImportTargetStatus.IdenticalToTarget;
+    public bool IsImportPreviewError => importPreview?.IsErrorOrBlocked == true;
+    public string ImportPreviewTitle => importedPackage is { IsValid: true } p && importPreview is not null
+        ? $"导入预览：{ConfigFormatting.FormatScopedName(importPreview.TargetPath)}"
+        : "导入预览";
+    public string ImportPreviewDirectionLabel => importPreview?.DirectionLabel ?? "本机当前 → 恢复后";
+    public string ImportPreviewTargetPath => importPreview?.TargetPath ?? "";
+    public string ImportPreviewHeadline => importPreview?.Headline ?? "";
+    public string ImportPreviewFormatTransition
+    {
+        get
+        {
+            if (importedPackage is not { IsValid: true } pkg || importPreview is null) return "";
+            if (importPreview.Status == ConfigImportTargetStatus.ReadyToCreate)
+                return $"状态：当前缺失（将新建）→ 恢复后 {pkg.DisplaySize}（{pkg.DisplayFormatSummary}，{pkg.DisplayShortSha256}）";
+            if (importPreview.Status == ConfigImportTargetStatus.IdenticalToTarget)
+                return $"校验：本机当前与迁移包逐字节一致（{pkg.DisplaySize} · {pkg.DisplayFormatSummary} · {pkg.DisplayShortSha256}）";
+            if (importPreview.IsErrorOrBlocked)
+                return importPreview.Detail;
+            return $"格式与哈希：{importPreview.LiveSnapshot.DisplaySize}（{importPreview.LiveSnapshot.DisplayFormatSummary}，{importPreview.LiveSnapshot.DisplayShortSha256}）→ {pkg.DisplaySize}（{pkg.DisplayFormatSummary}，{pkg.DisplayShortSha256}）";
+        }
+    }
+    public string ImportPreviewActionSummary => importPreview?.ActionSummary ?? "";
+    public bool HasImportMidConfirmWarning => !string.IsNullOrWhiteSpace(importMidConfirmWarning);
+    public string ImportMidConfirmWarningText => importMidConfirmWarning;
+    public bool CanConfirmImportRestore => !busy && HasValidImportedPackage && importPreview is { CanConfirm: true };
+    public string ConfirmImportRestoreButtonText => IsImportReadyToCreate
+        ? "确认恢复（新建目标文件）"
+        : "确认恢复（覆盖并保留本机撤销副本）";
+    public bool HasImportTextDiff => importPreview is { IsTextDiffAvailable: true } && ImportDiffLines.Count > 0;
+    public bool ShowImportDiffFallback => importPreview is not null && !HasImportTextDiff && !string.IsNullOrWhiteSpace(importPreview.DiffFallbackNote);
+    public string ImportDiffFallbackNote => importPreview?.DiffFallbackNote ?? "";
+    public string ImportDiffHeaderSummary => importPreview switch
+    {
+        { IsTextDiffAvailable: true } p => $"逐行变更预览：本机当前 → 恢复后（- 移除本机 / + 写入迁移包 · 共 -{p.RemovedLineCount} / +{p.AddedLineCount} 行）",
+        { Status: ConfigImportTargetStatus.ReadyToCreate } => "新建目标文件预览（本机当前缺失 → 恢复后新建）",
+        _ => "导入对比说明"
+    };
+    public bool HasImportDiffTruncationNote => importPreview is { IsTextDiffAvailable: true, IsDiffTruncated: true } && !string.IsNullOrWhiteSpace(importPreview.DiffFallbackNote);
 
     public bool IsSelectedTargetBusyInAnotherWindow =>
         selectedPoint is not null &&
@@ -225,7 +372,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     // Interruption recovery card & shell banner properties
     public ConfigRecoveryReport? ActiveRecoveryReport => activeRecoveryReport;
     public bool HasRecoveryCard => activeRecoveryReport is not null && activeRecoveryReport.Status != ConfigRecoveryStatus.None;
-    public bool ShowRecoveryCard => HasRecoveryCard && !IsPreviewingUndo && !IsViewingOriginalCopy;
+    public bool ShowRecoveryCard => HasRecoveryCard && !IsPreviewingUndo && !IsViewingOriginalCopy && !isImportingPackage;
     public bool HasPendingRecoveryShellBanner => HasRecoveryCard;
     public string PendingRecoveryShellBannerText => activeRecoveryReport is null
         ? ""
@@ -278,7 +425,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     // Undo bar & lightweight Undo Preview properties
     public ConfigUndoSnapshot? LatestUndo => latestUndo;
     public bool CanUndoLastRestore => !busy && latestUndo is { Consumed: false };
-    public bool ShowUndoBar => CanUndoLastRestore && !IsPreviewingUndo && !IsViewingOriginalCopy && !(ShowRecoveryCard && CanUndoFromRecovery);
+    public bool ShowUndoBar => CanUndoLastRestore && !IsPreviewingUndo && !IsViewingOriginalCopy && !isImportingPackage && !(ShowRecoveryCard && CanUndoFromRecovery);
     public string UndoTargetScopedName => latestUndo is { Consumed: false } u ? u.DisplayTargetScopedName : "";
     public string UndoTargetFullPath => latestUndo is { Consumed: false } u ? u.TargetPath : "";
     public bool IsUndoTargetDifferentFromSelected =>
@@ -301,7 +448,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         : "";
 
     public bool IsPreviewingUndo => isPreviewingUndo && undoPreview is not null;
-    public bool ShowUndoPreviewPanel => IsPreviewingUndo && !IsViewingOriginalCopy;
+    public bool ShowUndoPreviewPanel => IsPreviewingUndo && !IsViewingOriginalCopy && !isImportingPackage;
     public string UndoPreviewTitle => undoPreview is null ? "" : $"撤销预览：{undoPreview.UndoSnapshot.DisplayTargetScopedName}";
     public string UndoPreviewDirectionLabel => undoPreview?.DirectionLabel ?? "当前文件 → 撤销后";
     public string UndoPreviewTargetPath => undoPreview?.UndoSnapshot.TargetPath ?? "";
@@ -386,6 +533,8 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
             latestUndo = service.LoadLatestActiveUndo();
             ClearUndoPreviewCore();
             ClearOriginalCopyPreviewCore();
+            ClearExportPackageCore();
+            ClearImportWorkspaceCore();
 
             if (selectedPoint is not null)
                 selectedPoint = allPoints.FirstOrDefault(p => string.Equals(p.PointId, selectedPoint.PointId, StringComparison.OrdinalIgnoreCase));
@@ -581,6 +730,8 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         ClearOperationBanner();
         ClearUndoPreviewCore();
         ClearOriginalCopyPreviewCore();
+        ClearExportPackageCore();
+        ClearImportWorkspaceCore();
         NotifyAll();
 
         try
@@ -619,13 +770,15 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
 
     public void SelectPoint(ConfigRestorePointRecord? point)
     {
-        if (ReferenceEquals(selectedPoint, point)) return;
+        if (ReferenceEquals(selectedPoint, point) && !isImportingPackage && !isExportingPackage) return;
         selectedPoint = point;
         isConfirmingRestore = false;
         confirmedLiveSnapshot = null;
         midConfirmWarning = "";
         ClearUndoPreviewCore();
         ClearOriginalCopyPreviewCore();
+        ClearExportPackageCore();
+        ClearImportWorkspaceCore();
         errorMessage = "";
         if (selectedPoint is not null)
         {
@@ -645,6 +798,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         errorMessage = "";
         ClearUndoPreviewCore();
         ClearOriginalCopyPreviewCore();
+        ClearExportPackageCore();
         RefreshSelectedComparisonCore(ConfigDiffDirection.BackupToCurrent, preserveConfirmation: false);
         statusMessage = $"已重新核对“{selectedPoint.DisplayScopedName}”：{comparison?.StatusHeadline}";
         NotifyAll();
@@ -657,6 +811,8 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         ClearOperationBanner();
         ClearUndoPreviewCore();
         ClearOriginalCopyPreviewCore();
+        ClearExportPackageCore();
+        ClearImportWorkspaceCore();
         midConfirmWarning = "";
 
         if (service.IsTargetBusyInAnotherWindow(selectedPoint.TargetPath, out var busyLock))
@@ -815,6 +971,8 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         errorMessage = "";
         ClearOperationBanner();
         ClearOriginalCopyPreviewCore();
+        ClearExportPackageCore();
+        ClearImportWorkspaceCore();
         isConfirmingRestore = false;
         confirmedLiveSnapshot = null;
         midConfirmWarning = "";
@@ -938,6 +1096,336 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     }
 
     public void ClearSearch() => SearchQuery = "";
+
+    // --- Portable Restore Point Export ("导出还原点…") ---
+
+    public void BeginExportRestorePoint()
+    {
+        if (!CanBeginExportRestorePoint || selectedPoint is null) return;
+        errorMessage = "";
+        ClearOperationBanner();
+        ClearUndoPreviewCore();
+        ClearOriginalCopyPreviewCore();
+        ClearImportWorkspaceCore();
+        isConfirmingRestore = false;
+        confirmedLiveSnapshot = null;
+        midConfirmWarning = "";
+
+        isExportingPackage = true;
+        exportPackagePathInput = "";
+        OnPropertyChanged(nameof(ExportPackagePathInput));
+        statusMessage = $"准备导出还原点“{selectedPoint.DisplayScopedName}”的保存备份（SHA-256：{selectedPoint.DisplayShortSha256}）。";
+        NotifyAll();
+    }
+
+    public void SelectExportPackagePath(string path)
+    {
+        if (!isExportingPackage) return;
+        exportPackagePathInput = path ?? "";
+        OnPropertyChanged(nameof(ExportPackagePathInput));
+        OnPropertyChanged(nameof(CanConfirmExportPackage));
+    }
+
+    public void CancelExportRestorePoint()
+    {
+        if (!isExportingPackage) return;
+        ClearExportPackageCore();
+        statusMessage = "已取消导出还原点迁移包。";
+        NotifyAll();
+    }
+
+    public ConfigPortablePackageExportResult? ConfirmExportRestorePoint()
+    {
+        if (!CanConfirmExportPackage || selectedPoint is null) return null;
+        return ExportRestorePointPackage(exportPackagePathInput);
+    }
+
+    public ConfigPortablePackageExportResult? ExportRestorePointPackage(string destinationPath)
+    {
+        if (busy || selectedPoint is null) return null;
+        busy = true;
+        errorMessage = "";
+        NotifyAll();
+
+        try
+        {
+            var result = service.ExportRestorePointPackage(selectedPoint, destinationPath);
+            SetOperationBanner(result.Headline, result.Detail, isError: !result.Succeeded, isWarning: false);
+            if (result.Succeeded)
+            {
+                ClearExportPackageCore();
+            }
+            else
+            {
+                errorMessage = result.Detail;
+            }
+            statusMessage = result.Headline;
+            return result;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            SetOperationBanner("导出还原点失败", ex.Message, isError: true, isWarning: false);
+            errorMessage = ex.Message;
+            statusMessage = errorMessage;
+            return null;
+        }
+        finally
+        {
+            busy = false;
+            NotifyAll();
+        }
+    }
+
+    // --- Portable Restore Point Import ("导入还原点…") ---
+
+    public void OpenImportWorkspace()
+    {
+        if (busy) return;
+        errorMessage = "";
+        ClearOperationBanner();
+        ClearUndoPreviewCore();
+        ClearOriginalCopyPreviewCore();
+        ClearExportPackageCore();
+        isConfirmingRestore = false;
+        confirmedLiveSnapshot = null;
+        midConfirmWarning = "";
+
+        isImportingPackage = true;
+        importPackagePathInput = "";
+        importTargetPathInput = "";
+        importedPackage = null;
+        importPreview = null;
+        confirmedImportLiveSnapshot = null;
+        importMidConfirmWarning = "";
+        ImportDiffLines.Clear();
+        OnPropertyChanged(nameof(ImportPackagePathInput));
+        OnPropertyChanged(nameof(ImportTargetPathInput));
+        statusMessage = "请选择要导入的配置还原点迁移包（.contain-config-point）。打开与预览均不会写入本机文件。";
+        NotifyAll();
+    }
+
+    public void OpenImportPackage(string packagePath)
+    {
+        if (busy) return;
+        if (!isImportingPackage)
+        {
+            ClearOperationBanner();
+            ClearUndoPreviewCore();
+            ClearOriginalCopyPreviewCore();
+            ClearExportPackageCore();
+            isConfirmingRestore = false;
+            confirmedLiveSnapshot = null;
+            midConfirmWarning = "";
+            isImportingPackage = true;
+        }
+        importPackagePathInput = packagePath ?? "";
+        OnPropertyChanged(nameof(ImportPackagePathInput));
+        InspectImportedPackageInput();
+    }
+
+    public void SelectImportTargetPath(string targetPath)
+    {
+        if (busy || !isImportingPackage) return;
+        importTargetPathInput = targetPath ?? "";
+        OnPropertyChanged(nameof(ImportTargetPathInput));
+        RefreshImportTargetPreviewCore();
+    }
+
+    public void RecheckImportTarget()
+    {
+        if (busy || !isImportingPackage) return;
+        errorMessage = "";
+        importMidConfirmWarning = "";
+        ClearOperationBanner();
+        RefreshImportTargetPreviewCore();
+    }
+
+    public void CancelImport()
+    {
+        if (!isImportingPackage) return;
+        ClearImportWorkspaceCore();
+        errorMessage = "";
+        if (selectedPoint is not null)
+            RefreshSelectedComparisonCore(ConfigDiffDirection.BackupToCurrent, preserveConfirmation: false);
+        statusMessage = "已取消导入还原点，未写入本机目标文件。";
+        NotifyAll();
+    }
+
+    public ConfigImportRestoreResult? ConfirmImportRestore()
+    {
+        if (busy || !isImportingPackage || importedPackage is not { IsValid: true } || importPreview is null || !importPreview.CanConfirm || confirmedImportLiveSnapshot is null)
+            return null;
+
+        busy = true;
+        errorMessage = "";
+        importMidConfirmWarning = "";
+        NotifyAll();
+
+        try
+        {
+            var result = service.ImportAndRestorePackage(importedPackage, importTargetPathInput, confirmedImportLiveSnapshot);
+            switch (result.Outcome)
+            {
+                case ConfigRestoreOutcomeKind.Succeeded:
+                    if (result.ImportedPoint is not null)
+                    {
+                        allPoints.Insert(0, result.ImportedPoint);
+                        ApplyFilter();
+                        selectedPoint = result.ImportedPoint;
+                    }
+                    ClearImportWorkspaceCore();
+                    activeRecoveryReport = null;
+                    latestUndo = result.UndoSnapshot;
+                    if (selectedPoint is not null)
+                        RefreshSelectedComparisonCore(ConfigDiffDirection.BackupToCurrent, preserveConfirmation: false);
+                    SetOperationBanner(result.Headline, result.Detail, isError: false, isWarning: result.RefreshFailed);
+                    statusMessage = result.Headline;
+                    break;
+
+                case ConfigRestoreOutcomeKind.RefreshedDueToExternalEdit:
+                    if (result.RefreshedImportPreview is not null)
+                        ApplyImportPreviewCore(result.RefreshedImportPreview);
+                    importMidConfirmWarning = $"{result.Headline}：{result.Detail}";
+                    if (importPreview is not { CanConfirm: true })
+                        SetOperationBanner(result.Headline, result.Detail, isError: false, isWarning: true);
+                    statusMessage = result.Headline;
+                    break;
+
+                case ConfigRestoreOutcomeKind.BusyInAnotherWindow:
+                    if (result.RefreshedImportPreview is not null)
+                        ApplyImportPreviewCore(result.RefreshedImportPreview);
+                    activeRecoveryReport = service.ReconcileLatestOperation();
+                    SetOperationBanner(result.Headline, result.Detail, isError: false, isWarning: true);
+                    statusMessage = result.Headline;
+                    break;
+
+                case ConfigRestoreOutcomeKind.VerificationFailedBackupPreserved:
+                    if (result.ImportedPoint is not null)
+                    {
+                        allPoints.Insert(0, result.ImportedPoint);
+                        ApplyFilter();
+                        selectedPoint = result.ImportedPoint;
+                    }
+                    ClearImportWorkspaceCore();
+                    activeRecoveryReport = service.ReconcileLatestOperation();
+                    latestUndo = service.LoadLatestActiveUndo();
+                    if (selectedPoint is not null)
+                        RefreshSelectedComparisonCore(ConfigDiffDirection.BackupToCurrent, preserveConfirmation: false);
+                    SetOperationBanner(result.Headline, result.Detail, isError: false, isWarning: true);
+                    statusMessage = result.Headline;
+                    break;
+
+                case ConfigRestoreOutcomeKind.Failed:
+                default:
+                    if (result.RefreshedImportPreview is not null)
+                        ApplyImportPreviewCore(result.RefreshedImportPreview);
+                    SetOperationBanner(result.Headline, result.Detail, isError: true, isWarning: false);
+                    errorMessage = result.Detail;
+                    statusMessage = result.Headline;
+                    break;
+            }
+            return result;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            SetOperationBanner("导入恢复失败", ex.Message, isError: true, isWarning: false);
+            errorMessage = ex.Message;
+            statusMessage = errorMessage;
+            return null;
+        }
+        finally
+        {
+            busy = false;
+            NotifyAll();
+        }
+    }
+
+    private void InspectImportedPackageInput()
+    {
+        errorMessage = "";
+        importMidConfirmWarning = "";
+        ClearOperationBanner();
+        if (string.IsNullOrWhiteSpace(importPackagePathInput))
+        {
+            importedPackage = null;
+            ClearImportPreviewOnlyCore();
+            statusMessage = "请选择要导入的配置还原点迁移包（.contain-config-point）。";
+            NotifyAll();
+            return;
+        }
+
+        importedPackage = service.InspectPortablePackage(importPackagePathInput);
+        if (!importedPackage.IsValid)
+        {
+            ClearImportPreviewOnlyCore();
+            statusMessage = importedPackage.ErrorMessage;
+            NotifyAll();
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(importTargetPathInput))
+        {
+            var preview = service.PreviewImportedPackageTarget(importedPackage, importTargetPathInput);
+            ApplyImportPreviewCore(preview);
+            statusMessage = $"迁移包校验通过，已预览「{preview.DirectionLabel}」。";
+        }
+        else
+        {
+            ClearImportPreviewOnlyCore();
+            statusMessage = $"迁移包校验通过（{importedPackage.DisplayFileName}，{importedPackage.DisplaySize}）。请选择本机目标配置文件。";
+        }
+        NotifyAll();
+    }
+
+    private void RefreshImportTargetPreviewCore()
+    {
+        importMidConfirmWarning = "";
+        if (importedPackage is not { IsValid: true } || string.IsNullOrWhiteSpace(importTargetPathInput))
+        {
+            ClearImportPreviewOnlyCore();
+            NotifyAll();
+            return;
+        }
+
+        var preview = service.PreviewImportedPackageTarget(importedPackage, importTargetPathInput);
+        ApplyImportPreviewCore(preview);
+        statusMessage = preview.CanConfirm
+            ? $"{preview.DirectionLabel}：请核对本机目标路径与差异后确认恢复。"
+            : preview.Headline;
+        NotifyAll();
+    }
+
+    private void ApplyImportPreviewCore(ConfigImportPreviewResult preview)
+    {
+        importPreview = preview;
+        confirmedImportLiveSnapshot = preview.LiveSnapshot;
+        ImportDiffLines.Clear();
+        foreach (var line in preview.DiffLines)
+            ImportDiffLines.Add(line);
+    }
+
+    private void ClearImportPreviewOnlyCore()
+    {
+        importPreview = null;
+        confirmedImportLiveSnapshot = null;
+        importMidConfirmWarning = "";
+        ImportDiffLines.Clear();
+    }
+
+    private void ClearExportPackageCore()
+    {
+        isExportingPackage = false;
+        exportPackagePathInput = "";
+    }
+
+    private void ClearImportWorkspaceCore()
+    {
+        isImportingPackage = false;
+        importPackagePathInput = "";
+        importTargetPathInput = "";
+        importedPackage = null;
+        ClearImportPreviewOnlyCore();
+    }
 
     private ConfigUndoSnapshot? ResolveActiveOriginalCopySource()
     {
@@ -1081,6 +1569,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSearchEmpty));
         OnPropertyChanged(nameof(SelectedPoint));
         OnPropertyChanged(nameof(HasSelectedPoint));
+        OnPropertyChanged(nameof(ShowCreateCard));
         OnPropertyChanged(nameof(HasNoSelectedPoint));
         OnPropertyChanged(nameof(ShowSelectedPointPanels));
         OnPropertyChanged(nameof(ShowDetailHeaderCard));
@@ -1114,6 +1603,48 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         OnPropertyChanged(nameof(DiffHeaderSummary));
         OnPropertyChanged(nameof(HasDiffTruncationNote));
         OnPropertyChanged(nameof(CanBeginRestore));
+        OnPropertyChanged(nameof(CanBeginExportRestorePoint));
+        OnPropertyChanged(nameof(IsExportingPackage));
+        OnPropertyChanged(nameof(ShowExportPackageCard));
+        OnPropertyChanged(nameof(ExportPackagePathInput));
+        OnPropertyChanged(nameof(CanConfirmExportPackage));
+        OnPropertyChanged(nameof(SuggestedPortablePackageFileName));
+        OnPropertyChanged(nameof(ExportPackageTitle));
+        OnPropertyChanged(nameof(ExportPackageVersionSummary));
+        OnPropertyChanged(nameof(ExportPackagePrivacyNotice));
+        OnPropertyChanged(nameof(CanOpenImportWorkspace));
+        OnPropertyChanged(nameof(IsImportingPackage));
+        OnPropertyChanged(nameof(ShowImportPanel));
+        OnPropertyChanged(nameof(ImportPackagePathInput));
+        OnPropertyChanged(nameof(ImportTargetPathInput));
+        OnPropertyChanged(nameof(ImportedPackage));
+        OnPropertyChanged(nameof(ImportPreview));
+        OnPropertyChanged(nameof(HasValidImportedPackage));
+        OnPropertyChanged(nameof(HasInvalidImportedPackage));
+        OnPropertyChanged(nameof(ImportedPackageErrorMessage));
+        OnPropertyChanged(nameof(ImportedPackageDisplayFileName));
+        OnPropertyChanged(nameof(ImportedPackageVerifiedHeadline));
+        OnPropertyChanged(nameof(ImportedPackageVerifiedMeta));
+        OnPropertyChanged(nameof(HasImportPreview));
+        OnPropertyChanged(nameof(IsImportReadyToCreate));
+        OnPropertyChanged(nameof(IsImportReadyToOverwrite));
+        OnPropertyChanged(nameof(IsImportIdentical));
+        OnPropertyChanged(nameof(IsImportPreviewError));
+        OnPropertyChanged(nameof(ImportPreviewTitle));
+        OnPropertyChanged(nameof(ImportPreviewDirectionLabel));
+        OnPropertyChanged(nameof(ImportPreviewTargetPath));
+        OnPropertyChanged(nameof(ImportPreviewHeadline));
+        OnPropertyChanged(nameof(ImportPreviewFormatTransition));
+        OnPropertyChanged(nameof(ImportPreviewActionSummary));
+        OnPropertyChanged(nameof(HasImportMidConfirmWarning));
+        OnPropertyChanged(nameof(ImportMidConfirmWarningText));
+        OnPropertyChanged(nameof(CanConfirmImportRestore));
+        OnPropertyChanged(nameof(ConfirmImportRestoreButtonText));
+        OnPropertyChanged(nameof(HasImportTextDiff));
+        OnPropertyChanged(nameof(ShowImportDiffFallback));
+        OnPropertyChanged(nameof(ImportDiffFallbackNote));
+        OnPropertyChanged(nameof(ImportDiffHeaderSummary));
+        OnPropertyChanged(nameof(HasImportDiffTruncationNote));
         OnPropertyChanged(nameof(IsSelectedTargetBusyInAnotherWindow));
         OnPropertyChanged(nameof(IsConfirmingRestore));
         OnPropertyChanged(nameof(IsNotConfirmingRestore));

@@ -29,4 +29,14 @@ public partial class ConfigRestorePointsView : UserControl
     private void OnViewOriginalCopy(object sender, RoutedEventArgs e) => Host?.ViewConfigOriginalCopy();
     private void OnExportOriginalCopy(object sender, RoutedEventArgs e) => Host?.ExportConfigOriginalCopy();
     private void OnCloseOriginalCopyPreview(object sender, RoutedEventArgs e) => Host?.CloseConfigOriginalCopyPreview();
+    private void OnBeginExportRestorePoint(object sender, RoutedEventArgs e) => Host?.BeginExportConfigRestorePoint();
+    private void OnPickExportPackagePath(object sender, RoutedEventArgs e) => Host?.PickConfigExportPackagePath();
+    private void OnConfirmExportRestorePoint(object sender, RoutedEventArgs e) => Host?.ConfirmExportConfigRestorePoint();
+    private void OnCancelExportRestorePoint(object sender, RoutedEventArgs e) => Host?.CancelExportConfigRestorePoint();
+    private void OnOpenImportWorkspace(object sender, RoutedEventArgs e) => Host?.OpenConfigImportWorkspace();
+    private void OnPickImportPackage(object sender, RoutedEventArgs e) => Host?.PickConfigImportPackage();
+    private void OnPickImportTarget(object sender, RoutedEventArgs e) => Host?.PickConfigImportTarget();
+    private void OnRecheckImportTarget(object sender, RoutedEventArgs e) => Host?.RecheckConfigImportTarget();
+    private void OnConfirmImportRestore(object sender, RoutedEventArgs e) => Host?.ConfirmConfigImportRestore();
+    private void OnCancelImport(object sender, RoutedEventArgs e) => Host?.CancelConfigImport();
 }
