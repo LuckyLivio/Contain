@@ -51,6 +51,7 @@ internal static class ConfigRestorePointChecks
         Run(passed, "config_v080b2_overwrite_existing_package_succeeds_and_receiver_restores_new_and_undoes_to_own_b", V080B2NormalOverwriteExistingPackageReceiverRestoresNew);
         Run(passed, "config_v080b2_staged_temp_readback_failure_preserves_existing_and_cleans_temp", V080B2StagedTempReadbackFailurePreservesTargetAndCleansTemp);
         Run(passed, "config_v080b2_locked_and_readonly_destination_preserves_existing_and_cleans_temp", V080B2LockedAndReadOnlyDestinationPreservesExistingAndCleansTemp);
+        Run(passed, "config_v080rc1_import_target_help_guidance_and_no_auto_guess_preserves_decoy_settings_json", V080Rc1ImportTargetHelpAndDecoySameNameIsolation);
         return Task.FromResult<IReadOnlyList<string>>(passed);
     }
 
@@ -2271,6 +2272,67 @@ internal static class ConfigRestorePointChecks
         }
         Assert(Sha256Hex(File.ReadAllBytes(existingPkg)) == oldSha && File.ReadAllBytes(existingPkg).SequenceEqual(oldBytes),
             "ReadOnly destination preserved byte-for-byte");
+    }
+
+    private static void V080Rc1ImportTargetHelpAndDecoySameNameIsolation()
+    {
+        var bytesOn = EncodeUtf8Bom("{\r\n  \"editor.lineNumbers\": \"on\"\r\n}\r\n");
+        var bytesOff = EncodeUtf8Bom("{\r\n  \"editor.lineNumbers\": \"off\"\r\n}\r\n");
+        var bytesDecoy = EncodeUtf8Bom("{\r\n  \"otherApp\": true,\r\n  \"editor.lineNumbers\": \"decoy\"\r\n}\r\n");
+        var shaOn = Sha256Hex(bytesOn);
+        var shaOff = Sha256Hex(bytesOff);
+        var shaDecoy = Sha256Hex(bytesDecoy);
+
+        using var dir = new TempDir();
+        var srcStore = Path.Combine(dir.Path, "src-store");
+        var dstStore = Path.Combine(dir.Path, "dst-store");
+        var srcCfg = Path.Combine(dir.Path, "src", "settings.json");
+        var dstReal = Path.Combine(dir.Path, "Code", "User", "settings.json");
+        var dstDecoy = Path.Combine(dir.Path, "OtherApp", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(srcCfg)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(dstReal)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(dstDecoy)!);
+        File.WriteAllBytes(srcCfg, bytesOn);
+        File.WriteAllBytes(dstReal, bytesOff);
+        File.WriteAllBytes(dstDecoy, bytesDecoy);
+
+        var srcSvc = new LocalConfigRestorePointService(srcStore);
+        var pt = srcSvc.CreateRestorePoint(srcCfg, "VSCode线号on");
+        var pkgPath = Path.Combine(dir.Path, "vscode.contain-config-point");
+        Assert(srcSvc.ExportRestorePointPackage(pt, pkgPath).Succeeded, "Exported VS Code package");
+
+        var dstVm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(dstStore));
+        dstVm.Refresh();
+        dstVm.OpenImportWorkspace();
+        Assert(!dstVm.ShowImportTargetHelp, "Target help hidden before package validated");
+
+        dstVm.OpenImportPackage(pkgPath);
+        Assert(dstVm.HasValidImportedPackage, "Valid package loaded");
+        Assert(string.IsNullOrEmpty(dstVm.ImportTargetPathInput), "Must NEVER auto-fill or guess target path for settings.json");
+        Assert(dstVm.ShowImportTargetHelp, "Lightweight target help auto-surfaces before target is chosen");
+        Assert(dstVm.ImportTargetHelpDetail.Contains("Preferences: Open User Settings (JSON)") &&
+               dstVm.ImportTargetHelpDetail.Contains("不") &&
+               dstVm.ImportTargetHelpDetail.Contains("settings.json"),
+            "Help includes VS Code Command Palette example and non-auto-guess guarantee");
+
+        // Selecting explicit target auto-collapses help so preview & diff stay above the fold
+        dstVm.SelectImportTargetPath(dstReal);
+        Assert(dstVm.HasImportPreview && !dstVm.ShowImportTargetHelp, "Selecting target auto-collapses help");
+        dstVm.ToggleImportTargetHelp();
+        Assert(dstVm.ShowImportTargetHelp, "User can re-expand help on demand");
+        dstVm.ToggleImportTargetHelp();
+        Assert(!dstVm.ShowImportTargetHelp, "User can collapse help again");
+
+        // Restore real target -> decoy same-name settings.json MUST stay byte-identical; Undo returns real target to off!
+        var res = dstVm.ConfirmImportRestore();
+        Assert(res is { Outcome: ConfigRestoreOutcomeKind.Succeeded }, "Restore succeeded on chosen target");
+        Assert(Sha256Hex(File.ReadAllBytes(dstReal)) == shaOn, "Chosen target updated to on");
+        Assert(Sha256Hex(File.ReadAllBytes(dstDecoy)) == shaDecoy, "Decoy same-name settings.json untouched after restore");
+
+        dstVm.BeginUndoPreview();
+        dstVm.ConfirmUndoRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(dstReal)) == shaOff, "Chosen target undone back to off");
+        Assert(Sha256Hex(File.ReadAllBytes(dstDecoy)) == shaDecoy, "Decoy same-name settings.json untouched after undo");
     }
 
     private static byte[] CreateSyntheticBytes(int totalBytes, string prefix)

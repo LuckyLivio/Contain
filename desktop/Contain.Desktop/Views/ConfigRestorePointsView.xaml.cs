@@ -37,6 +37,7 @@ public partial class ConfigRestorePointsView : UserControl
     private void OnPickImportPackage(object sender, RoutedEventArgs e) => Host?.PickConfigImportPackage();
     private void OnPickImportTarget(object sender, RoutedEventArgs e) => Host?.PickConfigImportTarget();
     private void OnRecheckImportTarget(object sender, RoutedEventArgs e) => Host?.RecheckConfigImportTarget();
+    private void OnToggleImportTargetHelp(object sender, RoutedEventArgs e) => Host?.ToggleConfigImportTargetHelp();
     private void OnConfirmImportRestore(object sender, RoutedEventArgs e) => Host?.ConfirmConfigImportRestore();
     private void OnCancelImport(object sender, RoutedEventArgs e) => Host?.CancelConfigImport();
 }

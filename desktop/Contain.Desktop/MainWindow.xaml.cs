@@ -552,6 +552,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         RunUiOperation(() => ConfigRestorePoints.SelectImportTargetPath(dialog.FileName));
     }
     public void RecheckConfigImportTarget() => RunUiOperation(() => ConfigRestorePoints.RecheckImportTarget());
+    public void ToggleConfigImportTargetHelp() => RunUiOperation(() => ConfigRestorePoints.ToggleImportTargetHelp());
     public void ConfirmConfigImportRestore() => RunUiOperation(() => ConfigRestorePoints.ConfirmImportRestore());
     public void CancelConfigImport() => RunUiOperation(() => ConfigRestorePoints.CancelImport());
 

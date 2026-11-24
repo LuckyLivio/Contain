@@ -49,6 +49,8 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     private ConfigImportPreviewResult? importPreview;
     private ConfigLiveFileSnapshot? confirmedImportLiveSnapshot;
     private string importMidConfirmWarning = "";
+    private bool isImportTargetHelpExpanded;
+    private bool importTargetHelpToggledByUser;
 
     private bool hasOperationBanner;
     private bool isOperationBannerError;
@@ -294,6 +296,11 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     public string ImportedPackageVerifiedMeta => importedPackage is { IsValid: true } p
         ? $"备注：{p.DisplayNote} · 包内文件名仅作展示，写入位置由下方本机目标决定"
         : "";
+    public bool ShowImportTargetHelp => HasValidImportedPackage && (importTargetHelpToggledByUser ? isImportTargetHelpExpanded : !HasImportPreview);
+    public string ImportTargetHelpToggleText => ShowImportTargetHelp ? "收起「如何找到配置文件？」" : "如何找到配置文件？";
+    public string ImportTargetHelpTitle => "如何找到配置文件？";
+    public string ImportTargetHelpDetail =>
+        "以 VS Code 为例：在命令面板（Ctrl+Shift+P）执行 Preferences: Open User Settings (JSON)，复制打开文件的路径，再回到 Contain 粘贴或通过「选择目标…」选择它。Contain 不会将同名 settings.json 自动认作 VS Code 配置，写入位置始终由你明确决定。";
 
     public bool HasImportPreview => HasValidImportedPackage && importPreview is not null;
     public bool IsImportReadyToCreate => importPreview?.Status == ConfigImportTargetStatus.ReadyToCreate;
@@ -1244,6 +1251,16 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         RefreshImportTargetPreviewCore();
     }
 
+    public void ToggleImportTargetHelp()
+    {
+        if (!HasValidImportedPackage) return;
+        var next = !ShowImportTargetHelp;
+        importTargetHelpToggledByUser = true;
+        isImportTargetHelpExpanded = next;
+        OnPropertyChanged(nameof(ShowImportTargetHelp));
+        OnPropertyChanged(nameof(ImportTargetHelpToggleText));
+    }
+
     public void CancelImport()
     {
         if (!isImportingPackage) return;
@@ -1428,6 +1445,8 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         importPackagePathInput = "";
         importTargetPathInput = "";
         importedPackage = null;
+        isImportTargetHelpExpanded = false;
+        importTargetHelpToggledByUser = false;
         ClearImportPreviewOnlyCore();
     }
 
@@ -1629,6 +1648,10 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         OnPropertyChanged(nameof(ImportedPackageDisplayFileName));
         OnPropertyChanged(nameof(ImportedPackageVerifiedHeadline));
         OnPropertyChanged(nameof(ImportedPackageVerifiedMeta));
+        OnPropertyChanged(nameof(ShowImportTargetHelp));
+        OnPropertyChanged(nameof(ImportTargetHelpToggleText));
+        OnPropertyChanged(nameof(ImportTargetHelpTitle));
+        OnPropertyChanged(nameof(ImportTargetHelpDetail));
         OnPropertyChanged(nameof(HasImportPreview));
         OnPropertyChanged(nameof(IsImportReadyToCreate));
         OnPropertyChanged(nameof(IsImportReadyToOverwrite));

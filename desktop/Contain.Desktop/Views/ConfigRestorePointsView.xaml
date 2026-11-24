@@ -258,31 +258,54 @@
                                 </Border>
 
                                 <!-- Step 2: Select Target Path on Receiving Machine (shown only after package passes validation) -->
-                                <Grid Margin="0,5,0,0"
-                                      Visibility="{Binding ConfigRestorePoints.HasValidImportedPackage, Converter={StaticResource BoolVisibility}}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="62" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="本机目标：" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                    <ui:TextBox Grid.Column="1" FontSize="12" Padding="8,4"
-                                                Text="{Binding ConfigRestorePoints.ImportTargetPathInput, UpdateSourceTrigger=PropertyChanged}"
-                                                TextWrapping="NoWrap" MaxLines="1" VerticalContentAlignment="Center"
-                                                PlaceholderText="选择或粘贴本机目标配置文件路径（已有文件或待新建路径）"
-                                                AutomationProperties.AutomationId="ImportTargetPathInput"
-                                                AutomationProperties.Name="本机目标配置文件路径" />
-                                    <ui:Button Grid.Column="2" Content="选择目标…" Appearance="Secondary" Padding="8,4.5" Margin="5,0,4,0" FontSize="11.5"
-                                               Click="OnPickImportTarget" AutomationProperties.AutomationId="PickImportTargetButton">
-                                        <ui:Button.Icon><ui:SymbolIcon Symbol="Document24" /></ui:Button.Icon>
-                                    </ui:Button>
-                                    <ui:Button Grid.Column="3" Content="刷新" Appearance="Secondary" Padding="7,4.5" FontSize="11.5"
-                                               ToolTip="重新检查本机目标文件状态"
-                                               Click="OnRecheckImportTarget" AutomationProperties.AutomationId="RecheckImportTargetButton">
-                                        <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowClockwise24" /></ui:Button.Icon>
-                                    </ui:Button>
-                                </Grid>
+                                <StackPanel Margin="0,5,0,0"
+                                            Visibility="{Binding ConfigRestorePoints.HasValidImportedPackage, Converter={StaticResource BoolVisibility}}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="62" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="本机目标：" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        <ui:TextBox Grid.Column="1" FontSize="12" Padding="8,4"
+                                                    Text="{Binding ConfigRestorePoints.ImportTargetPathInput, UpdateSourceTrigger=PropertyChanged}"
+                                                    TextWrapping="NoWrap" MaxLines="1" VerticalContentAlignment="Center"
+                                                    PlaceholderText="选择或粘贴本机目标配置文件路径（已有文件或待新建路径）"
+                                                    AutomationProperties.AutomationId="ImportTargetPathInput"
+                                                    AutomationProperties.Name="本机目标配置文件路径" />
+                                        <ui:Button Grid.Column="2" Content="选择目标…" Appearance="Secondary" Padding="8,4.5" Margin="5,0,4,0" FontSize="11.5"
+                                                   Click="OnPickImportTarget" AutomationProperties.AutomationId="PickImportTargetButton">
+                                            <ui:Button.Icon><ui:SymbolIcon Symbol="Document24" /></ui:Button.Icon>
+                                        </ui:Button>
+                                        <ui:Button Grid.Column="3" Content="刷新" Appearance="Secondary" Padding="7,4.5" FontSize="11.5"
+                                                   ToolTip="重新检查本机目标文件状态"
+                                                   Click="OnRecheckImportTarget" AutomationProperties.AutomationId="RecheckImportTargetButton">
+                                            <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowClockwise24" /></ui:Button.Icon>
+                                        </ui:Button>
+                                    </Grid>
+
+                                    <!-- Lightweight "如何找到配置文件？" toggle & collapsible VS Code tip -->
+                                    <StackPanel Orientation="Horizontal" Margin="62,2.5,0,0">
+                                        <ui:Button Content="{Binding ConfigRestorePoints.ImportTargetHelpToggleText}" Appearance="Transparent"
+                                                   Padding="4,1.5" FontSize="11" Foreground="#0E5A53"
+                                                   Click="OnToggleImportTargetHelp"
+                                                   AutomationProperties.AutomationId="ToggleImportTargetHelpButton">
+                                            <ui:Button.Icon><ui:SymbolIcon Symbol="Info24" FontSize="12" /></ui:Button.Icon>
+                                        </ui:Button>
+                                    </StackPanel>
+
+                                    <Border Background="#F4F8FB" BorderBrush="#C4D6E7" BorderThickness="1" CornerRadius="5" Padding="9,6" Margin="0,3,0,0"
+                                            Visibility="{Binding ConfigRestorePoints.ShowImportTargetHelp, Converter={StaticResource BoolVisibility}}"
+                                            AutomationProperties.AutomationId="ConfigImportTargetHelpCard">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding ConfigRestorePoints.ImportTargetHelpTitle}" Foreground="#173A5A" FontSize="11.5" FontWeight="SemiBold"
+                                                       AutomationProperties.AutomationId="ConfigImportTargetHelpTitle" />
+                                            <TextBlock Text="{Binding ConfigRestorePoints.ImportTargetHelpDetail}" Foreground="#2B4B69" FontSize="11" LineHeight="16" TextWrapping="Wrap" Margin="0,2,0,0"
+                                                       AutomationProperties.AutomationId="ConfigImportTargetHelpText" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 
