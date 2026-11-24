@@ -5,8 +5,8 @@
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <UseWPF>true</UseWPF>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <Version>0.7.0-rc.1</Version>
-    <AssemblyVersion>0.7.0.4</AssemblyVersion>
+    <Version>0.7.0</Version>
+    <AssemblyVersion>0.7.0.0</AssemblyVersion>
     <RuntimeFrameworkVersion>10.0.14</RuntimeFrameworkVersion>
     <AssemblyName>Contain.Viewer</AssemblyName>
     <RootNamespace>Contain.Desktop</RootNamespace>
