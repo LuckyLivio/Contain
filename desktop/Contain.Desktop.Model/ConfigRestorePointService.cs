@@ -13,6 +13,8 @@ public interface IConfigRestoreOperationHooks
     void BeforePostRestoreRefresh(string undoId, string targetPath) { }
     void AfterUndoPrepared(string undoId, string targetPath) { }
     void AfterUndoTargetUpdatedBeforeMarkCompleted(string undoId, string targetPath) { }
+    void BeforeVerifyStagedExportPackage(string tempPackagePath, string destinationPath) { }
+    void BeforeReplaceExportDestination(string tempPackagePath, string destinationPath) { }
 }
 
 public interface IConfigRestorePointService
@@ -1386,6 +1388,19 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 Detail: blobError);
         }
 
+        // Pre-write migration cap guard: NEVER write or overwrite any target or temp file when raw backup exceeds 32 MiB!
+        if (backupBytes.LongLength > ConfigPortablePackageConstants.MaxRawPayloadBytes)
+        {
+            return new ConfigPortablePackageExportResult(
+                Succeeded: false,
+                DestinationPath: normalizedDest,
+                DisplayFileName: point.TargetFileName,
+                ByteLength: backupBytes.LongLength,
+                Sha256: point.Sha256,
+                Headline: "导出还原点失败：超过 32 MiB 迁移上限",
+                Detail: $"这份还原点仍可在本机恢复，超过 32 MiB 的配置暂不支持迁移。当前备份大小为 {ConfigFormatting.FormatByteSize(backupBytes.LongLength)}，未修改目标文件或写入任何临时文件。");
+        }
+
         var displayFileName = SanitizeDisplayFileName(point.TargetFileName);
         if (string.IsNullOrWhiteSpace(displayFileName))
             displayFileName = "config.dat";
@@ -1406,18 +1421,70 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
             PayloadBase64 = Convert.ToBase64String(backupBytes)
         };
 
+        var targetDir = Path.GetDirectoryName(normalizedDest);
+        if (string.IsNullOrWhiteSpace(targetDir))
+        {
+            return new ConfigPortablePackageExportResult(
+                Succeeded: false,
+                DestinationPath: normalizedDest,
+                DisplayFileName: displayFileName,
+                ByteLength: 0,
+                Sha256: "",
+                Headline: "导出还原点失败：保存目录无效",
+                Detail: "无法解析目标文件所在目录，未写入磁盘。");
+        }
+
+        var destinationExistedBefore = File.Exists(normalizedDest);
+        var tempPath = Path.Combine(targetDir, $".{Path.GetFileName(normalizedDest)}.contain-export-{Guid.NewGuid():N}.tmp");
+        var committed = false;
+
         try
         {
-            WriteJsonAtomically(normalizedDest, package);
-            var verified = InspectPortablePackage(normalizedDest);
-            if (!verified.IsValid ||
-                verified.ByteLength != backupBytes.LongLength ||
-                !string.Equals(verified.Sha256, point.Sha256, StringComparison.OrdinalIgnoreCase))
+            // Step 1: Write candidate package to a same-directory temp file first (never touch destination yet!)
+            Directory.CreateDirectory(targetDir);
+            using (var fs = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, FileOptions.WriteThrough))
             {
-                throw new IOException(string.IsNullOrWhiteSpace(verified.ErrorMessage)
-                    ? "迁移包写出后回读校验不一致。"
+                JsonSerializer.Serialize(fs, package, JsonOptions);
+                fs.WriteByte((byte)'\n');
+                fs.Flush(flushToDisk: true);
+            }
+
+            // Step 2: Verify the staged temp package using the FORMAL importer BEFORE replacing destination!
+            operationHooks?.BeforeVerifyStagedExportPackage(tempPath, normalizedDest);
+
+            var tempInfo = new FileInfo(tempPath);
+            if (!tempInfo.Exists || tempInfo.Length <= 0 || tempInfo.Length > ConfigPortablePackageConstants.MaxPackageFileBytes)
+            {
+                throw new InvalidDataException(
+                    $"生成的迁移包体积超出安全上限（实际 {ConfigFormatting.FormatByteSize(tempInfo.Exists ? tempInfo.Length : 0)}，上限 {ConfigFormatting.FormatByteSize(ConfigPortablePackageConstants.MaxPackageFileBytes)}）。");
+            }
+
+            var verified = InspectPortablePackage(tempPath);
+            if (!verified.IsValid ||
+                !string.Equals(verified.Format, ConfigPortablePackageConstants.FormatId, StringComparison.Ordinal) ||
+                verified.SchemaVersion != ConfigPortablePackageConstants.CurrentSchemaVersion ||
+                verified.ByteLength != backupBytes.LongLength ||
+                verified.RawBytes.LongLength != backupBytes.LongLength ||
+                !string.Equals(verified.Sha256, point.Sha256, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(verified.DisplayFileName, displayFileName, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(string.IsNullOrWhiteSpace(verified.ErrorMessage)
+                    ? "新迁移包回读校验与原始还原点不一致。"
                     : verified.ErrorMessage);
             }
+
+            // Step 3: Formal readback passed -> atomically commit temp file to destination!
+            operationHooks?.BeforeReplaceExportDestination(tempPath, normalizedDest);
+
+            if (File.Exists(normalizedDest))
+            {
+                File.Replace(tempPath, normalizedDest, destinationBackupFileName: null, ignoreMetadataErrors: true);
+            }
+            else
+            {
+                File.Move(tempPath, normalizedDest, overwrite: true);
+            }
+            committed = true;
 
             return new ConfigPortablePackageExportResult(
                 Succeeded: true,
@@ -1426,10 +1493,27 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 ByteLength: backupBytes.LongLength,
                 Sha256: verified.Sha256,
                 Headline: "已导出配置还原点迁移包",
-                Detail: $"已将还原点保存的备份版本（{displayFileName}，{ConfigFormatting.FormatByteSize(backupBytes.LongLength)}，SHA-256：{verified.DisplayShortSha256}）导出至：{normalizedDest}。迁移包不包含源机目录路径或撤销记录，请妥善保管其中可能包含的账号、令牌或私人配置内容。");
+                Detail: $"已将还原点保存的备份版本（{displayFileName}，{ConfigFormatting.FormatByteSize(backupBytes.LongLength)}，SHA-256：{verified.DisplayShortSha256}）校验通过并导出至：{normalizedDest}。迁移包不包含源机目录路径或撤销记录，请妥善保管其中可能包含的账号、令牌或私人配置内容。");
+        }
+        catch (InvalidDataException ex)
+        {
+            var preserveNote = destinationExistedBefore
+                ? "原有目标文件已逐字节保留，临时文件已清理。"
+                : "未创建新目标文件，临时文件已清理。";
+            return new ConfigPortablePackageExportResult(
+                Succeeded: false,
+                DestinationPath: normalizedDest,
+                DisplayFileName: displayFileName,
+                ByteLength: 0,
+                Sha256: "",
+                Headline: "导出还原点失败：新迁移包校验未通过",
+                Detail: $"{ex.Message} {preserveNote}");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            var preserveNote = destinationExistedBefore
+                ? "原有目标文件未被修改，临时文件已清理。"
+                : "未留下不完整的目标文件，临时文件已清理。";
             return new ConfigPortablePackageExportResult(
                 Succeeded: false,
                 DestinationPath: normalizedDest,
@@ -1437,7 +1521,12 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 ByteLength: 0,
                 Sha256: "",
                 Headline: "导出还原点失败",
-                Detail: DescribeWriteFailure(ex));
+                Detail: $"{DescribeWriteFailure(ex)} {preserveNote}");
+        }
+        finally
+        {
+            if (!committed)
+                TryDeleteFile(tempPath);
         }
     }
 
@@ -1454,8 +1543,12 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
             if (info.Length > ConfigPortablePackageConstants.MaxPackageFileBytes)
                 return InvalidPackage(normalizedPath, $"迁移包体积超过安全限制（{ConfigFormatting.FormatByteSize(info.Length)}），已拒绝读取。");
 
-            var rawText = Utf8NoBom.GetString(ReadAllBytesShared(normalizedPath));
-            using var doc = JsonDocument.Parse(rawText);
+            var fileBytes = ReadAllBytesShared(normalizedPath);
+            ReadOnlyMemory<byte> utf8Slice = fileBytes.Length >= 3 && fileBytes[0] == 0xEF && fileBytes[1] == 0xBB && fileBytes[2] == 0xBF
+                ? fileBytes.AsMemory(3)
+                : fileBytes.AsMemory();
+
+            using var doc = JsonDocument.Parse(utf8Slice);
             if (doc.RootElement.ValueKind != JsonValueKind.Object)
                 return InvalidPackage(normalizedPath, "迁移包格式无法识别：根内容不是有效的 JSON 对象。");
 
@@ -1477,7 +1570,7 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
             if (schemaVersion != ConfigPortablePackageConstants.CurrentSchemaVersion)
                 return InvalidPackage(normalizedPath, $"不支持的迁移包格式版本 v{schemaVersion}（当前仅支持 v{ConfigPortablePackageConstants.CurrentSchemaVersion}），请升级 Contain 后重试。");
 
-            var parsed = JsonSerializer.Deserialize<ConfigPortablePackageFile>(rawText, JsonOptions);
+            var parsed = JsonSerializer.Deserialize<ConfigPortablePackageFile>(utf8Slice.Span, JsonOptions);
             if (parsed is null)
                 return InvalidPackage(normalizedPath, "迁移包结构解析失败，文件可能已损坏。");
 

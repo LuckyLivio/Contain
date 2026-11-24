@@ -237,6 +237,10 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         get
         {
             if (selectedPoint is null) return "";
+            if (selectedPoint.ByteLength > ConfigPortablePackageConstants.MaxRawPayloadBytes)
+            {
+                return $"导出版本：{selectedPoint.TargetFileName} · {selectedPoint.DisplaySize} · SHA-256：{selectedPoint.DisplayShortSha256}（提示：这份还原点仍可在本机恢复，超过 32 MiB 的配置暂不支持迁移）";
+            }
             var diskNote = comparison?.Status switch
             {
                 ConfigComparisonStatus.Changed => "（当前磁盘文件已有修改，导出仍使用建点时保存的备份版本）",
