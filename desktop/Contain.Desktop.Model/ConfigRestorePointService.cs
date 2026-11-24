@@ -1025,7 +1025,7 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
         var targetFmt = string.IsNullOrWhiteSpace(targetText.LineEndingLabel) || targetText.LineEndingLabel == "不适用"
             ? targetText.EncodingLabel
             : $"{targetText.EncodingLabel} · {targetText.LineEndingLabel}";
-        var actionSummary = $"即将用覆盖前保存的原始字节写回目标文件（当前 {live.DisplaySize}，{live.DisplayFormatSummary}，SHA-256：{live.DisplayShortSha256} → 撤销后 {ConfigFormatting.FormatByteSize(undoSnapshot.PreRestoreByteLength)}，{targetFmt}，SHA-256：{undoSnapshot.DisplayPreRestoreShortSha}），严格保留原始 BOM 与换行格式。";
+        var actionSummary = "将用覆盖前保存的原始字节写回目标文件（严格保留原 BOM 与换行格式）；取消不会写盘，也不消耗撤销记录。";
 
         if (!liveText.IsRecognizedText || !targetText.IsRecognizedText)
         {

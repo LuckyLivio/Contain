@@ -198,8 +198,8 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         {
             if (selectedPoint is null || comparison is null) return "";
             if (comparison.Status == ConfigComparisonStatus.Missing)
-                return "确认后将按备份原始字节重建该文件（保留原始 BOM 与换行格式）；之后可点击撤销预览移除本次重建的文件。";
-            return "确认后将用备份原始字节覆盖目标文件（保留原始 BOM 与换行格式）；覆盖前先保存当前版本，随时可撤销。";
+                return "将按备份原始字节重建文件（保留原 BOM 与换行）；之后可经撤销预览移除。";
+            return "将用备份原始字节覆盖目标（保留原 BOM 与换行）；覆盖前自动保存撤销副本。";
         }
     }
     public bool HasMidConfirmWarning => !string.IsNullOrWhiteSpace(midConfirmWarning);
@@ -242,8 +242,8 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     public bool IsUndoPreviewRemoveRecreated => undoPreview?.Status == ConfigUndoPreviewStatus.ReadyToRemoveRecreatedFile;
     public bool CanConfirmUndo => !busy && undoPreview is { CanConfirm: true };
     public string ConfirmUndoButtonText => IsUndoPreviewRemoveRecreated
-        ? "确认撤销（移除本次重建的文件）"
-        : "确认撤销（写回覆盖前原始字节）";
+        ? "确认撤销（移除重建文件）"
+        : "确认撤销（写回覆盖前版本）";
     public string UndoPreviewFormatTransition
     {
         get

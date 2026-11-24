@@ -304,23 +304,24 @@
                                            AutomationProperties.AutomationId="ConfigUndoPreviewActionSummary" />
 
                                 <StackPanel Orientation="Horizontal">
-                                    <ui:Button Content="{Binding ConfigRestorePoints.ConfirmUndoButtonText}" Appearance="Primary" Padding="14,7" Margin="0,0,8,0"
+                                    <ui:Button Content="{Binding ConfigRestorePoints.ConfirmUndoButtonText}" Appearance="Primary" Padding="12,6" Margin="0,0,8,0" FontSize="12.5"
                                                Click="OnConfirmUndoRestore" IsEnabled="{Binding ConfigRestorePoints.CanConfirmUndo}"
                                                AutomationProperties.AutomationId="ConfirmUndoButton">
                                         <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowUndo24" /></ui:Button.Icon>
                                     </ui:Button>
-                                    <ui:Button Content="取消（不写盘，保留撤销记录）" Appearance="Secondary" Padding="12,7" Click="OnCancelUndoPreview"
+                                    <ui:Button Content="取消（保留撤销记录）" Appearance="Secondary" Padding="10,6" FontSize="12.5" Click="OnCancelUndoPreview"
                                                AutomationProperties.AutomationId="CancelUndoPreviewButton" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>
 
                         <!-- Undo Preview Diff / Conflict Explanation Card -->
-                        <Border Style="{StaticResource Surface}" Padding="14,10" Margin="0" AutomationProperties.AutomationId="ConfigUndoDiffCard">
+                        <Border Style="{StaticResource Surface}" Padding="14,9" Margin="0" AutomationProperties.AutomationId="ConfigUndoDiffCard">
                             <StackPanel>
-                                <TextBlock Text="{Binding ConfigRestorePoints.UndoDiffHeaderSummary}" FontWeight="SemiBold" FontSize="13.5" Margin="0,0,0,2"
+                                <TextBlock Text="{Binding ConfigRestorePoints.UndoDiffHeaderSummary}" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,5"
                                            AutomationProperties.AutomationId="ConfigUndoDiffHeaderSummary" />
                                 <TextBlock Text="{Binding ConfigRestorePoints.UndoPreviewDetail}" Style="{StaticResource MutedText}" FontSize="11.5" Margin="0,0,0,6"
+                                           Visibility="{Binding ConfigRestorePoints.ShowUndoDiffFallback, Converter={StaticResource BoolVisibility}}"
                                            AutomationProperties.AutomationId="ConfigUndoPreviewDetail" />
 
                                 <Border BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="6" Background="White"
@@ -571,9 +572,9 @@
                         </Border>
 
                         <!-- Directional Line-by-Line Diff Card (Browse: 从备份到现在 | Restore Preview: 当前文件 → 恢复后) -->
-                        <Border Style="{StaticResource Surface}" Padding="14,10" Margin="0" AutomationProperties.AutomationId="ConfigDiffCard">
+                        <Border Style="{StaticResource Surface}" Padding="14,9" Margin="0" AutomationProperties.AutomationId="ConfigDiffCard">
                             <StackPanel>
-                                <DockPanel Margin="0,0,0,2">
+                                <DockPanel Margin="0,0,0,5">
                                     <Border DockPanel.Dock="Right" CornerRadius="4" Padding="7,1.5" VerticalAlignment="Center" Margin="8,0,0,0">
                                         <Border.Style>
                                             <Style TargetType="Border">
@@ -599,10 +600,11 @@
                                             </TextBlock.Style>
                                         </TextBlock>
                                     </Border>
-                                    <TextBlock Text="{Binding ConfigRestorePoints.DiffHeaderSummary}" FontWeight="SemiBold" FontSize="13.5"
+                                    <TextBlock Text="{Binding ConfigRestorePoints.DiffHeaderSummary}" FontWeight="SemiBold" FontSize="13"
                                                AutomationProperties.AutomationId="ConfigDiffHeaderSummary" />
                                 </DockPanel>
                                 <TextBlock Text="{Binding ConfigRestorePoints.ComparisonDetail}" Style="{StaticResource MutedText}" FontSize="11.5" Margin="0,0,0,6"
+                                           Visibility="{Binding ConfigRestorePoints.IsNotConfirmingRestore, Converter={StaticResource BoolVisibility}}"
                                            AutomationProperties.AutomationId="ConfigComparisonDetail" />
 
                                 <Border BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="6" Background="White"
