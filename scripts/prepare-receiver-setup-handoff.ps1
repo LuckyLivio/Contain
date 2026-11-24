@@ -12,7 +12,7 @@ param(
     [string]$SourceSha = '05d96546b7bb3f97540e26f1614e9c063fd40212',
     [string]$HelloContainInstallLeaf = 'HelloContain-9a1c05c8',
     [string]$HelloContainShortcutLabel = 'HelloContain (9a1c05c8)',
-    [string]$ContainVersionLabel = '0.7.0-beta.3'
+    [string]$ContainVersionLabel = '0.7.0-rc.1'
 )
 
 $ErrorActionPreference = 'Stop'

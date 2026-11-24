@@ -183,8 +183,15 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         !isConfirmingRestore &&
         !isPreviewingUndo &&
         !isViewingOriginalCopy &&
+        !IsSelectedTargetBusyInAnotherWindow &&
         comparison is { BackupIntegrityValid: true } c &&
         c.Status is ConfigComparisonStatus.Changed or ConfigComparisonStatus.Missing;
+
+    public bool IsSelectedTargetBusyInAnotherWindow =>
+        selectedPoint is not null &&
+        (activeRecoveryReport is { Status: ConfigRecoveryStatus.ActiveInAnotherWindow } r &&
+         string.Equals(r.OperationRecord.TargetPath, selectedPoint.TargetPath, StringComparison.OrdinalIgnoreCase)
+         || service.IsTargetBusyInAnotherWindow(selectedPoint.TargetPath, out _));
 
     public bool IsConfirmingRestore => isConfirmingRestore;
     public bool IsNotConfirmingRestore => !isConfirmingRestore;
@@ -231,16 +238,19 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     public string RecoveryTargetPath => activeRecoveryReport?.OperationRecord.TargetPath ?? "";
     public string RecoveryDiskStateSummary => activeRecoveryReport?.DiskStateSummary ?? "";
     public string RecoveryOriginalCopySummary => activeRecoveryReport?.OriginalCopySummary ?? "";
-    public bool IsRecoveryWarning => activeRecoveryReport?.Status is ConfigRecoveryStatus.ExternalVersionCDetected or ConfigRecoveryStatus.TargetMissingAfterInterruption or ConfigRecoveryStatus.NeedsVerification;
+    public bool IsRecoveryWarning => activeRecoveryReport?.Status is ConfigRecoveryStatus.ActiveInAnotherWindow or ConfigRecoveryStatus.ExternalVersionCDetected or ConfigRecoveryStatus.TargetMissingAfterInterruption or ConfigRecoveryStatus.NeedsVerification;
     public bool IsRecoveryInfo => activeRecoveryReport?.Status is ConfigRecoveryStatus.RestoreAppliedNeedsReview or ConfigRecoveryStatus.UndoNotApplied;
     public bool IsRecoveryResolved => activeRecoveryReport?.Status is ConfigRecoveryStatus.RestoreNotApplied or ConfigRecoveryStatus.UndoAlreadyApplied;
     public bool CanUndoFromRecovery => !busy && activeRecoveryReport is { CanOfferUndoPreview: true };
     public bool CanViewOriginalCopyFromRecovery => !busy && activeRecoveryReport is { HasValidOriginalCopy: true };
     public bool CanExportOriginalCopyFromRecovery => !busy && activeRecoveryReport is { HasValidOriginalCopy: true };
-    public bool CanRecheckRecovery => !busy && activeRecoveryReport is { RequiresExplicitArchive: true };
-    public string DismissRecoveryButtonText => activeRecoveryReport is { RequiresExplicitArchive: true }
-        ? "已知悉并归档"
-        : "确认并收起";
+    public bool CanRecheckRecovery => !busy && activeRecoveryReport is { RequiresExplicitArchive: true } or { Status: ConfigRecoveryStatus.ActiveInAnotherWindow };
+    public string DismissRecoveryButtonText => activeRecoveryReport switch
+    {
+        { RequiresExplicitArchive: true } => "已知悉并归档",
+        { Status: ConfigRecoveryStatus.ActiveInAnotherWindow } => "收起提示",
+        _ => "确认并收起"
+    };
 
     // Inline original copy preview ("查看原副本")
     public bool IsViewingOriginalCopy => isViewingOriginalCopy && originalCopyPreview is not null;
@@ -347,6 +357,8 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
             var report = service.ReconcileLatestOperation();
             if (report is not null)
                 activeRecoveryReport = report;
+            else if (activeRecoveryReport is { Status: ConfigRecoveryStatus.ActiveInAnotherWindow })
+                activeRecoveryReport = null;
             latestUndo = service.LoadLatestActiveUndo();
             NotifyAll();
         }
@@ -364,7 +376,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
             var freshReport = service.ReconcileLatestOperation();
             if (freshReport is not null)
                 activeRecoveryReport = freshReport;
-            else if (activeRecoveryReport is { RequiresExplicitArchive: true })
+            else if (activeRecoveryReport is { RequiresExplicitArchive: true } or { Status: ConfigRecoveryStatus.ActiveInAnotherWindow })
                 activeRecoveryReport = null;
 
             var points = service.LoadAllPoints();
@@ -647,6 +659,20 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         ClearOriginalCopyPreviewCore();
         midConfirmWarning = "";
 
+        if (service.IsTargetBusyInAnotherWindow(selectedPoint.TargetPath, out var busyLock))
+        {
+            var pidNote = busyLock is { OwnerPid: > 0 } ? $"（PID {busyLock.OwnerPid}）" : "";
+            activeRecoveryReport = service.ReconcileLatestOperation() ?? activeRecoveryReport;
+            SetOperationBanner(
+                "操作已暂缓：另一个 Contain 窗口正在操作此文件",
+                $"检测到另一个 Contain 窗口{pidNote}正在写入该目标文件。请等待对方完成后点击「刷新」再尝试恢复。",
+                isError: false,
+                isWarning: true);
+            statusMessage = "另一个 Contain 窗口正在操作此文件，当前仅支持只读浏览。";
+            NotifyAll();
+            return;
+        }
+
         // Entering restore confirmation flips diff direction to "当前文件 → 恢复后"!
         RefreshSelectedComparisonCore(ConfigDiffDirection.CurrentToBackup, preserveConfirmation: false);
         if (comparison is null || !comparison.BackupIntegrityValid)
@@ -721,6 +747,8 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
                     break;
 
                 case ConfigRestoreOutcomeKind.RefreshedDueToExternalEdit:
+                    activeRecoveryReport = service.ReconcileLatestOperation();
+                    latestUndo = service.LoadLatestActiveUndo();
                     if (comparison is { BackupIntegrityValid: true } c &&
                         c.Status is ConfigComparisonStatus.Changed or ConfigComparisonStatus.Missing)
                     {
@@ -734,6 +762,15 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
                         confirmedLiveSnapshot = null;
                         SetOperationBanner(result.Headline, result.Detail, isError: false, isWarning: true);
                     }
+                    statusMessage = result.Headline;
+                    break;
+
+                case ConfigRestoreOutcomeKind.BusyInAnotherWindow:
+                    isConfirmingRestore = false;
+                    confirmedLiveSnapshot = null;
+                    activeRecoveryReport = service.ReconcileLatestOperation();
+                    latestUndo = service.LoadLatestActiveUndo();
+                    SetOperationBanner(result.Headline, result.Detail, isError: false, isWarning: true);
                     statusMessage = result.Headline;
                     break;
 
@@ -842,6 +879,25 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
                     ClearOriginalCopyPreviewCore();
                     activeRecoveryReport = null;
                     // Do NOT show a stale Undo bar! LoadLatestActiveUndo excludes undo_prepared records.
+                    latestUndo = service.LoadLatestActiveUndo();
+                    SetOperationBanner(result.Headline, result.Detail, isError: false, isWarning: true);
+                    statusMessage = result.Headline;
+                    if (selectedPoint is not null)
+                        RefreshSelectedComparisonCore(ConfigDiffDirection.BackupToCurrent, preserveConfirmation: false);
+                    break;
+
+                case ConfigUndoOutcomeKind.BusyInAnotherWindow:
+                    if (result.RefreshedUndoPreview is not null)
+                        ApplyUndoPreviewCore(result.RefreshedUndoPreview);
+                    activeRecoveryReport = service.ReconcileLatestOperation();
+                    SetOperationBanner(result.Headline, result.Detail, isError: false, isWarning: true);
+                    statusMessage = result.Headline;
+                    break;
+
+                case ConfigUndoOutcomeKind.StaleAlreadyHandled:
+                    ClearUndoPreviewCore();
+                    ClearOriginalCopyPreviewCore();
+                    activeRecoveryReport = service.ReconcileLatestOperation();
                     latestUndo = service.LoadLatestActiveUndo();
                     SetOperationBanner(result.Headline, result.Detail, isError: false, isWarning: true);
                     statusMessage = result.Headline;
@@ -1058,6 +1114,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         OnPropertyChanged(nameof(DiffHeaderSummary));
         OnPropertyChanged(nameof(HasDiffTruncationNote));
         OnPropertyChanged(nameof(CanBeginRestore));
+        OnPropertyChanged(nameof(IsSelectedTargetBusyInAnotherWindow));
         OnPropertyChanged(nameof(IsConfirmingRestore));
         OnPropertyChanged(nameof(IsNotConfirmingRestore));
         OnPropertyChanged(nameof(ConfirmRestoreDirectionLabel));

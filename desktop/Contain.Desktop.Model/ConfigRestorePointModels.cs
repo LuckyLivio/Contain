@@ -31,6 +31,7 @@ public enum ConfigRestoreOutcomeKind
     Succeeded,
     RefreshedDueToExternalEdit,
     VerificationFailedBackupPreserved,
+    BusyInAnotherWindow,
     Failed
 }
 
@@ -41,6 +42,7 @@ public enum ConfigUndoPreviewStatus
     TargetModifiedConflict,
     TargetDeletedConflict,
     TargetReadFailed,
+    BusyInAnotherWindow,
     UndoSnapshotInvalid
 }
 
@@ -50,12 +52,15 @@ public enum ConfigUndoOutcomeKind
     SucceededMetadataPending,
     ExternalEditConflict,
     TargetDeletedConflict,
+    BusyInAnotherWindow,
+    StaleAlreadyHandled,
     Failed
 }
 
 public enum ConfigRecoveryStatus
 {
     None,
+    ActiveInAnotherWindow,
     RestoreNotApplied,
     RestoreAppliedNeedsReview,
     UndoAlreadyApplied,
@@ -212,6 +217,15 @@ public sealed record ConfigUndoSnapshot
 
     [JsonPropertyName("reconciled_note")]
     public string ReconciledNote { get; init; } = "";
+
+    [JsonPropertyName("owner_pid")]
+    public int OwnerPid { get; init; }
+
+    [JsonPropertyName("owner_process_start_utc_ticks")]
+    public long OwnerProcessStartUtcTicks { get; init; }
+
+    [JsonPropertyName("lock_file_relative_path")]
+    public string LockFileRelativePath { get; init; } = "";
 
     [JsonPropertyName("consumed")]
     public bool Consumed { get; init; }
@@ -429,6 +443,33 @@ public sealed record ConfigOriginalCopyExportResult(
     string Sha256,
     string Headline,
     string Detail);
+
+public sealed record ConfigTargetLockInfo
+{
+    [JsonPropertyName("schema_version")]
+    public int SchemaVersion { get; init; } = 1;
+
+    [JsonPropertyName("owner_pid")]
+    public int OwnerPid { get; init; }
+
+    [JsonPropertyName("owner_process_start_utc_ticks")]
+    public long OwnerProcessStartUtcTicks { get; init; }
+
+    [JsonPropertyName("instance_id")]
+    public string InstanceId { get; init; } = "";
+
+    [JsonPropertyName("operation_kind")]
+    public string OperationKind { get; init; } = "";
+
+    [JsonPropertyName("undo_id")]
+    public string UndoId { get; init; } = "";
+
+    [JsonPropertyName("target_path")]
+    public string TargetPath { get; init; } = "";
+
+    [JsonPropertyName("started_at_utc")]
+    public DateTimeOffset StartedAtUtc { get; init; }
+}
 
 public static class ConfigFormatting
 {

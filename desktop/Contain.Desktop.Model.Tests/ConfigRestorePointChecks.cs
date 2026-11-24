@@ -33,6 +33,12 @@ internal static class ConfigRestorePointChecks
         Run(passed, "config_beta3_originally_missing_file_interrupted_recreate_undo_and_external_c", Beta3OriginallyMissingFileInterruptions);
         Run(passed, "config_beta3_insufficient_evidence_shows_needs_verification_without_touching_target", Beta3InsufficientEvidenceShowsNeedsVerification);
         Run(passed, "config_beta3_backward_compatibility_with_beta1_and_beta2_points_and_undo_records", Beta3BackwardCompatibilityWithBeta1AndBeta2);
+        Run(passed, "config_rc1_dual_window_live_restore_prepared_blocks_window2_without_hijacking", Rc1DualWindowLiveRestorePrepared);
+        Run(passed, "config_rc1_dual_window_live_undo_prepared_blocks_window2_without_hijacking", Rc1DualWindowLiveUndoPrepared);
+        Run(passed, "config_rc1_window2_stale_restore_and_undo_previews_reread_disk_after_window1_completes", Rc1StalePreviewsRereadAfterWindow1Completes);
+        Run(passed, "config_rc1_owner_killed_releases_lock_and_window2_reconciles_cleanly_across_two_reopens", Rc1OwnerKilledTakeoverAndTwoReopens);
+        Run(passed, "config_rc1_different_target_files_operate_independently_while_lock_held", Rc1DifferentTargetFilesIndependent);
+        Run(passed, "config_rc1_completed_restore_by_another_live_pid_remains_undoable", Rc1CompletedRestoreByAnotherLivePidRemainsUndoable);
         return Task.FromResult<IReadOnlyList<string>>(passed);
     }
 
@@ -1170,6 +1176,380 @@ internal static class ConfigRestorePointChecks
         vmA.ConfirmUndoRestore();
         Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB && File.ReadAllBytes(cfg).SequenceEqual(bytesB),
             "Legacy Beta.1/Beta.2 undo cleanly restores B byte-for-byte");
+    }
+
+    private static void Rc1DualWindowLiveRestorePrepared()
+    {
+        var (bytesA, bytesB, _, shaA, shaB, _) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var store = Path.Combine(dir.Path, "store");
+        var cfg = Path.Combine(dir.Path, "app", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(cfg)!);
+        File.WriteAllBytes(cfg, bytesA);
+
+        var setupVm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+        setupVm.Refresh();
+        setupVm.SelectCandidateFile(cfg);
+        setupVm.CreateRestorePoint();
+        var point = setupVm.SelectedPoint!;
+        File.WriteAllBytes(cfg, bytesB);
+
+        using var paused = new ManualResetEventSlim(false);
+        using var resume = new ManualResetEventSlim(false);
+        var hooks1 = new DelegateHooks
+        {
+            OnAfterRestorePrepared = (_, _) => { paused.Set(); resume.Wait(TimeSpan.FromSeconds(15)); }
+        };
+        var vm1 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store, hooks1));
+        vm1.Refresh();
+        vm1.BeginRestoreConfirmation();
+        var w1Task = Task.Run(() => vm1.ConfirmRestore());
+        Assert(paused.Wait(TimeSpan.FromSeconds(10)), "Window 1 reached restore_prepared pause");
+
+        try
+        {
+            var svc2 = new LocalConfigRestorePointService(store);
+            var vm2 = new ConfigRestorePointsViewModel(svc2);
+            vm2.CheckInterruptedOperationOnStartup();
+            vm2.Refresh();
+
+            // Window 2 can browse read-only, sees ActiveInAnotherWindow, does NOT hijack or write!
+            Assert(vm2.TotalCount == 1 && vm2.HasSelectedPoint, "Window 2 can browse restore points while Window 1 writes");
+            Assert(vm2.ShowRecoveryCard && vm2.RecoveryStatus == ConfigRecoveryStatus.ActiveInAnotherWindow,
+                $"Window 2 must report ActiveInAnotherWindow, got {vm2.RecoveryStatus}");
+            Assert(vm2.RecoveryStatusBadge == "其他窗口正在操作", $"Unexpected badge: {vm2.RecoveryStatusBadge}");
+            Assert(!vm2.CanBeginRestore && !vm2.ShowUndoBar && !vm2.CanUndoFromRecovery, "Window 2 blocks conflicting write/undo");
+
+            // Even direct service call (stale preview racing) MUST return BusyInAnotherWindow and touch nothing!
+            var directRes = svc2.RestoreFromPoint(point, vm2.Comparison!.LiveSnapshot);
+            Assert(directRes.Outcome == ConfigRestoreOutcomeKind.BusyInAnotherWindow,
+                $"Expected BusyInAnotherWindow, got {directRes.Outcome}");
+
+            // Disk is still B, single undo record is still restore_prepared & unconsumed, B blob intact!
+            Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB, "Target still B while Window 1 paused");
+            var undoJsons = Directory.GetFiles(Path.Combine(store, "Undo"), "*.json");
+            Assert(undoJsons.Length == 1, $"Expected exactly 1 undo record, got {undoJsons.Length}");
+            var rawJson = File.ReadAllText(undoJsons[0], Utf8NoBom);
+            Assert(rawJson.Contains("\"restore_prepared\"") && rawJson.Contains("\"consumed\": false"),
+                "Window 2 MUST NOT mark Window 1's restore_prepared record as aborted/completed/consumed");
+            var undoBlobs = Directory.GetFiles(Path.Combine(store, "Undo"), "*.bin");
+            Assert(undoBlobs.Length == 1 && Sha256Hex(File.ReadAllBytes(undoBlobs[0])) == shaB, "B copy untouched");
+        }
+        finally
+        {
+            resume.Set();
+            Assert(w1Task.Wait(TimeSpan.FromSeconds(15)), "Window 1 finished cleanly after resume");
+        }
+
+        Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaA, "Window 1 finished restoring A");
+        Assert(Directory.GetFiles(Path.Combine(store, "Undo"), "*.json").Length == 1, "Still strictly 1 undo record");
+
+        // Consecutive two reopens: target A, 1 active undo, B intact!
+        for (var i = 0; i < 2; i++)
+        {
+            var reopen = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+            reopen.CheckInterruptedOperationOnStartup();
+            reopen.Refresh();
+            Assert(!reopen.HasRecoveryCard && reopen.CanUndoLastRestore && reopen.ComparisonStatus == ConfigComparisonStatus.Identical,
+                $"Reopen #{i + 1}: clean completed restore with active undo");
+            Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaA, $"Reopen #{i + 1}: disk remains A");
+        }
+    }
+
+    private static void Rc1DualWindowLiveUndoPrepared()
+    {
+        var (bytesA, bytesB, _, shaA, shaB, _) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var store = Path.Combine(dir.Path, "store");
+        var cfg = Path.Combine(dir.Path, "app", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(cfg)!);
+        File.WriteAllBytes(cfg, bytesA);
+
+        var setupVm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+        setupVm.Refresh();
+        setupVm.SelectCandidateFile(cfg);
+        setupVm.CreateRestorePoint();
+        File.WriteAllBytes(cfg, bytesB);
+        setupVm.RefreshSelectedComparison();
+        setupVm.BeginRestoreConfirmation();
+        setupVm.ConfirmRestore();
+        var activeUndoBefore = setupVm.LatestUndo!;
+        Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaA, "Restored A before undo concurrency check");
+
+        using var paused = new ManualResetEventSlim(false);
+        using var resume = new ManualResetEventSlim(false);
+        var hooks1 = new DelegateHooks
+        {
+            OnAfterUndoPrepared = (_, _) => { paused.Set(); resume.Wait(TimeSpan.FromSeconds(15)); }
+        };
+        var vm1 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store, hooks1));
+        vm1.Refresh();
+        vm1.BeginUndoPreview();
+        var w1Task = Task.Run(() => vm1.ConfirmUndoRestore());
+        Assert(paused.Wait(TimeSpan.FromSeconds(10)), "Window 1 reached undo_prepared pause");
+
+        try
+        {
+            var svc2 = new LocalConfigRestorePointService(store);
+            var vm2 = new ConfigRestorePointsViewModel(svc2);
+            vm2.CheckInterruptedOperationOnStartup();
+            vm2.Refresh();
+
+            Assert(vm2.ShowRecoveryCard && vm2.RecoveryStatus == ConfigRecoveryStatus.ActiveInAnotherWindow,
+                $"Window 2 must detect ActiveInAnotherWindow on undo_prepared, got {vm2.RecoveryStatus}");
+            Assert(!vm2.ShowUndoBar && !vm2.CanUndoFromRecovery && !vm2.CanBeginRestore, "Window 2 blocks concurrent undo/restore");
+
+            var preview2 = svc2.InspectUndoPreview(activeUndoBefore);
+            Assert(preview2.Status == ConfigUndoPreviewStatus.BusyInAnotherWindow && !preview2.CanConfirm,
+                $"InspectUndoPreview must report BusyInAnotherWindow, got {preview2.Status}");
+            var undoRes2 = svc2.UndoRestore(activeUndoBefore);
+            Assert(undoRes2.Outcome == ConfigUndoOutcomeKind.BusyInAnotherWindow,
+                $"UndoRestore must return BusyInAnotherWindow, got {undoRes2.Outcome}");
+
+            Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaA, "Disk remains A while Window 1 paused");
+            var undoFile = Directory.GetFiles(Path.Combine(store, "Undo"), "*.json").Single();
+            var rawJson = File.ReadAllText(undoFile, Utf8NoBom);
+            Assert(rawJson.Contains("\"undo_prepared\"") && rawJson.Contains("\"consumed\": false"),
+                "Window 2 MUST NOT revert or consume Window 1's undo_prepared record");
+        }
+        finally
+        {
+            resume.Set();
+            Assert(w1Task.Wait(TimeSpan.FromSeconds(15)), "Window 1 completed undo cleanly");
+        }
+
+        Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB, "Window 1 wrote B back cleanly");
+        var mtime = File.GetLastWriteTimeUtc(cfg);
+
+        // Two consecutive reopens: disk B untouched, no recovery card, no undo bar!
+        for (var i = 0; i < 2; i++)
+        {
+            var reopen = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+            reopen.CheckInterruptedOperationOnStartup();
+            reopen.Refresh();
+            Assert(!reopen.HasRecoveryCard && !reopen.ShowUndoBar && !reopen.CanUndoLastRestore,
+                $"Undo reopen #{i + 1}: clean state");
+            Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB && File.GetLastWriteTimeUtc(cfg) == mtime,
+                $"Undo reopen #{i + 1}: zero rewrites");
+        }
+    }
+
+    private static void Rc1StalePreviewsRereadAfterWindow1Completes()
+    {
+        var (bytesA, bytesB, _, shaA, shaB, _) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var store = Path.Combine(dir.Path, "store");
+        var cfg = Path.Combine(dir.Path, "app", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(cfg)!);
+        File.WriteAllBytes(cfg, bytesA);
+
+        var vm1 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+        vm1.Refresh();
+        vm1.SelectCandidateFile(cfg);
+        vm1.CreateRestorePoint();
+        File.WriteAllBytes(cfg, bytesB);
+
+        // Sub-case A: Both windows open Restore Preview while disk == B; Window 1 completes first!
+        vm1.RefreshSelectedComparison();
+        vm1.BeginRestoreConfirmation();
+        var vm2 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+        vm2.Refresh();
+        vm2.BeginRestoreConfirmation();
+
+        vm1.ConfirmRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaA, "Window 1 restored A");
+        var mtimeAfterW1Restore = File.GetLastWriteTimeUtc(cfg);
+
+        // Window 2 confirms its STALE restore preview -> MUST re-read target & records, write NOTHING, create NO duplicate undo!
+        vm2.ConfirmRestore();
+        Assert(!vm2.IsConfirmingRestore && vm2.ComparisonStatus == ConfigComparisonStatus.Identical, "Window 2 refreshed to Identical");
+        Assert(vm2.CanUndoLastRestore, "Window 2 picked up Window 1's active undo record");
+        Assert(File.GetLastWriteTimeUtc(cfg) == mtimeAfterW1Restore && Sha256Hex(File.ReadAllBytes(cfg)) == shaA,
+            "Window 2 stale restore preview did NOT rewrite disk");
+        Assert(Directory.GetFiles(Path.Combine(store, "Undo"), "*.json").Length == 1,
+            "Window 2 did NOT create duplicate undo record");
+
+        // Sub-case B: Both windows open Undo Preview while disk == A; Window 1 completes undo first!
+        vm1.BeginUndoPreview();
+        vm2.BeginUndoPreview();
+        Assert(vm1.CanConfirmUndo && vm2.CanConfirmUndo, "Both windows hold undo previews");
+
+        vm1.ConfirmUndoRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB, "Window 1 completed undo to B");
+        var mtimeAfterW1Undo = File.GetLastWriteTimeUtc(cfg);
+
+        // Window 2 confirms its STALE undo preview -> MUST re-read Undo/<id>.json, see consumed=true, NOT rewrite disk!
+        vm2.ConfirmUndoRestore();
+        Assert(!vm2.IsPreviewingUndo && !vm2.CanUndoLastRestore, "Window 2 closed stale undo preview cleanly");
+        Assert(vm2.OperationBannerHeadline.Contains("操作记录已更新"), $"Expected stale handled banner, got: {vm2.OperationBannerHeadline}");
+        Assert(File.GetLastWriteTimeUtc(cfg) == mtimeAfterW1Undo && Sha256Hex(File.ReadAllBytes(cfg)) == shaB,
+            "Window 2 stale undo preview did NOT touch disk");
+    }
+
+    private static void Rc1OwnerKilledTakeoverAndTwoReopens()
+    {
+        var (bytesA, bytesB, _, shaA, shaB, _) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var store = Path.Combine(dir.Path, "store");
+        var cfg = Path.Combine(dir.Path, "app", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(cfg)!);
+        File.WriteAllBytes(cfg, bytesA);
+
+        var setup = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+        setup.Refresh();
+        setup.SelectCandidateFile(cfg);
+        setup.CreateRestorePoint();
+        File.WriteAllBytes(cfg, bytesB);
+
+        using var paused = new ManualResetEventSlim(false);
+        using var killNow = new ManualResetEventSlim(false);
+        var hooks1 = new DelegateHooks
+        {
+            OnAfterTargetReplacedBeforeVerify = (_, _) =>
+            {
+                paused.Set();
+                killNow.Wait(TimeSpan.FromSeconds(15));
+                throw new OperationCanceledException("Simulated owner termination releasing OS lock");
+            }
+        };
+        var vm1 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store, hooks1));
+        vm1.Refresh();
+        vm1.BeginRestoreConfirmation();
+        var w1Task = Task.Run(() => { try { vm1.ConfirmRestore(); } catch (OperationCanceledException) { } });
+        Assert(paused.Wait(TimeSpan.FromSeconds(10)), "Window 1 paused post-replace while alive");
+
+        var vm2 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+        vm2.CheckInterruptedOperationOnStartup();
+        vm2.Refresh();
+        Assert(vm2.RecoveryStatus == ConfigRecoveryStatus.ActiveInAnotherWindow, "While Window 1 alive, Window 2 reports ActiveInAnotherWindow");
+
+        // Now terminate Window 1 -> OS lock releases -> Window 2 rechecks and seamlessly takes over Beta.3 read-only reconciliation!
+        killNow.Set();
+        Assert(w1Task.Wait(TimeSpan.FromSeconds(15)), "Window 1 terminated");
+        var mtimeA = File.GetLastWriteTimeUtc(cfg);
+
+        vm2.RecheckRecovery();
+        Assert(vm2.RecoveryStatus == ConfigRecoveryStatus.RestoreAppliedNeedsReview && vm2.CanUndoFromRecovery,
+            $"After Window 1 died, Window 2 takes over reconciliation, got {vm2.RecoveryStatus}");
+        Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaA && File.GetLastWriteTimeUtc(cfg) == mtimeA,
+            "Takeover reconciliation remained strictly read-only on target");
+
+        // Two consecutive reopens after takeover -> target A untouched, undo available, B intact!
+        for (var i = 0; i < 2; i++)
+        {
+            var reopen = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+            reopen.CheckInterruptedOperationOnStartup();
+            reopen.Refresh();
+            Assert(!reopen.HasRecoveryCard && reopen.CanUndoLastRestore, $"Post-takeover reopen #{i + 1}: undo ready");
+            Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaA && File.GetLastWriteTimeUtc(cfg) == mtimeA, $"Post-takeover reopen #{i + 1}: disk A untouched");
+            if (i == 1)
+            {
+                reopen.BeginUndoPreview();
+                reopen.ConfirmUndoRestore();
+                Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB && File.ReadAllBytes(cfg).SequenceEqual(bytesB),
+                    "Post-takeover undo restores exact bytes of B");
+            }
+        }
+    }
+
+    private static void Rc1DifferentTargetFilesIndependent()
+    {
+        var (bytesA, bytesB, _, shaA, shaB, _) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var store = Path.Combine(dir.Path, "store");
+        var cfgAlpha = Path.Combine(dir.Path, "alpha", "settings.json");
+        var cfgBeta = Path.Combine(dir.Path, "beta", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(cfgAlpha)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(cfgBeta)!);
+        File.WriteAllBytes(cfgAlpha, bytesA);
+        File.WriteAllBytes(cfgBeta, bytesA);
+
+        var setup = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+        setup.Refresh();
+        setup.SelectCandidateFile(cfgAlpha); setup.CreateRestorePoint();
+        var ptAlpha = setup.SelectedPoint!;
+        setup.SelectCandidateFile(cfgBeta); setup.CreateRestorePoint();
+        var ptBeta = setup.SelectedPoint!;
+        File.WriteAllBytes(cfgAlpha, bytesB);
+        File.WriteAllBytes(cfgBeta, bytesB);
+
+        using var paused = new ManualResetEventSlim(false);
+        using var resume = new ManualResetEventSlim(false);
+        var hooks1 = new DelegateHooks { OnAfterRestorePrepared = (_, _) => { paused.Set(); resume.Wait(TimeSpan.FromSeconds(15)); } };
+        var vm1 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store, hooks1));
+        vm1.Refresh();
+        vm1.SelectPoint(vm1.FilteredPoints.Single(p => p.PointId == ptAlpha.PointId));
+        vm1.BeginRestoreConfirmation();
+        var w1Task = Task.Run(() => vm1.ConfirmRestore());
+        Assert(paused.Wait(TimeSpan.FromSeconds(10)), "Window 1 locked alpha");
+
+        try
+        {
+            var vm2 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+            vm2.Refresh();
+            vm2.SelectPoint(vm2.FilteredPoints.Single(p => p.PointId == ptBeta.PointId));
+            Assert(vm2.CanBeginRestore, "Beta must NOT be blocked while Alpha is locked");
+            vm2.BeginRestoreConfirmation();
+            vm2.ConfirmRestore();
+            Assert(Sha256Hex(File.ReadAllBytes(cfgBeta)) == shaA, "Beta restored independently");
+            Assert(Sha256Hex(File.ReadAllBytes(cfgAlpha)) == shaB, "Alpha untouched by Beta operation");
+        }
+        finally
+        {
+            resume.Set();
+            Assert(w1Task.Wait(TimeSpan.FromSeconds(15)), "Window 1 finished alpha cleanly");
+        }
+        Assert(Sha256Hex(File.ReadAllBytes(cfgAlpha)) == shaA, "Alpha finished restoring A");
+    }
+
+    private static void Rc1CompletedRestoreByAnotherLivePidRemainsUndoable()
+    {
+        // Regression test for real multi-process case: Window 1 finishes restore (restore_completed, lock released)
+        // and stays open on screen; Window 2 (different OS PID) MUST still see the Undo bar and be able to Undo!
+        var (bytesA, bytesB, _, shaA, shaB, _) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var store = Path.Combine(dir.Path, "store");
+        var cfg = Path.Combine(dir.Path, "app", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(cfg)!);
+        File.WriteAllBytes(cfg, bytesA);
+
+        var vm1 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+        vm1.Refresh();
+        vm1.SelectCandidateFile(cfg);
+        vm1.CreateRestorePoint();
+        File.WriteAllBytes(cfg, bytesB);
+        vm1.RefreshSelectedComparison();
+        vm1.BeginRestoreConfirmation();
+        vm1.ConfirmRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaA, "Window 1 restored A");
+
+        // Stamp undo record with another genuinely alive OS process (e.g. a sibling live process or PID != current)
+        // while NO active write lock is held (Window 1 finished its write and stayed open).
+        var otherLive = System.Diagnostics.Process.GetProcesses()
+            .FirstOrDefault(p =>
+            {
+                try { return p.Id != Environment.ProcessId && !p.HasExited && p.StartTime.Year >= 2000; }
+                catch { return false; }
+            });
+        var undoPath = Directory.GetFiles(Path.Combine(store, "Undo"), "*.json").Single();
+        if (otherLive is not null)
+        {
+            var raw = File.ReadAllText(undoPath, Utf8NoBom);
+            raw = System.Text.RegularExpressions.Regex.Replace(raw, "\"owner_pid\"\\s*:\\s*\\d+", $"\"owner_pid\": {otherLive.Id}");
+            raw = System.Text.RegularExpressions.Regex.Replace(raw, "\"owner_process_start_utc_ticks\"\\s*:\\s*\\d+", $"\"owner_process_start_utc_ticks\": {otherLive.StartTime.ToUniversalTime().Ticks}");
+            File.WriteAllText(undoPath, raw, Utf8NoBom);
+        }
+
+        var vm2 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(store));
+        vm2.CheckInterruptedOperationOnStartup();
+        vm2.Refresh();
+        Assert(!vm2.HasRecoveryCard && vm2.CanUndoLastRestore,
+            "Window 2 must still see Undo bar after Window 1 finished restore and stayed open");
+        vm2.BeginUndoPreview();
+        Assert(vm2.IsPreviewingUndo && vm2.CanConfirmUndo, "Window 2 undo preview must NOT be false-blocked");
+        vm2.ConfirmUndoRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(cfg)) == shaB && File.ReadAllBytes(cfg).SequenceEqual(bytesB),
+            "Window 2 cleanly undoes completed restore from Window 1");
     }
 
     private sealed class DelegateHooks : IConfigRestoreOperationHooks

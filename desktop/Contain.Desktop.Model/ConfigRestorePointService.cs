@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -24,6 +25,7 @@ public interface IConfigRestorePointService
     ConfigRestoreResult RestoreFromPoint(ConfigRestorePointRecord point, ConfigLiveFileSnapshot expectedLiveSnapshot);
     IReadOnlyList<ConfigRecoveryReport> ReconcileOperationsOnStartup();
     ConfigRecoveryReport? ReconcileLatestOperation();
+    bool IsTargetBusyInAnotherWindow(string targetPath, out ConfigTargetLockInfo? activeLock);
     void ArchiveRecoveryRecord(ConfigUndoSnapshot undoSnapshot, string reason);
     ConfigOriginalCopyPreview InspectOriginalCopy(ConfigUndoSnapshot undoSnapshot);
     ConfigOriginalCopyExportResult ExportOriginalCopy(ConfigUndoSnapshot undoSnapshot, string destinationPath);
@@ -413,9 +415,13 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
 
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
+    private static readonly long CurrentProcessStartUtcTicks = TryGetCurrentProcessStartUtcTicks();
+
     private readonly string pointsDir;
     private readonly string blobsDir;
     private readonly string undoDir;
+    private readonly string locksDir;
+    private readonly string instanceId = Guid.NewGuid().ToString("N");
     private readonly IConfigRestoreOperationHooks? operationHooks;
 
     public LocalConfigRestorePointService(string? storageRootDirectory = null, IConfigRestoreOperationHooks? operationHooks = null)
@@ -426,6 +432,7 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
         pointsDir = Path.Combine(StorageRoot, "Points");
         blobsDir = Path.Combine(StorageRoot, "Blobs");
         undoDir = Path.Combine(StorageRoot, "Undo");
+        locksDir = Path.Combine(StorageRoot, "Locks");
         this.operationHooks = operationHooks;
     }
 
@@ -756,29 +763,15 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 RefreshedComparison: TryCompareSafely(point, ConfigDiffDirection.BackupToCurrent));
         }
 
-        var freshLive = CaptureLiveSnapshot(targetPath, out var freshLiveBytes);
-        if (!freshLive.MatchesContentOf(expectedLiveSnapshot))
+        // Cross-process target coordination: acquire OS exclusive write lock (FileShare.Read) BEFORE reading/mutating!
+        if (!TryAcquireTargetLock(targetPath, "restore", "", out var targetLock, out var busyLock) || targetLock is null)
         {
-            // Keep restore-preview direction ("当前文件 → 恢复后") so user immediately sees fresh diff!
-            var refreshed = TryCompareSafely(point, ConfigDiffDirection.CurrentToBackup);
+            var pidNote = busyLock is { OwnerPid: > 0 } ? $"（PID {busyLock.OwnerPid}）" : "";
+            var opLabel = busyLock?.OperationKind == "undo" ? "撤销" : "恢复";
             return new ConfigRestoreResult(
-                Outcome: ConfigRestoreOutcomeKind.RefreshedDueToExternalEdit,
-                Headline: "目标文件在确认期间已被外部修改",
-                Detail: "为避免误覆盖刚刚发生的改动，本次尚未写入文件。已按「当前文件 → 恢复后」刷新最新差异，请核对后再次点击「确认恢复」。",
-                TargetPath: targetPath,
-                ExpectedSha256: point.Sha256,
-                ActualSha256: freshLive.Sha256,
-                ExistingFilePreserved: true,
-                UndoSnapshot: null,
-                RefreshedComparison: refreshed);
-        }
-
-        if (freshLive.Exists && (!freshLive.IsReadable || freshLiveBytes is null))
-        {
-            return new ConfigRestoreResult(
-                Outcome: ConfigRestoreOutcomeKind.Failed,
-                Headline: "恢复失败：覆盖前无法读取并保存当前版本",
-                Detail: $"无法保住当前文件副本（{freshLive.ReadError}），因此未执行覆盖；现有文件未被修改。",
+                Outcome: ConfigRestoreOutcomeKind.BusyInAnotherWindow,
+                Headline: "操作已暂缓：另一个 Contain 窗口正在操作此文件",
+                Detail: $"检测到另一个 Contain 窗口{pidNote}正在对该配置文件执行{opLabel}。为避免并发写冲突，本次未写入目标文件，也未修改或抢先标记对方操作记录；请待对方完成后再刷新核对。",
                 TargetPath: targetPath,
                 ExpectedSha256: point.Sha256,
                 ActualSha256: "",
@@ -787,200 +780,256 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 RefreshedComparison: TryCompareSafely(point, ConfigDiffDirection.BackupToCurrent));
         }
 
-        // STEP R1: Persist & verify original copy (B) + "restore_prepared" intent BEFORE touching target!
-        ConfigUndoSnapshot preparedUndo;
-        string? undoBlobPath = null;
-        string? undoMetaPath = null;
-        try
+        using (targetLock)
         {
-            Directory.CreateDirectory(undoDir);
-            var undoId = Guid.NewGuid().ToString("N")[..12];
-            var undoBlobRel = "";
-            if (freshLive.Exists && freshLiveBytes is not null)
+            // Re-read live target AFTER acquiring lock (catches changes made by another window while we sat on preview!)
+            var freshLive = CaptureLiveSnapshot(targetPath, out var freshLiveBytes);
+            if (!freshLive.MatchesContentOf(expectedLiveSnapshot))
             {
-                undoBlobRel = Path.Combine("Undo", undoId + ".bin");
-                undoBlobPath = Path.Combine(StorageRoot, undoBlobRel);
-                WriteBytesAtomically(undoBlobPath, freshLiveBytes);
-                var savedUndoSha = ComputeFileSha256Hex(undoBlobPath);
-                if (!string.Equals(savedUndoSha, freshLive.Sha256, StringComparison.OrdinalIgnoreCase))
-                    throw new IOException("撤销副本写入后哈希校验不一致。");
-            }
-
-            preparedUndo = new ConfigUndoSnapshot
-            {
-                SchemaVersion = 1,
-                UndoId = undoId,
-                CreatedAtUtc = DateTimeOffset.UtcNow,
-                RestoredPointId = point.PointId,
-                RestoredPointNote = point.Note,
-                TargetPath = targetPath,
-                TargetExistedBeforeRestore = freshLive.Exists,
-                PreRestoreByteLength = freshLive.Exists ? freshLive.ByteLength : 0,
-                PreRestoreSha256 = freshLive.Exists ? freshLive.Sha256 : "",
-                PreRestoreBlobRelativePath = undoBlobRel,
-                PreRestoreEncodingLabel = freshLive.Exists ? freshLive.EncodingLabel : "",
-                PreRestoreLineEndingLabel = freshLive.Exists ? freshLive.LineEndingLabel : "",
-                RestoredBackupByteLength = point.ByteLength,
-                RestoredBackupSha256 = point.Sha256,
-                OperationState = ConfigOperationStates.RestorePrepared,
-                Consumed = false
-            };
-
-            undoMetaPath = Path.Combine(undoDir, undoId + ".json");
-            WriteJsonAtomically(undoMetaPath, preparedUndo);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // Target was NEVER touched yet; safe to remove half-prepared undo artifacts.
-            if (undoBlobPath is not null) TryDeleteFile(undoBlobPath);
-            if (undoMetaPath is not null) TryDeleteFile(undoMetaPath);
-            return new ConfigRestoreResult(
-                Outcome: ConfigRestoreOutcomeKind.Failed,
-                Headline: "恢复失败：无法保存覆盖前的撤销副本",
-                Detail: $"为保障可撤销，覆盖已被取消；原文件未被修改。（{ex.Message}）",
-                TargetPath: targetPath,
-                ExpectedSha256: point.Sha256,
-                ActualSha256: freshLive.Sha256,
-                ExistingFilePreserved: true,
-                UndoSnapshot: null,
-                RefreshedComparison: null);
-        }
-
-        // Deterministic interruption seam: B copy & restore_prepared saved, target NOT replaced yet!
-        operationHooks?.AfterRestorePrepared(preparedUndo.UndoId, targetPath);
-
-        // STEP R2: Replace or recreate target with backup A (isolated catch: NEVER delete B unless target is provably untouched!)
-        try
-        {
-            SafeWriteRawBytesToTarget(targetPath, backupBytes, point.Sha256, targetCurrentlyExists: freshLive.Exists);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            var afterFailLive = CaptureLiveSnapshot(targetPath, out _);
-            var intact = afterFailLive.MatchesContentOf(freshLive);
-            if (intact)
-            {
-                // Target is provably still at pre-restore state -> record restore_aborted so reopen never shows a false restore.
-                TryPersistUndoMetadata(preparedUndo with
+                var alreadyIdentical = freshLive.Exists && freshLive.IsReadable &&
+                    freshLive.ByteLength == point.ByteLength &&
+                    string.Equals(freshLive.Sha256, point.Sha256, StringComparison.OrdinalIgnoreCase);
+                if (alreadyIdentical)
                 {
-                    OperationState = ConfigOperationStates.RestoreAborted,
-                    Consumed = true,
-                    CompletedAtUtc = DateTimeOffset.UtcNow,
-                    ReconciledNote = "写入目标失败，已核对原文件未被修改。"
-                });
+                    return new ConfigRestoreResult(
+                        Outcome: ConfigRestoreOutcomeKind.RefreshedDueToExternalEdit,
+                        Headline: "目标文件已与所选备份一致（可能已由其他窗口完成恢复）",
+                        Detail: "确认前重新读取目标文件与操作记录，发现磁盘内容已经等于该还原点，本次未重复写入，已刷新最新状态。",
+                        TargetPath: targetPath,
+                        ExpectedSha256: point.Sha256,
+                        ActualSha256: freshLive.Sha256,
+                        ExistingFilePreserved: true,
+                        UndoSnapshot: null,
+                        RefreshedComparison: TryCompareSafely(point, ConfigDiffDirection.BackupToCurrent));
+                }
+
+                // Keep restore-preview direction ("当前文件 → 恢复后") so user immediately sees fresh diff!
+                var refreshed = TryCompareSafely(point, ConfigDiffDirection.CurrentToBackup);
+                return new ConfigRestoreResult(
+                    Outcome: ConfigRestoreOutcomeKind.RefreshedDueToExternalEdit,
+                    Headline: "目标文件在确认期间已被外部修改",
+                    Detail: "为避免误覆盖刚刚发生的改动，本次尚未写入文件。已按「当前文件 → 恢复后」刷新最新差异，请核对后再次点击「确认恢复」。",
+                    TargetPath: targetPath,
+                    ExpectedSha256: point.Sha256,
+                    ActualSha256: freshLive.Sha256,
+                    ExistingFilePreserved: true,
+                    UndoSnapshot: null,
+                    RefreshedComparison: refreshed);
             }
 
-            var reason = DescribeWriteFailure(ex);
-            var intactNote = intact
-                ? "已核对现有文件未被修改，内容完整保留。"
-                : "目标状态未能确认仍等于覆盖前版本，已完整保住覆盖前原始副本；请使用「重新核对」或查看/另存原副本。";
+            if (freshLive.Exists && (!freshLive.IsReadable || freshLiveBytes is null))
+            {
+                return new ConfigRestoreResult(
+                    Outcome: ConfigRestoreOutcomeKind.Failed,
+                    Headline: "恢复失败：覆盖前无法读取并保存当前版本",
+                    Detail: $"无法保住当前文件副本（{freshLive.ReadError}），因此未执行覆盖；现有文件未被修改。",
+                    TargetPath: targetPath,
+                    ExpectedSha256: point.Sha256,
+                    ActualSha256: "",
+                    ExistingFilePreserved: true,
+                    UndoSnapshot: null,
+                    RefreshedComparison: TryCompareSafely(point, ConfigDiffDirection.BackupToCurrent));
+            }
+
+            // STEP R1: Persist & verify original copy (B) + "restore_prepared" intent BEFORE touching target!
+            ConfigUndoSnapshot preparedUndo;
+            string? undoBlobPath = null;
+            string? undoMetaPath = null;
+            try
+            {
+                Directory.CreateDirectory(undoDir);
+                var undoId = Guid.NewGuid().ToString("N")[..12];
+                targetLock.UpdateUndoId(undoId);
+                var undoBlobRel = "";
+                if (freshLive.Exists && freshLiveBytes is not null)
+                {
+                    undoBlobRel = Path.Combine("Undo", undoId + ".bin");
+                    undoBlobPath = Path.Combine(StorageRoot, undoBlobRel);
+                    WriteBytesAtomically(undoBlobPath, freshLiveBytes);
+                    var savedUndoSha = ComputeFileSha256Hex(undoBlobPath);
+                    if (!string.Equals(savedUndoSha, freshLive.Sha256, StringComparison.OrdinalIgnoreCase))
+                        throw new IOException("撤销副本写入后哈希校验不一致。");
+                }
+
+                preparedUndo = new ConfigUndoSnapshot
+                {
+                    SchemaVersion = 1,
+                    UndoId = undoId,
+                    CreatedAtUtc = DateTimeOffset.UtcNow,
+                    RestoredPointId = point.PointId,
+                    RestoredPointNote = point.Note,
+                    TargetPath = targetPath,
+                    TargetExistedBeforeRestore = freshLive.Exists,
+                    PreRestoreByteLength = freshLive.Exists ? freshLive.ByteLength : 0,
+                    PreRestoreSha256 = freshLive.Exists ? freshLive.Sha256 : "",
+                    PreRestoreBlobRelativePath = undoBlobRel,
+                    PreRestoreEncodingLabel = freshLive.Exists ? freshLive.EncodingLabel : "",
+                    PreRestoreLineEndingLabel = freshLive.Exists ? freshLive.LineEndingLabel : "",
+                    RestoredBackupByteLength = point.ByteLength,
+                    RestoredBackupSha256 = point.Sha256,
+                    OperationState = ConfigOperationStates.RestorePrepared,
+                    OwnerPid = Environment.ProcessId,
+                    OwnerProcessStartUtcTicks = CurrentProcessStartUtcTicks,
+                    LockFileRelativePath = targetLock.RelativePath,
+                    Consumed = false
+                };
+
+                undoMetaPath = Path.Combine(undoDir, undoId + ".json");
+                WriteJsonAtomically(undoMetaPath, preparedUndo);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Target was NEVER touched yet; safe to remove half-prepared undo artifacts.
+                if (undoBlobPath is not null) TryDeleteFile(undoBlobPath);
+                if (undoMetaPath is not null) TryDeleteFile(undoMetaPath);
+                return new ConfigRestoreResult(
+                    Outcome: ConfigRestoreOutcomeKind.Failed,
+                    Headline: "恢复失败：无法保存覆盖前的撤销副本",
+                    Detail: $"为保障可撤销，覆盖已被取消；原文件未被修改。（{ex.Message}）",
+                    TargetPath: targetPath,
+                    ExpectedSha256: point.Sha256,
+                    ActualSha256: freshLive.Sha256,
+                    ExistingFilePreserved: true,
+                    UndoSnapshot: null,
+                    RefreshedComparison: null);
+            }
+
+            // Deterministic interruption seam: B copy & restore_prepared saved, target NOT replaced yet!
+            operationHooks?.AfterRestorePrepared(preparedUndo.UndoId, targetPath);
+
+            // STEP R2: Replace or recreate target with backup A (isolated catch: NEVER delete B unless target is provably untouched!)
+            try
+            {
+                SafeWriteRawBytesToTarget(targetPath, backupBytes, point.Sha256, targetCurrentlyExists: freshLive.Exists);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                var afterFailLive = CaptureLiveSnapshot(targetPath, out _);
+                var intact = afterFailLive.MatchesContentOf(freshLive);
+                if (intact)
+                {
+                    // Target is provably still at pre-restore state -> record restore_aborted so reopen never shows a false restore.
+                    TryPersistUndoMetadata(preparedUndo with
+                    {
+                        OperationState = ConfigOperationStates.RestoreAborted,
+                        Consumed = true,
+                        CompletedAtUtc = DateTimeOffset.UtcNow,
+                        ReconciledNote = "写入目标失败，已核对原文件未被修改。"
+                    });
+                }
+
+                var reason = DescribeWriteFailure(ex);
+                var intactNote = intact
+                    ? "已核对现有文件未被修改，内容完整保留。"
+                    : "目标状态未能确认仍等于覆盖前版本，已完整保住覆盖前原始副本；请使用「重新核对」或查看/另存原副本。";
+
+                return new ConfigRestoreResult(
+                    Outcome: intact ? ConfigRestoreOutcomeKind.Failed : ConfigRestoreOutcomeKind.VerificationFailedBackupPreserved,
+                    Headline: intact ? "恢复失败：目标文件未能写入" : "恢复中断：写入异常，覆盖前原副本已保住",
+                    Detail: $"{reason} {intactNote}",
+                    TargetPath: targetPath,
+                    ExpectedSha256: point.Sha256,
+                    ActualSha256: afterFailLive.Sha256,
+                    ExistingFilePreserved: intact,
+                    UndoSnapshot: intact ? null : preparedUndo,
+                    RefreshedComparison: TryCompareSafely(point, ConfigDiffDirection.BackupToCurrent),
+                    OriginalCopyPreserved: !intact && freshLive.Exists);
+            }
+
+            // STEP R3: Post-replace readback verification (ISOLATED catch: NEVER deletes B's saved copy!)
+            string postSha;
+            try
+            {
+                operationHooks?.AfterTargetReplacedBeforeVerify(preparedUndo.UndoId, targetPath);
+                postSha = ComputeFileSha256Hex(targetPath);
+                if (!string.Equals(postSha, point.Sha256, StringComparison.OrdinalIgnoreCase))
+                    throw new IOException($"写入完成但目标文件 SHA-256 核对不一致（期望 {point.Sha256}，实际 {postSha}）。");
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Target replacement ALREADY executed! MUST preserve undoBlobPath & preparedUndo (restore_prepared) intact!
+                var afterVerifyLive = CaptureLiveSnapshot(targetPath, out _);
+                var copyNote = freshLive.Exists
+                    ? "覆盖前的原始副本（B）已完整保住且未被删除，可随时核对、撤销或另存原副本。"
+                    : "已保留“恢复前原文件缺失”的操作记录，可随时核对或通过撤销预览移除重建文件。";
+                return new ConfigRestoreResult(
+                    Outcome: ConfigRestoreOutcomeKind.VerificationFailedBackupPreserved,
+                    Headline: "目标已替换但回读校验失败（原副本已保住）",
+                    Detail: $"目标文件替换后回读校验未通过（{ex.Message}）。{copyNote}",
+                    TargetPath: targetPath,
+                    ExpectedSha256: point.Sha256,
+                    ActualSha256: afterVerifyLive.Sha256,
+                    ExistingFilePreserved: false,
+                    UndoSnapshot: preparedUndo,
+                    RefreshedComparison: TryCompareSafely(point, ConfigDiffDirection.BackupToCurrent),
+                    OriginalCopyPreserved: freshLive.Exists);
+            }
+
+            // STEP R4: Persist "restore_completed" state (ISOLATED catch: NEVER deletes B's saved copy!)
+            var completedUndo = preparedUndo with
+            {
+                OperationState = ConfigOperationStates.RestoreCompleted,
+                CompletedAtUtc = DateTimeOffset.UtcNow
+            };
+            try
+            {
+                operationHooks?.BeforeSaveRestoreCompleted(preparedUndo.UndoId, targetPath);
+                WriteJsonAtomically(undoMetaPath, completedUndo);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Target IS verified as A and B's copy IS on disk in restore_prepared; next check/reopen reconciles cleanly!
+                var copyNote = freshLive.Exists
+                    ? "覆盖前原始副本已完整保住，重开 Contain 或点击「重新核对」后仍可预览撤销。"
+                    : "重建记录已保留，重开 Contain 或点击「重新核对」后仍可预览移除。";
+                return new ConfigRestoreResult(
+                    Outcome: ConfigRestoreOutcomeKind.VerificationFailedBackupPreserved,
+                    Headline: "目标已恢复为备份版本，但完成状态暂未保存（原副本已保住）",
+                    Detail: $"目标文件已写入备份并核验 SHA-256 一致（{postSha[..12]}…），但更新本地操作状态失败（{ex.Message}）。{copyNote}",
+                    TargetPath: targetPath,
+                    ExpectedSha256: point.Sha256,
+                    ActualSha256: postSha,
+                    ExistingFilePreserved: true,
+                    UndoSnapshot: preparedUndo,
+                    RefreshedComparison: TryCompareSafely(point, ConfigDiffDirection.BackupToCurrent),
+                    OriginalCopyPreserved: freshLive.Exists);
+            }
+
+            // STEP R5: Refresh comparison OUTSIDE any destructive catch — failure here NEVER loses B or invalidates the completed restore!
+            ConfigComparisonResult? refreshedComparison = null;
+            var refreshFailed = false;
+            string refreshError = "";
+            try
+            {
+                operationHooks?.BeforePostRestoreRefresh(completedUndo.UndoId, targetPath);
+                refreshedComparison = CompareRestorePoint(point, ConfigDiffDirection.BackupToCurrent);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                refreshFailed = true;
+                refreshError = ex.Message;
+            }
+
+            var baseDetail = freshLive.Exists
+                ? $"已将备份原始字节写入目标文件并校验 SHA-256 一致（{point.Sha256[..12]}…），保留了原始 BOM 与换行格式。覆盖前版本已保存，可点击撤销进入预览。"
+                : $"已在原路径按备份原始字节重新创建文件并校验 SHA-256 一致（{point.Sha256[..12]}…）。可点击撤销预览并移除本次重建的文件。";
+            var finalDetail = refreshFailed
+                ? $"{baseDetail}（提示：恢复后刷新对比视图失败：{refreshError}，可点击「重新检查」刷新，原副本不受影响。）"
+                : baseDetail;
 
             return new ConfigRestoreResult(
-                Outcome: intact ? ConfigRestoreOutcomeKind.Failed : ConfigRestoreOutcomeKind.VerificationFailedBackupPreserved,
-                Headline: intact ? "恢复失败：目标文件未能写入" : "恢复中断：写入异常，覆盖前原副本已保住",
-                Detail: $"{reason} {intactNote}",
-                TargetPath: targetPath,
-                ExpectedSha256: point.Sha256,
-                ActualSha256: afterFailLive.Sha256,
-                ExistingFilePreserved: intact,
-                UndoSnapshot: intact ? null : preparedUndo,
-                RefreshedComparison: TryCompareSafely(point, ConfigDiffDirection.BackupToCurrent),
-                OriginalCopyPreserved: !intact && freshLive.Exists);
-        }
-
-        // STEP R3: Post-replace readback verification (ISOLATED catch: NEVER deletes B's saved copy!)
-        string postSha;
-        try
-        {
-            operationHooks?.AfterTargetReplacedBeforeVerify(preparedUndo.UndoId, targetPath);
-            postSha = ComputeFileSha256Hex(targetPath);
-            if (!string.Equals(postSha, point.Sha256, StringComparison.OrdinalIgnoreCase))
-                throw new IOException($"写入完成但目标文件 SHA-256 核对不一致（期望 {point.Sha256}，实际 {postSha}）。");
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // Target replacement ALREADY executed! MUST preserve undoBlobPath & preparedUndo (restore_prepared) intact!
-            var afterVerifyLive = CaptureLiveSnapshot(targetPath, out _);
-            var copyNote = freshLive.Exists
-                ? "覆盖前的原始副本（B）已完整保住且未被删除，可随时核对、撤销或另存原副本。"
-                : "已保留“恢复前原文件缺失”的操作记录，可随时核对或通过撤销预览移除重建文件。";
-            return new ConfigRestoreResult(
-                Outcome: ConfigRestoreOutcomeKind.VerificationFailedBackupPreserved,
-                Headline: "目标已替换但回读校验失败（原副本已保住）",
-                Detail: $"目标文件替换后回读校验未通过（{ex.Message}）。{copyNote}",
-                TargetPath: targetPath,
-                ExpectedSha256: point.Sha256,
-                ActualSha256: afterVerifyLive.Sha256,
-                ExistingFilePreserved: false,
-                UndoSnapshot: preparedUndo,
-                RefreshedComparison: TryCompareSafely(point, ConfigDiffDirection.BackupToCurrent),
-                OriginalCopyPreserved: freshLive.Exists);
-        }
-
-        // STEP R4: Persist "restore_completed" state (ISOLATED catch: NEVER deletes B's saved copy!)
-        var completedUndo = preparedUndo with
-        {
-            OperationState = ConfigOperationStates.RestoreCompleted,
-            CompletedAtUtc = DateTimeOffset.UtcNow
-        };
-        try
-        {
-            operationHooks?.BeforeSaveRestoreCompleted(preparedUndo.UndoId, targetPath);
-            WriteJsonAtomically(undoMetaPath, completedUndo);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // Target IS verified as A and B's copy IS on disk in restore_prepared; next check/reopen reconciles cleanly!
-            var copyNote = freshLive.Exists
-                ? "覆盖前原始副本已完整保住，重开 Contain 或点击「重新核对」后仍可预览撤销。"
-                : "重建记录已保留，重开 Contain 或点击「重新核对」后仍可预览移除。";
-            return new ConfigRestoreResult(
-                Outcome: ConfigRestoreOutcomeKind.VerificationFailedBackupPreserved,
-                Headline: "目标已恢复为备份版本，但完成状态暂未保存（原副本已保住）",
-                Detail: $"目标文件已写入备份并核验 SHA-256 一致（{postSha[..12]}…），但更新本地操作状态失败（{ex.Message}）。{copyNote}",
+                Outcome: ConfigRestoreOutcomeKind.Succeeded,
+                Headline: "已恢复到所选还原点",
+                Detail: finalDetail,
                 TargetPath: targetPath,
                 ExpectedSha256: point.Sha256,
                 ActualSha256: postSha,
                 ExistingFilePreserved: true,
-                UndoSnapshot: preparedUndo,
-                RefreshedComparison: TryCompareSafely(point, ConfigDiffDirection.BackupToCurrent),
-                OriginalCopyPreserved: freshLive.Exists);
+                UndoSnapshot: completedUndo,
+                RefreshedComparison: refreshedComparison,
+                OriginalCopyPreserved: freshLive.Exists,
+                RefreshFailed: refreshFailed);
         }
-
-        // STEP R5: Refresh comparison OUTSIDE any destructive catch — failure here NEVER loses B or invalidates the completed restore!
-        ConfigComparisonResult? refreshedComparison = null;
-        var refreshFailed = false;
-        string refreshError = "";
-        try
-        {
-            operationHooks?.BeforePostRestoreRefresh(completedUndo.UndoId, targetPath);
-            refreshedComparison = CompareRestorePoint(point, ConfigDiffDirection.BackupToCurrent);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            refreshFailed = true;
-            refreshError = ex.Message;
-        }
-
-        var baseDetail = freshLive.Exists
-            ? $"已将备份原始字节写入目标文件并校验 SHA-256 一致（{point.Sha256[..12]}…），保留了原始 BOM 与换行格式。覆盖前版本已保存，可点击撤销进入预览。"
-            : $"已在原路径按备份原始字节重新创建文件并校验 SHA-256 一致（{point.Sha256[..12]}…）。可点击撤销预览并移除本次重建的文件。";
-        var finalDetail = refreshFailed
-            ? $"{baseDetail}（提示：恢复后刷新对比视图失败：{refreshError}，可点击「重新检查」刷新，原副本不受影响。）"
-            : baseDetail;
-
-        return new ConfigRestoreResult(
-            Outcome: ConfigRestoreOutcomeKind.Succeeded,
-            Headline: "已恢复到所选还原点",
-            Detail: finalDetail,
-            TargetPath: targetPath,
-            ExpectedSha256: point.Sha256,
-            ActualSha256: postSha,
-            ExistingFilePreserved: true,
-            UndoSnapshot: completedUndo,
-            RefreshedComparison: refreshedComparison,
-            OriginalCopyPreserved: freshLive.Exists,
-            RefreshFailed: refreshFailed);
     }
 
     public IReadOnlyList<ConfigRecoveryReport> ReconcileOperationsOnStartup()
@@ -1038,12 +1087,22 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
 
             if (string.Equals(snap.OperationState, ConfigOperationStates.RestorePrepared, StringComparison.Ordinal))
             {
+                if (IsOperationOwnedByAnotherLiveWindow(snap, out var liveLock))
+                {
+                    reports.Add(BuildActiveInAnotherWindowReport(snap, liveLock, "恢复"));
+                    continue;
+                }
                 reports.Add(ReconcilePreparedRestore(filePath, snap));
                 continue;
             }
 
             if (string.Equals(snap.OperationState, ConfigOperationStates.UndoPrepared, StringComparison.Ordinal))
             {
+                if (IsOperationOwnedByAnotherLiveWindow(snap, out var liveLock))
+                {
+                    reports.Add(BuildActiveInAnotherWindowReport(snap, liveLock, "撤销"));
+                    continue;
+                }
                 reports.Add(ReconcilePreparedUndo(filePath, snap));
                 continue;
             }
@@ -1073,6 +1132,20 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
     {
         var all = ReconcileOperationsOnStartup();
         return all.Count > 0 ? all[0] : null;
+    }
+
+    public bool IsTargetBusyInAnotherWindow(string targetPath, out ConfigTargetLockInfo? activeLock)
+    {
+        activeLock = null;
+        if (!TryNormalizeRegularFilePath(targetPath, mustExist: false, out var normalized, out _))
+            return false;
+        var probed = ProbeLiveTargetLock(normalized);
+        if (probed is not null && !string.Equals(probed.InstanceId, instanceId, StringComparison.Ordinal))
+        {
+            activeLock = probed;
+            return true;
+        }
+        return false;
     }
 
     public void ArchiveRecoveryRecord(ConfigUndoSnapshot undoSnapshot, string reason)
@@ -1274,6 +1347,9 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                         continue;
                 }
 
+                if (IsOperationOwnedByAnotherLiveWindow(snap, out _))
+                    continue;
+
                 if (latest is null || snap.CreatedAtUtc > latest.CreatedAtUtc)
                     latest = snap;
             }
@@ -1289,14 +1365,31 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
     {
         ArgumentNullException.ThrowIfNull(undoSnapshot);
 
+        // Always re-read latest record from disk so stale previews never act on an already-consumed/updated record!
+        var latestOnDisk = TryLoadUndoRecordById(undoSnapshot.UndoId);
+        if (latestOnDisk is not null)
+            undoSnapshot = latestOnDisk;
+
+        if (IsOperationOwnedByAnotherLiveWindow(undoSnapshot, out var activeLock) ||
+            IsTargetBusyInAnotherWindow(undoSnapshot.TargetPath, out activeLock))
+        {
+            var pidNote = activeLock is { OwnerPid: > 0 } ? $"（PID {activeLock.OwnerPid}）" : "";
+            return BuildUndoErrorPreview(
+                undoSnapshot,
+                ConfigUndoPreviewStatus.BusyInAnotherWindow,
+                CaptureLiveSnapshot(undoSnapshot.TargetPath, out _),
+                "另一个 Contain 窗口正在操作此文件",
+                $"检测到另一个 Contain 窗口{pidNote}正在对该目标文件执行写入。为避免并发冲突，当前不可执行撤销，也未修改或消耗撤销记录；请待对方完成后点击「刷新」。");
+        }
+
         if (undoSnapshot.Consumed)
         {
             return BuildUndoErrorPreview(
                 undoSnapshot,
                 ConfigUndoPreviewStatus.UndoSnapshotInvalid,
                 CaptureLiveSnapshot(undoSnapshot.TargetPath, out _),
-                "本次恢复已撤销",
-                "该撤销记录已被使用，无需重复撤销。");
+                "本次恢复已撤销或状态已更新",
+                "重新读取操作记录发现该撤销记录已使用或已关闭，无需重复撤销。");
         }
 
         if (!TryNormalizeRegularFilePath(undoSnapshot.TargetPath, mustExist: false, out var targetPath, out var pathError))
@@ -1503,18 +1596,6 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
     {
         ArgumentNullException.ThrowIfNull(undoSnapshot);
 
-        if (undoSnapshot.Consumed)
-        {
-            return new ConfigUndoResult(
-                Outcome: ConfigUndoOutcomeKind.Failed,
-                Headline: "本次恢复已撤销",
-                Detail: "该撤销记录已被使用，无需重复撤销。",
-                TargetPath: undoSnapshot.TargetPath,
-                ExpectedSha256: undoSnapshot.PreRestoreSha256,
-                ActualSha256: "",
-                ExistingFilePreserved: true);
-        }
-
         if (!TryNormalizeRegularFilePath(undoSnapshot.TargetPath, mustExist: false, out var targetPath, out var pathError))
         {
             return new ConfigUndoResult(
@@ -1528,188 +1609,229 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 RefreshedUndoPreview: InspectUndoPreview(undoSnapshot));
         }
 
-        byte[]? preRestoreBytes = null;
-        if (undoSnapshot.TargetExistedBeforeRestore)
+        // Cross-process target coordination: acquire OS exclusive write lock (FileShare.Read) BEFORE re-reading/mutating!
+        if (!TryAcquireTargetLock(targetPath, "undo", undoSnapshot.UndoId, out var targetLock, out var busyLock) || targetLock is null)
         {
-            if (!TryReadValidatedUndoBlob(undoSnapshot, out preRestoreBytes, out var blobError))
+            var pidNote = busyLock is { OwnerPid: > 0 } ? $"（PID {busyLock.OwnerPid}）" : "";
+            var opLabel = busyLock?.OperationKind == "undo" ? "撤销" : "恢复";
+            return new ConfigUndoResult(
+                Outcome: ConfigUndoOutcomeKind.BusyInAnotherWindow,
+                Headline: "撤销已暂缓：另一个 Contain 窗口正在操作此文件",
+                Detail: $"检测到另一个 Contain 窗口{pidNote}正在对该配置文件执行{opLabel}。为避免并发冲突，本次未写入目标文件，也未修改或消耗撤销记录；请待对方完成后再刷新。",
+                TargetPath: targetPath,
+                ExpectedSha256: undoSnapshot.PreRestoreSha256,
+                ActualSha256: "",
+                ExistingFilePreserved: true,
+                RefreshedUndoPreview: InspectUndoPreview(undoSnapshot));
+        }
+
+        using (targetLock)
+        {
+            // Re-read operation record from disk AFTER acquiring lock (catches Window 1 completing undo/restore while Window 2 held an old preview!)
+            var freshRecord = TryLoadUndoRecordById(undoSnapshot.UndoId);
+            if (freshRecord is null ||
+                freshRecord.Consumed ||
+                freshRecord.OperationState is ConfigOperationStates.UndoCompleted or ConfigOperationStates.RestoreAborted or ConfigOperationStates.ArchivedAfterConflict ||
+                HasNewerActiveRestoreForTarget(targetPath, freshRecord))
+            {
+                return new ConfigUndoResult(
+                    Outcome: ConfigUndoOutcomeKind.StaleAlreadyHandled,
+                    Headline: "操作记录已更新（可能已由其他窗口撤销或完成）",
+                    Detail: "确认前重新读取目标文件与操作记录，发现本次恢复已被其他窗口处理或已被更新的恢复替代。本次未重复写盘，已刷新最新状态。",
+                    TargetPath: targetPath,
+                    ExpectedSha256: undoSnapshot.PreRestoreSha256,
+                    ActualSha256: CaptureLiveSnapshot(targetPath, out _).Sha256,
+                    ExistingFilePreserved: true);
+            }
+
+            undoSnapshot = freshRecord;
+
+            byte[]? preRestoreBytes = null;
+            if (undoSnapshot.TargetExistedBeforeRestore)
+            {
+                if (!TryReadValidatedUndoBlob(undoSnapshot, out preRestoreBytes, out var blobError))
+                {
+                    return new ConfigUndoResult(
+                        Outcome: ConfigUndoOutcomeKind.Failed,
+                        Headline: "撤销失败：覆盖前副本已损坏或缺失",
+                        Detail: $"{blobError} 目标文件保持不变。",
+                        TargetPath: targetPath,
+                        ExpectedSha256: undoSnapshot.PreRestoreSha256,
+                        ActualSha256: "",
+                        ExistingFilePreserved: true,
+                        RefreshedUndoPreview: InspectUndoPreview(undoSnapshot));
+                }
+            }
+
+            // Re-check live target RIGHT BEFORE writing/deleting (protects against edits or deletions made after restore OR during Undo Preview!)
+            var live = CaptureLiveSnapshot(targetPath, out _);
+
+            if (!live.Exists)
+            {
+                var freshPreview = InspectUndoPreview(undoSnapshot);
+                return new ConfigUndoResult(
+                    Outcome: ConfigUndoOutcomeKind.TargetDeletedConflict,
+                    Headline: "撤销已阻止：目标文件已被主动删除",
+                    Detail: "核对发现恢复后的目标文件已不存在；为保住你的最新状态，未重新写入文件，且未消耗撤销记录。",
+                    TargetPath: targetPath,
+                    ExpectedSha256: undoSnapshot.PreRestoreSha256,
+                    ActualSha256: "",
+                    ExistingFilePreserved: true,
+                    RefreshedUndoPreview: freshPreview);
+            }
+
+            if (!live.IsReadable)
             {
                 return new ConfigUndoResult(
                     Outcome: ConfigUndoOutcomeKind.Failed,
-                    Headline: "撤销失败：覆盖前副本已损坏或缺失",
-                    Detail: $"{blobError} 目标文件保持不变。",
+                    Headline: "撤销已中止：当前无法读取目标文件",
+                    Detail: $"{live.ReadError} 现有文件未被修改。",
                     TargetPath: targetPath,
                     ExpectedSha256: undoSnapshot.PreRestoreSha256,
                     ActualSha256: "",
                     ExistingFilePreserved: true,
                     RefreshedUndoPreview: InspectUndoPreview(undoSnapshot));
             }
-        }
 
-        // Re-check live target RIGHT BEFORE writing/deleting (protects against edits or deletions made after restore OR during Undo Preview!)
-        var live = CaptureLiveSnapshot(targetPath, out _);
-
-        if (!live.Exists)
-        {
-            var freshPreview = InspectUndoPreview(undoSnapshot);
-            return new ConfigUndoResult(
-                Outcome: ConfigUndoOutcomeKind.TargetDeletedConflict,
-                Headline: "撤销已阻止：目标文件已被主动删除",
-                Detail: "核对发现恢复后的目标文件已不存在；为保住你的最新状态，未重新写入文件，且未消耗撤销记录。",
-                TargetPath: targetPath,
-                ExpectedSha256: undoSnapshot.PreRestoreSha256,
-                ActualSha256: "",
-                ExistingFilePreserved: true,
-                RefreshedUndoPreview: freshPreview);
-        }
-
-        if (!live.IsReadable)
-        {
-            return new ConfigUndoResult(
-                Outcome: ConfigUndoOutcomeKind.Failed,
-                Headline: "撤销已中止：当前无法读取目标文件",
-                Detail: $"{live.ReadError} 现有文件未被修改。",
-                TargetPath: targetPath,
-                ExpectedSha256: undoSnapshot.PreRestoreSha256,
-                ActualSha256: "",
-                ExistingFilePreserved: true,
-                RefreshedUndoPreview: InspectUndoPreview(undoSnapshot));
-        }
-
-        var matchesRestored = string.Equals(live.Sha256, undoSnapshot.RestoredBackupSha256, StringComparison.OrdinalIgnoreCase);
-        var matchesPreview = expectedLiveSnapshot is null || live.MatchesContentOf(expectedLiveSnapshot);
-        if (!matchesRestored || !matchesPreview)
-        {
-            var freshPreview = InspectUndoPreview(undoSnapshot);
-            return new ConfigUndoResult(
-                Outcome: ConfigUndoOutcomeKind.ExternalEditConflict,
-                Headline: "撤销已阻止：恢复后目标文件又被外部修改",
-                Detail: "实际写入前再次核对发现目标文件已不再等于恢复版本；为保住你的最新改动，已中止撤销且未修改现有文件。",
-                TargetPath: targetPath,
-                ExpectedSha256: undoSnapshot.PreRestoreSha256,
-                ActualSha256: live.Sha256,
-                ExistingFilePreserved: true,
-                RefreshedUndoPreview: freshPreview);
-        }
-
-        // STEP U1: Persist "undo_prepared" intent BEFORE modifying or deleting target!
-        var metaPath = Path.Combine(undoDir, undoSnapshot.UndoId + ".json");
-        var preparedUndo = undoSnapshot with
-        {
-            OperationState = ConfigOperationStates.UndoPrepared,
-            UndoStartedAtUtc = DateTimeOffset.UtcNow,
-            Consumed = false
-        };
-        try
-        {
-            Directory.CreateDirectory(undoDir);
-            WriteJsonAtomically(metaPath, preparedUndo);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            return new ConfigUndoResult(
-                Outcome: ConfigUndoOutcomeKind.Failed,
-                Headline: "撤销未开始：无法保存撤销状态标记",
-                Detail: $"为避免中断后状态不明，尚未改动目标文件（{ex.Message}）。请检查权限后重试。",
-                TargetPath: targetPath,
-                ExpectedSha256: undoSnapshot.PreRestoreSha256,
-                ActualSha256: live.Sha256,
-                ExistingFilePreserved: true,
-                RefreshedUndoPreview: InspectUndoPreview(undoSnapshot));
-        }
-
-        operationHooks?.AfterUndoPrepared(preparedUndo.UndoId, targetPath);
-
-        // STEP U2: Perform target write-back (B) or delete recreated file, and verify!
-        string actualShaAfter = "";
-        try
-        {
-            if (undoSnapshot.TargetExistedBeforeRestore && preRestoreBytes is not null)
+            var matchesRestored = string.Equals(live.Sha256, undoSnapshot.RestoredBackupSha256, StringComparison.OrdinalIgnoreCase);
+            var matchesPreview = expectedLiveSnapshot is null || live.MatchesContentOf(expectedLiveSnapshot);
+            if (!matchesRestored || !matchesPreview)
             {
-                SafeWriteRawBytesToTarget(targetPath, preRestoreBytes, undoSnapshot.PreRestoreSha256, targetCurrentlyExists: true);
-                actualShaAfter = ComputeFileSha256Hex(targetPath);
-                if (!string.Equals(actualShaAfter, undoSnapshot.PreRestoreSha256, StringComparison.OrdinalIgnoreCase))
-                    throw new IOException($"撤销后校验不一致（期望 {undoSnapshot.PreRestoreSha256}，实际 {actualShaAfter}）。");
+                var freshPreview = InspectUndoPreview(undoSnapshot);
+                return new ConfigUndoResult(
+                    Outcome: ConfigUndoOutcomeKind.ExternalEditConflict,
+                    Headline: "撤销已阻止：恢复后目标文件又被外部修改",
+                    Detail: "实际写入前再次核对发现目标文件已不再等于恢复版本；为保住你的最新改动，已中止撤销且未修改现有文件。",
+                    TargetPath: targetPath,
+                    ExpectedSha256: undoSnapshot.PreRestoreSha256,
+                    ActualSha256: live.Sha256,
+                    ExistingFilePreserved: true,
+                    RefreshedUndoPreview: freshPreview);
             }
-            else
-            {
-                File.Delete(targetPath);
-                if (File.Exists(targetPath))
-                    throw new IOException("删除本次恢复重建的文件失败，目标文件仍存在。");
-            }
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            var afterFail = CaptureLiveSnapshot(targetPath, out _);
-            var intact = afterFail.MatchesContentOf(live);
-            if (intact)
-            {
-                // Target is provably still at A -> revert state back to restore_completed so user can retry cleanly!
-                TryPersistUndoMetadata(undoSnapshot with
-                {
-                    OperationState = ConfigOperationStates.RestoreCompleted,
-                    Consumed = false
-                });
-            }
-            // If target state changed or unreadable, leave undo_prepared + B blob intact so reconciliation verifies disk!
-            return new ConfigUndoResult(
-                Outcome: ConfigUndoOutcomeKind.Failed,
-                Headline: "撤销失败：无法写回或移除目标文件",
-                Detail: $"{DescribeWriteFailure(ex)} {(intact ? "当前目标文件未被破坏。" : "目标状态未能确认，覆盖前原副本已保住，请重新核对当前文件状态。")}",
-                TargetPath: targetPath,
-                ExpectedSha256: undoSnapshot.PreRestoreSha256,
-                ActualSha256: afterFail.Sha256,
-                ExistingFilePreserved: intact,
-                RefreshedUndoPreview: InspectUndoPreview(undoSnapshot));
-        }
 
-        // STEP U3: Persist "undo_completed" (consumed = true) — NEVER silently swallow failure!
-        try
-        {
-            operationHooks?.AfterUndoTargetUpdatedBeforeMarkCompleted(preparedUndo.UndoId, targetPath);
-            var completedUndo = preparedUndo with
+            // STEP U1: Persist "undo_prepared" intent BEFORE modifying or deleting target!
+            var metaPath = Path.Combine(undoDir, undoSnapshot.UndoId + ".json");
+            var preparedUndo = undoSnapshot with
             {
-                OperationState = ConfigOperationStates.UndoCompleted,
-                Consumed = true,
-                CompletedAtUtc = DateTimeOffset.UtcNow
+                OperationState = ConfigOperationStates.UndoPrepared,
+                UndoStartedAtUtc = DateTimeOffset.UtcNow,
+                OwnerPid = Environment.ProcessId,
+                OwnerProcessStartUtcTicks = CurrentProcessStartUtcTicks,
+                LockFileRelativePath = targetLock.RelativePath,
+                Consumed = false
             };
-            WriteJsonAtomically(metaPath, completedUndo);
+            try
+            {
+                Directory.CreateDirectory(undoDir);
+                WriteJsonAtomically(metaPath, preparedUndo);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                return new ConfigUndoResult(
+                    Outcome: ConfigUndoOutcomeKind.Failed,
+                    Headline: "撤销未开始：无法保存撤销状态标记",
+                    Detail: $"为避免中断后状态不明，尚未改动目标文件（{ex.Message}）。请检查权限后重试。",
+                    TargetPath: targetPath,
+                    ExpectedSha256: undoSnapshot.PreRestoreSha256,
+                    ActualSha256: live.Sha256,
+                    ExistingFilePreserved: true,
+                    RefreshedUndoPreview: InspectUndoPreview(undoSnapshot));
+            }
 
-            return undoSnapshot.TargetExistedBeforeRestore
-                ? new ConfigUndoResult(
-                    Outcome: ConfigUndoOutcomeKind.Succeeded,
-                    Headline: "已撤销本次恢复",
-                    Detail: $"已将“{undoSnapshot.DisplayTargetScopedName}”还原为覆盖前的原始字节（SHA-256：{actualShaAfter[..12]}…），BOM 与换行格式均已完整保留。",
+            operationHooks?.AfterUndoPrepared(preparedUndo.UndoId, targetPath);
+
+            // STEP U2: Perform target write-back (B) or delete recreated file, and verify!
+            string actualShaAfter = "";
+            try
+            {
+                if (undoSnapshot.TargetExistedBeforeRestore && preRestoreBytes is not null)
+                {
+                    SafeWriteRawBytesToTarget(targetPath, preRestoreBytes, undoSnapshot.PreRestoreSha256, targetCurrentlyExists: true);
+                    actualShaAfter = ComputeFileSha256Hex(targetPath);
+                    if (!string.Equals(actualShaAfter, undoSnapshot.PreRestoreSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new IOException($"撤销后校验不一致（期望 {undoSnapshot.PreRestoreSha256}，实际 {actualShaAfter}）。");
+                }
+                else
+                {
+                    File.Delete(targetPath);
+                    if (File.Exists(targetPath))
+                        throw new IOException("删除本次恢复重建的文件失败，目标文件仍存在。");
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                var afterFail = CaptureLiveSnapshot(targetPath, out _);
+                var intact = afterFail.MatchesContentOf(live);
+                if (intact)
+                {
+                    // Target is provably still at A -> revert state back to restore_completed so user can retry cleanly!
+                    TryPersistUndoMetadata(undoSnapshot with
+                    {
+                        OperationState = ConfigOperationStates.RestoreCompleted,
+                        Consumed = false
+                    });
+                }
+                // If target state changed or unreadable, leave undo_prepared + B blob intact so reconciliation verifies disk!
+                return new ConfigUndoResult(
+                    Outcome: ConfigUndoOutcomeKind.Failed,
+                    Headline: "撤销失败：无法写回或移除目标文件",
+                    Detail: $"{DescribeWriteFailure(ex)} {(intact ? "当前目标文件未被破坏。" : "目标状态未能确认，覆盖前原副本已保住，请重新核对当前文件状态。")}",
+                    TargetPath: targetPath,
+                    ExpectedSha256: undoSnapshot.PreRestoreSha256,
+                    ActualSha256: afterFail.Sha256,
+                    ExistingFilePreserved: intact,
+                    RefreshedUndoPreview: InspectUndoPreview(undoSnapshot));
+            }
+
+            // STEP U3: Persist "undo_completed" (consumed = true) — NEVER silently swallow failure!
+            try
+            {
+                operationHooks?.AfterUndoTargetUpdatedBeforeMarkCompleted(preparedUndo.UndoId, targetPath);
+                var completedUndo = preparedUndo with
+                {
+                    OperationState = ConfigOperationStates.UndoCompleted,
+                    Consumed = true,
+                    CompletedAtUtc = DateTimeOffset.UtcNow
+                };
+                WriteJsonAtomically(metaPath, completedUndo);
+
+                return undoSnapshot.TargetExistedBeforeRestore
+                    ? new ConfigUndoResult(
+                        Outcome: ConfigUndoOutcomeKind.Succeeded,
+                        Headline: "已撤销本次恢复",
+                        Detail: $"已将“{undoSnapshot.DisplayTargetScopedName}”还原为覆盖前的原始字节（SHA-256：{actualShaAfter[..12]}…），BOM 与换行格式均已完整保留。",
+                        TargetPath: targetPath,
+                        ExpectedSha256: undoSnapshot.PreRestoreSha256,
+                        ActualSha256: actualShaAfter,
+                        ExistingFilePreserved: true,
+                        MetadataPersisted: true)
+                    : new ConfigUndoResult(
+                        Outcome: ConfigUndoOutcomeKind.Succeeded,
+                        Headline: "已撤销本次恢复（已移除重建文件）",
+                        Detail: $"“{undoSnapshot.DisplayTargetScopedName}”恢复前原本缺失，现已确认移除本次恢复重建的文件。",
+                        TargetPath: targetPath,
+                        ExpectedSha256: "",
+                        ActualSha256: "",
+                        ExistingFilePreserved: true,
+                        MetadataPersisted: true);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Target IS verified back to B (or cleanly removed)! Metadata stays in undo_prepared;
+                // next startup reconciliation will verify disk read-only and finalize without double-writing!
+                var diskOutcome = undoSnapshot.TargetExistedBeforeRestore
+                    ? $"目标文件已成功写回覆盖前版本（SHA-256：{actualShaAfter[..12]}…）"
+                    : "本次恢复重建的文件已确认移除";
+                return new ConfigUndoResult(
+                    Outcome: ConfigUndoOutcomeKind.SucceededMetadataPending,
+                    Headline: "目标已撤销还原，但完成标记暂未保存",
+                    Detail: $"{diskOutcome}，但保存完成标记失败（{ex.Message}）。请勿重复执行；下次启动 Contain 将只读核对当前磁盘状态并补记完成，不会重复写盘。",
                     TargetPath: targetPath,
                     ExpectedSha256: undoSnapshot.PreRestoreSha256,
                     ActualSha256: actualShaAfter,
                     ExistingFilePreserved: true,
-                    MetadataPersisted: true)
-                : new ConfigUndoResult(
-                    Outcome: ConfigUndoOutcomeKind.Succeeded,
-                    Headline: "已撤销本次恢复（已移除重建文件）",
-                    Detail: $"“{undoSnapshot.DisplayTargetScopedName}”恢复前原本缺失，现已确认移除本次恢复重建的文件。",
-                    TargetPath: targetPath,
-                    ExpectedSha256: "",
-                    ActualSha256: "",
-                    ExistingFilePreserved: true,
-                    MetadataPersisted: true);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // Target IS verified back to B (or cleanly removed)! Metadata stays in undo_prepared;
-            // next startup reconciliation will verify disk read-only and finalize without double-writing!
-            var diskOutcome = undoSnapshot.TargetExistedBeforeRestore
-                ? $"目标文件已成功写回覆盖前版本（SHA-256：{actualShaAfter[..12]}…）"
-                : "本次恢复重建的文件已确认移除";
-            return new ConfigUndoResult(
-                Outcome: ConfigUndoOutcomeKind.SucceededMetadataPending,
-                Headline: "目标已撤销还原，但完成标记暂未保存",
-                Detail: $"{diskOutcome}，但保存完成标记失败（{ex.Message}）。请勿重复执行；下次启动 Contain 将只读核对当前磁盘状态并补记完成，不会重复写盘。",
-                TargetPath: targetPath,
-                ExpectedSha256: undoSnapshot.PreRestoreSha256,
-                ActualSha256: actualShaAfter,
-                ExistingFilePreserved: true,
-                MetadataPersisted: false);
+                    MetadataPersisted: false);
+            }
         }
     }
 
@@ -2156,6 +2278,260 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return false;
+        }
+    }
+
+    private ConfigUndoSnapshot? TryLoadUndoRecordById(string undoId)
+    {
+        if (string.IsNullOrWhiteSpace(undoId)) return null;
+        var metaPath = Path.Combine(undoDir, undoId + ".json");
+        if (!File.Exists(metaPath)) return null;
+        try
+        {
+            var json = File.ReadAllText(metaPath, Utf8NoBom);
+            return JsonSerializer.Deserialize<ConfigUndoSnapshot>(json, JsonOptions);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private bool HasNewerActiveRestoreForTarget(string normalizedTargetPath, ConfigUndoSnapshot currentRecord)
+    {
+        if (!Directory.Exists(undoDir)) return false;
+        foreach (var file in Directory.EnumerateFiles(undoDir, "*.json", SearchOption.TopDirectoryOnly))
+        {
+            try
+            {
+                var snap = JsonSerializer.Deserialize<ConfigUndoSnapshot>(File.ReadAllText(file, Utf8NoBom), JsonOptions);
+                if (snap is null || snap.Consumed || string.Equals(snap.UndoId, currentRecord.UndoId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (!string.Equals(snap.TargetPath, normalizedTargetPath, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (snap.CreatedAtUtc > currentRecord.CreatedAtUtc)
+                    return true;
+            }
+            catch
+            {
+                // Ignore unreadable sibling metadata here.
+            }
+        }
+        return false;
+    }
+
+    private string GetTargetLockRelativePath(string normalizedTargetPath)
+    {
+        var key = ComputeSha256Hex(Utf8NoBom.GetBytes(normalizedTargetPath.ToUpperInvariant()))[..16];
+        return Path.Combine("Locks", $"target-{key}.lock");
+    }
+
+    private bool TryAcquireTargetLock(
+        string normalizedTargetPath,
+        string operationKind,
+        string undoId,
+        out TargetOperationLock? acquired,
+        out ConfigTargetLockInfo? busyLockInfo)
+    {
+        acquired = null;
+        busyLockInfo = null;
+        Directory.CreateDirectory(locksDir);
+        var relPath = GetTargetLockRelativePath(normalizedTargetPath);
+        var fullPath = Path.Combine(StorageRoot, relPath);
+
+        FileStream? stream = null;
+        try
+        {
+            // FileShare.Read guarantees kernel-level single-writer exclusivity across independent processes AND instances
+            // while allowing readers to inspect owner PID / operation kind, and preventing File.Delete while held!
+            stream = new FileStream(fullPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
+            var info = new ConfigTargetLockInfo
+            {
+                SchemaVersion = 1,
+                OwnerPid = Environment.ProcessId,
+                OwnerProcessStartUtcTicks = CurrentProcessStartUtcTicks,
+                InstanceId = instanceId,
+                OperationKind = operationKind,
+                UndoId = undoId,
+                TargetPath = normalizedTargetPath,
+                StartedAtUtc = DateTimeOffset.UtcNow
+            };
+            acquired = new TargetOperationLock(stream, fullPath, relPath, info);
+            acquired.PersistPayload();
+            return true;
+        }
+        catch (IOException)
+        {
+            stream?.Dispose();
+            busyLockInfo = TryReadLockInfoShared(fullPath) ?? new ConfigTargetLockInfo
+            {
+                OperationKind = operationKind,
+                TargetPath = normalizedTargetPath
+            };
+            return false;
+        }
+        catch
+        {
+            stream?.Dispose();
+            throw;
+        }
+    }
+
+    private ConfigTargetLockInfo? ProbeLiveTargetLock(string targetPath)
+    {
+        if (!TryNormalizeRegularFilePath(targetPath, mustExist: false, out var normalized, out _))
+            return null;
+        var fullPath = Path.Combine(StorageRoot, GetTargetLockRelativePath(normalized));
+        if (!File.Exists(fullPath))
+            return null;
+
+        try
+        {
+            using var probe = new FileStream(fullPath, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
+            // Opening with ReadWrite/Share.Read succeeded -> NO live writer holds this lock (previous owner exited or was killed!).
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+        catch (IOException)
+        {
+            // Sharing violation -> a live writer process/instance DEFINITELY holds this lock right now!
+            return TryReadLockInfoShared(fullPath) ?? new ConfigTargetLockInfo
+            {
+                TargetPath = normalized
+            };
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return TryReadLockInfoShared(fullPath) ?? new ConfigTargetLockInfo
+            {
+                TargetPath = normalized
+            };
+        }
+
+        // Stale lock file from a terminated process -> best-effort cleanup (harmless if re-acquired meanwhile).
+        TryDeleteFile(fullPath);
+        return null;
+    }
+
+    private bool IsOperationOwnedByAnotherLiveWindow(ConfigUndoSnapshot snap, out ConfigTargetLockInfo? liveLock)
+    {
+        liveLock = null;
+        var probed = ProbeLiveTargetLock(snap.TargetPath);
+        if (probed is not null && !string.Equals(probed.InstanceId, instanceId, StringComparison.Ordinal))
+        {
+            // OS kernel lock (FileAccess.ReadWrite, FileShare.Read) is the authoritative live-writer signal:
+            // it cannot be deleted while held and is immediately released on normal completion, exception, or Process.Kill().
+            liveLock = probed.OwnerPid > 0 || snap.OwnerPid <= 0
+                ? probed
+                : probed with
+                {
+                    OwnerPid = snap.OwnerPid,
+                    OwnerProcessStartUtcTicks = snap.OwnerProcessStartUtcTicks
+                };
+            return true;
+        }
+
+        return false;
+    }
+
+    private ConfigRecoveryReport BuildActiveInAnotherWindowReport(ConfigUndoSnapshot snap, ConfigTargetLockInfo? liveLock, string defaultOpLabel)
+    {
+        var live = CaptureLiveSnapshot(snap.TargetPath, out _);
+        var opLabel = liveLock?.OperationKind switch
+        {
+            "undo" => "撤销",
+            "restore" => "恢复",
+            _ => defaultOpLabel
+        };
+        var pidText = liveLock is { OwnerPid: > 0 } ? $"（PID {liveLock.OwnerPid}）" : "";
+        return new ConfigRecoveryReport(
+            Status: ConfigRecoveryStatus.ActiveInAnotherWindow,
+            OperationRecord: snap,
+            LiveSnapshot: live,
+            StatusBadge: "其他窗口正在操作",
+            Headline: $"另一个 Contain 窗口{pidText}正在对“{snap.DisplayTargetScopedName}”执行{opLabel}",
+            Detail: $"检测到对方进程仍在活跃运行，已暂缓对该文件的中断核对与写入，不会抢先将记录标为中断、完成或已消耗。你可以继续浏览记录，待对方完成后点击「重新核对」或「刷新」。",
+            DiskStateSummary: FormatDiskStateSummary(live, "对方窗口正在写入，当前仅只读观察"),
+            OriginalCopySummary: snap.TargetExistedBeforeRestore
+                ? $"覆盖前原副本：由对方窗口维护中（{ConfigFormatting.FormatByteSize(snap.PreRestoreByteLength)} · {snap.DisplayPreRestoreShortSha}）"
+                : "覆盖前原副本：原文件恢复前原本缺失",
+            HasValidOriginalCopy: false,
+            CanOfferUndoPreview: false,
+            RequiresExplicitArchive: false,
+            LocalMetadataUpdated: false);
+    }
+
+    private static ConfigTargetLockInfo? TryReadLockInfoShared(string lockPath)
+    {
+        try
+        {
+            using var fs = new FileStream(lockPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var sr = new StreamReader(fs, Utf8NoBom);
+            var text = sr.ReadToEnd();
+            if (string.IsNullOrWhiteSpace(text)) return null;
+            return JsonSerializer.Deserialize<ConfigTargetLockInfo>(text, JsonOptions);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static long TryGetCurrentProcessStartUtcTicks()
+    {
+        try
+        {
+            using var proc = Process.GetCurrentProcess();
+            return proc.StartTime.ToUniversalTime().Ticks;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private sealed class TargetOperationLock : IDisposable
+    {
+        private readonly FileStream stream;
+        private readonly string fullPath;
+        private ConfigTargetLockInfo payload;
+        private bool disposed;
+
+        public TargetOperationLock(FileStream stream, string fullPath, string relativePath, ConfigTargetLockInfo payload)
+        {
+            this.stream = stream;
+            this.fullPath = fullPath;
+            RelativePath = relativePath;
+            this.payload = payload;
+        }
+
+        public string RelativePath { get; }
+
+        public void UpdateUndoId(string undoId)
+        {
+            payload = payload with { UndoId = undoId };
+            PersistPayload();
+        }
+
+        public void PersistPayload()
+        {
+            var bytes = Utf8NoBom.GetBytes(JsonSerializer.Serialize(payload, JsonOptions) + "\n");
+            stream.Position = 0;
+            stream.Write(bytes, 0, bytes.Length);
+            stream.SetLength(bytes.Length);
+            stream.Flush(flushToDisk: true);
+        }
+
+        public void Dispose()
+        {
+            if (disposed) return;
+            disposed = true;
+            try { stream.Dispose(); } catch { }
+            // Safe on Windows: if another process already acquired the file with FileShare.Read (no FileShare.Delete),
+            // File.Delete fails harmlessly and is ignored without affecting the new owner's handle!
+            TryDeleteFile(fullPath);
         }
     }
 
