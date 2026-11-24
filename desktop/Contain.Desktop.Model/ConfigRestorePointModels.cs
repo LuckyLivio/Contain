@@ -3,6 +3,12 @@ using System.Text.Json.Serialization;
 
 namespace Contain.Desktop.Model;
 
+public enum ConfigDiffDirection
+{
+    BackupToCurrent,
+    CurrentToBackup
+}
+
 public enum ConfigComparisonStatus
 {
     Identical,
@@ -27,10 +33,21 @@ public enum ConfigRestoreOutcomeKind
     Failed
 }
 
+public enum ConfigUndoPreviewStatus
+{
+    ReadyToRestorePreviousBytes,
+    ReadyToRemoveRecreatedFile,
+    TargetModifiedConflict,
+    TargetDeletedConflict,
+    TargetReadFailed,
+    UndoSnapshotInvalid
+}
+
 public enum ConfigUndoOutcomeKind
 {
     Succeeded,
     ExternalEditConflict,
+    TargetDeletedConflict,
     Failed
 }
 
@@ -150,6 +167,15 @@ public sealed record ConfigUndoSnapshot
 
     [JsonIgnore]
     public string DisplayPreRestoreShortSha => PreRestoreSha256.Length >= 12 ? PreRestoreSha256[..12] + "…" : PreRestoreSha256;
+
+    [JsonIgnore]
+    public string DisplayRestoredShortSha => RestoredBackupSha256.Length >= 12 ? RestoredBackupSha256[..12] + "…" : RestoredBackupSha256;
+
+    [JsonIgnore]
+    public string DisplayTargetFileName => string.IsNullOrWhiteSpace(TargetPath) ? "" : Path.GetFileName(TargetPath);
+
+    [JsonIgnore]
+    public string DisplayTargetScopedName => ConfigFormatting.FormatScopedName(TargetPath);
 }
 
 public sealed record ConfigTextInspection(
@@ -205,8 +231,8 @@ public sealed record ConfigLiveFileSnapshot(
 
 public sealed record ConfigDiffLine(
     ConfigDiffLineKind Kind,
-    int? BackupLineNumber,
-    int? CurrentLineNumber,
+    int? LeftLineNumber,
+    int? RightLineNumber,
     string Text)
 {
     public string Prefix => Kind switch
@@ -219,7 +245,7 @@ public sealed record ConfigDiffLine(
 
     public string LineNumbersDisplay => Kind == ConfigDiffLineKind.Ellipsis
         ? "   … |    …"
-        : $"{(BackupLineNumber.HasValue ? BackupLineNumber.Value.ToString(CultureInfo.InvariantCulture).PadLeft(4) : "    ")} | {(CurrentLineNumber.HasValue ? CurrentLineNumber.Value.ToString(CultureInfo.InvariantCulture).PadLeft(4) : "    ")}";
+        : $"{(LeftLineNumber.HasValue ? LeftLineNumber.Value.ToString(CultureInfo.InvariantCulture).PadLeft(4) : "    ")} | {(RightLineNumber.HasValue ? RightLineNumber.Value.ToString(CultureInfo.InvariantCulture).PadLeft(4) : "    ")}";
 
     public string DisplayLine => Kind == ConfigDiffLineKind.Ellipsis
         ? Text
@@ -228,6 +254,7 @@ public sealed record ConfigDiffLine(
 
 public sealed record ConfigComparisonResult(
     ConfigRestorePointRecord Point,
+    ConfigDiffDirection Direction,
     ConfigComparisonStatus Status,
     bool BackupIntegrityValid,
     string BackupIntegrityError,
@@ -253,6 +280,34 @@ public sealed record ConfigRestoreResult(
     ConfigUndoSnapshot? UndoSnapshot,
     ConfigComparisonResult? RefreshedComparison);
 
+public sealed record ConfigUndoPreviewResult(
+    ConfigUndoSnapshot UndoSnapshot,
+    ConfigUndoPreviewStatus Status,
+    ConfigLiveFileSnapshot LiveSnapshot,
+    string DirectionLabel,
+    string Headline,
+    string Detail,
+    string ActionSummary,
+    string PreRestoreEncodingLabel,
+    string PreRestoreLineEndingLabel,
+    long PreRestoreByteLength,
+    string PreRestoreSha256,
+    bool IsTextDiffAvailable,
+    bool HasFormatOnlyDifference,
+    string DiffFallbackNote,
+    int RemovedLineCount,
+    int AddedLineCount,
+    bool IsDiffTruncated,
+    IReadOnlyList<ConfigDiffLine> DiffLines)
+{
+    public bool CanConfirm => Status is ConfigUndoPreviewStatus.ReadyToRestorePreviousBytes or ConfigUndoPreviewStatus.ReadyToRemoveRecreatedFile;
+    public bool IsConflictOrError => !CanConfirm;
+    public string PreRestoreDisplaySize => ConfigFormatting.FormatByteSize(PreRestoreByteLength);
+    public string PreRestoreDisplayFormatSummary => string.IsNullOrWhiteSpace(PreRestoreLineEndingLabel) || PreRestoreLineEndingLabel == "不适用"
+        ? PreRestoreEncodingLabel
+        : $"{PreRestoreEncodingLabel} · {PreRestoreLineEndingLabel}";
+}
+
 public sealed record ConfigUndoResult(
     ConfigUndoOutcomeKind Outcome,
     string Headline,
@@ -260,7 +315,8 @@ public sealed record ConfigUndoResult(
     string TargetPath,
     string ExpectedSha256,
     string ActualSha256,
-    bool ExistingFilePreserved);
+    bool ExistingFilePreserved,
+    ConfigUndoPreviewResult? RefreshedUndoPreview = null);
 
 public static class ConfigFormatting
 {
@@ -271,5 +327,16 @@ public static class ConfigFormatting
         if (bytes < 1024 * 1024)
             return $"{(bytes / 1024.0).ToString("0.00", CultureInfo.InvariantCulture)} KB（{bytes.ToString("N0", CultureInfo.InvariantCulture)} 字节）";
         return $"{(bytes / (1024.0 * 1024.0)).ToString("0.00", CultureInfo.InvariantCulture)} MB（{bytes.ToString("N0", CultureInfo.InvariantCulture)} 字节）";
+    }
+
+    public static string FormatScopedName(string? fullPath)
+    {
+        if (string.IsNullOrWhiteSpace(fullPath)) return "";
+        var fileName = Path.GetFileName(fullPath);
+        var dir = Path.GetDirectoryName(fullPath);
+        if (string.IsNullOrWhiteSpace(dir)) return fileName;
+        var trimmed = dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var parent = Path.GetFileName(trimmed);
+        return string.IsNullOrWhiteSpace(parent) ? fileName : $"{parent}\\{fileName}";
     }
 }

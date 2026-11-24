@@ -4,7 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace Contain.Desktop.Model;
 
 /// <summary>
-/// ViewModel for the "配置还原点" single-file config backup, diff, confirmed restore, and undo workflow.
+/// ViewModel for the "配置还原点" single-file config backup, directional diff, restore preview, and undo preview workflow.
 /// Runs completely locally with normal user privileges and requires NO Windows Sandbox.
 /// </summary>
 public sealed class ConfigRestorePointsViewModel : ObservableObject
@@ -18,10 +18,18 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     private ConfigFilePreview? candidatePreview;
     private ConfigRestorePointRecord? selectedPoint;
     private ConfigComparisonResult? comparison;
+
+    // Restore preview / confirmation state ("当前文件 → 恢复后")
     private bool isConfirmingRestore;
     private ConfigLiveFileSnapshot? confirmedLiveSnapshot;
     private string midConfirmWarning = "";
+
+    // Undo preview / confirmation state ("当前文件 → 撤销后")
     private ConfigUndoSnapshot? latestUndo;
+    private bool isPreviewingUndo;
+    private ConfigUndoPreviewResult? undoPreview;
+    private ConfigLiveFileSnapshot? confirmedUndoLiveSnapshot;
+
     private bool hasOperationBanner;
     private bool isOperationBannerError;
     private bool isOperationBannerWarning;
@@ -38,6 +46,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
 
     public ObservableCollection<ConfigRestorePointRecord> FilteredPoints { get; } = [];
     public ObservableCollection<ConfigDiffLine> DiffLines { get; } = [];
+    public ObservableCollection<ConfigDiffLine> UndoDiffLines { get; } = [];
 
     public string TargetFilePathInput
     {
@@ -100,8 +109,11 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     }
 
     public bool HasSelectedPoint => selectedPoint is not null && comparison is not null;
-    public bool HasNoSelectedPoint => !HasSelectedPoint;
+    public bool HasNoSelectedPoint => !HasSelectedPoint && !isPreviewingUndo;
+    public bool ShowSelectedPointPanels => HasSelectedPoint && !isPreviewingUndo;
+    public bool ShowDetailHeaderCard => HasSelectedPoint && !isConfirmingRestore && !isPreviewingUndo;
     public ConfigComparisonResult? Comparison => comparison;
+    public ConfigUndoPreviewResult? UndoPreview => undoPreview;
 
     public string SelectedFileName => selectedPoint?.TargetFileName ?? "";
     public string SelectedScopedName => selectedPoint?.DisplayScopedName ?? "";
@@ -111,6 +123,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     public string SelectedPointId => selectedPoint?.PointId ?? "";
 
     public ConfigComparisonStatus ComparisonStatus => comparison?.Status ?? ConfigComparisonStatus.Identical;
+    public ConfigDiffDirection ActiveDiffDirection => comparison?.Direction ?? ConfigDiffDirection.BackupToCurrent;
     public string ComparisonStatusBadge => comparison?.Status switch
     {
         ConfigComparisonStatus.Identical => "与备份一致",
@@ -133,55 +146,129 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
 
     public string LiveSizeText => comparison?.LiveSnapshot.DisplaySize ?? "—";
     public string LiveFormatText => comparison?.LiveSnapshot.DisplayFormatSummary ?? "—";
-    public string LiveSha256Text => comparison?.LiveSnapshot is { Exists: true, IsReadable: true } snap ? snap.Sha256 : (comparison?.Status == ConfigComparisonStatus.Missing ? "目标文件不存在" : "无法读取");
+    public string LiveSha256Text => comparison?.LiveSnapshot is { Exists: true, IsReadable: true } snap
+        ? snap.Sha256
+        : (comparison?.Status == ConfigComparisonStatus.Missing ? "目标文件不存在" : "无法读取");
 
     public bool HasTextDiff => comparison?.IsTextDiffAvailable == true && DiffLines.Count > 0;
     public bool ShowDiffFallback => comparison is not null && !HasTextDiff && !string.IsNullOrWhiteSpace(comparison.DiffFallbackNote);
     public string DiffFallbackNote => comparison?.DiffFallbackNote ?? "";
-    public string DiffHeaderSummary => comparison is { IsTextDiffAvailable: true } c
-        ? $"逐行差异（- 备份中原有 / + 当前文件现有 · 共 -{c.RemovedLineCount} / +{c.AddedLineCount} 行）"
-        : "文件对比说明";
+    public string DiffDirectionBadgeText => comparison?.Direction == ConfigDiffDirection.CurrentToBackup
+        ? "当前文件 → 恢复后"
+        : "从备份到现在";
+    public string DiffHeaderSummary
+    {
+        get
+        {
+            if (comparison is null) return "文件对比说明";
+            if (!comparison.IsTextDiffAvailable)
+                return comparison.Direction == ConfigDiffDirection.CurrentToBackup ? "恢复预览（当前文件 → 恢复后）" : "文件对比说明";
+            return comparison.Direction == ConfigDiffDirection.CurrentToBackup
+                ? $"逐行变更预览：当前文件 → 恢复后（- 移除当前 / + 写入备份 · 共 -{comparison.RemovedLineCount} / +{comparison.AddedLineCount} 行）"
+                : $"逐行变化：从备份到现在（- 备份中原有 / + 当前文件现有 · 共 -{comparison.RemovedLineCount} / +{comparison.AddedLineCount} 行）";
+        }
+    }
     public bool HasDiffTruncationNote => comparison is { IsTextDiffAvailable: true, IsDiffTruncated: true } && !string.IsNullOrWhiteSpace(comparison.DiffFallbackNote);
 
     public bool CanBeginRestore =>
         !busy &&
         !isConfirmingRestore &&
+        !isPreviewingUndo &&
         comparison is { BackupIntegrityValid: true } c &&
         c.Status is ConfigComparisonStatus.Changed or ConfigComparisonStatus.Missing;
 
     public bool IsConfirmingRestore => isConfirmingRestore;
     public bool IsNotConfirmingRestore => !isConfirmingRestore;
-    public string ConfirmRestoreTitle => selectedPoint is null ? "" : $"恢复前确认：{selectedPoint.DisplayScopedName}";
+    public string ConfirmRestoreDirectionLabel => "当前文件 → 恢复后";
+    public string ConfirmRestoreTitle => selectedPoint is null ? "" : $"恢复预览：{selectedPoint.DisplayScopedName}";
     public string ConfirmRestoreTargetPath => selectedPoint?.TargetPath ?? "";
+    public string ConfirmRestoreFormatTransition
+    {
+        get
+        {
+            if (selectedPoint is null || comparison is null) return "";
+            if (comparison.Status == ConfigComparisonStatus.Missing)
+                return $"状态与编码：当前缺失 → 恢复后重建（{selectedPoint.DisplaySize} · {selectedPoint.DisplayFormatSummary} · SHA-256：{selectedPoint.DisplayShortSha256}）";
+            return $"编码与哈希：当前 {comparison.LiveSnapshot.DisplaySize}（{comparison.LiveSnapshot.DisplayFormatSummary}，{comparison.LiveSnapshot.DisplayShortSha256}）→ 恢复后 {selectedPoint.DisplaySize}（{selectedPoint.DisplayFormatSummary}，{selectedPoint.DisplayShortSha256}）";
+        }
+    }
     public string ConfirmRestoreOperationText
     {
         get
         {
             if (selectedPoint is null || comparison is null) return "";
             if (comparison.Status == ConfigComparisonStatus.Missing)
-            {
-                return $"即将在目标路径按备份原始字节重新创建文件（{selectedPoint.DisplaySize}，{selectedPoint.DisplayFormatSummary}，SHA-256：{selectedPoint.DisplayShortSha256}）。恢复后可点击「撤销本次恢复」移除重建文件。";
-            }
-            return $"即将用备份的原始字节覆盖目标文件（{selectedPoint.DisplaySize}，{selectedPoint.DisplayFormatSummary}，SHA-256：{selectedPoint.DisplayShortSha256}），严格保留原始 BOM 与换行格式。覆盖前会先保存当前版本（{comparison.LiveSnapshot.DisplaySize}，SHA-256：{comparison.LiveSnapshot.DisplayShortSha256}），恢复后可随时点击「撤销本次恢复」。";
+                return "确认后将按备份原始字节重建该文件（保留原始 BOM 与换行格式）；之后可点击撤销预览移除本次重建的文件。";
+            return "确认后将用备份原始字节覆盖目标文件（保留原始 BOM 与换行格式）；覆盖前先保存当前版本，随时可撤销。";
         }
     }
     public bool HasMidConfirmWarning => !string.IsNullOrWhiteSpace(midConfirmWarning);
     public string MidConfirmWarningText => midConfirmWarning;
     public bool CanConfirmRestore => !busy && isConfirmingRestore && comparison is { BackupIntegrityValid: true } && comparison.Status is ConfigComparisonStatus.Changed or ConfigComparisonStatus.Missing;
 
+    // Undo bar & lightweight Undo Preview properties
+    public ConfigUndoSnapshot? LatestUndo => latestUndo;
+    public bool CanUndoLastRestore => !busy && latestUndo is { Consumed: false };
+    public bool ShowUndoBar => CanUndoLastRestore && !isPreviewingUndo;
+    public string UndoTargetScopedName => latestUndo is { Consumed: false } u ? u.DisplayTargetScopedName : "";
+    public string UndoTargetFullPath => latestUndo is { Consumed: false } u ? u.TargetPath : "";
+    public bool IsUndoTargetDifferentFromSelected =>
+        latestUndo is { Consumed: false } u &&
+        selectedPoint is not null &&
+        !string.Equals(u.TargetPath, selectedPoint.TargetPath, StringComparison.OrdinalIgnoreCase);
+    public string UndoCrossTargetNotice => IsUndoTargetDifferentFromSelected && latestUndo is not null && selectedPoint is not null
+        ? $"注意：最近一次可撤销操作指向「{latestUndo.DisplayTargetScopedName}」，与当前左侧选中的「{selectedPoint.DisplayScopedName}」不是同一个文件。"
+        : "";
+    public string UndoBarHeadline => latestUndo is { Consumed: false } u
+        ? (u.TargetExistedBeforeRestore
+            ? $"可撤销对「{u.DisplayTargetScopedName}」的上次恢复（覆盖前版本已保留）"
+            : $"可撤销对「{u.DisplayTargetScopedName}」的上次恢复（原本缺失，恢复时重建）")
+        : "";
+    public string UndoButtonText => latestUndo is { Consumed: false } u
+        ? $"撤销对 {u.DisplayTargetScopedName} 的恢复…"
+        : "撤销本次恢复…";
+    public string UndoContextText => latestUndo is { Consumed: false } u
+        ? $"实际操作目标：{u.TargetPath}"
+        : "";
+
+    public bool IsPreviewingUndo => isPreviewingUndo && undoPreview is not null;
+    public string UndoPreviewTitle => undoPreview is null ? "" : $"撤销预览：{undoPreview.UndoSnapshot.DisplayTargetScopedName}";
+    public string UndoPreviewDirectionLabel => undoPreview?.DirectionLabel ?? "当前文件 → 撤销后";
+    public string UndoPreviewTargetPath => undoPreview?.UndoSnapshot.TargetPath ?? "";
+    public string UndoPreviewHeadline => undoPreview?.Headline ?? "";
+    public string UndoPreviewDetail => undoPreview?.Detail ?? "";
+    public string UndoPreviewActionSummary => undoPreview?.ActionSummary ?? "";
+    public bool IsUndoPreviewConflict => undoPreview?.IsConflictOrError == true;
+    public bool IsUndoPreviewRemoveRecreated => undoPreview?.Status == ConfigUndoPreviewStatus.ReadyToRemoveRecreatedFile;
+    public bool CanConfirmUndo => !busy && undoPreview is { CanConfirm: true };
+    public string ConfirmUndoButtonText => IsUndoPreviewRemoveRecreated
+        ? "确认撤销（移除本次重建的文件）"
+        : "确认撤销（写回覆盖前原始字节）";
+    public string UndoPreviewFormatTransition
+    {
+        get
+        {
+            if (undoPreview is null) return "";
+            if (undoPreview.Status == ConfigUndoPreviewStatus.ReadyToRemoveRecreatedFile)
+                return $"状态与哈希：当前已重建文件（{undoPreview.LiveSnapshot.DisplaySize}，{undoPreview.LiveSnapshot.DisplayFormatSummary}，{undoPreview.LiveSnapshot.DisplayShortSha256}）→ 撤销后移除";
+            if (undoPreview.IsConflictOrError)
+                return $"恢复写入版本：{undoPreview.UndoSnapshot.DisplayRestoredShortSha} · 当前状态：{(undoPreview.LiveSnapshot.Exists ? $"{undoPreview.LiveSnapshot.DisplaySize}（{undoPreview.LiveSnapshot.DisplayShortSha256}）" : "文件已不存在")}";
+            return $"编码与哈希：当前 {undoPreview.LiveSnapshot.DisplaySize}（{undoPreview.LiveSnapshot.DisplayFormatSummary}，{undoPreview.LiveSnapshot.DisplayShortSha256}）→ 撤销后 {undoPreview.PreRestoreDisplaySize}（{undoPreview.PreRestoreDisplayFormatSummary}，{undoPreview.UndoSnapshot.DisplayPreRestoreShortSha}）";
+        }
+    }
+    public bool HasUndoTextDiff => undoPreview?.IsTextDiffAvailable == true && UndoDiffLines.Count > 0;
+    public bool ShowUndoDiffFallback => undoPreview is not null && !HasUndoTextDiff && !string.IsNullOrWhiteSpace(undoPreview.DiffFallbackNote);
+    public string UndoDiffFallbackNote => undoPreview?.DiffFallbackNote ?? "";
+    public string UndoDiffHeaderSummary => undoPreview is { IsTextDiffAvailable: true } p
+        ? $"逐行变更预览：当前文件 → 撤销后（- 移除当前 / + 写回覆盖前 · 共 -{p.RemovedLineCount} / +{p.AddedLineCount} 行）"
+        : (IsUndoPreviewConflict ? "冲突说明（已保住用户最新状态）" : "撤销变更说明");
+    public bool HasUndoDiffTruncationNote => undoPreview is { IsTextDiffAvailable: true, IsDiffTruncated: true } && !string.IsNullOrWhiteSpace(undoPreview.DiffFallbackNote);
+
     public bool HasOperationBanner => hasOperationBanner;
     public bool IsOperationBannerError => isOperationBannerError;
     public bool IsOperationBannerWarning => isOperationBannerWarning;
     public string OperationBannerHeadline => operationBannerHeadline;
     public string OperationBannerDetail => operationBannerDetail;
-
-    public bool CanUndoLastRestore => !busy && latestUndo is { Consumed: false };
-    public string UndoButtonText => latestUndo is { Consumed: false } u
-        ? $"撤销本次恢复（回到 {(u.TargetExistedBeforeRestore ? u.DisplayPreRestoreShortSha : "恢复前缺失状态")}）"
-        : "撤销本次恢复";
-    public string UndoContextText => latestUndo is { Consumed: false } u
-        ? $"可撤销目标：{u.TargetPath}"
-        : "";
 
     public string StatusMessage => statusMessage;
     public string ErrorMessage => errorMessage;
@@ -197,12 +284,10 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
             allPoints.AddRange(points);
 
             latestUndo = service.LoadLatestActiveUndo();
+            ClearUndoPreviewCore();
 
             if (selectedPoint is not null)
-            {
-                var updated = allPoints.FirstOrDefault(p => string.Equals(p.PointId, selectedPoint.PointId, StringComparison.OrdinalIgnoreCase));
-                selectedPoint = updated;
-            }
+                selectedPoint = allPoints.FirstOrDefault(p => string.Equals(p.PointId, selectedPoint.PointId, StringComparison.OrdinalIgnoreCase));
 
             ApplyFilter();
 
@@ -210,7 +295,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
                 selectedPoint = FilteredPoints[0];
 
             if (selectedPoint is not null)
-                RefreshSelectedComparisonCore(preserveConfirmation: false);
+                RefreshSelectedComparisonCore(ConfigDiffDirection.BackupToCurrent, preserveConfirmation: false);
             else
                 ClearComparisonCore();
 
@@ -240,6 +325,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         busy = true;
         errorMessage = "";
         ClearOperationBanner();
+        ClearUndoPreviewCore();
         NotifyAll();
 
         try
@@ -254,7 +340,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
             isConfirmingRestore = false;
             confirmedLiveSnapshot = null;
             midConfirmWarning = "";
-            RefreshSelectedComparisonCore(preserveConfirmation: false);
+            RefreshSelectedComparisonCore(ConfigDiffDirection.BackupToCurrent, preserveConfirmation: false);
 
             SetOperationBanner(
                 "已创建配置还原点",
@@ -283,10 +369,11 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         isConfirmingRestore = false;
         confirmedLiveSnapshot = null;
         midConfirmWarning = "";
+        ClearUndoPreviewCore();
         errorMessage = "";
         if (selectedPoint is not null)
         {
-            RefreshSelectedComparisonCore(preserveConfirmation: false);
+            RefreshSelectedComparisonCore(ConfigDiffDirection.BackupToCurrent, preserveConfirmation: false);
             statusMessage = $"已核对“{selectedPoint.DisplayScopedName}”：{comparison?.StatusHeadline}";
         }
         else
@@ -300,7 +387,8 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
     {
         if (selectedPoint is null) return;
         errorMessage = "";
-        RefreshSelectedComparisonCore(preserveConfirmation: false);
+        ClearUndoPreviewCore();
+        RefreshSelectedComparisonCore(ConfigDiffDirection.BackupToCurrent, preserveConfirmation: false);
         statusMessage = $"已重新核对“{selectedPoint.DisplayScopedName}”：{comparison?.StatusHeadline}";
         NotifyAll();
     }
@@ -310,10 +398,11 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         if (selectedPoint is null || busy) return;
         errorMessage = "";
         ClearOperationBanner();
+        ClearUndoPreviewCore();
         midConfirmWarning = "";
 
-        // Always refresh live file state right when user clicks "恢复" so confirmation shows fresh facts!
-        RefreshSelectedComparisonCore(preserveConfirmation: false);
+        // Entering restore confirmation flips diff direction to "当前文件 → 恢复后"!
+        RefreshSelectedComparisonCore(ConfigDiffDirection.CurrentToBackup, preserveConfirmation: false);
         if (comparison is null || !comparison.BackupIntegrityValid)
         {
             SetOperationBanner(
@@ -327,6 +416,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
 
         if (comparison.Status == ConfigComparisonStatus.Identical)
         {
+            RefreshSelectedComparisonCore(ConfigDiffDirection.BackupToCurrent, preserveConfirmation: false);
             SetOperationBanner("当前文件与备份一致", "文件内容已与所选还原点逐字节一致，无需恢复。", isError: false, isWarning: false);
             NotifyAll();
             return;
@@ -334,6 +424,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
 
         if (comparison.Status == ConfigComparisonStatus.ReadFailed)
         {
+            RefreshSelectedComparisonCore(ConfigDiffDirection.BackupToCurrent, preserveConfirmation: false);
             SetOperationBanner("无法开始恢复：当前文件读取失败", comparison.StatusDetail, isError: true, isWarning: false);
             NotifyAll();
             return;
@@ -341,7 +432,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
 
         isConfirmingRestore = true;
         confirmedLiveSnapshot = comparison.LiveSnapshot;
-        statusMessage = $"请核对目标路径与差异后确认恢复“{selectedPoint.DisplayScopedName}”。";
+        statusMessage = $"当前文件 → 恢复后：请核对目标路径与下方差异后确认恢复“{selectedPoint.DisplayScopedName}”。";
         NotifyAll();
     }
 
@@ -351,6 +442,8 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         isConfirmingRestore = false;
         confirmedLiveSnapshot = null;
         midConfirmWarning = "";
+        if (selectedPoint is not null)
+            RefreshSelectedComparisonCore(ConfigDiffDirection.BackupToCurrent, preserveConfirmation: false);
         statusMessage = "已取消恢复，未修改目标文件。";
         NotifyAll();
     }
@@ -381,7 +474,6 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
                     break;
 
                 case ConfigRestoreOutcomeKind.RefreshedDueToExternalEdit:
-                    // Stay in confirmation mode if still restorable; update expected snapshot so user must explicitly re-confirm!
                     if (comparison is { BackupIntegrityValid: true } c &&
                         c.Status is ConfigComparisonStatus.Changed or ConfigComparisonStatus.Missing)
                     {
@@ -423,42 +515,85 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         }
     }
 
-    public void UndoLastRestore()
+    public void BeginUndoPreview()
     {
         if (!CanUndoLastRestore || latestUndo is null) return;
-        busy = true;
         errorMessage = "";
+        ClearOperationBanner();
         isConfirmingRestore = false;
         confirmedLiveSnapshot = null;
         midConfirmWarning = "";
+
+        try
+        {
+            var preview = service.InspectUndoPreview(latestUndo);
+            ApplyUndoPreviewCore(preview);
+            statusMessage = preview.CanConfirm
+                ? $"当前文件 → 撤销后：请核对实际目标“{preview.UndoSnapshot.DisplayTargetScopedName}”后确认撤销。"
+                : preview.Headline;
+        }
+        catch (Exception ex)
+        {
+            ClearUndoPreviewCore();
+            SetOperationBanner("加载撤销预览失败", ex.Message, isError: true, isWarning: false);
+            errorMessage = ex.Message;
+            statusMessage = errorMessage;
+        }
+        finally
+        {
+            NotifyAll();
+        }
+    }
+
+    public void CancelUndoPreview()
+    {
+        if (!isPreviewingUndo) return;
+        ClearUndoPreviewCore();
+        if (selectedPoint is not null)
+            RefreshSelectedComparisonCore(ConfigDiffDirection.BackupToCurrent, preserveConfirmation: false);
+        statusMessage = "已取消撤销预览，未写入磁盘，撤销记录已保留。";
+        NotifyAll();
+    }
+
+    public void ConfirmUndoRestore()
+    {
+        if (busy || !isPreviewingUndo || latestUndo is null || undoPreview is null || !undoPreview.CanConfirm) return;
+        busy = true;
+        errorMessage = "";
         NotifyAll();
 
         try
         {
-            var result = service.UndoRestore(latestUndo);
+            var result = service.UndoRestore(latestUndo, confirmedUndoLiveSnapshot);
             switch (result.Outcome)
             {
                 case ConfigUndoOutcomeKind.Succeeded:
+                    ClearUndoPreviewCore();
                     latestUndo = service.LoadLatestActiveUndo();
                     SetOperationBanner(result.Headline, result.Detail, isError: false, isWarning: false);
                     statusMessage = result.Headline;
+                    if (selectedPoint is not null)
+                        RefreshSelectedComparisonCore(ConfigDiffDirection.BackupToCurrent, preserveConfirmation: false);
                     break;
 
                 case ConfigUndoOutcomeKind.ExternalEditConflict:
+                case ConfigUndoOutcomeKind.TargetDeletedConflict:
+                    // Keep Undo Preview open with refreshed conflict facts; preserve user's latest state and do NOT consume undo record!
+                    if (result.RefreshedUndoPreview is not null)
+                        ApplyUndoPreviewCore(result.RefreshedUndoPreview);
                     SetOperationBanner(result.Headline, result.Detail, isError: false, isWarning: true);
                     statusMessage = result.Headline;
                     break;
 
                 case ConfigUndoOutcomeKind.Failed:
                 default:
+                    if (result.RefreshedUndoPreview is not null)
+                        ApplyUndoPreviewCore(result.RefreshedUndoPreview);
                     SetOperationBanner(result.Headline, result.Detail, isError: true, isWarning: false);
                     errorMessage = result.Detail;
                     statusMessage = result.Headline;
                     break;
             }
-
-            if (selectedPoint is not null)
-                RefreshSelectedComparisonCore(preserveConfirmation: false);
         }
         catch (Exception ex)
         {
@@ -507,7 +642,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSearchEmpty));
     }
 
-    private void RefreshSelectedComparisonCore(bool preserveConfirmation)
+    private void RefreshSelectedComparisonCore(ConfigDiffDirection direction, bool preserveConfirmation)
     {
         if (selectedPoint is null)
         {
@@ -515,7 +650,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
             return;
         }
 
-        var result = service.CompareRestorePoint(selectedPoint);
+        var result = service.CompareRestorePoint(selectedPoint, direction);
         ApplyComparisonCore(result);
         if (!preserveConfirmation)
         {
@@ -540,6 +675,24 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         isConfirmingRestore = false;
         confirmedLiveSnapshot = null;
         midConfirmWarning = "";
+    }
+
+    private void ApplyUndoPreviewCore(ConfigUndoPreviewResult preview)
+    {
+        undoPreview = preview;
+        isPreviewingUndo = true;
+        confirmedUndoLiveSnapshot = preview.LiveSnapshot;
+        UndoDiffLines.Clear();
+        foreach (var line in preview.DiffLines)
+            UndoDiffLines.Add(line);
+    }
+
+    private void ClearUndoPreviewCore()
+    {
+        isPreviewingUndo = false;
+        undoPreview = null;
+        confirmedUndoLiveSnapshot = null;
+        UndoDiffLines.Clear();
     }
 
     private void SetOperationBanner(string headline, string detail, bool isError, bool isWarning)
@@ -581,7 +734,10 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedPoint));
         OnPropertyChanged(nameof(HasSelectedPoint));
         OnPropertyChanged(nameof(HasNoSelectedPoint));
+        OnPropertyChanged(nameof(ShowSelectedPointPanels));
+        OnPropertyChanged(nameof(ShowDetailHeaderCard));
         OnPropertyChanged(nameof(Comparison));
+        OnPropertyChanged(nameof(UndoPreview));
         OnPropertyChanged(nameof(SelectedFileName));
         OnPropertyChanged(nameof(SelectedScopedName));
         OnPropertyChanged(nameof(SelectedTargetPath));
@@ -589,6 +745,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedCreatedTime));
         OnPropertyChanged(nameof(SelectedPointId));
         OnPropertyChanged(nameof(ComparisonStatus));
+        OnPropertyChanged(nameof(ActiveDiffDirection));
         OnPropertyChanged(nameof(ComparisonStatusBadge));
         OnPropertyChanged(nameof(IsStatusIdentical));
         OnPropertyChanged(nameof(IsStatusChanged));
@@ -605,25 +762,52 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         OnPropertyChanged(nameof(HasTextDiff));
         OnPropertyChanged(nameof(ShowDiffFallback));
         OnPropertyChanged(nameof(DiffFallbackNote));
+        OnPropertyChanged(nameof(DiffDirectionBadgeText));
         OnPropertyChanged(nameof(DiffHeaderSummary));
         OnPropertyChanged(nameof(HasDiffTruncationNote));
         OnPropertyChanged(nameof(CanBeginRestore));
         OnPropertyChanged(nameof(IsConfirmingRestore));
         OnPropertyChanged(nameof(IsNotConfirmingRestore));
+        OnPropertyChanged(nameof(ConfirmRestoreDirectionLabel));
         OnPropertyChanged(nameof(ConfirmRestoreTitle));
         OnPropertyChanged(nameof(ConfirmRestoreTargetPath));
+        OnPropertyChanged(nameof(ConfirmRestoreFormatTransition));
         OnPropertyChanged(nameof(ConfirmRestoreOperationText));
         OnPropertyChanged(nameof(HasMidConfirmWarning));
         OnPropertyChanged(nameof(MidConfirmWarningText));
         OnPropertyChanged(nameof(CanConfirmRestore));
+        OnPropertyChanged(nameof(LatestUndo));
+        OnPropertyChanged(nameof(CanUndoLastRestore));
+        OnPropertyChanged(nameof(ShowUndoBar));
+        OnPropertyChanged(nameof(UndoTargetScopedName));
+        OnPropertyChanged(nameof(UndoTargetFullPath));
+        OnPropertyChanged(nameof(IsUndoTargetDifferentFromSelected));
+        OnPropertyChanged(nameof(UndoCrossTargetNotice));
+        OnPropertyChanged(nameof(UndoBarHeadline));
+        OnPropertyChanged(nameof(UndoButtonText));
+        OnPropertyChanged(nameof(UndoContextText));
+        OnPropertyChanged(nameof(IsPreviewingUndo));
+        OnPropertyChanged(nameof(UndoPreviewTitle));
+        OnPropertyChanged(nameof(UndoPreviewDirectionLabel));
+        OnPropertyChanged(nameof(UndoPreviewTargetPath));
+        OnPropertyChanged(nameof(UndoPreviewHeadline));
+        OnPropertyChanged(nameof(UndoPreviewDetail));
+        OnPropertyChanged(nameof(UndoPreviewActionSummary));
+        OnPropertyChanged(nameof(IsUndoPreviewConflict));
+        OnPropertyChanged(nameof(IsUndoPreviewRemoveRecreated));
+        OnPropertyChanged(nameof(CanConfirmUndo));
+        OnPropertyChanged(nameof(ConfirmUndoButtonText));
+        OnPropertyChanged(nameof(UndoPreviewFormatTransition));
+        OnPropertyChanged(nameof(HasUndoTextDiff));
+        OnPropertyChanged(nameof(ShowUndoDiffFallback));
+        OnPropertyChanged(nameof(UndoDiffFallbackNote));
+        OnPropertyChanged(nameof(UndoDiffHeaderSummary));
+        OnPropertyChanged(nameof(HasUndoDiffTruncationNote));
         OnPropertyChanged(nameof(HasOperationBanner));
         OnPropertyChanged(nameof(IsOperationBannerError));
         OnPropertyChanged(nameof(IsOperationBannerWarning));
         OnPropertyChanged(nameof(OperationBannerHeadline));
         OnPropertyChanged(nameof(OperationBannerDetail));
-        OnPropertyChanged(nameof(CanUndoLastRestore));
-        OnPropertyChanged(nameof(UndoButtonText));
-        OnPropertyChanged(nameof(UndoContextText));
         OnPropertyChanged(nameof(StatusMessage));
         OnPropertyChanged(nameof(ErrorMessage));
         OnPropertyChanged(nameof(HasError));

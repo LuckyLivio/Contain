@@ -10,10 +10,11 @@ public interface IConfigRestorePointService
     ConfigFilePreview InspectCandidateFile(string rawPath);
     ConfigRestorePointRecord CreateRestorePoint(string rawPath, string? note);
     IReadOnlyList<ConfigRestorePointRecord> LoadAllPoints();
-    ConfigComparisonResult CompareRestorePoint(ConfigRestorePointRecord point);
+    ConfigComparisonResult CompareRestorePoint(ConfigRestorePointRecord point, ConfigDiffDirection direction = ConfigDiffDirection.BackupToCurrent);
     ConfigRestoreResult RestoreFromPoint(ConfigRestorePointRecord point, ConfigLiveFileSnapshot expectedLiveSnapshot);
     ConfigUndoSnapshot? LoadLatestActiveUndo();
-    ConfigUndoResult UndoRestore(ConfigUndoSnapshot undoSnapshot);
+    ConfigUndoPreviewResult InspectUndoPreview(ConfigUndoSnapshot undoSnapshot);
+    ConfigUndoResult UndoRestore(ConfigUndoSnapshot undoSnapshot, ConfigLiveFileSnapshot? expectedLiveSnapshot = null);
 }
 
 public static class ConfigTextDecoder
@@ -36,7 +37,7 @@ public static class ConfigTextDecoder
                 HasUtf8Bom: HasUtf8BomPrefix(rawBytes),
                 LineEndingLabel: "不适用",
                 Lines: [],
-                UnrecognizedReason: "文件超过 2 MB，跳过逐行文本对比，仅展示大小与 SHA-256；恢复仍将按原始字节完整执行。");
+                UnrecognizedReason: "文件超过 2 MB，跳过逐行文本对比，仅展示大小与 SHA-256；恢复与撤销仍将按原始字节完整执行。");
         }
 
         if (rawBytes.Length == 0)
@@ -53,9 +54,7 @@ public static class ConfigTextDecoder
         if (HasUtf8BomPrefix(rawBytes))
         {
             if (ContainsNullByte(rawBytes, 3))
-            {
                 return Unrecognized("检测到 NUL 字节，非纯文本配置文件。");
-            }
             try
             {
                 var text = StrictUtf8NoBom.GetString(rawBytes, 3, rawBytes.Length - 3);
@@ -106,11 +105,9 @@ public static class ConfigTextDecoder
             }
         }
 
-        // 4. UTF-8 without BOM (strict validation + no NUL bytes + no binary control bytes)
+        // 4. UTF-8 without BOM
         if (ContainsNullByte(rawBytes, 0))
-        {
             return Unrecognized("检测到 NUL 字节，可能是二进制或未带 BOM 的多字节编码。");
-        }
 
         try
         {
@@ -191,7 +188,6 @@ public static class ConfigTextDecoder
 
         if (lineStart <= text.Length)
         {
-            // Keep final segment (including trailing empty line if text ended with newline so trailing newline changes show up).
             if (lineStart < text.Length)
                 lines.Add(text[lineStart..]);
             else if (text.Length > 0 && (text[^1] == '\n' || text[^1] == '\r'))
@@ -229,40 +225,38 @@ public static class ConfigLineDiffer
         int AddedCount,
         bool Truncated);
 
-    public static DiffOutput Compute(IReadOnlyList<string> backupLines, IReadOnlyList<string> currentLines)
+    public static DiffOutput Compute(IReadOnlyList<string> leftLines, IReadOnlyList<string> rightLines)
     {
-        ArgumentNullException.ThrowIfNull(backupLines);
-        ArgumentNullException.ThrowIfNull(currentLines);
+        ArgumentNullException.ThrowIfNull(leftLines);
+        ArgumentNullException.ThrowIfNull(rightLines);
 
-        // Trim identical prefix and suffix in O(N)
         var prefix = 0;
-        var minLen = Math.Min(backupLines.Count, currentLines.Count);
-        while (prefix < minLen && string.Equals(backupLines[prefix], currentLines[prefix], StringComparison.Ordinal))
+        var minLen = Math.Min(leftLines.Count, rightLines.Count);
+        while (prefix < minLen && string.Equals(leftLines[prefix], rightLines[prefix], StringComparison.Ordinal))
             prefix++;
 
         var suffix = 0;
         while (suffix < (minLen - prefix) &&
-               string.Equals(backupLines[backupLines.Count - 1 - suffix], currentLines[currentLines.Count - 1 - suffix], StringComparison.Ordinal))
+               string.Equals(leftLines[leftLines.Count - 1 - suffix], rightLines[rightLines.Count - 1 - suffix], StringComparison.Ordinal))
             suffix++;
 
-        var midOldCount = backupLines.Count - prefix - suffix;
-        var midNewCount = currentLines.Count - prefix - suffix;
+        var midOldCount = leftLines.Count - prefix - suffix;
+        var midNewCount = rightLines.Count - prefix - suffix;
 
         if (midOldCount == 0 && midNewCount == 0)
             return new DiffOutput([], 0, 0, false);
 
-        var rawOps = new List<ConfigDiffLine>(backupLines.Count + currentLines.Count);
+        var rawOps = new List<ConfigDiffLine>(leftLines.Count + rightLines.Count);
 
-        // Prefix context
         for (var i = 0; i < prefix; i++)
-            rawOps.Add(new ConfigDiffLine(ConfigDiffLineKind.Context, i + 1, i + 1, backupLines[i]));
+            rawOps.Add(new ConfigDiffLine(ConfigDiffLineKind.Context, i + 1, i + 1, leftLines[i]));
 
         var removed = 0;
         var added = 0;
 
         if ((long)midOldCount * midNewCount <= MaxLcsCells && midOldCount > 0 && midNewCount > 0)
         {
-            var midOps = ComputeLcsMiddle(backupLines, currentLines, prefix, midOldCount, midNewCount);
+            var midOps = ComputeLcsMiddle(leftLines, rightLines, prefix, midOldCount, midNewCount);
             foreach (var op in midOps)
             {
                 if (op.Kind == ConfigDiffLineKind.Removed) removed++;
@@ -272,28 +266,25 @@ public static class ConfigLineDiffer
         }
         else
         {
-            // Fallback for huge middle diffs: emit removed block then added block cleanly.
             for (var i = 0; i < midOldCount; i++)
             {
                 removed++;
-                rawOps.Add(new ConfigDiffLine(ConfigDiffLineKind.Removed, prefix + i + 1, null, backupLines[prefix + i]));
+                rawOps.Add(new ConfigDiffLine(ConfigDiffLineKind.Removed, prefix + i + 1, null, leftLines[prefix + i]));
             }
             for (var j = 0; j < midNewCount; j++)
             {
                 added++;
-                rawOps.Add(new ConfigDiffLine(ConfigDiffLineKind.Added, null, prefix + j + 1, currentLines[prefix + j]));
+                rawOps.Add(new ConfigDiffLine(ConfigDiffLineKind.Added, null, prefix + j + 1, rightLines[prefix + j]));
             }
         }
 
-        // Suffix context
         for (var i = 0; i < suffix; i++)
         {
-            var oldIdx = backupLines.Count - suffix + i;
-            var newIdx = currentLines.Count - suffix + i;
-            rawOps.Add(new ConfigDiffLine(ConfigDiffLineKind.Context, oldIdx + 1, newIdx + 1, backupLines[oldIdx]));
+            var oldIdx = leftLines.Count - suffix + i;
+            var newIdx = rightLines.Count - suffix + i;
+            rawOps.Add(new ConfigDiffLine(ConfigDiffLineKind.Context, oldIdx + 1, newIdx + 1, leftLines[oldIdx]));
         }
 
-        // Collapse unchanged context runs outside ContextLines window around changes
         var keep = new bool[rawOps.Count];
         for (var i = 0; i < rawOps.Count; i++)
         {
@@ -338,8 +329,8 @@ public static class ConfigLineDiffer
     }
 
     private static List<ConfigDiffLine> ComputeLcsMiddle(
-        IReadOnlyList<string> backupLines,
-        IReadOnlyList<string> currentLines,
+        IReadOnlyList<string> leftLines,
+        IReadOnlyList<string> rightLines,
         int offset,
         int m,
         int n)
@@ -347,10 +338,10 @@ public static class ConfigLineDiffer
         var dp = new int[m + 1, n + 1];
         for (var i = m - 1; i >= 0; i--)
         {
-            var oldLine = backupLines[offset + i];
+            var oldLine = leftLines[offset + i];
             for (var j = n - 1; j >= 0; j--)
             {
-                if (string.Equals(oldLine, currentLines[offset + j], StringComparison.Ordinal))
+                if (string.Equals(oldLine, rightLines[offset + j], StringComparison.Ordinal))
                     dp[i, j] = dp[i + 1, j + 1] + 1;
                 else
                     dp[i, j] = dp[i + 1, j] >= dp[i, j + 1] ? dp[i + 1, j] : dp[i, j + 1];
@@ -362,33 +353,33 @@ public static class ConfigLineDiffer
         var b = 0;
         while (a < m && b < n)
         {
-            if (string.Equals(backupLines[offset + a], currentLines[offset + b], StringComparison.Ordinal))
+            if (string.Equals(leftLines[offset + a], rightLines[offset + b], StringComparison.Ordinal))
             {
-                result.Add(new ConfigDiffLine(ConfigDiffLineKind.Context, offset + a + 1, offset + b + 1, backupLines[offset + a]));
+                result.Add(new ConfigDiffLine(ConfigDiffLineKind.Context, offset + a + 1, offset + b + 1, leftLines[offset + a]));
                 a++;
                 b++;
             }
             else if (dp[a + 1, b] >= dp[a, b + 1])
             {
-                result.Add(new ConfigDiffLine(ConfigDiffLineKind.Removed, offset + a + 1, null, backupLines[offset + a]));
+                result.Add(new ConfigDiffLine(ConfigDiffLineKind.Removed, offset + a + 1, null, leftLines[offset + a]));
                 a++;
             }
             else
             {
-                result.Add(new ConfigDiffLine(ConfigDiffLineKind.Added, null, offset + b + 1, currentLines[offset + b]));
+                result.Add(new ConfigDiffLine(ConfigDiffLineKind.Added, null, offset + b + 1, rightLines[offset + b]));
                 b++;
             }
         }
 
         while (a < m)
         {
-            result.Add(new ConfigDiffLine(ConfigDiffLineKind.Removed, offset + a + 1, null, backupLines[offset + a]));
+            result.Add(new ConfigDiffLine(ConfigDiffLineKind.Removed, offset + a + 1, null, leftLines[offset + a]));
             a++;
         }
 
         while (b < n)
         {
-            result.Add(new ConfigDiffLine(ConfigDiffLineKind.Added, null, offset + b + 1, currentLines[offset + b]));
+            result.Add(new ConfigDiffLine(ConfigDiffLineKind.Added, null, offset + b + 1, rightLines[offset + b]));
             b++;
         }
 
@@ -398,7 +389,7 @@ public static class ConfigLineDiffer
 
 public sealed class LocalConfigRestorePointService : IConfigRestorePointService
 {
-    public const long MaxConfigFileBytes = 64L * 1024 * 1024; // 64 MiB safety cap for single config file
+    public const long MaxConfigFileBytes = 64L * 1024 * 1024;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -426,9 +417,7 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
     public ConfigFilePreview InspectCandidateFile(string rawPath)
     {
         if (!TryNormalizeRegularFilePath(rawPath, mustExist: true, out var fullPath, out var error))
-        {
             return new ConfigFilePreview(false, rawPath?.Trim() ?? "", "", "", "", 0, "", "", "", error);
-        }
 
         try
         {
@@ -483,7 +472,6 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
 
         WriteBytesAtomically(blobPath, rawBytes);
 
-        // Verify stored blob matches exact bytes before publishing metadata record
         var writtenSha = ComputeFileSha256Hex(blobPath);
         if (!string.Equals(writtenSha, sha, StringComparison.OrdinalIgnoreCase))
         {
@@ -530,7 +518,7 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
             }
             catch
             {
-                // Ignore unreadable or half-written stray files cleanly without crashing the list.
+                // Ignore unreadable stray files cleanly.
             }
         }
 
@@ -542,16 +530,16 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
         return results;
     }
 
-    public ConfigComparisonResult CompareRestorePoint(ConfigRestorePointRecord point)
+    public ConfigComparisonResult CompareRestorePoint(ConfigRestorePointRecord point, ConfigDiffDirection direction = ConfigDiffDirection.BackupToCurrent)
     {
         ArgumentNullException.ThrowIfNull(point);
 
-        // 1. Validate backup blob integrity first
         if (!TryReadValidatedBackupBlob(point, out var backupBytes, out var integrityError))
         {
             var liveOnCorrupt = CaptureLiveSnapshot(point.TargetPath, out _);
             return new ConfigComparisonResult(
                 Point: point,
+                Direction: direction,
                 Status: ConfigComparisonStatus.BackupCorrupted,
                 BackupIntegrityValid: false,
                 BackupIntegrityError: integrityError,
@@ -567,22 +555,28 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 DiffLines: []);
         }
 
-        // 2. Inspect current live target file
         var liveSnapshot = CaptureLiveSnapshot(point.TargetPath, out var liveBytes);
 
         if (!liveSnapshot.Exists)
         {
+            var detail = direction == ConfigDiffDirection.CurrentToBackup
+                ? $"当前目标路径缺失该文件 → 恢复后将按备份原始字节重建（{point.DisplaySize}，{point.DisplayFormatSummary}，SHA-256：{point.DisplayShortSha256}）。"
+                : "原位置已找不到该配置文件。你可以点击「恢复」，按备份原始字节重新创建该文件。";
+            var fallback = direction == ConfigDiffDirection.CurrentToBackup
+                ? $"当前状态：目标文件不存在 → 恢复后：按备份原始字节重建（{point.DisplaySize}，{point.DisplayFormatSummary}，SHA-256：{point.Sha256}）。"
+                : $"当前目标路径无文件；备份共 {point.DisplaySize}，SHA-256 为 {point.Sha256}。";
             return new ConfigComparisonResult(
                 Point: point,
+                Direction: direction,
                 Status: ConfigComparisonStatus.Missing,
                 BackupIntegrityValid: true,
                 BackupIntegrityError: "",
                 LiveSnapshot: liveSnapshot,
                 StatusHeadline: "目标文件当前已缺失",
-                StatusDetail: "原位置已找不到该配置文件。你可以点击「恢复此还原点」，按备份原始字节重新创建该文件。",
+                StatusDetail: detail,
                 IsTextDiffAvailable: false,
                 HasFormatOnlyDifference: false,
-                DiffFallbackNote: $"当前目标路径无文件；备份共 {point.DisplaySize}，SHA-256 为 {point.Sha256}。",
+                DiffFallbackNote: fallback,
                 RemovedLineCount: 0,
                 AddedLineCount: 0,
                 IsDiffTruncated: false,
@@ -593,6 +587,7 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
         {
             return new ConfigComparisonResult(
                 Point: point,
+                Direction: direction,
                 Status: ConfigComparisonStatus.ReadFailed,
                 BackupIntegrityValid: true,
                 BackupIntegrityError: "",
@@ -610,12 +605,12 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 DiffLines: []);
         }
 
-        // 3. Exact byte comparison
         if (liveSnapshot.ByteLength == point.ByteLength &&
             string.Equals(liveSnapshot.Sha256, point.Sha256, StringComparison.OrdinalIgnoreCase))
         {
             return new ConfigComparisonResult(
                 Point: point,
+                Direction: direction,
                 Status: ConfigComparisonStatus.Identical,
                 BackupIntegrityValid: true,
                 BackupIntegrityError: "",
@@ -631,23 +626,25 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 DiffLines: []);
         }
 
-        // 4. Changed: attempt reliable text diff (raw bytes remain authoritative for restore!)
         var backupText = ConfigTextDecoder.Inspect(backupBytes);
         var liveText = ConfigTextDecoder.Inspect(liveBytes);
+        var restoreDir = direction == ConfigDiffDirection.CurrentToBackup;
 
         if (!backupText.IsRecognizedText || !liveText.IsRecognizedText)
         {
-            var reason = !backupText.IsRecognizedText
-                ? backupText.UnrecognizedReason
-                : liveText.UnrecognizedReason;
+            var reason = !backupText.IsRecognizedText ? backupText.UnrecognizedReason : liveText.UnrecognizedReason;
+            var detail = restoreDir
+                ? $"当前文件 → 恢复后：编码无法可靠识别（当前 {liveSnapshot.DisplaySize} → 恢复后 {point.DisplaySize}），恢复将直接写入备份原始字节。"
+                : $"文件字节已与备份不同（备份 {point.DisplaySize} → 当前 {liveSnapshot.DisplaySize}）。编码无法可靠识别，已展示大小与 SHA-256；恢复仍将按原始字节执行。";
             return new ConfigComparisonResult(
                 Point: point,
+                Direction: direction,
                 Status: ConfigComparisonStatus.Changed,
                 BackupIntegrityValid: true,
                 BackupIntegrityError: "",
                 LiveSnapshot: liveSnapshot,
                 StatusHeadline: "当前文件已变化",
-                StatusDetail: $"文件字节已与备份不同（备份 {point.DisplaySize} → 当前 {liveSnapshot.DisplaySize}）。编码无法可靠识别，已展示大小与 SHA-256；恢复仍将按原始字节执行。",
+                StatusDetail: detail,
                 IsTextDiffAvailable: false,
                 HasFormatOnlyDifference: false,
                 DiffFallbackNote: $"{reason} 恢复时不会重新编码，始终写入备份的原始字节。",
@@ -657,17 +654,27 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 DiffLines: []);
         }
 
-        var diff = ConfigLineDiffer.Compute(backupText.Lines, liveText.Lines);
+        // Direction follows user action:
+        // - BackupToCurrent (browse):  left=backup -> right=current ("从备份到现在改了什么")
+        // - CurrentToBackup (restore): left=current -> right=backup ("当前文件 → 恢复后")
+        var diff = restoreDir
+            ? ConfigLineDiffer.Compute(liveText.Lines, backupText.Lines)
+            : ConfigLineDiffer.Compute(backupText.Lines, liveText.Lines);
+
         if (diff.RemovedCount == 0 && diff.AddedCount == 0)
         {
+            var formatDetail = restoreDir
+                ? $"文本行相同，但编码 BOM 或换行格式将变化（当前：{liveText.EncodingLabel} · {liveText.LineEndingLabel} → 恢复后：{backupText.EncodingLabel} · {backupText.LineEndingLabel}）。"
+                : $"文本行内容相同，但原始字节有变化（备份：{backupText.EncodingLabel} · {backupText.LineEndingLabel} → 当前：{liveText.EncodingLabel} · {liveText.LineEndingLabel}）。恢复将完整还原原始字节。";
             return new ConfigComparisonResult(
                 Point: point,
+                Direction: direction,
                 Status: ConfigComparisonStatus.Changed,
                 BackupIntegrityValid: true,
                 BackupIntegrityError: "",
                 LiveSnapshot: liveSnapshot,
                 StatusHeadline: "当前文件已变化（仅编码 BOM 或换行格式不同）",
-                StatusDetail: $"文本行内容相同，但原始字节有变化（备份：{backupText.EncodingLabel} · {backupText.LineEndingLabel}；当前：{liveText.EncodingLabel} · {liveText.LineEndingLabel}）。恢复将完整还原原始字节。",
+                StatusDetail: formatDetail,
                 IsTextDiffAvailable: false,
                 HasFormatOnlyDifference: true,
                 DiffFallbackNote: "文本行无增删，差异来自 UTF-8/UTF-16 BOM 或 CRLF/LF 换行格式；恢复将严格按原始字节保留 BOM 与换行符。",
@@ -677,14 +684,19 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 DiffLines: []);
         }
 
+        var statusDetail = restoreDir
+            ? $"当前文件 → 恢复后：将移除 {diff.RemovedCount} 行当前内容、写入 {diff.AddedCount} 行备份内容（当前 {liveSnapshot.DisplaySize}，{liveSnapshot.DisplayFormatSummary} → 恢复后 {point.DisplaySize}，{point.DisplayFormatSummary}）。"
+            : $"从备份到现在：原备份 {diff.RemovedCount} 行变更/移除，当前文件 {diff.AddedCount} 行变更/新增（备份 {point.DisplaySize}，{point.DisplayFormatSummary} → 当前 {liveSnapshot.DisplaySize}，{liveSnapshot.DisplayFormatSummary}）。";
+
         return new ConfigComparisonResult(
             Point: point,
+            Direction: direction,
             Status: ConfigComparisonStatus.Changed,
             BackupIntegrityValid: true,
             BackupIntegrityError: "",
             LiveSnapshot: liveSnapshot,
             StatusHeadline: "当前文件已变化",
-            StatusDetail: $"与备份相比共 {diff.RemovedCount} 行原内容变更/移除、{diff.AddedCount} 行现内容变更/新增（备份 {point.DisplaySize} → 当前 {liveSnapshot.DisplaySize}）。恢复将按原始字节还原。",
+            StatusDetail: statusDetail,
             IsTextDiffAvailable: true,
             HasFormatOnlyDifference: false,
             DiffFallbackNote: diff.Truncated ? $"差异较长，仅展示前 {ConfigLineDiffer.MaxDisplayedRows} 行；恢复仍会完整写入备份的全部原始字节。" : "",
@@ -699,7 +711,6 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
         ArgumentNullException.ThrowIfNull(point);
         ArgumentNullException.ThrowIfNull(expectedLiveSnapshot);
 
-        // 1. Validate backup integrity before touching anything
         if (!TryReadValidatedBackupBlob(point, out var backupBytes, out var integrityError))
         {
             return new ConfigRestoreResult(
@@ -711,10 +722,9 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 ActualSha256: "",
                 ExistingFilePreserved: true,
                 UndoSnapshot: null,
-                RefreshedComparison: CompareRestorePoint(point));
+                RefreshedComparison: CompareRestorePoint(point, ConfigDiffDirection.BackupToCurrent));
         }
 
-        // 2. Reject directory or reparse point at target path
         if (!TryNormalizeRegularFilePath(point.TargetPath, mustExist: false, out var targetPath, out var pathError))
         {
             return new ConfigRestoreResult(
@@ -726,18 +736,18 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 ActualSha256: "",
                 ExistingFilePreserved: true,
                 UndoSnapshot: null,
-                RefreshedComparison: CompareRestorePoint(point));
+                RefreshedComparison: CompareRestorePoint(point, ConfigDiffDirection.BackupToCurrent));
         }
 
-        // 3. Re-read live file right before overwrite to detect mid-confirmation external edits!
         var freshLive = CaptureLiveSnapshot(targetPath, out var freshLiveBytes);
         if (!freshLive.MatchesContentOf(expectedLiveSnapshot))
         {
-            var refreshed = CompareRestorePoint(point);
+            // Keep restore-preview direction ("当前文件 → 恢复后") so user immediately sees fresh diff!
+            var refreshed = CompareRestorePoint(point, ConfigDiffDirection.CurrentToBackup);
             return new ConfigRestoreResult(
                 Outcome: ConfigRestoreOutcomeKind.RefreshedDueToExternalEdit,
                 Headline: "目标文件在确认期间已被外部修改",
-                Detail: "为避免误覆盖刚刚发生的改动，本次尚未写入文件。已刷新最新差异，请核对后再次点击「确认恢复」。",
+                Detail: "为避免误覆盖刚刚发生的改动，本次尚未写入文件。已按「当前文件 → 恢复后」刷新最新差异，请核对后再次点击「确认恢复」。",
                 TargetPath: targetPath,
                 ExpectedSha256: point.Sha256,
                 ActualSha256: freshLive.Sha256,
@@ -757,10 +767,9 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 ActualSha256: "",
                 ExistingFilePreserved: true,
                 UndoSnapshot: null,
-                RefreshedComparison: CompareRestorePoint(point));
+                RefreshedComparison: CompareRestorePoint(point, ConfigDiffDirection.BackupToCurrent));
         }
 
-        // 4. Persist durable undo snapshot BEFORE modifying the target file
         ConfigUndoSnapshot undo;
         string? undoBlobPath = null;
         string? undoMetaPath = null;
@@ -814,7 +823,6 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 RefreshedComparison: null);
         }
 
-        // 5. Safe atomic-replace write of raw backup bytes to targetPath
         try
         {
             SafeWriteRawBytesToTarget(targetPath, backupBytes, point.Sha256, targetCurrentlyExists: freshLive.Exists);
@@ -823,8 +831,8 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 throw new IOException($"写入完成但目标文件 SHA-256 核对不一致（期望 {point.Sha256}，实际 {postSha}）。");
 
             var detail = freshLive.Exists
-                ? $"已将备份原始字节写入目标文件并校验 SHA-256 一致（{point.Sha256[..12]}…），保留了原始 BOM 与换行格式。覆盖前版本已保存，可随时点击「撤销本次恢复」。"
-                : $"已在原路径按备份原始字节重新创建文件并校验 SHA-256 一致（{point.Sha256[..12]}…）。可随时点击「撤销本次恢复」移除本次重建的文件。";
+                ? $"已将备份原始字节写入目标文件并校验 SHA-256 一致（{point.Sha256[..12]}…），保留了原始 BOM 与换行格式。覆盖前版本已保存，可点击撤销进入预览。"
+                : $"已在原路径按备份原始字节重新创建文件并校验 SHA-256 一致（{point.Sha256[..12]}…）。可点击撤销预览并移除本次重建的文件。";
 
             return new ConfigRestoreResult(
                 Outcome: ConfigRestoreOutcomeKind.Succeeded,
@@ -835,11 +843,10 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 ActualSha256: postSha,
                 ExistingFilePreserved: true,
                 UndoSnapshot: undo,
-                RefreshedComparison: CompareRestorePoint(point));
+                RefreshedComparison: CompareRestorePoint(point, ConfigDiffDirection.BackupToCurrent));
         }
         catch (Exception ex)
         {
-            // Clean up unused undo snapshot because overwrite did not succeed
             if (undoBlobPath is not null) TryDeleteFile(undoBlobPath);
             if (undoMetaPath is not null) TryDeleteFile(undoMetaPath);
 
@@ -859,7 +866,7 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 ActualSha256: afterFailLive.Sha256,
                 ExistingFilePreserved: intact,
                 UndoSnapshot: null,
-                RefreshedComparison: CompareRestorePoint(point));
+                RefreshedComparison: CompareRestorePoint(point, ConfigDiffDirection.BackupToCurrent));
         }
     }
 
@@ -888,7 +895,209 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
         return latest;
     }
 
-    public ConfigUndoResult UndoRestore(ConfigUndoSnapshot undoSnapshot)
+    public ConfigUndoPreviewResult InspectUndoPreview(ConfigUndoSnapshot undoSnapshot)
+    {
+        ArgumentNullException.ThrowIfNull(undoSnapshot);
+
+        if (undoSnapshot.Consumed)
+        {
+            return BuildUndoErrorPreview(
+                undoSnapshot,
+                ConfigUndoPreviewStatus.UndoSnapshotInvalid,
+                CaptureLiveSnapshot(undoSnapshot.TargetPath, out _),
+                "本次恢复已撤销",
+                "该撤销记录已被使用，无需重复撤销。");
+        }
+
+        if (!TryNormalizeRegularFilePath(undoSnapshot.TargetPath, mustExist: false, out var targetPath, out var pathError))
+        {
+            return BuildUndoErrorPreview(
+                undoSnapshot,
+                ConfigUndoPreviewStatus.TargetReadFailed,
+                new ConfigLiveFileSnapshot(true, false, 0, "", 0, "", "", pathError),
+                "无法撤销：目标路径不是受支持的普通文件",
+                pathError);
+        }
+
+        // Validate undo blob integrity first if target existed before restore
+        byte[]? preRestoreBytes = null;
+        ConfigTextInspection? preText = null;
+        if (undoSnapshot.TargetExistedBeforeRestore)
+        {
+            if (!TryReadValidatedUndoBlob(undoSnapshot, out preRestoreBytes, out var blobError))
+            {
+                return BuildUndoErrorPreview(
+                    undoSnapshot,
+                    ConfigUndoPreviewStatus.UndoSnapshotInvalid,
+                    CaptureLiveSnapshot(targetPath, out _),
+                    "无法撤销：覆盖前副本已损坏或缺失",
+                    $"{blobError} 为保住现有文件，已阻止撤销。");
+            }
+            preText = ConfigTextDecoder.Inspect(preRestoreBytes);
+        }
+
+        // Check live target existence & content match against RestoredBackupSha256!
+        var live = CaptureLiveSnapshot(targetPath, out var liveBytes);
+
+        if (!live.Exists)
+        {
+            return new ConfigUndoPreviewResult(
+                UndoSnapshot: undoSnapshot,
+                Status: ConfigUndoPreviewStatus.TargetDeletedConflict,
+                LiveSnapshot: live,
+                DirectionLabel: "当前文件 → 撤销后（存在冲突）",
+                Headline: "撤销冲突：恢复后目标文件已被主动删除",
+                Detail: $"目标文件在恢复写入版本（{undoSnapshot.DisplayRestoredShortSha}）之后已不存在。为保住你的最新删除状态，已阻止撤销，不会重新写入文件。",
+                ActionSummary: "已保住用户删除后的当前状态，未修改磁盘，也不会静默消耗撤销记录。",
+                PreRestoreEncodingLabel: preText?.EncodingLabel ?? "不适用",
+                PreRestoreLineEndingLabel: preText?.LineEndingLabel ?? "不适用",
+                PreRestoreByteLength: undoSnapshot.PreRestoreByteLength,
+                PreRestoreSha256: undoSnapshot.PreRestoreSha256,
+                IsTextDiffAvailable: false,
+                HasFormatOnlyDifference: false,
+                DiffFallbackNote: "恢复写入的文件已从目标路径被删除；为避免覆盖或复活用户主动删除的文件，撤销已被阻止。",
+                RemovedLineCount: 0,
+                AddedLineCount: 0,
+                IsDiffTruncated: false,
+                DiffLines: []);
+        }
+
+        if (!live.IsReadable || liveBytes is null)
+        {
+            return BuildUndoErrorPreview(
+                undoSnapshot,
+                ConfigUndoPreviewStatus.TargetReadFailed,
+                live,
+                "无法撤销：当前目标文件读取失败",
+                string.IsNullOrWhiteSpace(live.ReadError) ? "无法读取当前目标文件，请检查是否被占用或权限受限。" : live.ReadError);
+        }
+
+        if (!string.Equals(live.Sha256, undoSnapshot.RestoredBackupSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            return new ConfigUndoPreviewResult(
+                UndoSnapshot: undoSnapshot,
+                Status: ConfigUndoPreviewStatus.TargetModifiedConflict,
+                LiveSnapshot: live,
+                DirectionLabel: "当前文件 → 撤销后（存在冲突）",
+                Headline: "撤销冲突：恢复后目标文件已被外部修改",
+                Detail: $"恢复时写入的 SHA-256 为 {undoSnapshot.DisplayRestoredShortSha}，但当前文件已变为 {live.DisplayShortSha256}（{live.DisplaySize}）。为保住你的最新修改，已阻止撤销。",
+                ActionSummary: "已保住当前文件最新内容，未修改磁盘，也不会静默消耗撤销记录。",
+                PreRestoreEncodingLabel: preText?.EncodingLabel ?? "不适用",
+                PreRestoreLineEndingLabel: preText?.LineEndingLabel ?? "不适用",
+                PreRestoreByteLength: undoSnapshot.PreRestoreByteLength,
+                PreRestoreSha256: undoSnapshot.PreRestoreSha256,
+                IsTextDiffAvailable: false,
+                HasFormatOnlyDifference: false,
+                DiffFallbackNote: $"当前文件（{live.Sha256}）已不再匹配上次恢复写入的版本（{undoSnapshot.RestoredBackupSha256}）；为防止丢失新修改，已禁止撤销。",
+                RemovedLineCount: 0,
+                AddedLineCount: 0,
+                IsDiffTruncated: false,
+                DiffLines: []);
+        }
+
+        // Case B: Originally missing, recreated by Contain during restore, and still unchanged since restore!
+        if (!undoSnapshot.TargetExistedBeforeRestore)
+        {
+            return new ConfigUndoPreviewResult(
+                UndoSnapshot: undoSnapshot,
+                Status: ConfigUndoPreviewStatus.ReadyToRemoveRecreatedFile,
+                LiveSnapshot: live,
+                DirectionLabel: "当前文件 → 撤销后（移除重建文件）",
+                Headline: "撤销预览：将移除本次重建的文件",
+                Detail: $"该文件恢复前原本缺失、由 Contain 恢复时重建，且此后内容未变（当前 {live.DisplaySize}，SHA-256：{live.DisplayShortSha256}）。",
+                ActionSummary: "确认撤销后将移除本次恢复重建的文件，使目标路径回到恢复前的缺失状态。点击「取消」不会写盘，也不会消耗撤销记录。",
+                PreRestoreEncodingLabel: "原本缺失",
+                PreRestoreLineEndingLabel: "不适用",
+                PreRestoreByteLength: 0,
+                PreRestoreSha256: "",
+                IsTextDiffAvailable: false,
+                HasFormatOnlyDifference: false,
+                DiffFallbackNote: $"将移除本次恢复重建的文件（当前 {live.DisplaySize}，{live.DisplayFormatSummary}，SHA-256：{live.Sha256}）。点击「确认撤销」前不会删除文件。",
+                RemovedLineCount: 0,
+                AddedLineCount: 0,
+                IsDiffTruncated: false,
+                DiffLines: []);
+        }
+
+        // Case A: File existed before restore -> compute Current -> Undo Target (preRestoreBytes) diff!
+        var liveText = ConfigTextDecoder.Inspect(liveBytes);
+        var targetText = preText!;
+        var targetFmt = string.IsNullOrWhiteSpace(targetText.LineEndingLabel) || targetText.LineEndingLabel == "不适用"
+            ? targetText.EncodingLabel
+            : $"{targetText.EncodingLabel} · {targetText.LineEndingLabel}";
+        var actionSummary = $"即将用覆盖前保存的原始字节写回目标文件（当前 {live.DisplaySize}，{live.DisplayFormatSummary}，SHA-256：{live.DisplayShortSha256} → 撤销后 {ConfigFormatting.FormatByteSize(undoSnapshot.PreRestoreByteLength)}，{targetFmt}，SHA-256：{undoSnapshot.DisplayPreRestoreShortSha}），严格保留原始 BOM 与换行格式。";
+
+        if (!liveText.IsRecognizedText || !targetText.IsRecognizedText)
+        {
+            var reason = !liveText.IsRecognizedText ? liveText.UnrecognizedReason : targetText.UnrecognizedReason;
+            return new ConfigUndoPreviewResult(
+                UndoSnapshot: undoSnapshot,
+                Status: ConfigUndoPreviewStatus.ReadyToRestorePreviousBytes,
+                LiveSnapshot: live,
+                DirectionLabel: "当前文件 → 撤销后",
+                Headline: "撤销预览：按原始字节还原覆盖前版本",
+                Detail: $"当前文件 → 撤销后：编码无法可靠识别，已展示大小与 SHA-256；撤销仍将严格写入覆盖前原始字节。",
+                ActionSummary: actionSummary,
+                PreRestoreEncodingLabel: targetText.EncodingLabel,
+                PreRestoreLineEndingLabel: targetText.LineEndingLabel,
+                PreRestoreByteLength: undoSnapshot.PreRestoreByteLength,
+                PreRestoreSha256: undoSnapshot.PreRestoreSha256,
+                IsTextDiffAvailable: false,
+                HasFormatOnlyDifference: false,
+                DiffFallbackNote: $"{reason} 撤销时不会重新编码，始终写回覆盖前原始字节。",
+                RemovedLineCount: 0,
+                AddedLineCount: 0,
+                IsDiffTruncated: false,
+                DiffLines: []);
+        }
+
+        // Undo diff direction is ALWAYS Current (live/restored A) -> After Undo (preRestore B)!
+        var diff = ConfigLineDiffer.Compute(liveText.Lines, targetText.Lines);
+        if (diff.RemovedCount == 0 && diff.AddedCount == 0)
+        {
+            return new ConfigUndoPreviewResult(
+                UndoSnapshot: undoSnapshot,
+                Status: ConfigUndoPreviewStatus.ReadyToRestorePreviousBytes,
+                LiveSnapshot: live,
+                DirectionLabel: "当前文件 → 撤销后",
+                Headline: "撤销预览：仅恢复原有编码 BOM 或换行格式",
+                Detail: $"文本行相同，撤销后编码与换行将还原（当前：{live.DisplayFormatSummary} → 撤销后：{targetFmt}）。",
+                ActionSummary: actionSummary,
+                PreRestoreEncodingLabel: targetText.EncodingLabel,
+                PreRestoreLineEndingLabel: targetText.LineEndingLabel,
+                PreRestoreByteLength: undoSnapshot.PreRestoreByteLength,
+                PreRestoreSha256: undoSnapshot.PreRestoreSha256,
+                IsTextDiffAvailable: false,
+                HasFormatOnlyDifference: true,
+                DiffFallbackNote: "文本行无增删，撤销将按原始字节还原覆盖前的 BOM 与换行格式。",
+                RemovedLineCount: 0,
+                AddedLineCount: 0,
+                IsDiffTruncated: false,
+                DiffLines: []);
+        }
+
+        return new ConfigUndoPreviewResult(
+            UndoSnapshot: undoSnapshot,
+            Status: ConfigUndoPreviewStatus.ReadyToRestorePreviousBytes,
+            LiveSnapshot: live,
+            DirectionLabel: "当前文件 → 撤销后",
+            Headline: "撤销预览：将还原为覆盖前版本",
+            Detail: $"当前文件 → 撤销后：将移除 {diff.RemovedCount} 行当前内容、写回 {diff.AddedCount} 行覆盖前内容（当前 {live.DisplaySize}，{live.DisplayFormatSummary} → 撤销后 {ConfigFormatting.FormatByteSize(undoSnapshot.PreRestoreByteLength)}，{targetFmt}）。",
+            ActionSummary: actionSummary,
+            PreRestoreEncodingLabel: targetText.EncodingLabel,
+            PreRestoreLineEndingLabel: targetText.LineEndingLabel,
+            PreRestoreByteLength: undoSnapshot.PreRestoreByteLength,
+            PreRestoreSha256: undoSnapshot.PreRestoreSha256,
+            IsTextDiffAvailable: true,
+            HasFormatOnlyDifference: false,
+            DiffFallbackNote: diff.Truncated ? $"差异较长，仅展示前 {ConfigLineDiffer.MaxDisplayedRows} 行；撤销仍会完整写回覆盖前全部原始字节。" : "",
+            RemovedLineCount: diff.RemovedCount,
+            AddedLineCount: diff.AddedCount,
+            IsDiffTruncated: diff.Truncated,
+            DiffLines: diff.Lines);
+    }
+
+    public ConfigUndoResult UndoRestore(ConfigUndoSnapshot undoSnapshot, ConfigLiveFileSnapshot? expectedLiveSnapshot = null)
     {
         ArgumentNullException.ThrowIfNull(undoSnapshot);
 
@@ -913,73 +1122,78 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 TargetPath: undoSnapshot.TargetPath,
                 ExpectedSha256: undoSnapshot.PreRestoreSha256,
                 ActualSha256: "",
-                ExistingFilePreserved: true);
+                ExistingFilePreserved: true,
+                RefreshedUndoPreview: InspectUndoPreview(undoSnapshot));
         }
 
-        // Verify undo blob integrity first if target existed before restore
         byte[]? preRestoreBytes = null;
         if (undoSnapshot.TargetExistedBeforeRestore)
         {
-            if (string.IsNullOrWhiteSpace(undoSnapshot.PreRestoreBlobRelativePath))
+            if (!TryReadValidatedUndoBlob(undoSnapshot, out preRestoreBytes, out var blobError))
             {
                 return new ConfigUndoResult(
                     Outcome: ConfigUndoOutcomeKind.Failed,
-                    Headline: "撤销失败：缺少覆盖前备份副本",
-                    Detail: "找不到覆盖前保存的原始副本，目标文件保持不变。",
+                    Headline: "撤销失败：覆盖前副本已损坏或缺失",
+                    Detail: $"{blobError} 目标文件保持不变。",
                     TargetPath: targetPath,
                     ExpectedSha256: undoSnapshot.PreRestoreSha256,
                     ActualSha256: "",
-                    ExistingFilePreserved: true);
-            }
-
-            var blobPath = ResolveSafeChildPath(StorageRoot, undoSnapshot.PreRestoreBlobRelativePath);
-            if (blobPath is null || !File.Exists(blobPath))
-            {
-                return new ConfigUndoResult(
-                    Outcome: ConfigUndoOutcomeKind.Failed,
-                    Headline: "撤销失败：覆盖前副本文件已丢失",
-                    Detail: "本地撤销副本已不存在，目标文件保持不变。",
-                    TargetPath: targetPath,
-                    ExpectedSha256: undoSnapshot.PreRestoreSha256,
-                    ActualSha256: "",
-                    ExistingFilePreserved: true);
-            }
-
-            preRestoreBytes = ReadAllBytesShared(blobPath);
-            var blobSha = ComputeSha256Hex(preRestoreBytes);
-            if (preRestoreBytes.LongLength != undoSnapshot.PreRestoreByteLength ||
-                !string.Equals(blobSha, undoSnapshot.PreRestoreSha256, StringComparison.OrdinalIgnoreCase))
-            {
-                return new ConfigUndoResult(
-                    Outcome: ConfigUndoOutcomeKind.Failed,
-                    Headline: "撤销失败：覆盖前副本已损坏",
-                    Detail: "本地撤销副本的哈希与记录不符，已阻止写入以保住现有文件。",
-                    TargetPath: targetPath,
-                    ExpectedSha256: undoSnapshot.PreRestoreSha256,
-                    ActualSha256: "",
-                    ExistingFilePreserved: true);
+                    ExistingFilePreserved: true,
+                    RefreshedUndoPreview: InspectUndoPreview(undoSnapshot));
             }
         }
 
-        // Check whether the file was modified externally AFTER our restore
+        // Re-check live target RIGHT BEFORE writing/deleting (protects against edits or deletions made after restore OR during Undo Preview!)
         var live = CaptureLiveSnapshot(targetPath, out _);
-        if (live.Exists && (!live.IsReadable || !string.Equals(live.Sha256, undoSnapshot.RestoredBackupSha256, StringComparison.OrdinalIgnoreCase)))
+
+        if (!live.Exists)
+        {
+            var freshPreview = InspectUndoPreview(undoSnapshot);
+            return new ConfigUndoResult(
+                Outcome: ConfigUndoOutcomeKind.TargetDeletedConflict,
+                Headline: "撤销已阻止：目标文件已被主动删除",
+                Detail: "核对发现恢复后的目标文件已不存在；为保住你的最新状态，未重新写入文件，且未消耗撤销记录。",
+                TargetPath: targetPath,
+                ExpectedSha256: undoSnapshot.PreRestoreSha256,
+                ActualSha256: "",
+                ExistingFilePreserved: true,
+                RefreshedUndoPreview: freshPreview);
+        }
+
+        if (!live.IsReadable)
         {
             return new ConfigUndoResult(
+                Outcome: ConfigUndoOutcomeKind.Failed,
+                Headline: "撤销已中止：当前无法读取目标文件",
+                Detail: $"{live.ReadError} 现有文件未被修改。",
+                TargetPath: targetPath,
+                ExpectedSha256: undoSnapshot.PreRestoreSha256,
+                ActualSha256: "",
+                ExistingFilePreserved: true,
+                RefreshedUndoPreview: InspectUndoPreview(undoSnapshot));
+        }
+
+        var matchesRestored = string.Equals(live.Sha256, undoSnapshot.RestoredBackupSha256, StringComparison.OrdinalIgnoreCase);
+        var matchesPreview = expectedLiveSnapshot is null || live.MatchesContentOf(expectedLiveSnapshot);
+        if (!matchesRestored || !matchesPreview)
+        {
+            var freshPreview = InspectUndoPreview(undoSnapshot);
+            return new ConfigUndoResult(
                 Outcome: ConfigUndoOutcomeKind.ExternalEditConflict,
-                Headline: "撤销已中止：恢复后目标文件又发生了变化",
-                Detail: "目标文件当前内容已不再等于刚才恢复的备份版本；为防止丢失你的新修改，已中止撤销且未修改现有文件。",
+                Headline: "撤销已阻止：恢复后目标文件又被外部修改",
+                Detail: "实际写入前再次核对发现目标文件已不再等于恢复版本；为保住你的最新改动，已中止撤销且未修改现有文件。",
                 TargetPath: targetPath,
                 ExpectedSha256: undoSnapshot.PreRestoreSha256,
                 ActualSha256: live.Sha256,
-                ExistingFilePreserved: true);
+                ExistingFilePreserved: true,
+                RefreshedUndoPreview: freshPreview);
         }
 
         try
         {
             if (undoSnapshot.TargetExistedBeforeRestore && preRestoreBytes is not null)
             {
-                SafeWriteRawBytesToTarget(targetPath, preRestoreBytes, undoSnapshot.PreRestoreSha256, targetCurrentlyExists: live.Exists);
+                SafeWriteRawBytesToTarget(targetPath, preRestoreBytes, undoSnapshot.PreRestoreSha256, targetCurrentlyExists: true);
                 var postSha = ComputeFileSha256Hex(targetPath);
                 if (!string.Equals(postSha, undoSnapshot.PreRestoreSha256, StringComparison.OrdinalIgnoreCase))
                     throw new IOException($"撤销后校验不一致（期望 {undoSnapshot.PreRestoreSha256}，实际 {postSha}）。");
@@ -988,7 +1202,7 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
                 return new ConfigUndoResult(
                     Outcome: ConfigUndoOutcomeKind.Succeeded,
                     Headline: "已撤销本次恢复",
-                    Detail: $"已将目标文件还原为覆盖前的原始字节（SHA-256：{postSha[..12]}…），BOM 与换行格式均已完整保留。",
+                    Detail: $"已将“{undoSnapshot.DisplayTargetScopedName}”还原为覆盖前的原始字节（SHA-256：{postSha[..12]}…），BOM 与换行格式均已完整保留。",
                     TargetPath: targetPath,
                     ExpectedSha256: undoSnapshot.PreRestoreSha256,
                     ActualSha256: postSha,
@@ -996,13 +1210,14 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
             }
             else
             {
-                if (live.Exists)
-                    File.Delete(targetPath);
+                File.Delete(targetPath);
+                if (File.Exists(targetPath))
+                    throw new IOException("删除本次恢复重建的文件失败，目标文件仍存在。");
                 MarkUndoConsumed(undoSnapshot);
                 return new ConfigUndoResult(
                     Outcome: ConfigUndoOutcomeKind.Succeeded,
-                    Headline: "已撤销本次恢复",
-                    Detail: "恢复前目标文件原本不存在，已移除本次重建的文件。",
+                    Headline: "已撤销本次恢复（已移除重建文件）",
+                    Detail: $"“{undoSnapshot.DisplayTargetScopedName}”恢复前原本缺失，现已确认移除本次恢复重建的文件。",
                     TargetPath: targetPath,
                     ExpectedSha256: "",
                     ActualSha256: "",
@@ -1015,14 +1230,41 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
             var intact = afterFail.MatchesContentOf(live);
             return new ConfigUndoResult(
                 Outcome: ConfigUndoOutcomeKind.Failed,
-                Headline: "撤销失败：无法写回覆盖前版本",
+                Headline: "撤销失败：无法写回或移除目标文件",
                 Detail: $"{DescribeWriteFailure(ex)} {(intact ? "当前目标文件未被破坏。" : "请刷新检查当前文件状态。")}",
                 TargetPath: targetPath,
                 ExpectedSha256: undoSnapshot.PreRestoreSha256,
                 ActualSha256: afterFail.Sha256,
-                ExistingFilePreserved: intact);
+                ExistingFilePreserved: intact,
+                RefreshedUndoPreview: InspectUndoPreview(undoSnapshot));
         }
     }
+
+    private static ConfigUndoPreviewResult BuildUndoErrorPreview(
+        ConfigUndoSnapshot undoSnapshot,
+        ConfigUndoPreviewStatus status,
+        ConfigLiveFileSnapshot live,
+        string headline,
+        string detail) =>
+        new(
+            UndoSnapshot: undoSnapshot,
+            Status: status,
+            LiveSnapshot: live,
+            DirectionLabel: "当前文件 → 撤销后（不可执行）",
+            Headline: headline,
+            Detail: detail,
+            ActionSummary: "未修改目标文件，也不会消耗撤销记录。",
+            PreRestoreEncodingLabel: "不适用",
+            PreRestoreLineEndingLabel: "不适用",
+            PreRestoreByteLength: undoSnapshot.PreRestoreByteLength,
+            PreRestoreSha256: undoSnapshot.PreRestoreSha256,
+            IsTextDiffAvailable: false,
+            HasFormatOnlyDifference: false,
+            DiffFallbackNote: detail,
+            RemovedLineCount: 0,
+            AddedLineCount: 0,
+            IsDiffTruncated: false,
+            DiffLines: []);
 
     private void MarkUndoConsumed(ConfigUndoSnapshot undoSnapshot)
     {
@@ -1034,6 +1276,48 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
         catch
         {
             // Non-fatal metadata update.
+        }
+    }
+
+    private bool TryReadValidatedUndoBlob(ConfigUndoSnapshot undoSnapshot, out byte[] bytes, out string error)
+    {
+        bytes = [];
+        error = "";
+        if (string.IsNullOrWhiteSpace(undoSnapshot.PreRestoreBlobRelativePath))
+        {
+            error = "撤销记录缺少覆盖前副本路径。";
+            return false;
+        }
+
+        var blobPath = ResolveSafeChildPath(StorageRoot, undoSnapshot.PreRestoreBlobRelativePath);
+        if (blobPath is null)
+        {
+            error = "撤销副本路径越界，已拒绝读取。";
+            return false;
+        }
+        if (!File.Exists(blobPath))
+        {
+            error = "本地覆盖前副本文件已丢失。";
+            return false;
+        }
+
+        try
+        {
+            var raw = ReadAllBytesShared(blobPath);
+            var sha = ComputeSha256Hex(raw);
+            if (raw.LongLength != undoSnapshot.PreRestoreByteLength ||
+                !string.Equals(sha, undoSnapshot.PreRestoreSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                error = $"覆盖前副本校验失败（记录 {undoSnapshot.PreRestoreByteLength} B / {undoSnapshot.DisplayPreRestoreShortSha}，实际 {raw.LongLength} B / {(sha.Length >= 12 ? sha[..12] + "…" : sha)}）。";
+                return false;
+            }
+            bytes = raw;
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            error = $"无法读取覆盖前副本：{ex.Message}";
+            return false;
         }
     }
 
@@ -1087,22 +1371,16 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
         rawBytes = null;
 
         if (Directory.Exists(targetPath))
-        {
             return new ConfigLiveFileSnapshot(true, false, 0, "", 0, "", "", "目标路径当前是一个文件夹，而非普通文件。");
-        }
 
         if (!File.Exists(targetPath))
-        {
             return new ConfigLiveFileSnapshot(false, false, 0, "", 0, "", "");
-        }
 
         try
         {
             var attrs = File.GetAttributes(targetPath);
             if ((attrs & FileAttributes.ReparsePoint) != 0)
-            {
                 return new ConfigLiveFileSnapshot(true, false, 0, "", 0, "", "", "目标路径是符号链接或重解析点；第一版仅操作普通本地文件。");
-            }
 
             var info = new FileInfo(targetPath);
             if (info.Length > MaxConfigFileBytes)
@@ -1149,7 +1427,6 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
 
         try
         {
-            // Write raw bytes directly with WriteThrough so temp file is flushed before replace
             using (var fs = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, FileOptions.WriteThrough))
             {
                 fs.Write(rawBytes, 0, rawBytes.Length);
@@ -1162,12 +1439,10 @@ public sealed class LocalConfigRestorePointService : IConfigRestorePointService
 
             if (targetCurrentlyExists)
             {
-                // File.Replace uses Win32 ReplaceFileW: fails cleanly without truncating or corrupting targetPath if locked/read-only/permission-denied!
                 File.Replace(tempPath, targetPath, destinationBackupFileName: null, ignoreMetadataErrors: true);
             }
             else
             {
-                // Recreate missing file without overwriting if one suddenly appeared
                 if (File.Exists(targetPath))
                     throw new IOException("目标路径在写入瞬间已出现新文件，已中止覆盖。");
                 File.Move(tempPath, targetPath);

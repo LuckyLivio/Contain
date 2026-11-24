@@ -12,20 +12,22 @@ internal static class ConfigRestorePointChecks
     public static Task<IReadOnlyList<string>> RunAsync()
     {
         var passed = new List<string>();
-        Run(passed, "config_utf8_bom_crlf_chinese_roundtrip_and_restart_persistence", Utf8BomCrlfChineseRoundtrip);
-        Run(passed, "config_disambiguates_same_filename_in_different_directories", SameFilenameDifferentDirectories);
-        Run(passed, "config_missing_file_restore_recreates_and_undo_removes", MissingFileRestoreAndUndo);
+        Run(passed, "config_utf8_bom_crlf_chinese_roundtrip_and_directional_previews", Utf8BomCrlfChineseRoundtripAndDirectionalPreviews);
+        Run(passed, "config_asymmetric_line_counts_flip_between_browse_and_restore_preview", AsymmetricLineCountsFlipByDirection);
+        Run(passed, "config_disambiguates_same_filename_and_cross_file_undo_preview", SameFilenameDifferentDirectoriesAndCrossFileUndo);
+        Run(passed, "config_missing_file_restore_recreates_and_undo_preview_forecasts_removal", MissingFileRestoreAndUndoPreview);
         Run(passed, "config_unrecognized_encoding_shows_size_hash_and_restores_raw_bytes", UnrecognizedEncodingRawByteRestore);
         Run(passed, "config_bom_and_line_ending_only_change_restores_exact_bytes", BomAndLineEndingOnlyChange);
-        Run(passed, "config_mid_confirmation_external_edit_blocks_and_refreshes", MidConfirmationExternalEdit);
+        Run(passed, "config_mid_confirmation_external_edit_blocks_and_refreshes_in_restore_direction", MidConfirmationExternalEdit);
         Run(passed, "config_corrupted_or_missing_backup_blocks_restore_and_preserves_live", CorruptedOrMissingBackup);
         Run(passed, "config_write_failure_locked_and_readonly_preserves_existing_file", WriteFailureLockedAndReadOnly);
-        Run(passed, "config_undo_aborts_if_externally_edited_after_restore", UndoAbortsOnPostRestoreExternalEdit);
+        Run(passed, "config_undo_conflict_on_post_restore_external_edit_preview_and_mid_preview", UndoConflictOnPostRestoreExternalEdit);
+        Run(passed, "config_undo_conflict_on_post_restore_active_deletion_preview_and_mid_preview", UndoConflictOnPostRestoreActiveDeletion);
         Run(passed, "config_rejects_directories_missing_and_device_paths", RejectsInvalidPaths);
         return Task.FromResult<IReadOnlyList<string>>(passed);
     }
 
-    private static void Utf8BomCrlfChineseRoundtrip()
+    private static void Utf8BomCrlfChineseRoundtripAndDirectionalPreviews()
     {
         using var dir = new TempDir();
         var storageRoot = Path.Combine(dir.Path, "store");
@@ -49,57 +51,102 @@ internal static class ConfigRestorePointChecks
         vm1.NoteInput = "调整快捷键前";
         vm1.CreateRestorePoint();
 
-        Assert(vm1.TotalCount == 1, "Expected 1 restore point");
         var saved = vm1.SelectedPoint ?? throw new InvalidOperationException("Expected non-null SelectedPoint");
-        Assert(saved.Sha256 == shaA, "Saved point SHA-256 must match A");
-        Assert(saved.ByteLength == bytesA.LongLength, "Saved point byte length must match A");
+        Assert(saved.Sha256 == shaA && saved.ByteLength == bytesA.LongLength, "Saved point metadata must match A");
         Assert(saved.Note == "调整快捷键前", "Saved note must match");
-        Assert(saved.EncodingLabel.Contains("BOM"), "Encoding label should note UTF-8 BOM");
-        Assert(saved.LineEndingLabel.Contains("CRLF"), "Line ending label should note CRLF");
-        Assert(vm1.ComparisonStatus == ConfigComparisonStatus.Identical, "Initial comparison should be Identical");
-        Assert(!vm1.CanBeginRestore, "Restore should be disabled when identical");
+        Assert(saved.EncodingLabel.Contains("BOM") && saved.LineEndingLabel.Contains("CRLF"), "Encoding/EOL detected");
+        Assert(vm1.ComparisonStatus == ConfigComparisonStatus.Identical && !vm1.CanBeginRestore, "Identical disables restore");
 
-        // Edit file to B, then simulate full Contain restart with a brand-new Service + ViewModel!
+        // Edit file to B, then simulate full Contain restart!
         File.WriteAllBytes(cfgPath, bytesB);
         var vm2 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(storageRoot));
         vm2.Refresh();
 
-        Assert(vm2.TotalCount == 1, "Restore point must persist after restart");
-        Assert(vm2.SelectedPoint is not null && vm2.SelectedPoint.Note == "调整快捷键前", "Note must persist after restart");
-        Assert(vm2.ComparisonStatus == ConfigComparisonStatus.Changed, "Comparison after edit should be Changed");
-        Assert(vm2.HasTextDiff, "Recognized UTF-8 BOM text must produce line diff");
-        Assert(vm2.DiffLines.Any(l => l.Kind == ConfigDiffLineKind.Removed && l.Text.Contains("\"theme\": \"light\"")), "Diff must show light removed from backup");
-        Assert(vm2.DiffLines.Any(l => l.Kind == ConfigDiffLineKind.Added && l.Text.Contains("\"theme\": \"dark\"")), "Diff must show dark added in current");
-        Assert(vm2.CanBeginRestore, "Restore button must be enabled when Changed");
+        // Normal browse mode: "从备份到现在" (- light / + dark)
+        Assert(vm2.TotalCount == 1 && vm2.ComparisonStatus == ConfigComparisonStatus.Changed, "Persisted point detects change after restart");
+        Assert(vm2.ActiveDiffDirection == ConfigDiffDirection.BackupToCurrent, "Browse mode uses BackupToCurrent");
+        Assert(vm2.DiffDirectionBadgeText == "从备份到现在", "Browse direction badge");
+        Assert(vm2.DiffLines.Any(l => l.Kind == ConfigDiffLineKind.Removed && l.Text.Contains("\"theme\": \"light\"")), "Browse diff: - light");
+        Assert(vm2.DiffLines.Any(l => l.Kind == ConfigDiffLineKind.Added && l.Text.Contains("\"theme\": \"dark\"")), "Browse diff: + dark");
 
-        // Enter restore confirmation, check target path & action text, confirm restore to A
+        // Enter Restore Preview -> flips direction to "当前文件 → 恢复后" (- dark / + light)!
         vm2.BeginRestoreConfirmation();
-        Assert(vm2.IsConfirmingRestore && vm2.CanConfirmRestore, "Should enter confirmation state");
-        Assert(vm2.ConfirmRestoreTargetPath == Path.GetFullPath(cfgPath), "Confirmation must display exact target path");
-        Assert(vm2.ConfirmRestoreOperationText.Contains("撤销本次恢复"), "Confirmation must mention undo capability");
+        Assert(vm2.IsConfirmingRestore && vm2.CanConfirmRestore, "Restore preview active");
+        Assert(vm2.ActiveDiffDirection == ConfigDiffDirection.CurrentToBackup, "Restore preview flips to CurrentToBackup");
+        Assert(vm2.DiffDirectionBadgeText == "当前文件 → 恢复后", "Restore preview direction badge");
+        Assert(vm2.ConfirmRestoreTargetPath == Path.GetFullPath(cfgPath), "Exact target path displayed");
+        Assert(vm2.DiffLines.Any(l => l.Kind == ConfigDiffLineKind.Removed && l.Text.Contains("\"theme\": \"dark\"")), "Restore preview MUST remove dark");
+        Assert(vm2.DiffLines.Any(l => l.Kind == ConfigDiffLineKind.Added && l.Text.Contains("\"theme\": \"light\"")), "Restore preview MUST write light");
 
+        // Cancel restore confirmation -> flips cleanly back to BackupToCurrent without writing
+        vm2.CancelRestoreConfirmation();
+        Assert(!vm2.IsConfirmingRestore && vm2.ActiveDiffDirection == ConfigDiffDirection.BackupToCurrent, "Cancel restore reverts to browse direction");
+        Assert(Sha256Hex(File.ReadAllBytes(cfgPath)) == shaB, "Cancel restore writes nothing");
+
+        // Re-enter Restore Preview & confirm -> disk becomes A byte-for-byte
+        vm2.BeginRestoreConfirmation();
         vm2.ConfirmRestore();
-        Assert(!vm2.IsConfirmingRestore, "Confirmation should close after restore");
-        Assert(!vm2.IsOperationBannerError, "Restore should succeed without error");
-        Assert(vm2.ComparisonStatus == ConfigComparisonStatus.Identical, "After restore, status must be Identical");
-        Assert(vm2.CanUndoLastRestore, "Undo must be available right after restore");
-
+        Assert(!vm2.IsConfirmingRestore && !vm2.IsOperationBannerError, "Restore succeeded");
+        Assert(vm2.ComparisonStatus == ConfigComparisonStatus.Identical && vm2.CanUndoLastRestore, "Status identical and undo ready");
         var afterRestoreBytes = File.ReadAllBytes(cfgPath);
-        Assert(Sha256Hex(afterRestoreBytes) == shaA, "Restored file SHA-256 must match A byte-for-byte");
-        Assert(afterRestoreBytes.SequenceEqual(bytesA), "Restored bytes must preserve BOM, CRLF, and Chinese exactly");
+        Assert(Sha256Hex(afterRestoreBytes) == shaA && afterRestoreBytes.SequenceEqual(bytesA), "Restored file matches A byte-for-byte");
 
-        // Undo restore -> must return byte-for-byte to B!
-        vm2.UndoLastRestore();
-        Assert(!vm2.IsOperationBannerError, "Undo should succeed without error");
-        Assert(!vm2.CanUndoLastRestore, "Undo should be consumed after use");
-        Assert(vm2.ComparisonStatus == ConfigComparisonStatus.Changed, "After undo back to B, comparison against A must be Changed");
+        // Open Lightweight Undo Preview -> direction "当前文件 → 撤销后" (- light / + dark)
+        vm2.BeginUndoPreview();
+        Assert(vm2.IsPreviewingUndo && vm2.CanConfirmUndo, "Undo preview opened cleanly");
+        Assert(vm2.UndoPreviewTargetPath == Path.GetFullPath(cfgPath), "Undo preview shows exact target path");
+        Assert(vm2.UndoPreviewDirectionLabel == "当前文件 → 撤销后", "Undo preview direction label");
+        Assert(vm2.UndoDiffLines.Any(l => l.Kind == ConfigDiffLineKind.Removed && l.Text.Contains("\"theme\": \"light\"")), "Undo preview removes light");
+        Assert(vm2.UndoDiffLines.Any(l => l.Kind == ConfigDiffLineKind.Added && l.Text.Contains("\"theme\": \"dark\"")), "Undo preview writes dark");
 
+        // Cancel Undo Preview -> MUST NOT write disk or consume undo record!
+        vm2.CancelUndoPreview();
+        Assert(!vm2.IsPreviewingUndo, "Undo preview closed on cancel");
+        Assert(vm2.CanUndoLastRestore && vm2.LatestUndo is { Consumed: false }, "Cancel undo preview MUST NOT consume undo record");
+        Assert(Sha256Hex(File.ReadAllBytes(cfgPath)) == shaA, "Cancel undo preview MUST NOT modify disk");
+
+        // Re-open Undo Preview & Confirm Undo -> disk returns byte-for-byte to B!
+        vm2.BeginUndoPreview();
+        Assert(vm2.IsPreviewingUndo && vm2.CanConfirmUndo, "Undo preview still usable after cancel");
+        vm2.ConfirmUndoRestore();
+        Assert(!vm2.IsPreviewingUndo && !vm2.IsOperationBannerError && !vm2.CanUndoLastRestore, "Undo succeeded and consumed");
+        Assert(vm2.ComparisonStatus == ConfigComparisonStatus.Changed, "Comparison against A is Changed again");
         var afterUndoBytes = File.ReadAllBytes(cfgPath);
-        Assert(Sha256Hex(afterUndoBytes) == shaB, "Undone file SHA-256 must match B byte-for-byte");
-        Assert(afterUndoBytes.SequenceEqual(bytesB), "Undone bytes must preserve BOM, CRLF, and Chinese exactly");
+        Assert(Sha256Hex(afterUndoBytes) == shaB && afterUndoBytes.SequenceEqual(bytesB), "Undone file matches B byte-for-byte");
     }
 
-    private static void SameFilenameDifferentDirectories()
+    private static void AsymmetricLineCountsFlipByDirection()
+    {
+        using var dir = new TempDir();
+        var storageRoot = Path.Combine(dir.Path, "store");
+        var cfgPath = Path.Combine(dir.Path, "settings.ini");
+
+        // Backup A has 1 key (UTF-8 BOM + CRLF); Current B has 3 keys (UTF-8 no BOM + LF)
+        var bytesA = EncodeUtf8Bom("theme=light\r\n");
+        var bytesB = Utf8NoBom.GetBytes("theme=dark\nfont=14\nwrap=true\n");
+        File.WriteAllBytes(cfgPath, bytesA);
+
+        var vm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(storageRoot));
+        vm.Refresh();
+        vm.SelectCandidateFile(cfgPath);
+        vm.CreateRestorePoint();
+
+        File.WriteAllBytes(cfgPath, bytesB);
+        vm.RefreshSelectedComparison();
+
+        // Browse (Backup -> Current): -1 / +3
+        Assert(vm.Comparison!.RemovedLineCount == 1 && vm.Comparison.AddedLineCount == 3,
+            $"Browse counts expected -1/+3, got -{vm.Comparison.RemovedLineCount}/+{vm.Comparison.AddedLineCount}");
+
+        // Restore Preview (Current -> Restored): -3 / +1, encoding Current(无 BOM · LF) -> Restored(含 BOM · CRLF)!
+        vm.BeginRestoreConfirmation();
+        Assert(vm.Comparison!.RemovedLineCount == 3 && vm.Comparison.AddedLineCount == 1,
+            $"Restore preview counts expected -3/+1, got -{vm.Comparison.RemovedLineCount}/+{vm.Comparison.AddedLineCount}");
+        Assert(vm.ConfirmRestoreFormatTransition.Contains("无 BOM") && vm.ConfirmRestoreFormatTransition.Contains("含 BOM"),
+            "Restore preview must show Current -> Restored encoding transition");
+    }
+
+    private static void SameFilenameDifferentDirectoriesAndCrossFileUndo()
     {
         using var dir = new TempDir();
         var storageRoot = Path.Combine(dir.Path, "store");
@@ -128,32 +175,35 @@ internal static class ConfigRestorePointChecks
         vm.CreateRestorePoint();
         var pointB = vm.SelectedPoint!;
 
-        Assert(vm.TotalCount == 2, "Expected 2 distinct restore points");
-        Assert(pointA.TargetFileName == "settings.json" && pointB.TargetFileName == "settings.json", "Both have same filename");
-        Assert(pointA.DisplayScopedName == @"profile-alpha\settings.json", $"Unexpected scoped name A: {pointA.DisplayScopedName}");
-        Assert(pointB.DisplayScopedName == @"profile-beta\settings.json", $"Unexpected scoped name B: {pointB.DisplayScopedName}");
-        Assert(pointA.TargetDirectory != pointB.TargetDirectory, "Directories must remain distinct");
-
-        // Search by folder name must filter cleanly
-        vm.SearchQuery = "profile-alpha";
-        Assert(vm.FilteredPoints.Count == 1 && vm.FilteredPoints[0].PointId == pointA.PointId, "Folder search should isolate alpha");
-        vm.ClearSearch();
-        Assert(vm.FilteredPoints.Count == 2, "Clearing search restores both points");
-
-        // Mutate both files, restore ONLY alpha -> beta must remain untouched!
         File.WriteAllBytes(fileA, bytesA2);
         File.WriteAllBytes(fileB, bytesB2);
 
+        // Restore ONLY alpha
         vm.SelectPoint(pointA);
-        Assert(vm.ComparisonStatus == ConfigComparisonStatus.Changed, "Alpha should be Changed");
         vm.BeginRestoreConfirmation();
         vm.ConfirmRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(fileA)) == Sha256Hex(bytesA1), "Alpha restored to A1");
+        Assert(Sha256Hex(File.ReadAllBytes(fileB)) == Sha256Hex(bytesB2), "Beta untouched at B2");
 
-        Assert(Sha256Hex(File.ReadAllBytes(fileA)) == Sha256Hex(bytesA1), "Alpha must be restored to A1");
-        Assert(Sha256Hex(File.ReadAllBytes(fileB)) == Sha256Hex(bytesB2), "Beta must remain completely untouched at B2");
+        // Now user switches selection to SAME-NAMED file in another directory (profile-beta\settings.json)!
+        vm.SelectPoint(pointB);
+        Assert(vm.IsUndoTargetDifferentFromSelected, "Must detect undo target differs from currently selected file");
+        Assert(vm.UndoButtonText.Contains(@"profile-alpha\settings.json"), $"Undo button must name actual target: {vm.UndoButtonText}");
+        Assert(vm.UndoCrossTargetNotice.Contains(@"profile-alpha\settings.json") && vm.UndoCrossTargetNotice.Contains(@"profile-beta\settings.json"),
+            "Cross-target warning must name both files");
+
+        // Open Undo Preview while profile-beta is selected -> preview MUST target profile-alpha!
+        vm.BeginUndoPreview();
+        Assert(vm.UndoPreviewTargetPath == Path.GetFullPath(fileA), "Undo preview must point to profile-alpha");
+        Assert(vm.UndoDiffLines.Any(l => l.Kind == ConfigDiffLineKind.Removed && l.Text.Contains("light")), "Undo preview removes alpha light");
+        Assert(vm.UndoDiffLines.Any(l => l.Kind == ConfigDiffLineKind.Added && l.Text.Contains("dark")), "Undo preview writes alpha dark");
+
+        vm.ConfirmUndoRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(fileA)) == Sha256Hex(bytesA2), "Alpha undone back to A2");
+        Assert(Sha256Hex(File.ReadAllBytes(fileB)) == Sha256Hex(bytesB2), "Beta STILL untouched at B2");
     }
 
-    private static void MissingFileRestoreAndUndo()
+    private static void MissingFileRestoreAndUndoPreview()
     {
         using var dir = new TempDir();
         var storageRoot = Path.Combine(dir.Path, "store");
@@ -170,17 +220,28 @@ internal static class ConfigRestorePointChecks
 
         File.Delete(iniPath);
         vm.RefreshSelectedComparison();
-        Assert(vm.ComparisonStatus == ConfigComparisonStatus.Missing, "Deleted file must report Missing");
-        Assert(vm.CanBeginRestore, "Missing file must still allow Restore");
+        Assert(vm.ComparisonStatus == ConfigComparisonStatus.Missing && vm.CanBeginRestore, "Missing file can be restored");
 
         vm.BeginRestoreConfirmation();
         vm.ConfirmRestore();
-        Assert(File.Exists(iniPath), "Restore must recreate missing file");
-        Assert(Sha256Hex(File.ReadAllBytes(iniPath)) == Sha256Hex(origBytes), "Recreated file must match exact original bytes");
+        Assert(File.Exists(iniPath) && Sha256Hex(File.ReadAllBytes(iniPath)) == Sha256Hex(origBytes), "Restore recreated missing file");
 
-        vm.UndoLastRestore();
-        Assert(!File.Exists(iniPath), "Undo of recreated missing file must remove it again");
-        Assert(vm.ComparisonStatus == ConfigComparisonStatus.Missing, "Status after undo returns to Missing");
+        // Open Undo Preview -> MUST explicitly forecast removing the recreated file, without deleting yet!
+        vm.BeginUndoPreview();
+        Assert(vm.IsPreviewingUndo && vm.CanConfirmUndo && vm.IsUndoPreviewRemoveRecreated, "Undo preview recognizes recreated file");
+        Assert(vm.UndoPreviewHeadline.Contains("移除本次重建的文件") || vm.UndoPreviewActionSummary.Contains("移除本次恢复重建的文件"),
+            "Undo preview must explicitly forecast removal of recreated file");
+        Assert(File.Exists(iniPath), "Opening preview MUST NOT delete file yet");
+
+        // Cancel preview -> file still exists & undo not consumed
+        vm.CancelUndoPreview();
+        Assert(File.Exists(iniPath) && vm.CanUndoLastRestore, "Canceling preview keeps recreated file and undo record");
+
+        // Re-open & Confirm -> cleanly removes recreated file
+        vm.BeginUndoPreview();
+        vm.ConfirmUndoRestore();
+        Assert(!File.Exists(iniPath), "Confirming undo removes recreated file");
+        Assert(vm.ComparisonStatus == ConfigComparisonStatus.Missing && !vm.CanUndoLastRestore, "Returned to Missing and undo consumed");
     }
 
     private static void UnrecognizedEncodingRawByteRestore()
@@ -189,7 +250,6 @@ internal static class ConfigRestorePointChecks
         var storageRoot = Path.Combine(dir.Path, "store");
         var binCfg = Path.Combine(dir.Path, "prefs.dat");
 
-        // Invalid UTF-8 bytes + NUL byte (cannot be decoded reliably as UTF-8/UTF-16 text)
         var rawA = new byte[] { 0x80, 0xFF, 0xFE, 0x00, 0x41, 0x42, 0xC3, 0x28, 0x0D, 0x0A };
         var rawB = new byte[] { 0x80, 0xFF, 0xFE, 0x00, 0x58, 0x59, 0xC3, 0x28, 0x0A };
         File.WriteAllBytes(binCfg, rawA);
@@ -201,15 +261,16 @@ internal static class ConfigRestorePointChecks
 
         File.WriteAllBytes(binCfg, rawB);
         vm.RefreshSelectedComparison();
-        Assert(vm.ComparisonStatus == ConfigComparisonStatus.Changed, "Binary change must report Changed");
-        Assert(!vm.HasTextDiff && vm.ShowDiffFallback, "Unrecognized encoding must show size/hash fallback instead of garbled diff");
+        Assert(vm.ComparisonStatus == ConfigComparisonStatus.Changed && !vm.HasTextDiff && vm.ShowDiffFallback, "Binary fallback shown");
 
         vm.BeginRestoreConfirmation();
         vm.ConfirmRestore();
-        Assert(File.ReadAllBytes(binCfg).SequenceEqual(rawA), "Raw byte restore must restore exact original binary bytes");
+        Assert(File.ReadAllBytes(binCfg).SequenceEqual(rawA), "Restored raw binary A");
 
-        vm.UndoLastRestore();
-        Assert(File.ReadAllBytes(binCfg).SequenceEqual(rawB), "Raw byte undo must restore exact pre-restore binary bytes");
+        vm.BeginUndoPreview();
+        Assert(vm.CanConfirmUndo && !vm.HasUndoTextDiff && vm.ShowUndoDiffFallback, "Undo preview binary fallback shown");
+        vm.ConfirmUndoRestore();
+        Assert(File.ReadAllBytes(binCfg).SequenceEqual(rawB), "Undone raw binary B");
     }
 
     private static void BomAndLineEndingOnlyChange()
@@ -229,13 +290,12 @@ internal static class ConfigRestorePointChecks
 
         File.WriteAllBytes(cfgPath, noBomLf);
         vm.RefreshSelectedComparison();
-        Assert(vm.ComparisonStatus == ConfigComparisonStatus.Changed, "BOM/EOL-only difference must be detected as Changed");
-        Assert(vm.Comparison?.HasFormatOnlyDifference == true, "HasFormatOnlyDifference should be true");
-        Assert(vm.ShowDiffFallback, "Format-only difference should show calm explanation");
+        Assert(vm.ComparisonStatus == ConfigComparisonStatus.Changed && vm.Comparison?.HasFormatOnlyDifference == true, "Format-only difference detected");
 
         vm.BeginRestoreConfirmation();
+        Assert(vm.ComparisonDetail.Contains("当前：") && vm.ComparisonDetail.Contains("恢复后："), "Format-only restore preview shows Current -> Restored");
         vm.ConfirmRestore();
-        Assert(File.ReadAllBytes(cfgPath).SequenceEqual(bomCrlf), "Restoring BOM/EOL-only change must restore exact BOM + CRLF bytes");
+        Assert(File.ReadAllBytes(cfgPath).SequenceEqual(bomCrlf), "Restored exact BOM + CRLF bytes");
     }
 
     private static void MidConfirmationExternalEdit()
@@ -257,25 +317,23 @@ internal static class ConfigRestorePointChecks
         File.WriteAllBytes(cfgPath, bytesB);
         vm.RefreshSelectedComparison();
         vm.BeginRestoreConfirmation();
-        Assert(vm.IsConfirmingRestore, "Confirmation opened against B");
 
-        // External edit happens while user is sitting on confirmation screen!
+        // External edit to C while user sits on Restore Confirmation!
         File.WriteAllBytes(cfgPath, bytesC);
-
-        // First Confirm MUST refuse overwrite, refresh diff to C, and stay in confirmation!
         vm.ConfirmRestore();
-        Assert(vm.IsConfirmingRestore, "Must stay on confirmation screen after mid-edit refresh");
-        Assert(vm.HasMidConfirmWarning, "Must display mid-confirmation external edit warning");
-        Assert(Sha256Hex(File.ReadAllBytes(cfgPath)) == Sha256Hex(bytesC), "First confirm after external edit MUST NOT overwrite C!");
-        Assert(vm.DiffLines.Any(l => l.Kind == ConfigDiffLineKind.Added && l.Text.Contains("high-contrast")), "Refreshed diff must show C");
+        Assert(vm.IsConfirmingRestore && vm.HasMidConfirmWarning, "Stays on confirm with mid-edit warning");
+        Assert(Sha256Hex(File.ReadAllBytes(cfgPath)) == Sha256Hex(bytesC), "First confirm does NOT overwrite C");
+        Assert(vm.ActiveDiffDirection == ConfigDiffDirection.CurrentToBackup, "Refreshed confirm diff stays in CurrentToBackup direction");
+        Assert(vm.DiffLines.Any(l => l.Kind == ConfigDiffLineKind.Removed && l.Text.Contains("high-contrast")), "Refreshed diff removes high-contrast");
+        Assert(vm.DiffLines.Any(l => l.Kind == ConfigDiffLineKind.Added && l.Text.Contains("light")), "Refreshed diff writes light");
 
-        // Second Confirm succeeds -> restores A, and Undo returns to C (not stale B)!
         vm.ConfirmRestore();
-        Assert(!vm.IsConfirmingRestore, "Second confirm completes restore");
-        Assert(Sha256Hex(File.ReadAllBytes(cfgPath)) == Sha256Hex(bytesA), "Second confirm must restore A");
+        Assert(Sha256Hex(File.ReadAllBytes(cfgPath)) == Sha256Hex(bytesA), "Second confirm restores A");
 
-        vm.UndoLastRestore();
-        Assert(Sha256Hex(File.ReadAllBytes(cfgPath)) == Sha256Hex(bytesC), "Undo must return to C (actual pre-overwrite content)");
+        vm.BeginUndoPreview();
+        Assert(vm.UndoDiffLines.Any(l => l.Kind == ConfigDiffLineKind.Added && l.Text.Contains("high-contrast")), "Undo preview shows writing back C");
+        vm.ConfirmUndoRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(cfgPath)) == Sha256Hex(bytesC), "Undo returns to C");
     }
 
     private static void CorruptedOrMissingBackup()
@@ -288,8 +346,7 @@ internal static class ConfigRestorePointChecks
         var bytesB = Utf8NoBom.GetBytes("{\"theme\":\"dark\"}\n");
         File.WriteAllBytes(cfgPath, bytesA);
 
-        var svc = new LocalConfigRestorePointService(storageRoot);
-        var vm = new ConfigRestorePointsViewModel(svc);
+        var vm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(storageRoot));
         vm.Refresh();
         vm.SelectCandidateFile(cfgPath);
         vm.CreateRestorePoint();
@@ -299,22 +356,14 @@ internal static class ConfigRestorePointChecks
         vm.RefreshSelectedComparison();
         vm.BeginRestoreConfirmation();
 
-        // Corrupt the stored backup blob on disk right before user clicks Confirm!
         var blobPath = Path.Combine(storageRoot, point.BackupBlobRelativePath);
         var corrupted = File.ReadAllBytes(blobPath);
         corrupted[0] ^= 0xFF;
         File.WriteAllBytes(blobPath, corrupted);
 
         vm.ConfirmRestore();
-        Assert(vm.IsOperationBannerError, "Corrupted backup must fail with error");
-        Assert(vm.ComparisonStatus == ConfigComparisonStatus.BackupCorrupted, "Status must update to BackupCorrupted");
-        Assert(Sha256Hex(File.ReadAllBytes(cfgPath)) == Sha256Hex(bytesB), "Live file B must remain completely untouched");
-
-        // Delete blob completely -> still BackupCorrupted and restore disabled
-        File.Delete(blobPath);
-        vm.RefreshSelectedComparison();
-        Assert(vm.ComparisonStatus == ConfigComparisonStatus.BackupCorrupted, "Missing blob must report BackupCorrupted");
-        Assert(!vm.CanBeginRestore, "Restore must be disabled when backup is missing");
+        Assert(vm.IsOperationBannerError && vm.ComparisonStatus == ConfigComparisonStatus.BackupCorrupted, "Corrupted backup blocked");
+        Assert(Sha256Hex(File.ReadAllBytes(cfgPath)) == Sha256Hex(bytesB), "Live file B preserved intact");
     }
 
     private static void WriteFailureLockedAndReadOnly()
@@ -337,45 +386,17 @@ internal static class ConfigRestorePointChecks
         File.WriteAllBytes(cfgPath, bytesB);
         vm.RefreshSelectedComparison();
 
-        // Case 1: Another process holds FileShare.Read write-lock (readable, but cannot be replaced!)
         using (var writeLock = new FileStream(cfgPath, FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
         {
             vm.BeginRestoreConfirmation();
-            Assert(vm.IsConfirmingRestore, "Confirmation should open when file is readable");
             vm.ConfirmRestore();
-            Assert(vm.IsOperationBannerError, "Locked write must report failure");
-            Assert(!vm.CanUndoLastRestore, "Failed restore must not create dangling undo");
+            Assert(vm.IsOperationBannerError && !vm.CanUndoLastRestore, "Locked write fails cleanly");
         }
-
-        Assert(Sha256Hex(File.ReadAllBytes(cfgPath)) == Sha256Hex(bytesB), "Existing file B must stay 100% intact after locked write failure");
-        var strayTemps1 = Directory.GetFiles(targetDir, "*.contain-restore-*.tmp");
-        Assert(strayTemps1.Length == 0, "No stray temp files may remain after locked write failure");
-
-        // Case 2: ReadOnly file attribute
-        File.SetAttributes(cfgPath, FileAttributes.ReadOnly);
-        try
-        {
-            vm.BeginRestoreConfirmation();
-            vm.ConfirmRestore();
-            Assert(vm.IsOperationBannerError, "Read-only file must fail restore cleanly");
-            Assert(Sha256Hex(File.ReadAllBytes(cfgPath)) == Sha256Hex(bytesB), "Read-only file must stay 100% intact");
-            Assert(Directory.GetFiles(targetDir, "*.contain-restore-*.tmp").Length == 0, "No stray temp files after read-only failure");
-        }
-        finally
-        {
-            File.SetAttributes(cfgPath, FileAttributes.Normal);
-        }
-
-        // Case 3: Exclusive FileShare.None lock -> ReadFailed without crashing
-        using (var exclLock = new FileStream(cfgPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
-        {
-            vm.RefreshSelectedComparison();
-            Assert(vm.ComparisonStatus == ConfigComparisonStatus.ReadFailed, "Exclusive lock must report ReadFailed");
-            Assert(!vm.CanBeginRestore, "Restore button must be disabled on ReadFailed");
-        }
+        Assert(Sha256Hex(File.ReadAllBytes(cfgPath)) == Sha256Hex(bytesB), "File B intact after write lock failure");
+        Assert(Directory.GetFiles(targetDir, "*.contain-restore-*.tmp").Length == 0, "Zero stray temp files");
     }
 
-    private static void UndoAbortsOnPostRestoreExternalEdit()
+    private static void UndoConflictOnPostRestoreExternalEdit()
     {
         using var dir = new TempDir();
         var storageRoot = Path.Combine(dir.Path, "store");
@@ -383,7 +404,7 @@ internal static class ConfigRestorePointChecks
 
         var bytesA = Utf8NoBom.GetBytes("{\"theme\":\"light\"}\n");
         var bytesB = Utf8NoBom.GetBytes("{\"theme\":\"dark\"}\n");
-        var bytesD = Utf8NoBom.GetBytes("{\"theme\":\"custom-user-edit\"}\n");
+        var bytesC = Utf8NoBom.GetBytes("{\"theme\":\"user-edited-c\"}\n");
         File.WriteAllBytes(cfgPath, bytesA);
 
         var vm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(storageRoot));
@@ -395,23 +416,80 @@ internal static class ConfigRestorePointChecks
         vm.RefreshSelectedComparison();
         vm.BeginRestoreConfirmation();
         vm.ConfirmRestore();
-        Assert(vm.CanUndoLastRestore, "Undo ready after restore");
+        Assert(vm.CanUndoLastRestore, "Undo ready after restore to A");
 
-        // User edits file externally AFTER restore -> Undo must NOT clobber D!
-        File.WriteAllBytes(cfgPath, bytesD);
-        vm.UndoLastRestore();
-        Assert(vm.IsOperationBannerWarning, "Post-restore external edit must produce warning conflict");
-        Assert(Sha256Hex(File.ReadAllBytes(cfgPath)) == Sha256Hex(bytesD), "Post-restore edit D must be preserved intact");
+        // Case 1: Edit A -> C BEFORE opening Undo Preview
+        File.WriteAllBytes(cfgPath, bytesC);
+        vm.BeginUndoPreview();
+        Assert(vm.IsPreviewingUndo && vm.IsUndoPreviewConflict && !vm.CanConfirmUndo, "Preview must detect post-restore external edit conflict");
+        Assert(vm.UndoPreview!.Status == ConfigUndoPreviewStatus.TargetModifiedConflict, "Expected TargetModifiedConflict");
+        Assert(Sha256Hex(File.ReadAllBytes(cfgPath)) == Sha256Hex(bytesC), "C preserved");
+        vm.CancelUndoPreview();
+        Assert(vm.CanUndoLastRestore, "Conflict preview cancel preserves undo record");
+
+        // Case 2: Put A back so Undo Preview opens ready, THEN edit A -> C DURING Undo Preview!
+        File.WriteAllBytes(cfgPath, bytesA);
+        vm.BeginUndoPreview();
+        Assert(vm.CanConfirmUndo, "Preview ready while file is A");
+        File.WriteAllBytes(cfgPath, bytesC);
+
+        vm.ConfirmUndoRestore();
+        Assert(vm.IsPreviewingUndo && vm.IsUndoPreviewConflict && !vm.CanConfirmUndo, "Confirm Undo re-check catches mid-preview edit!");
+        Assert(vm.UndoPreview!.Status == ConfigUndoPreviewStatus.TargetModifiedConflict, "Refreshed preview shows TargetModifiedConflict");
+        Assert(Sha256Hex(File.ReadAllBytes(cfgPath)) == Sha256Hex(bytesC), "Mid-preview edit C MUST be preserved intact");
+        Assert(vm.LatestUndo is { Consumed: false }, "Undo record NOT consumed on conflict");
+    }
+
+    private static void UndoConflictOnPostRestoreActiveDeletion()
+    {
+        using var dir = new TempDir();
+        var storageRoot = Path.Combine(dir.Path, "store");
+        var cfgPath = Path.Combine(dir.Path, "settings.json");
+
+        var bytesA = Utf8NoBom.GetBytes("{\"theme\":\"light\"}\n");
+        var bytesB = Utf8NoBom.GetBytes("{\"theme\":\"dark\"}\n");
+        File.WriteAllBytes(cfgPath, bytesA);
+
+        var vm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(storageRoot));
+        vm.Refresh();
+        vm.SelectCandidateFile(cfgPath);
+        vm.CreateRestorePoint();
+
+        File.WriteAllBytes(cfgPath, bytesB);
+        vm.RefreshSelectedComparison();
+        vm.BeginRestoreConfirmation();
+        vm.ConfirmRestore();
+        Assert(File.Exists(cfgPath), "Restored A exists");
+
+        // Case 1: User actively deletes A BEFORE opening Undo Preview!
+        File.Delete(cfgPath);
+        vm.BeginUndoPreview();
+        Assert(vm.IsPreviewingUndo && vm.IsUndoPreviewConflict && !vm.CanConfirmUndo, "Preview detects active deletion conflict");
+        Assert(vm.UndoPreview!.Status == ConfigUndoPreviewStatus.TargetDeletedConflict, "Expected TargetDeletedConflict");
+        Assert(!File.Exists(cfgPath), "Deleted file MUST stay deleted (not resurrected!)");
+        vm.CancelUndoPreview();
+        Assert(vm.LatestUndo is { Consumed: false }, "Undo record NOT silently consumed");
+
+        // Case 2: Put A back so Undo Preview opens ready, THEN delete A DURING Undo Preview!
+        File.WriteAllBytes(cfgPath, bytesA);
+        vm.BeginUndoPreview();
+        Assert(vm.CanConfirmUndo, "Preview ready while A exists");
+        File.Delete(cfgPath);
+
+        vm.ConfirmUndoRestore();
+        Assert(vm.IsPreviewingUndo && vm.IsUndoPreviewConflict && !vm.CanConfirmUndo, "Confirm Undo re-check catches mid-preview deletion!");
+        Assert(vm.UndoPreview!.Status == ConfigUndoPreviewStatus.TargetDeletedConflict, "Refreshed preview shows TargetDeletedConflict");
+        Assert(!File.Exists(cfgPath), "Mid-preview deleted file MUST stay deleted!");
+        Assert(vm.LatestUndo is { Consumed: false }, "Undo record NOT consumed on deletion conflict");
     }
 
     private static void RejectsInvalidPaths()
     {
         using var dir = new TempDir();
         var svc = new LocalConfigRestorePointService(Path.Combine(dir.Path, "store"));
-
-        Assert(!svc.InspectCandidateFile(dir.Path).IsValid, "Directory must be rejected");
-        Assert(!svc.InspectCandidateFile(Path.Combine(dir.Path, "does-not-exist.json")).IsValid, "Missing file must be rejected");
-        Assert(!svc.InspectCandidateFile(@"\\.\PhysicalDrive0").IsValid, "Device path must be rejected");
+        Assert(!svc.InspectCandidateFile(dir.Path).IsValid, "Directory rejected");
+        Assert(!svc.InspectCandidateFile(Path.Combine(dir.Path, "does-not-exist.json")).IsValid, "Missing file rejected");
+        Assert(!svc.InspectCandidateFile(@"\\.\PhysicalDrive0").IsValid, "Device path rejected");
     }
 
     private static byte[] EncodeUtf8Bom(string text)

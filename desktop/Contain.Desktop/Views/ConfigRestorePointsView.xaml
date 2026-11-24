@@ -14,20 +14,20 @@
         <DockPanel Margin="0,0,0,8">
             <TextBlock DockPanel.Dock="Left" Text="配置还原点" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"
                        AutomationProperties.AutomationId="ConfigRestorePointsPageTitle" />
-            <TextBlock Text="单配置文件原始字节备份、逐行对比、确认恢复与撤销（无需管理员权限或 Windows 沙盒）"
+            <TextBlock Text="单配置文件原始字节备份、逐行对比、恢复与撤销预览（无需管理员权限或 Windows 沙盒）"
                        Style="{StaticResource MutedText}" FontSize="12.5" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
-                       ToolTip="为单个本地配置文件保留原始字节备份，对比逐行差异后确认恢复并支持撤销（普通用户即可使用，无需管理员权限或 Windows 沙盒）。"
+                       ToolTip="为单个本地配置文件保留原始字节备份，对比逐行差异后确认恢复并支持撤销预览（普通用户即可使用，无需管理员权限或 Windows 沙盒）。"
                        AutomationProperties.AutomationId="ConfigRestorePointsPurposeText" />
         </DockPanel>
 
         <!-- Compact Single-Line Create Restore Point Strip -->
-        <Border Grid.Row="1" Style="{StaticResource Surface}" Padding="10,8" Margin="0,0,0,10" AutomationProperties.AutomationId="ConfigCreateCard">
+        <Border Grid.Row="1" Style="{StaticResource Surface}" Padding="10,7" Margin="0,0,0,10" AutomationProperties.AutomationId="ConfigCreateCard">
             <StackPanel>
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="175" />
+                        <ColumnDefinition Width="170" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <ui:TextBox Grid.Column="0"
@@ -53,7 +53,6 @@
                     </ui:Button>
                 </Grid>
 
-                <!-- Candidate read-only preview -->
                 <Border Background="#F2F8F6" BorderBrush="#CBE4DC" BorderThickness="1" CornerRadius="6" Padding="8,4" Margin="0,6,0,0"
                         Visibility="{Binding ConfigRestorePoints.HasCandidatePreview, Converter={StaticResource BoolVisibility}}"
                         AutomationProperties.AutomationId="ConfigCandidatePreviewBar">
@@ -63,7 +62,6 @@
                     </WrapPanel>
                 </Border>
 
-                <!-- Candidate validation error -->
                 <Border Background="#FFF0ED" BorderBrush="#E5B6AC" BorderThickness="1" CornerRadius="6" Padding="8,4" Margin="0,6,0,0"
                         Visibility="{Binding ConfigRestorePoints.HasCandidateError, Converter={StaticResource BoolVisibility}}"
                         AutomationProperties.AutomationId="ConfigCandidateErrorBar">
@@ -140,7 +138,6 @@
                         </ListBox.ItemTemplate>
                     </ListBox>
 
-                    <!-- Empty state -->
                     <StackPanel Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="12"
                                 Visibility="{Binding ConfigRestorePoints.IsListEmpty, Converter={StaticResource BoolVisibility}}">
                         <ui:SymbolIcon Symbol="History24" FontSize="28" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,8" />
@@ -148,7 +145,6 @@
                         <TextBlock Text="在上方选择配置文件并点击「创建还原点」，即可保留原始字节副本。" Style="{StaticResource MutedText}" FontSize="12" TextAlignment="Center" Margin="0,4,0,0" />
                     </StackPanel>
 
-                    <!-- Search empty state -->
                     <StackPanel Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="12"
                                 Visibility="{Binding ConfigRestorePoints.IsSearchEmpty, Converter={StaticResource BoolVisibility}}">
                         <TextBlock Text="没有匹配的还原点" FontWeight="SemiBold" HorizontalAlignment="Center" />
@@ -157,7 +153,7 @@
                 </Grid>
             </Border>
 
-            <!-- Right Column: Selected Point Details, Restore Confirmation & Line-by-Line Diff -->
+            <!-- Right Column: Operation Banner, Undo Bar/Preview, Restore Preview, or Browse Detail -->
             <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>
                     <!-- Operation Result Banner (Create / Restore / Undo / Failure) -->
@@ -202,71 +198,255 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- Always-reachable Undo Bar whenever an active undo snapshot exists -->
+                    <!-- Always-explicit Undo Bar (names ACTUAL undo target file + warns if user selected a different file!) -->
                     <Border Background="#EEF5FB" BorderBrush="#9BBAD8" BorderThickness="1" CornerRadius="8" Padding="10,7" Margin="0,0,0,8"
-                            Visibility="{Binding ConfigRestorePoints.CanUndoLastRestore, Converter={StaticResource BoolVisibility}}"
+                            Visibility="{Binding ConfigRestorePoints.ShowUndoBar, Converter={StaticResource BoolVisibility}}"
                             AutomationProperties.AutomationId="ConfigUndoBar">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="覆盖前版本已安全保留，可随时撤回本次恢复" Foreground="#1B466C" FontWeight="SemiBold" FontSize="12.5" />
-                                <TextBlock Text="{Binding ConfigRestorePoints.UndoContextText}" Foreground="#24527A" FontFamily="Consolas, Microsoft YaHei UI" FontSize="11" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" Margin="0,1,0,0" />
-                            </StackPanel>
-                            <ui:Button Grid.Column="1" Content="{Binding ConfigRestorePoints.UndoButtonText}" Appearance="Secondary" Padding="10,6" Margin="10,0,0,0" FontSize="12.5"
-                                       Click="OnUndoRestore" AutomationProperties.AutomationId="UndoRestoreButton">
-                                <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowUndo24" /></ui:Button.Icon>
-                            </ui:Button>
-                        </Grid>
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding ConfigRestorePoints.UndoBarHeadline}" Foreground="#1B466C" FontWeight="SemiBold" FontSize="12.5"
+                                               AutomationProperties.AutomationId="ConfigUndoBarHeadline" />
+                                    <TextBlock Text="{Binding ConfigRestorePoints.UndoContextText}" Foreground="#24527A" FontFamily="Consolas, Microsoft YaHei UI" FontSize="11" TextWrapping="Wrap" Margin="0,1,0,0"
+                                               AutomationProperties.AutomationId="ConfigUndoBarTargetPath" />
+                                </StackPanel>
+                                <ui:Button Grid.Column="1" Content="{Binding ConfigRestorePoints.UndoButtonText}" Appearance="Secondary" Padding="10,6" Margin="10,0,0,0" FontSize="12"
+                                           Click="OnBeginUndoPreview" AutomationProperties.AutomationId="UndoRestoreButton">
+                                    <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowUndo24" /></ui:Button.Icon>
+                                </ui:Button>
+                            </Grid>
+                            <Border Background="#FFF4E5" BorderBrush="#D99B26" BorderThickness="1" CornerRadius="5" Padding="8,4" Margin="0,6,0,0"
+                                    Visibility="{Binding ConfigRestorePoints.IsUndoTargetDifferentFromSelected, Converter={StaticResource BoolVisibility}}"
+                                    AutomationProperties.AutomationId="ConfigUndoCrossTargetBanner">
+                                <TextBlock Text="{Binding ConfigRestorePoints.UndoCrossTargetNotice}" Foreground="#7A4300" FontSize="11.5" FontWeight="SemiBold"
+                                           AutomationProperties.AutomationId="ConfigUndoCrossTargetNotice" />
+                            </Border>
+                        </StackPanel>
                     </Border>
+
+                    <!-- LIGHTWEIGHT UNDO PREVIEW PANEL (Current -> After Undo, actual target path, conflict protection, Cancel does NOT consume undo!) -->
+                    <StackPanel Visibility="{Binding ConfigRestorePoints.IsPreviewingUndo, Converter={StaticResource BoolVisibility}}"
+                                AutomationProperties.AutomationId="ConfigUndoPreviewPanel">
+                        <Border CornerRadius="10" Padding="14,10" Margin="0,0,0,10" BorderThickness="1.5"
+                                AutomationProperties.AutomationId="ConfigUndoPreviewCard">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="#F0F6FC" />
+                                    <Setter Property="BorderBrush" Value="#4B7AA8" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ConfigRestorePoints.IsUndoPreviewConflict}" Value="True">
+                                            <Setter Property="Background" Value="#FFF6F4" />
+                                            <Setter Property="BorderBrush" Value="#C86D5D" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding ConfigRestorePoints.IsUndoPreviewRemoveRecreated}" Value="True">
+                                            <Setter Property="Background" Value="#FFFBF2" />
+                                            <Setter Property="BorderBrush" Value="#D99B26" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,5">
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Border Background="#DCEAF7" CornerRadius="4" Padding="7,2" Margin="0,0,6,0">
+                                            <TextBlock Text="{Binding ConfigRestorePoints.UndoPreviewDirectionLabel}" Foreground="#1B466C" FontSize="11" FontWeight="SemiBold"
+                                                       AutomationProperties.AutomationId="ConfigUndoPreviewDirectionBadge" />
+                                        </Border>
+                                        <Border Background="#E8EEF3" CornerRadius="4" Padding="7,2">
+                                            <TextBlock Text="尚未写入磁盘" Foreground="#354643" FontSize="11" FontWeight="SemiBold" />
+                                        </Border>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding ConfigRestorePoints.UndoPreviewTitle}" FontSize="15.5" FontWeight="SemiBold" Foreground="#173A5A"
+                                               TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                                               AutomationProperties.AutomationId="ConfigUndoPreviewTitle" />
+                                </DockPanel>
+
+                                <!-- Cross-file disambiguation notice inside Undo Preview -->
+                                <Border Background="#FFF4E5" BorderBrush="#D99B26" BorderThickness="1" CornerRadius="6" Padding="8,5" Margin="0,0,0,6"
+                                        Visibility="{Binding ConfigRestorePoints.IsUndoTargetDifferentFromSelected, Converter={StaticResource BoolVisibility}}">
+                                    <TextBlock Text="{Binding ConfigRestorePoints.UndoCrossTargetNotice}" Foreground="#7A4300" FontSize="11.5" FontWeight="SemiBold"
+                                               AutomationProperties.AutomationId="ConfigUndoPreviewCrossTargetText" />
+                                </Border>
+
+                                <!-- Actual target path (wraps cleanly so full path is always readable at high DPI!) -->
+                                <Border Background="White" BorderBrush="#C4D6E7" BorderThickness="1" CornerRadius="6" Padding="9,5" Margin="0,0,0,6">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Left" Text="实际目标路径：" FontSize="11.5" FontWeight="SemiBold" Foreground="#1B466C" VerticalAlignment="Top" />
+                                        <TextBlock Text="{Binding ConfigRestorePoints.UndoPreviewTargetPath}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="11.5" FontWeight="SemiBold"
+                                                   TextWrapping="Wrap" AutomationProperties.AutomationId="ConfigUndoPreviewTargetPath" />
+                                    </DockPanel>
+                                </Border>
+
+                                <TextBlock Text="{Binding ConfigRestorePoints.UndoPreviewHeadline}" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,2"
+                                           AutomationProperties.AutomationId="ConfigUndoPreviewHeadline">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="#173A5A" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ConfigRestorePoints.IsUndoPreviewConflict}" Value="True">
+                                                    <Setter Property="Foreground" Value="#8F2D1E" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ConfigRestorePoints.IsUndoPreviewRemoveRecreated}" Value="True">
+                                                    <Setter Property="Foreground" Value="#7A4300" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <TextBlock Text="{Binding ConfigRestorePoints.UndoPreviewFormatTransition}" FontSize="11.5" Foreground="#24527A" Margin="0,0,0,3"
+                                           AutomationProperties.AutomationId="ConfigUndoPreviewFormatTransition" />
+                                <TextBlock Text="{Binding ConfigRestorePoints.UndoPreviewActionSummary}" FontSize="12" Foreground="#213934" LineHeight="18" Margin="0,0,0,8"
+                                           AutomationProperties.AutomationId="ConfigUndoPreviewActionSummary" />
+
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:Button Content="{Binding ConfigRestorePoints.ConfirmUndoButtonText}" Appearance="Primary" Padding="14,7" Margin="0,0,8,0"
+                                               Click="OnConfirmUndoRestore" IsEnabled="{Binding ConfigRestorePoints.CanConfirmUndo}"
+                                               AutomationProperties.AutomationId="ConfirmUndoButton">
+                                        <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowUndo24" /></ui:Button.Icon>
+                                    </ui:Button>
+                                    <ui:Button Content="取消（不写盘，保留撤销记录）" Appearance="Secondary" Padding="12,7" Click="OnCancelUndoPreview"
+                                               AutomationProperties.AutomationId="CancelUndoPreviewButton" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Undo Preview Diff / Conflict Explanation Card -->
+                        <Border Style="{StaticResource Surface}" Padding="14,10" Margin="0" AutomationProperties.AutomationId="ConfigUndoDiffCard">
+                            <StackPanel>
+                                <TextBlock Text="{Binding ConfigRestorePoints.UndoDiffHeaderSummary}" FontWeight="SemiBold" FontSize="13.5" Margin="0,0,0,2"
+                                           AutomationProperties.AutomationId="ConfigUndoDiffHeaderSummary" />
+                                <TextBlock Text="{Binding ConfigRestorePoints.UndoPreviewDetail}" Style="{StaticResource MutedText}" FontSize="11.5" Margin="0,0,0,6"
+                                           AutomationProperties.AutomationId="ConfigUndoPreviewDetail" />
+
+                                <Border BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="6" Background="White"
+                                        Visibility="{Binding ConfigRestorePoints.HasUndoTextDiff, Converter={StaticResource BoolVisibility}}">
+                                    <ItemsControl ItemsSource="{Binding ConfigRestorePoints.UndoDiffLines}" AutomationProperties.AutomationId="ConfigUndoDiffLinesList">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Padding="8,2.5" BorderBrush="#F0F3F2" BorderThickness="0,0,0,1">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="White" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding Kind}" Value="{x:Static model:ConfigDiffLineKind.Removed}">
+                                                                    <Setter Property="Background" Value="#FFF0ED" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding Kind}" Value="{x:Static model:ConfigDiffLineKind.Added}">
+                                                                    <Setter Property="Background" Value="#EAF5F1" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding Kind}" Value="{x:Static model:ConfigDiffLineKind.Ellipsis}">
+                                                                    <Setter Property="Background" Value="#F4F6F6" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="86" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="{Binding LineNumbersDisplay}"
+                                                                   FontFamily="Consolas, Microsoft YaHei UI" FontSize="11.5"
+                                                                   Foreground="#7A8C87" Margin="0,0,8,0" TextWrapping="NoWrap" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding DisplayLine}"
+                                                                   FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" TextWrapping="Wrap">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Foreground" Value="#213934" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding Kind}" Value="{x:Static model:ConfigDiffLineKind.Removed}">
+                                                                            <Setter Property="Foreground" Value="#8F2D1E" />
+                                                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding Kind}" Value="{x:Static model:ConfigDiffLineKind.Added}">
+                                                                            <Setter Property="Foreground" Value="#0E5A53" />
+                                                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding Kind}" Value="{x:Static model:ConfigDiffLineKind.Ellipsis}">
+                                                                            <Setter Property="Foreground" Value="#596D68" />
+                                                                            <Setter Property="FontStyle" Value="Italic" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Border>
+
+                                <TextBlock Text="{Binding ConfigRestorePoints.UndoDiffFallbackNote}" Style="{StaticResource MutedText}" FontSize="11.5" Margin="0,5,0,0"
+                                           Visibility="{Binding ConfigRestorePoints.HasUndoDiffTruncationNote, Converter={StaticResource BoolVisibility}}" />
+
+                                <Border Background="#F7F9F9" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="6" Padding="10,8"
+                                        Visibility="{Binding ConfigRestorePoints.ShowUndoDiffFallback, Converter={StaticResource BoolVisibility}}">
+                                    <TextBlock Text="{Binding ConfigRestorePoints.UndoDiffFallbackNote}" Style="{StaticResource MutedText}" FontSize="12"
+                                               AutomationProperties.AutomationId="ConfigUndoDiffFallbackText" />
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
 
                     <!-- Empty selection hint -->
                     <Border Style="{StaticResource Surface}" Padding="24" Margin="0"
                             Visibility="{Binding ConfigRestorePoints.HasNoSelectedPoint, Converter={StaticResource BoolVisibility}}">
                         <StackPanel HorizontalAlignment="Center" MaxWidth="420">
                             <TextBlock Text="选择左侧还原点以核对当前状态" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" />
-                            <TextBlock Text="选中任意还原点后，将只读比对当前文件与备份的差异；点击「恢复」后会先展示目标路径与即将发生的操作，由你确认后再写入。"
+                            <TextBlock Text="选中任意还原点后，将只读比对从备份到现在的变化；点击「恢复」会切换为「当前文件 → 恢复后」预览，确认后再写入。"
                                        Style="{StaticResource MutedText}" TextAlignment="Center" Margin="0,6,0,0" />
                         </StackPanel>
                     </Border>
 
-                    <!-- Selected Restore Point Content -->
-                    <StackPanel Visibility="{Binding ConfigRestorePoints.HasSelectedPoint, Converter={StaticResource BoolVisibility}}">
+                    <!-- Selected Restore Point Content (Browse or Restore Preview) -->
+                    <StackPanel Visibility="{Binding ConfigRestorePoints.ShowSelectedPointPanels, Converter={StaticResource BoolVisibility}}">
 
-                        <!-- TOP-PRIORITY Inline Pre-Restore Confirmation Panel (placed at TOP of right pane when confirming so target path, action & diff are ALL above the fold!) -->
+                        <!-- TOP-PRIORITY Inline Restore Preview / Confirmation Panel ("当前文件 → 恢复后") -->
                         <Border Background="#FFFBF2" BorderBrush="#D99B26" BorderThickness="1.5" CornerRadius="10" Padding="14,10" Margin="0,0,0,10"
                                 Visibility="{Binding ConfigRestorePoints.IsConfirmingRestore, Converter={StaticResource BoolVisibility}}"
                                 AutomationProperties.AutomationId="ConfigRestoreConfirmCard">
                             <StackPanel>
-                                <DockPanel Margin="0,0,0,4">
-                                    <Border DockPanel.Dock="Right" Background="#FDE8C8" CornerRadius="4" Padding="7,2" VerticalAlignment="Center">
-                                        <TextBlock Text="尚未写入磁盘" Foreground="#8A4B00" FontSize="11" FontWeight="SemiBold" />
-                                    </Border>
+                                <DockPanel Margin="0,0,0,5">
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Border Background="#FDE8C8" CornerRadius="4" Padding="7,2" Margin="0,0,6,0">
+                                            <TextBlock Text="{Binding ConfigRestorePoints.ConfirmRestoreDirectionLabel}" Foreground="#7A4300" FontSize="11" FontWeight="SemiBold"
+                                                       AutomationProperties.AutomationId="ConfigRestoreDirectionBadge" />
+                                        </Border>
+                                        <Border Background="#F3EBDD" CornerRadius="4" Padding="7,2">
+                                            <TextBlock Text="尚未写入磁盘" Foreground="#6E4E1B" FontSize="11" FontWeight="SemiBold" />
+                                        </Border>
+                                    </StackPanel>
                                     <TextBlock Text="{Binding ConfigRestorePoints.ConfirmRestoreTitle}" FontSize="15.5" FontWeight="SemiBold" Foreground="#5C3100"
                                                TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
                                                AutomationProperties.AutomationId="ConfigRestoreConfirmTitle" />
                                 </DockPanel>
 
                                 <!-- Mid-confirmation external edit refresh alert -->
-                                <Border Background="#FDE8C8" BorderBrush="#D99B26" BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,2,0,6"
+                                <Border Background="#FDE8C8" BorderBrush="#D99B26" BorderThickness="1" CornerRadius="6" Padding="8,5" Margin="0,0,0,6"
                                         Visibility="{Binding ConfigRestorePoints.HasMidConfirmWarning, Converter={StaticResource BoolVisibility}}"
                                         AutomationProperties.AutomationId="ConfigMidEditWarningBanner">
                                     <TextBlock Text="{Binding ConfigRestorePoints.MidConfirmWarningText}" Foreground="#7A4300" FontSize="12" FontWeight="SemiBold"
                                                AutomationProperties.AutomationId="ConfigMidEditWarningText" />
                                 </Border>
 
-                                <Border Background="White" BorderBrush="#E8CFA0" BorderThickness="1" CornerRadius="6" Padding="9,5" Margin="0,0,0,6">
+                                <!-- Full target path (wraps cleanly so full filename is always readable at high DPI!) -->
+                                <Border Background="White" BorderBrush="#E8CFA0" BorderThickness="1" CornerRadius="6" Padding="9,5" Margin="0,0,0,5">
                                     <DockPanel>
-                                        <TextBlock DockPanel.Dock="Left" Text="目标路径：" FontSize="12" FontWeight="SemiBold" Foreground="#8A4B00" VerticalAlignment="Center" />
-                                        <TextBlock Text="{Binding ConfigRestorePoints.ConfirmRestoreTargetPath}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" FontWeight="SemiBold"
-                                                   TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip="{Binding ConfigRestorePoints.ConfirmRestoreTargetPath}"
-                                                   AutomationProperties.AutomationId="ConfigRestoreConfirmTargetPath" />
+                                        <TextBlock DockPanel.Dock="Left" Text="目标路径：" FontSize="11.5" FontWeight="SemiBold" Foreground="#8A4B00" VerticalAlignment="Top" />
+                                        <TextBlock Text="{Binding ConfigRestorePoints.ConfirmRestoreTargetPath}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="11.5" FontWeight="SemiBold"
+                                                   TextWrapping="Wrap" AutomationProperties.AutomationId="ConfigRestoreConfirmTargetPath" />
                                     </DockPanel>
                                 </Border>
 
-                                <TextBlock Text="{Binding ConfigRestorePoints.ConfirmRestoreOperationText}" FontSize="12" Foreground="#4A2E0B" LineHeight="18" Margin="0,0,0,8"
+                                <TextBlock Text="{Binding ConfigRestorePoints.ConfirmRestoreFormatTransition}" FontSize="11.5" Foreground="#6A3C06" Margin="0,0,0,3"
+                                           AutomationProperties.AutomationId="ConfigRestoreFormatTransition" />
+                                <TextBlock Text="{Binding ConfigRestorePoints.ConfirmRestoreOperationText}" FontSize="12" Foreground="#4A2E0B" LineHeight="17" Margin="0,0,0,8"
                                            AutomationProperties.AutomationId="ConfigRestoreConfirmOperationText" />
 
                                 <StackPanel Orientation="Horizontal">
@@ -281,9 +461,9 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Summary, Target Path & Primary Restore Trigger (compact when not confirming; hidden redundant chrome during active confirmation so Diff sits directly below Confirm Card!) -->
+                        <!-- Normal Browse Detail Header Card (hidden while confirming restore so Confirm + Diff stay above the fold!) -->
                         <Border Style="{StaticResource Surface}" Padding="14,10" Margin="0,0,0,10"
-                                Visibility="{Binding ConfigRestorePoints.IsNotConfirmingRestore, Converter={StaticResource BoolVisibility}}"
+                                Visibility="{Binding ConfigRestorePoints.ShowDetailHeaderCard, Converter={StaticResource BoolVisibility}}"
                                 AutomationProperties.AutomationId="ConfigDetailHeaderCard">
                             <StackPanel>
                                 <Grid>
@@ -353,17 +533,15 @@
                                     </StackPanel>
                                 </Grid>
 
-                                <!-- Unmistakable full path bar -->
                                 <Border Background="#F4F7F6" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="6" Padding="8,4" Margin="0,6,0,0">
                                     <DockPanel>
-                                        <TextBlock DockPanel.Dock="Left" Text="目标文件：" FontSize="11.5" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                        <TextBlock DockPanel.Dock="Left" Text="目标文件：" FontSize="11.5" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Top" />
                                         <TextBox Style="{StaticResource SelectableText}" Text="{Binding ConfigRestorePoints.SelectedTargetPath, Mode=OneWay}"
-                                                 FontFamily="Consolas, Microsoft YaHei UI" FontSize="11.5" TextWrapping="NoWrap" VerticalAlignment="Center"
+                                                 FontFamily="Consolas, Microsoft YaHei UI" FontSize="11.5" VerticalAlignment="Center"
                                                  AutomationProperties.AutomationId="ConfigSelectedTargetPath" />
                                     </DockPanel>
                                 </Border>
 
-                                <!-- Side-by-side Backup vs Live metadata -->
                                 <Grid Margin="0,6,0,0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -392,15 +570,41 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Line-by-Line Diff / Fallback Explanation Card -->
+                        <!-- Directional Line-by-Line Diff Card (Browse: 从备份到现在 | Restore Preview: 当前文件 → 恢复后) -->
                         <Border Style="{StaticResource Surface}" Padding="14,10" Margin="0" AutomationProperties.AutomationId="ConfigDiffCard">
                             <StackPanel>
-                                <TextBlock Text="{Binding ConfigRestorePoints.DiffHeaderSummary}" FontWeight="SemiBold" FontSize="13.5" Margin="0,0,0,2"
-                                           AutomationProperties.AutomationId="ConfigDiffHeaderSummary" />
+                                <DockPanel Margin="0,0,0,2">
+                                    <Border DockPanel.Dock="Right" CornerRadius="4" Padding="7,1.5" VerticalAlignment="Center" Margin="8,0,0,0">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="#EEF2F2" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ConfigRestorePoints.IsConfirmingRestore}" Value="True">
+                                                        <Setter Property="Background" Value="#FDE8C8" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock Text="{Binding ConfigRestorePoints.DiffDirectionBadgeText}" FontSize="11" FontWeight="SemiBold"
+                                                   AutomationProperties.AutomationId="ConfigDiffDirectionBadge">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="#354643" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ConfigRestorePoints.IsConfirmingRestore}" Value="True">
+                                                            <Setter Property="Foreground" Value="#7A4300" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Border>
+                                    <TextBlock Text="{Binding ConfigRestorePoints.DiffHeaderSummary}" FontWeight="SemiBold" FontSize="13.5"
+                                               AutomationProperties.AutomationId="ConfigDiffHeaderSummary" />
+                                </DockPanel>
                                 <TextBlock Text="{Binding ConfigRestorePoints.ComparisonDetail}" Style="{StaticResource MutedText}" FontSize="11.5" Margin="0,0,0,6"
                                            AutomationProperties.AutomationId="ConfigComparisonDetail" />
 
-                                <!-- Recognized text line-by-line diff -->
                                 <Border BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="6" Background="White"
                                         Visibility="{Binding ConfigRestorePoints.HasTextDiff, Converter={StaticResource BoolVisibility}}"
                                         AutomationProperties.AutomationId="ConfigDiffLinesContainer">
@@ -461,11 +665,9 @@
                                     </ItemsControl>
                                 </Border>
 
-                                <!-- Truncation note if diff was capped -->
                                 <TextBlock Text="{Binding ConfigRestorePoints.DiffFallbackNote}" Style="{StaticResource MutedText}" FontSize="11.5" Margin="0,5,0,0"
                                            Visibility="{Binding ConfigRestorePoints.HasDiffTruncationNote, Converter={StaticResource BoolVisibility}}" />
 
-                                <!-- Non-text / Identical / Missing / BOM-only fallback card -->
                                 <Border Background="#F7F9F9" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="6" Padding="10,8"
                                         Visibility="{Binding ConfigRestorePoints.ShowDiffFallback, Converter={StaticResource BoolVisibility}}"
                                         AutomationProperties.AutomationId="ConfigDiffFallbackCard">

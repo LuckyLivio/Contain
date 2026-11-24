@@ -476,7 +476,9 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     public void BeginConfigRestoreConfirmation() => RunUiOperation(() => ConfigRestorePoints.BeginRestoreConfirmation());
     public void ConfirmConfigRestore() => RunUiOperation(() => ConfigRestorePoints.ConfirmRestore());
     public void CancelConfigRestoreConfirmation() => RunUiOperation(() => ConfigRestorePoints.CancelRestoreConfirmation());
-    public void UndoLastConfigRestore() => RunUiOperation(() => ConfigRestorePoints.UndoLastRestore());
+    public void BeginUndoConfigRestorePreview() => RunUiOperation(() => ConfigRestorePoints.BeginUndoPreview());
+    public void ConfirmUndoConfigRestore() => RunUiOperation(() => ConfigRestorePoints.ConfirmUndoRestore());
+    public void CancelUndoConfigRestorePreview() => RunUiOperation(() => ConfigRestorePoints.CancelUndoPreview());
 
     private void RunUiOperation(Action operation)
     {

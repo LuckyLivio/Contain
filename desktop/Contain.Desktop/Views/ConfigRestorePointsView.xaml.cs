@@ -20,5 +20,7 @@ public partial class ConfigRestorePointsView : UserControl
     private void OnBeginRestore(object sender, RoutedEventArgs e) => Host?.BeginConfigRestoreConfirmation();
     private void OnConfirmRestore(object sender, RoutedEventArgs e) => Host?.ConfirmConfigRestore();
     private void OnCancelRestore(object sender, RoutedEventArgs e) => Host?.CancelConfigRestoreConfirmation();
-    private void OnUndoRestore(object sender, RoutedEventArgs e) => Host?.UndoLastConfigRestore();
+    private void OnBeginUndoPreview(object sender, RoutedEventArgs e) => Host?.BeginUndoConfigRestorePreview();
+    private void OnConfirmUndoRestore(object sender, RoutedEventArgs e) => Host?.ConfirmUndoConfigRestore();
+    private void OnCancelUndoPreview(object sender, RoutedEventArgs e) => Host?.CancelUndoConfigRestorePreview();
 }
