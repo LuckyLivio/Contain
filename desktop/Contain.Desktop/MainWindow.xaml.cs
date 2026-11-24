@@ -14,7 +14,7 @@ namespace Contain.Desktop;
 
 public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 {
-    private enum ActiveSection { Records, TrialRecordDetails, NewRecord, EnvironmentCheck, PackageCheck, IsolatedTrial }
+    private enum ActiveSection { Records, TrialRecordDetails, NewRecord, EnvironmentCheck, PackageCheck, IsolatedTrial, ConfigRestorePoints }
 
     private readonly PersonalRecords personalRecords;
     private readonly MyRecordsView recordsView = new();
@@ -24,6 +24,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     private readonly EnvironmentCheckView environmentView = new();
     private readonly PackageCheckView packageView = new();
     private readonly IsolatedTrialView isolatedTrialView = new();
+    private readonly ConfigRestorePointsView configRestorePointsView = new();
     private readonly DispatcherTimer timer;
     private ActiveSection activeSection = ActiveSection.Records;
     private bool isTrialHistoryCategory;
@@ -58,12 +59,15 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
             dispatch: action => Dispatcher.BeginInvoke(action),
             historyStore: trialHistoryStore,
             onHistoryUpdated: record => Dispatcher.BeginInvoke(() => TrialHistory.UpsertInMemory(record)));
+        ConfigRestorePoints = new ConfigRestorePointsViewModel(
+            new LocalConfigRestorePointService(Path.Combine(appDataRoot, "ConfigRestorePoints")));
         Records.PropertyChanged += OnModelChanged;
         TrialHistory.PropertyChanged += OnModelChanged;
         Install.PropertyChanged += OnModelChanged;
         EnvironmentCheck.PropertyChanged += OnModelChanged;
         PackageCheck.PropertyChanged += OnModelChanged;
         IsolatedTrial.PropertyChanged += OnModelChanged;
+        ConfigRestorePoints.PropertyChanged += OnModelChanged;
         InitializeComponent();
         Controls.ActionNavigationItem.ConfigureNavigation(Navigation);
         DataContext = this;
@@ -82,16 +86,19 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     public EnvironmentCheckViewModel EnvironmentCheck { get; }
     public PackageCheckViewModel PackageCheck { get; }
     public IsolatedTrialViewModel IsolatedTrial { get; }
+    public ConfigRestorePointsViewModel ConfigRestorePoints { get; }
     public bool IsTrialHistoryCategory => isTrialHistoryCategory;
     public bool IsInstallRecordsCategory => !isTrialHistoryCategory;
     public bool ShowPendingTrialBanner =>
         IsolatedTrial.HasPendingRecoveryBanner && activeSection != ActiveSection.IsolatedTrial;
+    public bool ShowConfigRecoveryBanner =>
+        ConfigRestorePoints.HasPendingRecoveryShellBanner && activeSection != ActiveSection.ConfigRestorePoints;
     public string WindowTitle => "Contain · " + ProductVersion.Version;
     public string ErrorMessage => localError.Length > 0
         ? localError
         : activeSection switch
         {
-            ActiveSection.EnvironmentCheck or ActiveSection.PackageCheck or ActiveSection.IsolatedTrial => "",
+            ActiveSection.EnvironmentCheck or ActiveSection.PackageCheck or ActiveSection.IsolatedTrial or ActiveSection.ConfigRestorePoints => "",
             ActiveSection.TrialRecordDetails => TrialHistory.ErrorMessage,
             ActiveSection.Records when isTrialHistoryCategory => TrialHistory.ErrorMessage,
             _ => Records.ErrorMessage
@@ -103,6 +110,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
             ActiveSection.EnvironmentCheck => EnvironmentCheck.StatusMessage,
             ActiveSection.PackageCheck => PackageCheck.StatusMessage,
             ActiveSection.IsolatedTrial => IsolatedTrial.StatusMessage,
+            ActiveSection.ConfigRestorePoints => ConfigRestorePoints.StatusMessage,
             ActiveSection.TrialRecordDetails => TrialHistory.StatusMessage,
             ActiveSection.Records when isTrialHistoryCategory => TrialHistory.StatusMessage,
             _ => Records.StatusMessage
@@ -124,11 +132,13 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         });
         // Non-blocking background check for any unfinished trial left by an abnormal Contain exit.
         _ = RunUiAsync(() => IsolatedTrial.CheckPendingSessionOnStartupAsync());
+        // Read-only startup check for any interrupted config restore/undo operation (never writes/deletes user files).
+        ConfigRestorePoints.CheckInterruptedOperationOnStartup();
     }
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(Records.ErrorMessage) or nameof(Records.StatusMessage) or nameof(TrialHistory.ErrorMessage) or nameof(TrialHistory.StatusMessage) or nameof(EnvironmentCheck.StatusMessage) or nameof(PackageCheck.StatusMessage) or nameof(IsolatedTrial.StatusMessage))
+        if (e.PropertyName is nameof(Records.ErrorMessage) or nameof(Records.StatusMessage) or nameof(TrialHistory.ErrorMessage) or nameof(TrialHistory.StatusMessage) or nameof(EnvironmentCheck.StatusMessage) or nameof(PackageCheck.StatusMessage) or nameof(IsolatedTrial.StatusMessage) or nameof(ConfigRestorePoints.StatusMessage))
         {
             localError = "";
             localStatus = "";
@@ -136,6 +146,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         Changed(nameof(ErrorMessage));
         Changed(nameof(StatusMessage));
         Changed(nameof(ShowPendingTrialBanner));
+        Changed(nameof(ShowConfigRecoveryBanner));
     }
 
     private void SetPage(UIElement page, ActiveSection section)
@@ -148,9 +159,11 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         EnvironmentNavigation.IsActive = section == ActiveSection.EnvironmentCheck;
         PackageNavigation.IsActive = section == ActiveSection.PackageCheck;
         IsolatedTrialNavigation.IsActive = section == ActiveSection.IsolatedTrial;
+        ConfigRestoreNavigation.IsActive = section == ActiveSection.ConfigRestorePoints;
         Changed(nameof(ErrorMessage));
         Changed(nameof(StatusMessage));
         Changed(nameof(ShowPendingTrialBanner));
+        Changed(nameof(ShowConfigRecoveryBanner));
     }
 
     private bool GuardTaskNavigation()
@@ -252,6 +265,11 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
     public void ShowEnvironmentCheck() => SetPage(environmentView, ActiveSection.EnvironmentCheck);
     public void ShowPackageCheck() => SetPage(packageView, ActiveSection.PackageCheck);
     public void ShowIsolatedTrial() => SetPage(isolatedTrialView, ActiveSection.IsolatedTrial);
+    public void ShowConfigRestorePoints()
+    {
+        ConfigRestorePoints.Refresh();
+        SetPage(configRestorePointsView, ActiveSection.ConfigRestorePoints);
+    }
 
     public async Task RefreshRecordsAsync()
     {
@@ -296,6 +314,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         ShowIsolatedTrial();
         await RunUiAsync(() => IsolatedTrial.EnsureCapabilityCheckedAsync());
     }
+    private void OnConfigRestorePoints(object sender, RoutedEventArgs e) => ShowConfigRestorePoints();
     private void OnCurrentTask(object sender, RoutedEventArgs e)
     {
         SetPage(newRecordView, ActiveSection.NewRecord);
@@ -444,6 +463,47 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
 
     public void OpenWindowsFeaturesFromTrial() => RunUiOperation(() => IsolatedTrial.OpenWindowsFeatures());
 
+    public void PickConfigRestoreFile()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "选择要备份的本地配置文件",
+            Filter = "常见配置文件|*.json;*.ini;*.toml;*.yaml;*.yml;*.xml;*.cfg;*.conf;*.config;*.env;*.properties|所有文件|*.*",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+        if (dialog.ShowDialog(this) == true)
+            RunUiOperation(() => ConfigRestorePoints.SelectCandidateFile(dialog.FileName));
+    }
+
+    public void CreateConfigRestorePoint() => RunUiOperation(() => ConfigRestorePoints.CreateRestorePoint());
+    public void RefreshConfigRestorePoints() => RunUiOperation(() => ConfigRestorePoints.Refresh());
+    public void RecheckConfigRestoreComparison() => RunUiOperation(() => ConfigRestorePoints.RefreshSelectedComparison());
+    public void BeginConfigRestoreConfirmation() => RunUiOperation(() => ConfigRestorePoints.BeginRestoreConfirmation());
+    public void ConfirmConfigRestore() => RunUiOperation(() => ConfigRestorePoints.ConfirmRestore());
+    public void CancelConfigRestoreConfirmation() => RunUiOperation(() => ConfigRestorePoints.CancelRestoreConfirmation());
+    public void BeginUndoConfigRestorePreview() => RunUiOperation(() => ConfigRestorePoints.BeginUndoPreview());
+    public void ConfirmUndoConfigRestore() => RunUiOperation(() => ConfigRestorePoints.ConfirmUndoRestore());
+    public void CancelUndoConfigRestorePreview() => RunUiOperation(() => ConfigRestorePoints.CancelUndoPreview());
+    public void RecheckConfigRecovery() => RunUiOperation(() => ConfigRestorePoints.RecheckRecovery());
+    public void BeginUndoFromConfigRecovery() => RunUiOperation(() => ConfigRestorePoints.BeginUndoPreviewFromRecovery());
+    public void DismissOrArchiveConfigRecovery() => RunUiOperation(() => ConfigRestorePoints.DismissOrArchiveRecovery());
+    public void ViewConfigOriginalCopy() => RunUiOperation(() => ConfigRestorePoints.BeginViewOriginalCopy());
+    public void CloseConfigOriginalCopyPreview() => RunUiOperation(() => ConfigRestorePoints.CloseOriginalCopyPreview());
+    public void ExportConfigOriginalCopy()
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title = "另存覆盖前原副本（原始字节）",
+            Filter = "配置文件|*.json;*.ini;*.toml;*.yaml;*.yml;*.xml;*.cfg;*.conf;*.config;*.env;*.properties;*.bak|所有文件|*.*",
+            FileName = ConfigRestorePoints.SuggestedOriginalCopyFileName,
+            OverwritePrompt = true,
+            CheckPathExists = true
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        RunUiOperation(() => ConfigRestorePoints.ExportOriginalCopy(dialog.FileName));
+    }
+
     private void RunUiOperation(Action operation)
     {
         localError = "";
@@ -589,6 +649,7 @@ public partial class MainWindow : FluentWindow, INotifyPropertyChanged
         EnvironmentCheck.PropertyChanged -= OnModelChanged;
         PackageCheck.PropertyChanged -= OnModelChanged;
         IsolatedTrial.PropertyChanged -= OnModelChanged;
+        ConfigRestorePoints.PropertyChanged -= OnModelChanged;
         Records.Dispose();
         EnvironmentCheck.Dispose();
         PackageCheck.Dispose();
