@@ -150,7 +150,8 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         c.Status is ConfigComparisonStatus.Changed or ConfigComparisonStatus.Missing;
 
     public bool IsConfirmingRestore => isConfirmingRestore;
-    public string ConfirmRestoreTitle => selectedPoint is null ? "" : $"恢复前确认：{selectedPoint.TargetFileName}";
+    public bool IsNotConfirmingRestore => !isConfirmingRestore;
+    public string ConfirmRestoreTitle => selectedPoint is null ? "" : $"恢复前确认：{selectedPoint.DisplayScopedName}";
     public string ConfirmRestoreTargetPath => selectedPoint?.TargetPath ?? "";
     public string ConfirmRestoreOperationText
     {
@@ -608,6 +609,7 @@ public sealed class ConfigRestorePointsViewModel : ObservableObject
         OnPropertyChanged(nameof(HasDiffTruncationNote));
         OnPropertyChanged(nameof(CanBeginRestore));
         OnPropertyChanged(nameof(IsConfirmingRestore));
+        OnPropertyChanged(nameof(IsNotConfirmingRestore));
         OnPropertyChanged(nameof(ConfirmRestoreTitle));
         OnPropertyChanged(nameof(ConfirmRestoreTargetPath));
         OnPropertyChanged(nameof(ConfirmRestoreOperationText));
