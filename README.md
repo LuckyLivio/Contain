@@ -1,14 +1,14 @@
 # Contain
 
-**[下载 Contain v0.5.0 正式版安装包（Windows x64）](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0/Contain-Setup-x64.exe)**
+**[下载 Contain v0.6.0 正式版安装包（Windows x64）](https://github.com/LuckyLivio/Contain/releases/download/v0.6.0/Contain-Setup-x64.exe)**
 
-把单项目 C# 控制台或 WPF 工程做成可以发给用户安装的 Windows 应用。首次打开 Contain 会直接进入“打包项目”。使用 Contain 本身（打包项目、我的记录、检查交付包及本地文件信息查看）无需 Windows 沙盒；仅「隔离试用」需要受支持的 Windows 版本、硬件虚拟化和可用的 `wsb` CLI。
+把单项目 C# 控制台或 WPF 工程做成可以发给用户安装的 Windows 应用，并提供陌生软件「隔离试用」（支持单 EXE 与便携软件文件夹、只读文件信息与 SHA-256 查看、离线沙箱试运行及再次试用前文件夹变化对照）。首次打开 Contain 会直接进入“打包项目”。安装和使用 Contain 本身无需 Windows Sandbox；仅实际启动「隔离试用」需要已启用 Windows Sandbox 且具备可用的 `wsb` 命令。
 
 **最短路径**　选择项目文件夹 → 保存配置并检查 → 构建并生成安装包 → 打开安装包文件夹。
 
-[便携桌面 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0/contain-0.5.0-windows-x64.zip) · [独立 CLI ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0/contain-workflow-0.5.0-windows-x64.zip) · [发行说明](https://github.com/LuckyLivio/Contain/releases/tag/v0.5.0) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0/SHA256SUMS.txt) · [上一预发行版 v0.5.0-beta.3](https://github.com/LuckyLivio/Contain/releases/tag/v0.5.0-beta.3)
+[便携桌面 ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.6.0/contain-0.6.0-windows-x64.zip) · [独立 CLI ZIP](https://github.com/LuckyLivio/Contain/releases/download/v0.6.0/contain-workflow-0.6.0-windows-x64.zip) · [发行说明](https://github.com/LuckyLivio/Contain/releases/tag/v0.6.0) · [SHA-256](https://github.com/LuckyLivio/Contain/releases/download/v0.6.0/SHA256SUMS.txt) · [上一稳定版 v0.5.0](https://github.com/LuckyLivio/Contain/releases/tag/v0.5.0)
 
-选择文件夹后可预览项目名、应用类型和入口 EXE。制作安装包的电脑需要匹配的 .NET SDK 和 Inno Setup 6。安装器尚未签名。v0.5.0 正式版已完成干净 Windows 11 x64 源码机 A → 独立断网无开发工具接收机 B 全链路验收、离线安装试装以及从公开 v0.5.0-beta.3 原位升级保留个人记录库实测。[v0.5.0 正式版验收说明与脱敏收据](docs/v050-release.md) · [首次打包对比与 Beta 3 实测](docs/beta05-beta3-release.md)
+选择文件夹后可预览项目名、应用类型和入口 EXE。制作安装包的电脑需要匹配的 .NET SDK 和 Inno Setup 6。安装器与可执行文件尚未代码签名（`NotSigned`），首次运行请先对照 `SHA256SUMS.txt` 核对摘要。v0.6.0 正式版已完成干净 Windows 11 x64 源码机 A → 独立断网无开发工具接收机 B 全链路验收、离线安装/卸载、从公开 v0.5.0 原位升级保留个人记录库及宿主机沙箱便携文件夹变更重放实测。[v0.6.0 正式版与隔离试用验收记录](docs/v060-isolated-trial-acceptance.md) · [v0.5.0 正式版验收说明与脱敏收据](docs/v050-release.md)
 
 ## 接手源码、恢复开发环境
 
@@ -45,7 +45,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows-inst
 
 ## 后续里程碑
 
-- **陌生软件隔离试用**：后续设计隔离执行、权限和试用证据；第一阶段不提供隔离保护。
+- **陌生软件隔离试用**：已于 `v0.6.0` 上线，支持单 EXE 与便携软件文件夹离线沙箱试运行、异常恢复、本地历史与再次试用前文件夹变化对照（详见 [v0.6.0 验收记录](docs/v060-isolated-trial-acceptance.md)）。
 - **配置回退**：后续设计配置备份、差异和可验证恢复；第一阶段不修改系统配置或提供回滚。
 - **桌面工具**：从“打包项目”识别单项目控制台或 WPF 工程、构建并制作安装包。使用“检查交付包”可单独核对 ZIP 与包规格。“我的记录”提供安装记录与外部只读库入口。
 
