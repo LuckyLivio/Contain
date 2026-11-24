@@ -1,4 +1,4 @@
-# Contain v0.8.0-beta.1 / v0.8.0-beta.2「配置还原点迁移」验收记录
+# Contain v0.8.0-beta.1 / v0.8.0-beta.2 / v0.8.0-rc.1「配置还原点迁移」验收记录
 
 ## 1. Beta.1 候选包与构建身份
 
@@ -155,3 +155,103 @@
 - 已有旧包 V1（`91905e983ac15ec92a230edf9ce83c7fe69684f835a146cd5654da7701cc692d`）被新还原点 **V2**（`theme: nord`，内容 SHA-256 `97575f169efb5418788ecb1498515c73c8445143aa02e43b0808d39b334812f4`）正常覆盖成功，更新后迁移包 SHA-256 为 `b820e5a9a4952fd387d0e48dfb33a2cd1f35ffb2719815182fdda9fc3ba44dc4`（临时文件残留 `0`）。
 - 接收机在正常 GUI 导入该覆盖后的包，预览准确显示 `- "theme": "dark"` / `+ "theme": "nord"`，确认恢复后磁盘文件 SHA-256 严格等于 **新包 V2**（`97575f16…`），点击撤销后精确回到接收机自己的原配置 **B**（`6fbf8fb0…`）。
 - 接收机卸载器退出码 `0`，安装目录与卸载注册表项清理干净。
+
+---
+
+## 6. v0.8.0-rc.1 真实 VS Code 端到端验收、覆盖升级与 Beta.2 兼容
+
+### 6.1 RC.1 候选包与构建身份
+
+- **基线提交**：已验收 Beta.2 构建提交 `885cd4d1d5b05ab9ff6b98cf243e410791df1b17`
+- **RC.1 构建提交 SHA**：`e34ef46097760074f81aea10b6dd3323ae3c1cb1`
+- **产品版本**：`0.8.0-rc.1`（PE / AssemblyVersion：`0.8.0.3`；采集核心保持 `0.3.2-beta.10`）
+- **发布状态**：本地 Windows x64 候选包 + Draft PR #33（公开稳定版仍为 `v0.7.0`，本轮不合并、不打标签、不公开发布）
+
+| RC.1 候选产物 | 体积（字节） | SHA-256 |
+| --- | ---: | --- |
+| `Contain-Setup-0.8.0-rc.1-x64.exe` | 51,563,509 | `da26116bd54291e5dc428a2d41d2399447df0c3a58e3622d27d553a51ed8c2ea` |
+| `contain-0.8.0-rc.1-windows-x64.zip` | 71,505,764 | `3103eb7eb7820e7ede319863b21a254acc8c90976aa8bbb264938aa3751b310b` |
+| `package-spec.json` | 34,411 | `0bf1e96d9b6a91c1903a6069f6505204cb819687bdd3eefef622ea04ed9c0f68` |
+| `identity.json` | 667 | `bced09bbe2bb4da1dbe5bed11ef1e949851f0aaf877b5d01881698870021d7e4` |
+| `installer-receipt.json` | 991 | `94c4fdb7fc5e6eeeba7403fd4c6f59749931bdf92bbc966d53993035f70fe2e3` |
+| `SHA256SUMS.txt`（自校验） | 453 | `891405962c2154bc242d858b9f9cf6a1f7e4ee12ec7496b949e30d390d877ffa` |
+
+> 说明：
+> 1. `git diff 885cd4d -- desktop/Contain.Desktop.Model/ConfigRestorePointService.cs desktop/Contain.Desktop.Model/ConfigRestorePointModels.cs` 输出为空，确认 RC.1 未触碰迁移包序列化、原子导出替换与 32/64 MiB 体积上限逻辑，直接沿用第 5 节 Beta.2 的 32 MiB / 33 MiB 覆盖保护与接收端实测回执。
+> 2. 自动化门禁全绿：`Contain.Desktop.Model.Tests` **139/139**（含新增 `config_v080rc1_import_target_help_guidance_and_no_auto_guess_preserves_decoy_settings_json`）、`test-package-source-desktop.py` **10/10**、`check-fuzz-lock.py`、`cargo test -p contain-workflow --locked` **55/55**、`cargo deny --locked check`。
+
+### 6.2 导入目标定位轻量提示（「如何找到配置文件？」）
+
+- 在导入页「本机目标」选择器下方新增可展开/收起的轻量提示入口「**如何找到配置文件？**」：
+  - 打开有效迁移包但尚未选择本机目标时自动展开轻量提示卡片，给出 VS Code 具体步骤示例（在命令面板 `Ctrl+Shift+P` 执行 `Preferences: Open User Settings (JSON)`，复制打开文件的路径，回到 Contain 粘贴或通过「选择目标…」选择），并明确说明 **Contain 不会将同名 `settings.json` 自动认作 VS Code 配置，写入位置始终由用户明确决定**；
+  - 选定本机目标进入预览后自动收起为单行折叠入口，保证 150% DPI 下完整目标路径、方向标签、确认恢复按钮与逐行差异仍完整位于首屏。
+
+![导入页轻量「如何找到配置文件？」提示与空目标框](v0.8.0-rc.1/contain-v080rc1-target-help.png)
+
+### 6.3 真实 VS Code 端到端实测环境
+
+- **真实编辑器版本**：**Microsoft Visual Studio Code `1.134.0`**（官方签名 Windows x64 安装版，无 `data/` 便携目录，使用真实默认用户配置 `%APPDATA%\Code\User\settings.json`）
+- **源端环境**：独立 Windows 11 环境，专用普通标准用户 **`ContainSrc`**（`is_admin = false`，`C:\Users\ContainSrc`），全程不接触个人主机配置与数据
+- **接收端环境**：另一独立、**完全断网**（`offline_v4_default_routes = 0`、`offline_v6_default_routes = 0`）、**无 Windows Sandbox**（`wsb_command_present = false`、`windows_sandbox_exe_present = false`）的 Windows 11 环境，专用普通标准用户 **`ContainTest`**（`is_admin = false`，`C:\Users\ContainTest`），安装本次最终 `Contain-Setup-0.8.0-rc.1-x64.exe`（`FileVersion = 0.8.0.3`，`HKCU DisplayVersion = 0.8.0-rc.1`）
+- **多行验证文本**：`C:\Users\Public\SampleNotes\multiline-sample.txt`（14 行文本，光标固定在第 6 行，清晰区分 `off` / `on` / `relative` 行号显示）
+
+### 6.4 源端实测：`v0.7.0` 建点 → 改配置 C → 覆盖升级至 RC.1 → 导出 A
+
+1. 以标准用户 `ContainSrc` 打开真实 VS Code `1.134.0`（默认 `C:\Users\ContainSrc\AppData\Roaming\Code\User\settings.json` 含 `"editor.lineNumbers": "on"`，版本 **A**），确认配置生效。
+2. 以 `ContainSrc` 安装公开稳定版 **`v0.7.0`** 安装包（`FileVersion = 0.7.0.0`），通过桌面界面为 `settings.json` 创建还原点 **A**（`point_id = 72634849c8c3`，SHA-256 `4bbfc225...`）。
+3. 将源端 `settings.json` 改为 `"editor.lineNumbers": "relative"`（版本 **C**，SHA-256 `a402b0ec...`）。
+4. 以 `ContainSrc` 直接运行本次最终 **`Contain-Setup-0.8.0-rc.1-x64.exe`** 完成原地覆盖升级（`0.7.0.0` → `0.8.0.3`）。
+5. 启动升级后的 RC.1 桌面端：旧 `v0.7.0` 还原点正常读取，状态准确显示「已变化」（`- "editor.lineNumbers": "on"` / `+ "editor.lineNumbers": "relative"`）；点击「导出还原点…」导出至 `vscode-line-numbers-on.contain-config-point`：
+   - 导出包载荷严格等于建点版本 **A**（`4bbfc225...`），不包含 `ContainSrc` / `AppData` / `Roaming` 等源机路径；
+   - 导出完成后源端磁盘上的 `settings.json` 仍严格为版本 **C**（`a402b0ec...`），再次打开真实 VS Code `1.134.0` 实拍可见相对行号（`5 4 3 2 1 6 1 2 3 ...`）。
+
+### 6.5 接收端实测：真实 VS Code 定位、导入恢复（B → A）、撤销（A → B）与干扰文件保护
+
+1. 接收端 `ContainTest` 默认 VS Code 用户配置 `C:\Users\ContainTest\AppData\Roaming\Code\User\settings.json` 初始为版本 **B**（`"editor.lineNumbers": "off"`），同时在另一目录 `C:\Users\ContainTest\Documents\OtherApp\settings.json` 放置同名干扰文件。
+2. 在真实 VS Code `1.134.0` 打开多行文本，实拍确认恢复前无行号；随后按「如何找到配置文件？」提示在 VS Code 内执行 `Ctrl+Shift+P` → `Preferences: Open User Settings (JSON)`（VS Code `1.134.0` 模态编辑器切至常规标签页后执行 `File: Copy Path of Active File`），实测剪贴板返回精确路径 `C:\Users\ContainTest\AppData\Roaming\Code\User\settings.json`。
+3. 回到 Contain RC.1 桌面端点击「导入还原点…」打开源端迁移包：目标框默认为空且展示轻量定位提示；粘贴 VS Code 复制出的路径后，预览准确显示完整路径 `C:\Users\ContainTest\AppData\Roaming\Code\User\settings.json`、`本机当前 → 恢复后` 及 `- "editor.lineNumbers": "off"` / `+ "editor.lineNumbers": "on"`。
+4. 点击「确认恢复」后，目标文件逐字节变为 **A**，同名干扰文件 `OtherApp\settings.json` 哈希未变；重开真实 VS Code `1.134.0`，多行文本左侧行号 `1..15` 清晰开启。
+5. 回到 Contain RC.1 点击「撤销」并确认后，目标文件逐字节回到接收端原始版本 **B**，同名干扰文件仍未变；重开真实 VS Code `1.134.0`，行号再次消失。
+
+#### 第一类证据：源端与接收端目标文件（B → A → B）及同名干扰文件 SHA-256 核对
+
+| 角色 / 文件 | 阶段 | 体积（字节） | SHA-256 | 核对结论 |
+| --- | --- | ---: | --- | --- |
+| 源端 `ContainSrc\...\Code\User\settings.json` | 建点版本 **A**（`"on"`） | 210 | `4bbfc225fbc6df13d033e2eef6c9d9017baffc65131f0749c6cfcd1cedc144ad` | v0.7.0 建点成功 |
+| 源端 `ContainSrc\...\Code\User\settings.json` | 改后 / 导出后 / 最终 **C**（`"relative"`） | 216 | `a402b0ec5c5cd22e5d4a32c9f6a864c4fa719e89e185a420f764e7d73b56ca2e` | 导出 A 后磁盘仍为 C |
+| 导出迁移包 `vscode-line-numbers-on.contain-config-point` | RC.1 导出整包（无源机路径） | — | `3def3eef1d3d102c580f4c339ae356c2cc7976419026b0381067c4d856038c92` | 载荷 SHA-256 == **A** |
+| 接收端 `ContainTest\...\Code\User\settings.json` | 恢复前 **B**（`"off"`） | 211 | `1f7cfcdb51a8a3fb1eab92fcbd1ac2e8c2afa40d7bcda4b7961870a5dc7e4837` | 接收机初始配置 |
+| 接收端 `ContainTest\...\Code\User\settings.json` | 导入恢复后 **A**（`"on"`） | 210 | `4bbfc225fbc6df13d033e2eef6c9d9017baffc65131f0749c6cfcd1cedc144ad` | 严格等于源端 **A** |
+| 接收端 `ContainTest\...\Code\User\settings.json` | 撤销恢复后 **B**（`"off"`） | 211 | `1f7cfcdb51a8a3fb1eab92fcbd1ac2e8c2afa40d7bcda4b7961870a5dc7e4837` | 严格回到原 **B** |
+| 接收端同名干扰 `ContainTest\Documents\OtherApp\settings.json` | 初始 / 恢复后 / 撤销后 / 最终 | 87 | `c875980a49f3e5473e8958efbfc9acd994ff56ef1ee4bde7c617e7b2105e1f45` | 全程逐字节未改动 |
+
+#### 第二类证据：Contain 导入预览与真实 VS Code `1.134.0` 实拍截图
+
+**1. 接收端 Contain RC.1 导入预览（完整路径 + 方向差异）**
+
+![Contain RC.1 导入预览：完整目标路径与 off -> on 差异](v0.8.0-rc.1/contain-v080rc1-import-preview.png)
+
+**2. 接收端真实 VS Code `1.134.0` 恢复前（`editor.lineNumbers = "off"`，无行号）**
+
+![接收端 VS Code 1.134.0 恢复前：无行号](v0.8.0-rc.1/vscode-receiver-before-off.png)
+
+**3. 接收端真实 VS Code `1.134.0` 恢复后（`editor.lineNumbers = "on"`，行号 `1..15` 开启）**
+
+![接收端 VS Code 1.134.0 恢复后：标准行号已开启](v0.8.0-rc.1/vscode-receiver-after-restore-on.png)
+
+**4. 接收端真实 VS Code `1.134.0` 撤销后（`editor.lineNumbers = "off"`，恢复无行号）**
+
+![接收端 VS Code 1.134.0 撤销后：行号再次关闭](v0.8.0-rc.1/vscode-receiver-after-undo-off.png)
+
+**5. 源端真实 VS Code `1.134.0` 导出 A 后（仍保持版本 C `"relative"` 相对行号）**
+
+![源端 VS Code 1.134.0 导出 A 后仍显示相对行号](v0.8.0-rc.1/vscode-source-after-export-relative.png)
+
+### 6.6 冻结 Beta.2（`885cd4d`）导出的 v1 迁移包在 RC.1 的兼容性
+
+- 使用冻结 Beta.2 桌面端（`FileVersion = 0.8.0.2`，提交 `885cd4d`）在隔离数据目录导出真实 v1 迁移包 `beta2-exported-v1.contain-config-point`（UTF-8 含 BOM + CRLF + 中文，载荷 `205 B`，整包 SHA-256 `c0a746e9d04c877c174a36cd0995beb33e1714d174abeb99c5f63e533e5f8589`，载荷 SHA-256 `c59bd89786d7f262147fcde907f94b4428b0f75477303862058f7c044a870e17`，无源机路径泄漏）。
+- 在上述独立断网接收机安装的最终 RC.1 桌面端直接导入该 Beta.2 迁移包至 `C:\Users\ContainTest\Documents\Beta2Compat\app-config.json`：
+  - 恢复前接收端目标：`107 B`，SHA-256 `7bc1e45e2911f794cd9191414574cdc35b7cc89083d9bb10322b0820b1c0db3d`；
+  - RC.1 直接识别、预览并确认恢复后：目标文件严格等于 Beta.2 载荷（`c59bd89786d7f262147fcde907f94b4428b0f75477303862058f7c044a870e17`）；
+  - 在 RC.1 点击撤销并确认后：目标文件严格回到恢复前版本（`7bc1e45e2911f794cd9191414574cdc35b7cc89083d9bb10322b0820b1c0db3d`），且 VS Code `settings.json` 与同名干扰文件 `OtherApp\settings.json` 均保持不变。
+- 最终以标准用户 `ContainTest` 执行 `unins000.exe /VERYSILENT /NORESTART` 卸载 RC.1：退出码 `0`，程序文件清理干净；完整机器回执保存在本地候选目录 `v080rc1-vscode-acceptance-receipt.json`。
