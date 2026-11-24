@@ -17,6 +17,7 @@
                            IsFooterSeparatorVisible="False" FrameMargin="0" Padding="0" Transition="None">
             <ui:NavigationView.MenuItems>
                 <controls:ActionNavigationItem x:Name="EnvironmentNavigation" Caption="打包项目" Symbol="Box24" Click="OnEnvironmentCheck" ActionId="CheckProjectEnvironment" />
+                <controls:ActionNavigationItem x:Name="IsolatedTrialNavigation" Caption="隔离试用" Symbol="Shield24" Click="OnIsolatedTrial" ActionId="IsolatedTrial" />
                 <controls:ActionNavigationItem x:Name="RecordsNavigation" Caption="我的记录" Symbol="DocumentMultiple24" Click="OnMyRecords" ActionId="MyRecords" IsActive="True" />
                 <controls:ActionNavigationItem x:Name="NewNavigation" Caption="新建记录" Symbol="DocumentAdd24" Click="OnNewRecord" ActionId="NewInstall" />
                 <controls:ActionNavigationItem x:Name="PackageNavigation" Caption="检查交付包" Symbol="DocumentText24" Click="OnPackageCheck" ActionId="CheckDeliveryPackage" />
@@ -28,6 +29,13 @@
             </ui:NavigationView.FooterMenuItems>
         </ui:NavigationView>
         <StackPanel Grid.Row="2" Margin="16,0,16,8">
+            <Border Background="#FFF8EB" BorderBrush="#D99B26" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,6" Visibility="{Binding ShowPendingTrialBanner, Converter={StaticResource BoolVisibility}}" AutomationProperties.AutomationId="ShellPendingTrialBanner">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding IsolatedTrial.PendingRecoveryBannerText}" Foreground="#7A4F00" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" AutomationProperties.AutomationId="ShellPendingTrialBannerText" />
+                    <ui:Button Grid.Column="1" Content="查看隔离试用" Appearance="Secondary" Padding="12,5" Margin="12,0,0,0" Click="OnIsolatedTrial" AutomationProperties.AutomationId="ShellPendingTrialBannerAction" />
+                </Grid>
+            </Border>
             <Border Background="#FFF0ED" CornerRadius="6" Padding="12,8" Visibility="{Binding ErrorMessage, Converter={StaticResource TextVisibility}}">
                 <TextBox Style="{StaticResource SelectableText}" Text="{Binding ErrorMessage, Mode=OneWay}" Foreground="#963D2E" AutomationProperties.AutomationId="ShellError" />
             </Border>

@@ -2,7 +2,7 @@
 
 **[下载 Contain v0.5.0 正式版安装包（Windows x64）](https://github.com/LuckyLivio/Contain/releases/download/v0.5.0/Contain-Setup-x64.exe)**
 
-把单项目 C# 控制台或 WPF 工程做成可以发给用户安装的 Windows 应用。首次打开 Contain 会直接进入“打包项目”。
+把单项目 C# 控制台或 WPF 工程做成可以发给用户安装的 Windows 应用。首次打开 Contain 会直接进入“打包项目”。使用 Contain 本身（打包项目、我的记录、检查交付包及本地文件信息查看）无需 Windows 沙盒；仅「隔离试用」需要受支持的 Windows 版本、硬件虚拟化和可用的 `wsb` CLI。
 
 **最短路径**　选择项目文件夹 → 保存配置并检查 → 构建并生成安装包 → 打开安装包文件夹。
 

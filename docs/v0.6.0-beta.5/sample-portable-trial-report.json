@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "protocol": "contain-isolated-trial-report-1",
+  "session_id": "5aa06643ee8a",
+  "started_at_utc": "2026-11-23T09:34:59.6968324+00:00",
+  "ended_at_utc": "2026-11-23T09:35:16.38796+00:00",
+  "software_name": "便携 样例 & 软件",
+  "version": "未提供",
+  "input_kind": "folder",
+  "input_kind_label": "软件文件夹",
+  "entry_relative_path": "bin\\便携 演示 & App.exe",
+  "entry_file_name": "便携 演示 & App.exe",
+  "entry_architecture": "Windows x64 (PE32+)",
+  "entry_size_bytes": 119808,
+  "entry_sha256": "be5bc56569d071f11086ff6dfeaef5e3a07cad1050c3074d1ed23c2a40eb4679",
+  "entry_sha256_recorded": true,
+  "folder_scope": {
+    "file_count": 4,
+    "directory_count": 3,
+    "total_bytes": 327769,
+    "formatted_total_size": "320.1 KB"
+  },
+  "isolation_policy": {
+    "networking": "Disable",
+    "clipboard_redirection": "Disable",
+    "read_only_host_mount": true,
+    "discard_guest_changes_on_close": true
+  },
+  "launch_outcome": "started_and_running",
+  "launch_outcome_label": "已启动入口（观察到入口进程运行）",
+  "launch_summary": "已将软件目录“便携 样例 & 软件”（4 个文件）复制到来宾可写目录 C:\\ContainTrialRun，并以 C:\\ContainTrialRun\\bin 为工作目录启动入口“bin\\便携 演示 & App.exe”（已确认启动，1 秒后入口进程仍在运行）。",
+  "sandbox_instance_state": "ConfirmedEnded",
+  "sandbox_instance_state_label": "已确认结束",
+  "host_staging_state": "Cleaned",
+  "host_staging_state_label": "已清理",
+  "overall_result_label": "已确认结束",
+  "evidence_scope_note": "本报告仅以 Contain 在宿主机与启动阶段实际观察到的证据为限，不含来宾内部完整行为审计；时间线中的“已启动入口”仅表示当时观察到入口进程启动。",
+  "timeline": [
+    {
+      "timestamp_utc": "2026-11-23T09:34:59.6969127+00:00",
+      "display_time": "17:34:59",
+      "stage": "启动准备",
+      "summary": "已锁定便携软件目录“便携 样例 & 软件”（4 个文件，320.1 KB），入口相对路径“bin\\便携 演示 & App.exe”，配置关闭网络与剪贴板共享、只读映射输入快照。"
+    },
+    {
+      "timestamp_utc": "2026-11-23T09:35:00.3401856+00:00",
+      "display_time": "17:35:00",
+      "stage": "快照已就绪",
+      "summary": "输入快照复制并核验完成（4 个文件，320.1 KB），正在启动沙箱。"
+    },
+    {
+      "timestamp_utc": "2026-11-23T09:35:05.7321223+00:00",
+      "display_time": "17:35:05",
+      "stage": "沙箱已打开",
+      "summary": "沙箱实例已创建并响应就绪检测（只读输入目录已挂载）。"
+    },
+    {
+      "timestamp_utc": "2026-11-23T09:35:11.0057876+00:00",
+      "display_time": "17:35:11",
+      "stage": "已启动入口：bin\\便携 演示 & App.exe",
+      "summary": "已将软件目录“便携 样例 & 软件”（4 个文件）复制到来宾可写目录 C:\\ContainTrialRun，并以 C:\\ContainTrialRun\\bin 为工作目录启动入口“bin\\便携 演示 & App.exe”（已确认启动，1 秒后入口进程仍在运行）。"
+    },
+    {
+      "timestamp_utc": "2026-11-23T09:35:16.388011+00:00",
+      "display_time": "17:35:16",
+      "stage": "试用已结束",
+      "summary": "已确认本次沙箱实例结束，并已清理本次宿主暂存目录。"
+    }
+  ]
+}
