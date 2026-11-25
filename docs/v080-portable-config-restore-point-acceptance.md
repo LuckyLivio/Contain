@@ -1,4 +1,4 @@
-# Contain v0.8.0-beta.1 / v0.8.0-beta.2 / v0.8.0-rc.1「配置还原点迁移」验收记录
+# Contain v0.8.0「配置还原点迁移」验收记录（Beta.1 / Beta.2 / RC.1 / 0.8.0 正式版）
 
 ## 1. Beta.1 候选包与构建身份
 
@@ -255,3 +255,71 @@
   - RC.1 直接识别、预览并确认恢复后：目标文件严格等于 Beta.2 载荷（`c59bd89786d7f262147fcde907f94b4428b0f75477303862058f7c044a870e17`）；
   - 在 RC.1 点击撤销并确认后：目标文件严格回到恢复前版本（`7bc1e45e2911f794cd9191414574cdc35b7cc89083d9bb10322b0820b1c0db3d`），且 VS Code `settings.json` 与同名干扰文件 `OtherApp\settings.json` 均保持不变。
 - 最终以标准用户 `ContainTest` 执行 `unins000.exe /VERYSILENT /NORESTART` 卸载 RC.1：退出码 `0`，程序文件清理干净；完整机器回执保存在本地候选目录 `v080rc1-vscode-acceptance-receipt.json`。
+
+---
+
+## 7. v0.8.0 正式版冻结、A → B 干净发布链与双升级串联迁移验收
+
+### 7.1 正式版冻结身份与差异核对
+
+- **基线**：已验收 RC.1 构建提交 `e34ef46097760074f81aea10b6dd3323ae3c1cb1`、文档 HEAD `8c9a45a426c9a106aa5fb88d79dede580e5722de`
+- **正式版冻结提交 SHA**：`ee98d7d2c96565706765d76952aa92ab8bfade9d`
+- **版本身份**：桌面端、`contain-workflow` CLI、Setup 与打包元数据统一为 **`0.8.0`**，PE/程序集版本 **`0.8.0.0`**，采集核心沿用 **`0.3.2-beta.10`**
+- **差异核对**：相对 `8c9a45a` 仅包含 15 个版本元数据文件的 20 行版本号更新；相对 RC.1 `e34ef46` 除 `8c9a45a` 的文档/实拍与上述版本冻结外零产品代码改动；核心序列化、容量限制（32/64 MiB）与原子导出替换逻辑与 `885cd4d` 零差异，沿用第 5 节 Beta.2 的 32/33 MiB 实测回执与第 6 节 RC.1 实拍。
+- **冻结前门禁**：`Contain.Desktop.Model.Tests` **139/139**、`test-package-source-desktop.py` **10/10**、`check-fuzz-lock.py`、`cargo test -p contain-workflow --locked` **55/55**、`cargo deny --locked check` 与 Desktop Release 构建（0 警告 / 0 错误）全部通过。
+
+### 7.2 干净发布链：源码机 A（SourceMissing → 安装工具 → Source）与断网接收机 B（Package）
+
+1. **源码机 A（全新 Windows 11 Build 26100 环境）**：
+   - `Step 1 (SourceMissing)`：`A-before` 校验退出码 `0`（`native-platform = passed`、`actual-source-before-install = passed`，缺失工具链实证通过）。
+   - `Step 2 (Install Tools)`：复用已校验离线缓存安装 MinGit 2.47.1.2、Python 3.12.10、.NET SDK 10.0.403 + NuGet 缓存、Rust 1.100.0 + Cargo 缓存，并安装 VS 2022 Build Tools（MSVC 14.44 + Windows 11 SDK 10.0.26100.0），退出码 `0`，工具链选择器探测通过。
+   - `Step 3 (Source)`：在冻结提交 `ee98d7d2` 干净工作树执行 `workflow-windows-acceptance.ps1 -Stage Source`，用时 `192.2 s`，退出码 `0`：`native-platform`、`restored-source`、`active-msvc-conflict`、`active-sdk-conflict`、`build-and-freeze` **5/5 全部通过**，产出本批桌面 ZIP、独立 CLI ZIP 与 `handoff.json`。
+2. **正式待发布产物组装与校验清单（14 个交付文件 + `SHA256SUMS.txt`）**：
+   - 签名状态：**未签名（`NotSigned`，`signed = false`）**；Inno Setup `6.7.3`；载荷文件数 `723`；`app_version = 0.8.0`、`version_info_version = 0.8.0.0`。
+
+| 公开交付产物 | 体积（字节） | SHA-256 |
+| --- | ---: | --- |
+| `Contain-Setup-x64.exe` | 51,563,971 | `59c58c759d104408274f85f853a4b4b479db5d13c26dbddd17fab8da27e85e69` |
+| `contain-0.8.0-windows-x64.zip` | 71,505,033 | `dddbdbe448e1a27cf7fb5fe99c2d43775eea089cb7f662be75a77ba1bf66f064` |
+| `contain-workflow-0.8.0-windows-x64.zip` | 1,734,630 | `c9f5ecfb3560f119c5a81195fb8670fda1b5185eef6aa9d52c279c636b05e0a0` |
+| `handoff.json` | 1,960 | `b1e00ce0c1b84457b007c7dbd0275c26450e40d3a243c2e7dd1e2cc89cb7e485` |
+| `desktop-package-spec.json` | 34,406 | `877af470a900df014d8572b1b7651d884d367f429c590ed29d11df03ed0696db` |
+| `cli-package-spec.json` | 1,600 | `fc2ac12bebbce98ac85ffc1b2f1886cd09e6d697252b0db43eda59d493fe4f12` |
+| `installer-receipt.json` | 975 | `7f3a0fccc7c88c51d39c556a8c8b88aa14567db79d4b7844ba3fad54ab35c794` |
+| `SHA256SUMS.txt`（自校验，覆盖全部 14 项） | 1,289 | `d421919614d4bd0541ab5e9d603deef4b694ea1776d1afa8fb2f06e9553dc148` |
+
+3. **断网、无开发工具接收机 B（`B-clean` 完整 `Package` 验收）**：
+   - 独立传入 `SHA256SUMS.txt` 自身摘要 `d421919614d4bd0541ab5e9d603deef4b694ea1776d1afa8fb2f06e9553dc148`，接收机全程断网（`network_before = offline`、`network_after = offline`），无任何开发工具（`dotnet_sdk`、`cargo`、`msbuild`、`python`、`cl`、`rustc`、`git` 全部 `false`）。
+   - `B-receipt.json` **6/6 全部通过**（`exit_code = 0`）：`native-platform`、`development-tools-absent`、`A-B-same-artifacts`、`independent-cli`、`desktop-launch-and-tests`、`missing-coreclr-rejected`（缺 `coreclr.dll` 副本以退出码 `1` 在启动前被拒绝，未发生解包启动）。
+
+### 7.3 同一份最终 Setup 的双升级实测与真实 VS Code `1.134.0` 串联迁移
+
+#### 链路一：源端 `v0.7.0` → 正式版 `0.8.0` 就地升级并导出迁移包
+
+- 专用标准非管理员用户 **`ContainSrc`** + 官方签名 **Microsoft VS Code `1.134.0`**。
+- 先安装公开稳定版 **`v0.7.0`**（`0.7.0.0`），为默认 `%APPDATA%\Code\User\settings.json`（版本 **A**：`"editor.lineNumbers": "on"`，`210 B`，`4bbfc225fbc6df13d033e2eef6c9d9017baffc65131f0749c6cfcd1cedc144ad`）创建还原点 `ac2a4773771c`，再将磁盘文件修改为版本 **C**（`"relative"`，`216 B`，`a402b0ec5c5cd22e5d4a32c9f6a864c4fa719e89e185a420f764e7d73b56ca2e`）。
+- 运行本次最终 `Contain-Setup-x64.exe` 原位升级至 `0.8.0`（`FileVersion = 0.8.0.0`、`ProductVersion = 0.8.0+ee98d7d2...`、`HKCU DisplayVersion = 0.8.0`），在正式版界面打开旧 `v0.7.0` 还原点导出 `v080-vscode-line-numbers-on.contain-config-point`（`810 B`，整包 SHA-256 `9625fa1e9077e8bf91170da2bee95eb304d0ddacba5d37ff6eb40f97b449273c`）：
+  - 导出包解码载荷 SHA-256 严格等于 **A**（`4bbfc225...`），且不含 `ContainSrc` / `AppData` / `Roaming` 等源机路径；
+  - 导出完成后与再次打开 VS Code 后，源端磁盘文件仍严格等于 **C**（`a402b0ec...`），VS Code 界面保持相对行号显示。
+
+#### 链路二：断网接收端 `RC.1 (0.8.0.3)` → 正式版 `0.8.0 (0.8.0.0)` 覆盖升级、5 个核心二进制核对、开始菜单启动撤销与串联迁移
+
+- 独立、**完全断网**（`v4/v6 default_routes = 0`）、**无 Windows Sandbox**（`wsb` 缺失）环境，专用标准非管理员用户 **`ContainTest`** + 官方 **VS Code `1.134.0`**。
+- **阶段 1（RC.1 + Beta.2 v1 恢复留存可撤销记录）**：安装冻结 RC.1（`0.8.0.3`），用冻结 Beta.2（`885cd4d`）导出的 v1 迁移包（整包 `d8e9931e...`，载荷 `205 B` `c59bd89786d7f262147fcde907f94b4428b0f75477303862058f7c044a870e17`）恢复 `C:\Users\ContainTest\Documents\Beta2Compat\app-config.json`（原始 **B0**：`115 B`，`1399f3a1d6c843e00831f0778d25e8dc780da008d65b4f750a37186b04a93f46` → 恢复后 `c59bd897...`），关闭 RC.1 留下活动撤销记录。
+- **阶段 2（覆盖安装正式版 `0.8.0` 与 `0.8.0.3 → 0.8.0.0` 五项二进制逐项比对）**：
+  - 覆盖安装后跨 `HKCU`/`HKLM` 检索 Contain 卸载项：**唯一 1 条**（`HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F4E2D91-5C3A-4B7E-9A16-2D8C4E7F1035}_is1`，`DisplayVersion = 0.8.0`）。
+  - 实际安装目录 `%LOCALAPPDATA%\Programs\Contain` 下全部 5 个核心二进制与正式桌面 ZIP（`contain-0.8.0-windows-x64.zip`）逐项核对 **5/5 逐字节一致**，证实 `0.8.0.3 → 0.8.0.0` 完整覆盖：
+
+| 二进制文件 | RC.1 覆盖前版本 | 正式版安装后版本 | 体积（字节） | 实际安装 SHA-256（与正式桌面 ZIP 严格一致） |
+| --- | --- | --- | ---: | --- |
+| `Contain.Viewer.exe` | `0.8.0.3` | `0.8.0.0` | 162,816 | `68fa67c2c30270110f190b2cc227ad8fd704b9a019eacf0ea7d320070162a6b7` |
+| `Contain.Viewer.dll` | `0.8.0.3` | `0.8.0.0` | 224,256 | `33ccf1f2887b9e1809f0d9e9f41a9986b51baaa04cdc9e3a5fb9d9bb05f340e1` |
+| `Contain.Desktop.Model.dll` | `0.8.0.3` | `0.8.0.0` | 1,005,056 | `1be6506f69388933fafb9bf9e8ee0c39b30ed1a7da5f748775b288f7c0f3d720` |
+| `contain.exe` | — | — | 7,195,136 | `1c419cde22671d02ebe037ba2373f0f8235abfe97c9eb54e5b22ad501e4d4ef7` |
+| `contain-workflow.exe` | — | — | 2,465,280 | `5b7d31d115095d8d2306338b07a7dc0f662b7e21318de21b43d8ea37570df7d6` |
+
+- **阶段 3（从开始菜单启动正式版并撤销 RC.1 操作）**：核实 `ContainTest` 开始菜单快捷方式 `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Contain.lnk` 指向 `C:\Users\ContainTest\AppData\Local\Programs\Contain\Contain.Viewer.exe`，通过 `.lnk` 直接启动正式版 `Contain · 0.8.0`，点击撤销 RC.1 的恢复操作后，`Beta2Compat\app-config.json` 逐字节回到 **B0**（`1399f3a1d6c843e00831f0778d25e8dc780da008d65b4f750a37186b04a93f46`）。
+- **阶段 4（同一断网接收端串联导入源端正式版迁移包）**：
+  - 接收端默认 VS Code 用户配置 **B**（`"off"`，`211 B`，`1f7cfcdb51a8a3fb1eab92fcbd1ac2e8c2afa40d7bcda4b7961870a5dc7e4837`），另置同名对照文件 `C:\Users\ContainTest\Documents\OtherApp\settings.json`（`87 B`，`c875980a49f3e5473e8958efbfc9acd994ff56ef1ee4bde7c617e7b2105e1f45`）。
+  - 在真实 VS Code `1.134.0` 打开多行文本观察无行号（`off`），通过命令面板复制出真实路径 `C:\Users\ContainTest\AppData\Roaming\Code\User\settings.json`；在开始菜单启动的正式版 `0.8.0` 导入源端刚导出的迁移包（`9625fa1e...`）并确认恢复：目标文件严格变为 **A**（`4bbfc225fbc6df13d033e2eef6c9d9017baffc65131f0749c6cfcd1cedc144ad`），VS Code 重开实拍可见标准行号 `1..15` 开启（`on`）；点击撤销并确认后，目标文件严格回到 **B**（`1f7cfcdb...`），VS Code 重开行号再次关闭（`off`）；同名对照 `OtherApp\settings.json` 全程逐字节未改动（`c875980a...`）。
+- **阶段 5（静默卸载）**：执行 `unins000.exe /VERYSILENT /NORESTART` 退出码 `0`，安装目录、开始菜单快捷方式及卸载注册表项全部清理归零（`remaining_uninstall_entries = 0`）。
