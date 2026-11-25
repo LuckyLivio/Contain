@@ -39,6 +39,19 @@ internal static class ConfigRestorePointChecks
         Run(passed, "config_rc1_owner_killed_releases_lock_and_window2_reconciles_cleanly_across_two_reopens", Rc1OwnerKilledTakeoverAndTwoReopens);
         Run(passed, "config_rc1_different_target_files_operate_independently_while_lock_held", Rc1DifferentTargetFilesIndependent);
         Run(passed, "config_rc1_completed_restore_by_another_live_pid_remains_undoable", Rc1CompletedRestoreByAnotherLivePidRemainsUndoable);
+        Run(passed, "config_v080_export_saved_backup_a_after_source_modified_to_c_and_deleted_excludes_source_paths", V080ExportSavedBackupAAfterSourceChangedAndDeleted);
+        Run(passed, "config_v080_import_onto_different_path_preview_cancel_restore_and_undo_to_b", V080ImportDifferentPathPreviewCancelRestoreUndo);
+        Run(passed, "config_v080_import_onto_missing_target_creates_a_and_undo_removes_file", V080ImportMissingTargetCreateAndUndoRemoves);
+        Run(passed, "config_v080_import_rejects_unknown_format_corrupt_length_mismatch_tamper_and_bad_name", V080ImportRejectsMalformedPackages);
+        Run(passed, "config_v080_import_mid_confirmation_external_edit_preserves_b2_and_refreshes_preview", V080ImportMidConfirmationExternalEdit);
+        Run(passed, "config_v080_import_reuses_v070_cross_process_lock_and_interruption_reconciliation", V080ImportReusesCrossProcessLockAndCrashReconciliation);
+        Run(passed, "config_v080_import_unrecognized_binary_payload_and_identical_target", V080ImportBinaryPayloadAndIdenticalTarget);
+        Run(passed, "config_v080b2_33mib_export_fails_before_touching_existing_or_new_target_and_old_package_still_restores", V080B2ThirtyThreeMiBExportPreservesExistingAndNewTarget);
+        Run(passed, "config_v080b2_exact_32mib_export_reimport_restore_and_undo_roundtrip", V080B2Exact32MiBExportReimportRoundtrip);
+        Run(passed, "config_v080b2_overwrite_existing_package_succeeds_and_receiver_restores_new_and_undoes_to_own_b", V080B2NormalOverwriteExistingPackageReceiverRestoresNew);
+        Run(passed, "config_v080b2_staged_temp_readback_failure_preserves_existing_and_cleans_temp", V080B2StagedTempReadbackFailurePreservesTargetAndCleansTemp);
+        Run(passed, "config_v080b2_locked_and_readonly_destination_preserves_existing_and_cleans_temp", V080B2LockedAndReadOnlyDestinationPreservesExistingAndCleansTemp);
+        Run(passed, "config_v080rc1_import_target_help_guidance_and_no_auto_guess_preserves_decoy_settings_json", V080Rc1ImportTargetHelpAndDecoySameNameIsolation);
         return Task.FromResult<IReadOnlyList<string>>(passed);
     }
 
@@ -1552,6 +1565,790 @@ internal static class ConfigRestorePointChecks
             "Window 2 cleanly undoes completed restore from Window 1");
     }
 
+    private static void V080ExportSavedBackupAAfterSourceChangedAndDeleted()
+    {
+        var (bytesA, _, bytesC, shaA, _, shaC) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var sourceStore = Path.Combine(dir.Path, "source-store");
+        var sourceDir = Path.Combine(dir.Path, "SecretSourceMachineFolder", "EditorProfile");
+        Directory.CreateDirectory(sourceDir);
+        var sourceCfg = Path.Combine(sourceDir, "settings.json");
+        File.WriteAllBytes(sourceCfg, bytesA);
+
+        var vm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(sourceStore));
+        vm.Refresh();
+        vm.SelectCandidateFile(sourceCfg);
+        vm.NoteInput = "旧电脑迁移基线";
+        vm.CreateRestorePoint();
+        var sourcePointId = vm.SelectedPoint!.PointId;
+
+        // Modify source disk file to C!
+        File.WriteAllBytes(sourceCfg, bytesC);
+        vm.RefreshSelectedComparison();
+        Assert(vm.ComparisonStatus == ConfigComparisonStatus.Changed && vm.CanBeginExportRestorePoint,
+            "Export must be enabled even when source file changed to C");
+
+        // Open export card and verify version identity & privacy reminder
+        vm.BeginExportRestorePoint();
+        Assert(vm.ShowExportPackageCard, "Export card visible");
+        Assert(vm.ExportPackagePrivacyNotice.Contains("令牌") && vm.ExportPackagePrivacyNotice.Contains("原始字节"),
+            "Privacy reminder mentions tokens and raw bytes");
+        Assert(vm.ExportPackageVersionSummary.Contains("备份版本"), "Export summary clarifies saved backup A");
+
+        // Refuse overwriting the source config file directly
+        var blockedRes = vm.ExportRestorePointPackage(sourceCfg);
+        Assert(blockedRes is { Succeeded: false }, "Export refuses overwriting source config directly");
+        Assert(Sha256Hex(File.ReadAllBytes(sourceCfg)) == shaC, "Source disk remains C after blocked export");
+
+        // Export package #1 while source disk is C
+        var pkg1Path = Path.Combine(dir.Path, "exports", "settings.json.contain-config-point");
+        vm.SelectExportPackagePath(pkg1Path);
+        Assert(vm.CanConfirmExportPackage, "Confirm export enabled once destination chosen");
+        var exp1 = vm.ConfirmExportRestorePoint();
+        Assert(exp1 is { Succeeded: true } && exp1.Sha256 == shaA && exp1.ByteLength == bytesA.LongLength,
+            "Exported package #1 must contain exact saved backup A");
+        Assert(Sha256Hex(File.ReadAllBytes(sourceCfg)) == shaC, "Source disk remains C");
+
+        // Inspect raw package JSON: MUST contain zero source directory paths, zero source point_id, zero undo records!
+        var rawPkgJson = File.ReadAllText(pkg1Path, Utf8NoBom);
+        Assert(!rawPkgJson.Contains("SecretSourceMachineFolder", StringComparison.OrdinalIgnoreCase), "Package must not leak source path");
+        Assert(!rawPkgJson.Contains("EditorProfile", StringComparison.OrdinalIgnoreCase), "Package must not leak source parent folder");
+        Assert(!rawPkgJson.Contains(sourcePointId, StringComparison.OrdinalIgnoreCase), "Package must not leak source point_id");
+        Assert(!rawPkgJson.Contains("undo_id", StringComparison.OrdinalIgnoreCase), "Package must not leak undo metadata");
+
+        // Delete source file completely -> MUST STILL export exact saved backup A!
+        File.Delete(sourceCfg);
+        vm.RefreshSelectedComparison();
+        Assert(vm.ComparisonStatus == ConfigComparisonStatus.Missing && vm.CanBeginExportRestorePoint,
+            "Export remains available even after source file is deleted");
+        var pkg2Path = Path.Combine(dir.Path, "exports", "after-delete.contain-config-point");
+        vm.BeginExportRestorePoint();
+        vm.SelectExportPackagePath(pkg2Path);
+        var exp2 = vm.ConfirmExportRestorePoint();
+        Assert(exp2 is { Succeeded: true } && exp2.Sha256 == shaA && !File.Exists(sourceCfg),
+            "Export after deletion still writes exact A without recreating source file");
+    }
+
+    private static void V080ImportDifferentPathPreviewCancelRestoreUndo()
+    {
+        var (bytesA, bytesB, bytesC, shaA, shaB, shaC) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var srcStore = Path.Combine(dir.Path, "src-store");
+        var dstStore = Path.Combine(dir.Path, "dst-store");
+        var srcCfg = Path.Combine(dir.Path, "old-pc", "settings.json");
+        var dstCfg = Path.Combine(dir.Path, "new-pc", "custom-name-config.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(srcCfg)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(dstCfg)!);
+        File.WriteAllBytes(srcCfg, bytesA);
+        File.WriteAllBytes(dstCfg, bytesB);
+
+        // Source PC: create point A, change disk to C, export package
+        var srcVm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(srcStore));
+        srcVm.Refresh();
+        srcVm.SelectCandidateFile(srcCfg);
+        srcVm.NoteInput = "旧电脑主题配置";
+        srcVm.CreateRestorePoint();
+        var srcPointId = srcVm.SelectedPoint!.PointId;
+        File.WriteAllBytes(srcCfg, bytesC);
+        var pkgPath = Path.Combine(dir.Path, "transfer", "migrated.contain-config-point");
+        var exp = srcVm.ExportRestorePointPackage(pkgPath);
+        Assert(exp is { Succeeded: true }, "Source exported package");
+
+        // Receiver PC: independent store, different target path & different filename!
+        var dstVm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(dstStore));
+        dstVm.Refresh();
+        Assert(dstVm.TotalCount == 0, "Receiver starts with 0 points");
+        dstVm.OpenImportWorkspace();
+        Assert(dstVm.ShowImportPanel && !dstVm.ShowCreateCard, "Import panel open and top create card hidden");
+
+        var dstMtimeBefore = File.GetLastWriteTimeUtc(dstCfg);
+        dstVm.OpenImportPackage(pkgPath);
+        Assert(dstVm.HasValidImportedPackage && dstVm.ImportedPackageDisplayFileName == "settings.json",
+            "Package validated with display filename settings.json");
+        Assert(File.ReadAllBytes(dstCfg).SequenceEqual(bytesB), "Opening package does not touch receiver target");
+
+        dstVm.SelectImportTargetPath(dstCfg);
+        Assert(dstVm.HasImportPreview && dstVm.IsImportReadyToOverwrite && dstVm.CanConfirmImportRestore,
+            "Preview ready to overwrite receiver target");
+        Assert(dstVm.ImportPreviewDirectionLabel == "本机当前 → 恢复后", "Import preview direction label");
+        Assert(dstVm.ImportPreviewTargetPath == Path.GetFullPath(dstCfg), "Import preview shows receiver full path");
+        Assert(dstVm.ImportDiffLines.Any(l => l.Kind == ConfigDiffLineKind.Removed && l.Text.Contains("\"theme\": \"dark\"")),
+            "Import preview removes receiver dark");
+        Assert(dstVm.ImportDiffLines.Any(l => l.Kind == ConfigDiffLineKind.Added && l.Text.Contains("\"theme\": \"light\"")),
+            "Import preview writes package light");
+
+        // Cancel MUST NOT write target, MUST NOT create local point or undo record!
+        dstVm.CancelImport();
+        Assert(!dstVm.ShowImportPanel && dstVm.TotalCount == 0 && !dstVm.CanUndoLastRestore, "Cancel leaves receiver clean");
+        Assert(Sha256Hex(File.ReadAllBytes(dstCfg)) == shaB && File.GetLastWriteTimeUtc(dstCfg) == dstMtimeBefore,
+            "Cancel leaves receiver file B untouched");
+
+        // Reopen and Confirm Restore
+        dstVm.OpenImportWorkspace();
+        dstVm.OpenImportPackage(pkgPath);
+        dstVm.SelectImportTargetPath(dstCfg);
+        var res = dstVm.ConfirmImportRestore();
+        Assert(res is { Outcome: ConfigRestoreOutcomeKind.Succeeded, ImportedPoint: not null, UndoSnapshot: not null },
+            "Import restore succeeded");
+        Assert(res!.ImportedPoint!.PointId != srcPointId, "Receiver creates brand-new local PointId");
+        Assert(res.ImportedPoint.TargetPath == Path.GetFullPath(dstCfg), "Receiver point binds strictly to receiver path");
+        Assert(Sha256Hex(File.ReadAllBytes(dstCfg)) == shaA && File.ReadAllBytes(dstCfg).SequenceEqual(bytesA),
+            "Receiver target now has exact raw bytes A (BOM + CRLF preserved)");
+        Assert(Sha256Hex(File.ReadAllBytes(srcCfg)) == shaC, "Source disk remains C");
+        Assert(!dstVm.ShowImportPanel && dstVm.TotalCount == 1 && dstVm.CanUndoLastRestore,
+            "Import panel closes, new local point selected, and undo bar ready");
+
+        // Undo preview & confirm -> restores receiver's exact B!
+        dstVm.BeginUndoPreview();
+        Assert(dstVm.IsPreviewingUndo && dstVm.CanConfirmUndo && dstVm.UndoPreviewTargetPath == Path.GetFullPath(dstCfg),
+            "Undo preview targets receiver path");
+        Assert(dstVm.UndoDiffLines.Any(l => l.Kind == ConfigDiffLineKind.Removed && l.Text.Contains("\"theme\": \"light\"")),
+            "Undo removes A (light)");
+        Assert(dstVm.UndoDiffLines.Any(l => l.Kind == ConfigDiffLineKind.Added && l.Text.Contains("\"theme\": \"dark\"")),
+            "Undo writes back B (dark)");
+        dstVm.ConfirmUndoRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(dstCfg)) == shaB && File.ReadAllBytes(dstCfg).SequenceEqual(bytesB),
+            "Undo restored receiver's original B byte-for-byte");
+        Assert(!dstVm.CanUndoLastRestore, "Undo consumed after restoring B");
+    }
+
+    private static void V080ImportMissingTargetCreateAndUndoRemoves()
+    {
+        var (bytesA, _, _, shaA, _, _) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var srcStore = Path.Combine(dir.Path, "src-store");
+        var dstStore = Path.Combine(dir.Path, "dst-store");
+        var srcCfg = Path.Combine(dir.Path, "src", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(srcCfg)!);
+        File.WriteAllBytes(srcCfg, bytesA);
+
+        var srcService = new LocalConfigRestorePointService(srcStore);
+        var pt = srcService.CreateRestorePoint(srcCfg, "新建目标测试");
+        var pkgPath = Path.Combine(dir.Path, "pkg.contain-config-point");
+        Assert(srcService.ExportRestorePointPackage(pt, pkgPath).Succeeded, "Exported package");
+
+        var missingTarget = Path.Combine(dir.Path, "receiver-new-dir", "nested", "new-settings.json");
+        Assert(!File.Exists(missingTarget), "Target starts missing");
+
+        var dstVm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(dstStore));
+        dstVm.Refresh();
+        dstVm.OpenImportWorkspace();
+        dstVm.OpenImportPackage(pkgPath);
+        dstVm.SelectImportTargetPath(missingTarget);
+
+        Assert(dstVm.HasImportPreview && dstVm.IsImportReadyToCreate && dstVm.CanConfirmImportRestore,
+            "Missing target preview ready to create");
+        Assert(dstVm.ImportPreviewTargetPath == Path.GetFullPath(missingTarget), "Full target path shown");
+        Assert(dstVm.ImportDiffFallbackNote.Contains(Path.GetFullPath(missingTarget), StringComparison.OrdinalIgnoreCase),
+            "Creation preview explicitly shows full path to be created");
+
+        // Cancel must NOT create file or directory
+        dstVm.CancelImport();
+        Assert(!File.Exists(missingTarget), "Cancel did not create missing target");
+
+        // Confirm creates missing target with exact A
+        dstVm.OpenImportWorkspace();
+        dstVm.OpenImportPackage(pkgPath);
+        dstVm.SelectImportTargetPath(missingTarget);
+        var res = dstVm.ConfirmImportRestore();
+        Assert(res is { Outcome: ConfigRestoreOutcomeKind.Succeeded }, "Missing target created");
+        Assert(File.Exists(missingTarget) && Sha256Hex(File.ReadAllBytes(missingTarget)) == shaA && File.ReadAllBytes(missingTarget).SequenceEqual(bytesA),
+            "Created file matches exact bytes A");
+
+        // Undo preview MUST forecast removing the newly created file, and Confirm removes it!
+        dstVm.BeginUndoPreview();
+        Assert(dstVm.IsPreviewingUndo && dstVm.IsUndoPreviewRemoveRecreated && dstVm.CanConfirmUndo,
+            "Undo preview forecasts removal of newly created file");
+        dstVm.ConfirmUndoRestore();
+        Assert(!File.Exists(missingTarget), "Undo removed the newly created file cleanly");
+    }
+
+    private static void V080ImportRejectsMalformedPackages()
+    {
+        var (bytesA, bytesB, _, _, shaB, _) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var srcStore = Path.Combine(dir.Path, "src");
+        var dstStore = Path.Combine(dir.Path, "dst");
+        var srcCfg = Path.Combine(dir.Path, "src-cfg", "settings.json");
+        var dstCfg = Path.Combine(dir.Path, "dst-cfg", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(srcCfg)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(dstCfg)!);
+        File.WriteAllBytes(srcCfg, bytesA);
+        File.WriteAllBytes(dstCfg, bytesB);
+
+        var srcSvc = new LocalConfigRestorePointService(srcStore);
+        var pt = srcSvc.CreateRestorePoint(srcCfg, "base");
+        var goodPkg = Path.Combine(dir.Path, "good.contain-config-point");
+        Assert(srcSvc.ExportRestorePointPackage(pt, goodPkg).Succeeded, "Good package created");
+        var goodJson = File.ReadAllText(goodPkg, Utf8NoBom);
+
+        var cases = new List<(string Name, string Content)>
+        {
+            ("empty.contain-config-point", ""),
+            ("unknown-plain.contain-config-point", "not json at all"),
+            ("unknown-format.contain-config-point", goodJson.Replace(ConfigPortablePackageConstants.FormatId, "other-tool-package")),
+            ("unsupported-version.contain-config-point", goodJson.Replace("\"schema_version\": 1", "\"schema_version\": 99")),
+            ("bad-base64.contain-config-point", System.Text.RegularExpressions.Regex.Replace(goodJson, "\"payload_base64\": \"[^\"]+\"", "\"payload_base64\": \"@@@not-base64@@@\"")),
+            ("length-mismatch.contain-config-point", System.Text.RegularExpressions.Regex.Replace(goodJson, "\"byte_length\": \\d+", $"\"byte_length\": {bytesA.LongLength + 17}")),
+            ("sha-tamper.contain-config-point", System.Text.RegularExpressions.Regex.Replace(goodJson, "\"sha256\": \"[0-9a-f]+\"", "\"sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\"")),
+            ("traversal-name.contain-config-point", goodJson.Replace("\"display_file_name\": \"settings.json\"", "\"display_file_name\": \"..\\\\evil.json\""))
+        };
+
+        var dstVm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(dstStore));
+        dstVm.Refresh();
+        dstVm.OpenImportWorkspace();
+
+        foreach (var (name, content) in cases)
+        {
+            var badPath = Path.Combine(dir.Path, name);
+            File.WriteAllText(badPath, content, Utf8NoBom);
+            dstVm.OpenImportPackage(badPath);
+            Assert(!dstVm.HasValidImportedPackage && dstVm.HasInvalidImportedPackage && !string.IsNullOrWhiteSpace(dstVm.ImportedPackageErrorMessage),
+                $"Expected invalid package rejected for {name}");
+            Assert(!dstVm.CanConfirmImportRestore, $"Confirm must be disabled for {name}");
+            Assert(Sha256Hex(File.ReadAllBytes(dstCfg)) == shaB, $"Target untouched after rejecting {name}");
+        }
+    }
+
+    private static void V080ImportMidConfirmationExternalEdit()
+    {
+        var (bytesA, bytesB, bytesB2, shaA, _, shaB2) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var srcStore = Path.Combine(dir.Path, "src");
+        var dstStore = Path.Combine(dir.Path, "dst");
+        var srcCfg = Path.Combine(dir.Path, "src-cfg", "settings.json");
+        var dstCfg = Path.Combine(dir.Path, "dst-cfg", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(srcCfg)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(dstCfg)!);
+        File.WriteAllBytes(srcCfg, bytesA);
+        File.WriteAllBytes(dstCfg, bytesB);
+
+        var srcSvc = new LocalConfigRestorePointService(srcStore);
+        var pt = srcSvc.CreateRestorePoint(srcCfg, "mid-edit-test");
+        var pkgPath = Path.Combine(dir.Path, "pkg.contain-config-point");
+        Assert(srcSvc.ExportRestorePointPackage(pt, pkgPath).Succeeded, "Exported package");
+
+        var dstVm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(dstStore));
+        dstVm.Refresh();
+        dstVm.OpenImportWorkspace();
+        dstVm.OpenImportPackage(pkgPath);
+        dstVm.SelectImportTargetPath(dstCfg);
+        Assert(dstVm.CanConfirmImportRestore, "Initial preview ready against B");
+
+        // External edit changes receiver file B -> B2 before user clicks Confirm!
+        File.WriteAllBytes(dstCfg, bytesB2);
+
+        var firstConfirm = dstVm.ConfirmImportRestore();
+        Assert(firstConfirm is { Outcome: ConfigRestoreOutcomeKind.RefreshedDueToExternalEdit },
+            $"Expected RefreshedDueToExternalEdit, got {firstConfirm?.Outcome}");
+        Assert(Sha256Hex(File.ReadAllBytes(dstCfg)) == shaB2, "Mid-confirm external edit B2 MUST be preserved");
+        Assert(dstVm.ShowImportPanel && dstVm.HasImportMidConfirmWarning && dstVm.CanConfirmImportRestore,
+            "Import panel stays open with refreshed diff and warning");
+        Assert(dstVm.ImportDiffLines.Any(l => l.Kind == ConfigDiffLineKind.Removed && l.Text.Contains("\"theme\": \"high-contrast\"")),
+            "Refreshed diff shows removing B2 (high-contrast)");
+
+        // Second confirm writes A, and Undo MUST restore B2 (not stale B)!
+        var secondConfirm = dstVm.ConfirmImportRestore();
+        Assert(secondConfirm is { Outcome: ConfigRestoreOutcomeKind.Succeeded }, "Second confirm writes A");
+        Assert(Sha256Hex(File.ReadAllBytes(dstCfg)) == shaA, "Receiver now has A");
+        dstVm.BeginUndoPreview();
+        dstVm.ConfirmUndoRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(dstCfg)) == shaB2 && File.ReadAllBytes(dstCfg).SequenceEqual(bytesB2),
+            "Undo restores exact refreshed pre-restore version B2");
+    }
+
+    private static void V080ImportReusesCrossProcessLockAndCrashReconciliation()
+    {
+        var (bytesA, bytesB, _, shaA, shaB, _) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var srcStore = Path.Combine(dir.Path, "src");
+        var dstStore = Path.Combine(dir.Path, "dst");
+        var srcCfg = Path.Combine(dir.Path, "src-cfg", "settings.json");
+        var dstCfg = Path.Combine(dir.Path, "dst-cfg", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(srcCfg)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(dstCfg)!);
+        File.WriteAllBytes(srcCfg, bytesA);
+        File.WriteAllBytes(dstCfg, bytesB);
+
+        var srcSvc = new LocalConfigRestorePointService(srcStore);
+        var pt = srcSvc.CreateRestorePoint(srcCfg, "crash-lock-test");
+        var pkgPath = Path.Combine(dir.Path, "pkg.contain-config-point");
+        Assert(srcSvc.ExportRestorePointPackage(pt, pkgPath).Succeeded, "Exported package");
+
+        using var paused = new ManualResetEventSlim(false);
+        using var killNow = new ManualResetEventSlim(false);
+        var hooks1 = new DelegateHooks
+        {
+            OnAfterTargetReplacedBeforeVerify = (_, _) =>
+            {
+                paused.Set();
+                killNow.Wait(TimeSpan.FromSeconds(15));
+                throw new OperationCanceledException("Simulated abnormal exit during imported restore");
+            }
+        };
+
+        var vm1 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(dstStore, hooks1));
+        vm1.Refresh();
+        vm1.OpenImportWorkspace();
+        vm1.OpenImportPackage(pkgPath);
+        vm1.SelectImportTargetPath(dstCfg);
+
+        var w1Task = Task.Run(() => { try { vm1.ConfirmImportRestore(); } catch (OperationCanceledException) { } });
+        Assert(paused.Wait(TimeSpan.FromSeconds(10)), "Window 1 paused inside imported restore while holding OS lock");
+
+        // While Window 1 holds lock, Window 2 sees TargetBusyInAnotherWindow on import preview & ActiveInAnotherWindow on startup reconcile!
+        var vm2 = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(dstStore));
+        vm2.CheckInterruptedOperationOnStartup();
+        vm2.Refresh();
+        Assert(vm2.RecoveryStatus == ConfigRecoveryStatus.ActiveInAnotherWindow,
+            $"Window 2 should see ActiveInAnotherWindow while Window 1 holds import lock, got {vm2.RecoveryStatus}");
+        vm2.OpenImportWorkspace();
+        vm2.OpenImportPackage(pkgPath);
+        vm2.SelectImportTargetPath(dstCfg);
+        Assert(vm2.ImportPreview?.Status == ConfigImportTargetStatus.TargetBusyInAnotherWindow && !vm2.CanConfirmImportRestore,
+            "Window 2 import preview blocked while Window 1 holds lock");
+
+        // Terminate Window 1 -> lock releases -> Window 2 reconciles and can undo back to exact B!
+        killNow.Set();
+        Assert(w1Task.Wait(TimeSpan.FromSeconds(15)), "Window 1 exited");
+        Assert(Sha256Hex(File.ReadAllBytes(dstCfg)) == shaA, "Disk has A written before crash");
+
+        vm2.CancelImport();
+        vm2.RecheckRecovery();
+        Assert(vm2.RecoveryStatus == ConfigRecoveryStatus.RestoreAppliedNeedsReview && vm2.CanUndoFromRecovery,
+            $"Post-crash reconciliation detects RestoreAppliedNeedsReview, got {vm2.RecoveryStatus}");
+        vm2.BeginUndoPreviewFromRecovery();
+        vm2.ConfirmUndoRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(dstCfg)) == shaB && File.ReadAllBytes(dstCfg).SequenceEqual(bytesB),
+            "Post-crash undo restores receiver's exact B");
+    }
+
+    private static void V080ImportBinaryPayloadAndIdenticalTarget()
+    {
+        using var dir = new TempDir();
+        var srcStore = Path.Combine(dir.Path, "src");
+        var dstStore = Path.Combine(dir.Path, "dst");
+        var srcCfg = Path.Combine(dir.Path, "src-cfg", "custom.dat");
+        var dstCfg = Path.Combine(dir.Path, "dst-cfg", "custom.dat");
+        Directory.CreateDirectory(Path.GetDirectoryName(srcCfg)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(dstCfg)!);
+
+        byte[] binA = [0x00, 0xFF, 0xFE, 0x89, 0x50, 0x4E, 0x47, 0x01, 0x02, 0x03];
+        byte[] binB = [0x00, 0xAA, 0xBB, 0xCC, 0xDD, 0x10, 0x20];
+        var shaA = Sha256Hex(binA);
+        var shaB = Sha256Hex(binB);
+        File.WriteAllBytes(srcCfg, binA);
+        File.WriteAllBytes(dstCfg, binB);
+
+        var srcSvc = new LocalConfigRestorePointService(srcStore);
+        var pt = srcSvc.CreateRestorePoint(srcCfg, "binary");
+        var pkgPath = Path.Combine(dir.Path, "bin.contain-config-point");
+        Assert(srcSvc.ExportRestorePointPackage(pt, pkgPath).Succeeded, "Exported binary package");
+
+        var dstVm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(dstStore));
+        dstVm.Refresh();
+        dstVm.OpenImportWorkspace();
+        dstVm.OpenImportPackage(pkgPath);
+        dstVm.SelectImportTargetPath(dstCfg);
+        Assert(!dstVm.HasImportTextDiff && dstVm.ShowImportDiffFallback && dstVm.CanConfirmImportRestore,
+            "Binary import falls back to size/hash summary without text diff");
+        var res = dstVm.ConfirmImportRestore();
+        Assert(res is { Outcome: ConfigRestoreOutcomeKind.Succeeded }, "Binary import restore succeeded");
+        Assert(Sha256Hex(File.ReadAllBytes(dstCfg)) == shaA && File.ReadAllBytes(dstCfg).SequenceEqual(binA),
+            "Binary target matches exact A bytes");
+
+        // Re-preview same package against already-identical target -> IdenticalToTarget, Confirm disabled!
+        dstVm.OpenImportWorkspace();
+        dstVm.OpenImportPackage(pkgPath);
+        dstVm.SelectImportTargetPath(dstCfg);
+        Assert(dstVm.IsImportIdentical && !dstVm.CanConfirmImportRestore,
+            "Identical target disables overwrite");
+        dstVm.CancelImport();
+
+        // Undo restores exact binary B
+        dstVm.BeginUndoPreview();
+        dstVm.ConfirmUndoRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(dstCfg)) == shaB && File.ReadAllBytes(dstCfg).SequenceEqual(binB),
+            "Undo restores exact binary B");
+    }
+
+    private static void V080B2ThirtyThreeMiBExportPreservesExistingAndNewTarget()
+    {
+        var (bytesA, bytesB, _, shaA, shaB, _) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var srcStore = Path.Combine(dir.Path, "src-store");
+        var dstStore = Path.Combine(dir.Path, "dst-store");
+        var smallCfg = Path.Combine(dir.Path, "src", "settings.json");
+        var largeCfg = Path.Combine(dir.Path, "src", "large-33mib.cfg");
+        var dstCfg = Path.Combine(dir.Path, "dst", "settings.json");
+        var exportDir = Path.Combine(dir.Path, "exports");
+        Directory.CreateDirectory(Path.GetDirectoryName(smallCfg)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(dstCfg)!);
+        Directory.CreateDirectory(exportDir);
+
+        File.WriteAllBytes(smallCfg, bytesA);
+        File.WriteAllBytes(dstCfg, bytesB);
+
+        var bytes33MiB = CreateSyntheticBytes(33 * 1024 * 1024, "beta2-33mib-");
+        File.WriteAllBytes(largeCfg, bytes33MiB);
+
+        var srcVm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(srcStore));
+        srcVm.Refresh();
+
+        // 1. Export valid small package first
+        srcVm.SelectCandidateFile(smallCfg);
+        srcVm.NoteInput = "原合法小包";
+        srcVm.CreateRestorePoint();
+        var existingPkg = Path.Combine(exportDir, "existing-valid.contain-config-point");
+        var smallExp = srcVm.ExportRestorePointPackage(existingPkg);
+        Assert(smallExp is { Succeeded: true }, "Small package exported");
+        var oldPkgBytes = File.ReadAllBytes(existingPkg);
+        var oldPkgSha = Sha256Hex(oldPkgBytes);
+
+        // 2. Create 33 MiB local restore point (within 64 MiB local cap!)
+        srcVm.SelectCandidateFile(largeCfg);
+        srcVm.NoteInput = "33MiB大配置";
+        srcVm.CreateRestorePoint();
+        Assert(srcVm.SelectedPoint!.ByteLength == 33L * 1024 * 1024, "33 MiB local restore point created cleanly");
+
+        // 3a. Attempt exporting 33 MiB point over existing-valid package
+        srcVm.BeginExportRestorePoint();
+        Assert(srcVm.ExportPackageVersionSummary.Contains("这份还原点仍可在本机恢复，超过 32 MiB 的配置暂不支持迁移"),
+            "Export card surfaces 32 MiB migration guidance");
+        srcVm.SelectExportPackagePath(existingPkg);
+        var failOverwrite = srcVm.ConfirmExportRestorePoint();
+        Assert(failOverwrite is { Succeeded: false }, "33 MiB export over existing package must fail");
+        Assert(failOverwrite!.Detail.Contains("这份还原点仍可在本机恢复，超过 32 MiB 的配置暂不支持迁移"),
+            $"Expected clear 32 MiB guidance, got: {failOverwrite.Detail}");
+        Assert(Sha256Hex(File.ReadAllBytes(existingPkg)) == oldPkgSha && File.ReadAllBytes(existingPkg).SequenceEqual(oldPkgBytes),
+            "Old valid package bytes & SHA-256 MUST be preserved verbatim");
+        Assert(Directory.GetFiles(exportDir, "*.tmp").Length == 0, "No temp files left after 33 MiB overwrite rejection");
+
+        // 3b. Attempt exporting 33 MiB point to brand-new filename
+        var brandNewPkg = Path.Combine(exportDir, "brand-new-33mib.contain-config-point");
+        var failNew = srcVm.ExportRestorePointPackage(brandNewPkg);
+        Assert(failNew is { Succeeded: false }, "33 MiB export to brand-new file must fail");
+        Assert(failNew!.Detail.Contains("这份还原点仍可在本机恢复，超过 32 MiB 的配置暂不支持迁移"), "Expected 32 MiB guidance on new file");
+        Assert(!File.Exists(brandNewPkg), "Brand-new file must NOT exist after failed 33 MiB export");
+        Assert(Directory.GetFiles(exportDir, "*.tmp").Length == 0, "No temp files left after brand-new rejection");
+
+        // 3c. Verify old valid package STILL imports and restores A on receiver, and undoes back to B!
+        var dstVm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(dstStore));
+        dstVm.Refresh();
+        dstVm.OpenImportWorkspace();
+        dstVm.OpenImportPackage(existingPkg);
+        Assert(dstVm.HasValidImportedPackage, "Old package MUST still pass formal import validation");
+        dstVm.SelectImportTargetPath(dstCfg);
+        var restoreRes = dstVm.ConfirmImportRestore();
+        Assert(restoreRes is { Outcome: ConfigRestoreOutcomeKind.Succeeded }, "Old package actually restores A");
+        Assert(Sha256Hex(File.ReadAllBytes(dstCfg)) == shaA, "Receiver matches exact A after restoring preserved old package");
+        dstVm.BeginUndoPreview();
+        dstVm.ConfirmUndoRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(dstCfg)) == shaB, "Receiver undoes cleanly back to B");
+    }
+
+    private static void V080B2Exact32MiBExportReimportRoundtrip()
+    {
+        var (_, bytesB, _, _, shaB, _) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var srcStore = Path.Combine(dir.Path, "src-store");
+        var dstStore = Path.Combine(dir.Path, "dst-store");
+        var exact32Cfg = Path.Combine(dir.Path, "src", "exact-32mib.cfg");
+        var dstCfg = Path.Combine(dir.Path, "dst", "exact-32mib.cfg");
+        var exportDir = Path.Combine(dir.Path, "exports");
+        Directory.CreateDirectory(Path.GetDirectoryName(exact32Cfg)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(dstCfg)!);
+        Directory.CreateDirectory(exportDir);
+
+        const int exact32MiB = 32 * 1024 * 1024;
+        var bytes32 = CreateSyntheticBytes(exact32MiB, "beta2-exact-32mib-");
+        var sha32 = Sha256Hex(bytes32);
+        File.WriteAllBytes(exact32Cfg, bytes32);
+        File.WriteAllBytes(dstCfg, bytesB);
+
+        var srcVm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(srcStore));
+        srcVm.Refresh();
+        srcVm.SelectCandidateFile(exact32Cfg);
+        srcVm.NoteInput = "恰好32MiB边界";
+        srcVm.CreateRestorePoint();
+
+        var pkg32 = Path.Combine(exportDir, "exact-32mib.contain-config-point");
+        var exp = srcVm.ExportRestorePointPackage(pkg32);
+        Assert(exp is { Succeeded: true } && exp.ByteLength == exact32MiB && exp.Sha256 == sha32,
+            $"Exact 32 MiB export must succeed, got: {exp?.Headline} / {exp?.Detail}");
+        var pkgFileLen = new FileInfo(pkg32).Length;
+        Assert(pkgFileLen <= ConfigPortablePackageConstants.MaxPackageFileBytes,
+            $"Serialized 32 MiB package ({pkgFileLen} B) must fit within 48 MiB package limit");
+        Assert(Directory.GetFiles(exportDir, "*.tmp").Length == 0, "No temp files left after 32 MiB export");
+
+        // Re-import into independent receiver store -> restore exact 32 MiB -> undo back to B!
+        var dstVm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(dstStore));
+        dstVm.Refresh();
+        dstVm.OpenImportWorkspace();
+        dstVm.OpenImportPackage(pkg32);
+        Assert(dstVm.HasValidImportedPackage && dstVm.ImportedPackage!.ByteLength == exact32MiB && dstVm.ImportedPackage.Sha256 == sha32,
+            "Exact 32 MiB package re-imports cleanly");
+        dstVm.SelectImportTargetPath(dstCfg);
+        var restoreRes = dstVm.ConfirmImportRestore();
+        Assert(restoreRes is { Outcome: ConfigRestoreOutcomeKind.Succeeded }, "Exact 32 MiB restore succeeded");
+        Assert(new FileInfo(dstCfg).Length == exact32MiB && Sha256Hex(File.ReadAllBytes(dstCfg)) == sha32,
+            "Restored 32 MiB file matches exact bytes & SHA-256");
+
+        dstVm.BeginUndoPreview();
+        dstVm.ConfirmUndoRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(dstCfg)) == shaB && File.ReadAllBytes(dstCfg).SequenceEqual(bytesB),
+            "Undo after 32 MiB restore returns exact receiver B");
+    }
+
+    private static void V080B2NormalOverwriteExistingPackageReceiverRestoresNew()
+    {
+        var (bytesV1, bytesReceiverB, bytesV2, _, shaReceiverB, shaV2) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var srcStore = Path.Combine(dir.Path, "src-store");
+        var dstStore = Path.Combine(dir.Path, "dst-store");
+        var srcCfg = Path.Combine(dir.Path, "src", "settings.json");
+        var dstCfg = Path.Combine(dir.Path, "dst", "settings.json");
+        var exportDir = Path.Combine(dir.Path, "exports");
+        Directory.CreateDirectory(Path.GetDirectoryName(srcCfg)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(dstCfg)!);
+        Directory.CreateDirectory(exportDir);
+
+        File.WriteAllBytes(srcCfg, bytesV1);
+        File.WriteAllBytes(dstCfg, bytesReceiverB);
+
+        var srcVm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(srcStore));
+        srcVm.Refresh();
+        srcVm.SelectCandidateFile(srcCfg);
+        srcVm.NoteInput = "旧包V1";
+        srcVm.CreateRestorePoint();
+        var sharedPkg = Path.Combine(exportDir, "shared.contain-config-point");
+        var exp1 = srcVm.ExportRestorePointPackage(sharedPkg);
+        Assert(exp1 is { Succeeded: true }, "Initial V1 package exported");
+        var pkg1Sha = Sha256Hex(File.ReadAllBytes(sharedPkg));
+
+        // Create newer V2 restore point and overwrite the SAME package file!
+        File.WriteAllBytes(srcCfg, bytesV2);
+        srcVm.SelectCandidateFile(srcCfg);
+        srcVm.NoteInput = "新包V2";
+        srcVm.CreateRestorePoint();
+        var exp2 = srcVm.ExportRestorePointPackage(sharedPkg);
+        Assert(exp2 is { Succeeded: true } && exp2.Sha256 == shaV2, "Overwrite with V2 package succeeded");
+        var pkg2Sha = Sha256Hex(File.ReadAllBytes(sharedPkg));
+        Assert(pkg2Sha != pkg1Sha, "Overwritten package hash updated");
+        Assert(Directory.GetFiles(exportDir, "*.tmp").Length == 0, "No temp files left after normal overwrite");
+
+        // Receiver imports overwritten package -> restores NEW V2 -> Undo returns receiver's own B!
+        var dstVm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(dstStore));
+        dstVm.Refresh();
+        dstVm.OpenImportWorkspace();
+        dstVm.OpenImportPackage(sharedPkg);
+        Assert(dstVm.HasValidImportedPackage && dstVm.ImportedPackage!.Sha256 == shaV2, "Receiver loads NEW V2 package");
+        dstVm.SelectImportTargetPath(dstCfg);
+        var restoreRes = dstVm.ConfirmImportRestore();
+        Assert(restoreRes is { Outcome: ConfigRestoreOutcomeKind.Succeeded }, "Receiver restored NEW V2");
+        Assert(Sha256Hex(File.ReadAllBytes(dstCfg)) == shaV2 && File.ReadAllBytes(dstCfg).SequenceEqual(bytesV2),
+            "Receiver disk matches exact NEW V2");
+
+        dstVm.BeginUndoPreview();
+        dstVm.ConfirmUndoRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(dstCfg)) == shaReceiverB && File.ReadAllBytes(dstCfg).SequenceEqual(bytesReceiverB),
+            "Receiver undo returns its own original B");
+    }
+
+    private static void V080B2StagedTempReadbackFailurePreservesTargetAndCleansTemp()
+    {
+        var (bytesV1, bytesReceiverB, bytesV2, shaV1, shaReceiverB, _) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var srcStore = Path.Combine(dir.Path, "src-store");
+        var dstStore = Path.Combine(dir.Path, "dst-store");
+        var srcCfg = Path.Combine(dir.Path, "src", "settings.json");
+        var dstCfg = Path.Combine(dir.Path, "dst", "settings.json");
+        var exportDir = Path.Combine(dir.Path, "exports");
+        Directory.CreateDirectory(Path.GetDirectoryName(srcCfg)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(dstCfg)!);
+        Directory.CreateDirectory(exportDir);
+
+        File.WriteAllBytes(srcCfg, bytesV1);
+        File.WriteAllBytes(dstCfg, bytesReceiverB);
+
+        // First export valid old package V1 using normal service
+        var cleanSvc = new LocalConfigRestorePointService(srcStore);
+        var ptV1 = cleanSvc.CreateRestorePoint(srcCfg, "V1");
+        var existingPkg = Path.Combine(exportDir, "existing.contain-config-point");
+        Assert(cleanSvc.ExportRestorePointPackage(ptV1, existingPkg).Succeeded, "Exported valid V1 package");
+        var oldPkgBytes = File.ReadAllBytes(existingPkg);
+        var oldPkgSha = Sha256Hex(oldPkgBytes);
+
+        // Create V2 point, then corrupt the staged temp file right before formal importer readback!
+        File.WriteAllBytes(srcCfg, bytesV2);
+        var ptV2 = cleanSvc.CreateRestorePoint(srcCfg, "V2");
+
+        var observedTemps = new List<string>();
+        var corruptHooks = new DelegateHooks
+        {
+            OnBeforeVerifyStagedExportPackage = (tempPath, _) =>
+            {
+                observedTemps.Add(tempPath);
+                Assert(File.Exists(tempPath), "Staged temp file exists prior to verification");
+                // Corrupt staged temp file (truncate JSON) to force formal InspectPortablePackage failure!
+                File.WriteAllText(tempPath, "{\"format\":\"contain-config-restore-point-package\",\"payload_base64\":", Utf8NoBom);
+            }
+        };
+        var hookedSvc = new LocalConfigRestorePointService(srcStore, corruptHooks);
+
+        // Case A: Overwriting existing valid package -> old package preserved byte-for-byte & temp deleted!
+        var failExisting = hookedSvc.ExportRestorePointPackage(ptV2, existingPkg);
+        Assert(!failExisting.Succeeded, "Export must fail when staged temp readback fails");
+        Assert(Sha256Hex(File.ReadAllBytes(existingPkg)) == oldPkgSha && File.ReadAllBytes(existingPkg).SequenceEqual(oldPkgBytes),
+            "Existing valid package MUST remain byte-for-byte untouched on staged readback failure");
+        Assert(observedTemps.Count == 1 && !File.Exists(observedTemps[0]), "Staged temp file MUST be deleted on failure");
+        Assert(Directory.GetFiles(exportDir, "*.tmp").Length == 0, "Zero leftover .tmp files in export directory");
+
+        // Verify preserved existing package still imports & restores V1!
+        var dstVm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(dstStore));
+        dstVm.Refresh();
+        dstVm.OpenImportWorkspace();
+        dstVm.OpenImportPackage(existingPkg);
+        dstVm.SelectImportTargetPath(dstCfg);
+        Assert(dstVm.ConfirmImportRestore() is { Outcome: ConfigRestoreOutcomeKind.Succeeded }, "Preserved old package restores V1");
+        Assert(Sha256Hex(File.ReadAllBytes(dstCfg)) == shaV1, "Receiver matches exact V1");
+        dstVm.BeginUndoPreview();
+        dstVm.ConfirmUndoRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(dstCfg)) == shaReceiverB, "Receiver undone back to B");
+
+        // Case B: Brand-new destination -> brand-new file stays absent & temp deleted!
+        var brandNewPkg = Path.Combine(exportDir, "new-corrupt-stage.contain-config-point");
+        var failNew = hookedSvc.ExportRestorePointPackage(ptV2, brandNewPkg);
+        Assert(!failNew.Succeeded, "Brand-new export must fail when staged temp readback fails");
+        Assert(!File.Exists(brandNewPkg), "Brand-new destination must NOT exist on staged readback failure");
+        Assert(observedTemps.Count == 2 && !File.Exists(observedTemps[1]), "Second staged temp file MUST be deleted");
+        Assert(Directory.GetFiles(exportDir, "*.tmp").Length == 0, "Zero leftover .tmp files");
+    }
+
+    private static void V080B2LockedAndReadOnlyDestinationPreservesExistingAndCleansTemp()
+    {
+        var (bytesV1, _, bytesV2, shaV1, _, _) = CreateLightDarkHighContrastFixtures();
+        using var dir = new TempDir();
+        var srcStore = Path.Combine(dir.Path, "src-store");
+        var srcCfg = Path.Combine(dir.Path, "src", "settings.json");
+        var exportDir = Path.Combine(dir.Path, "exports");
+        Directory.CreateDirectory(Path.GetDirectoryName(srcCfg)!);
+        Directory.CreateDirectory(exportDir);
+
+        File.WriteAllBytes(srcCfg, bytesV1);
+        var svc = new LocalConfigRestorePointService(srcStore);
+        var ptV1 = svc.CreateRestorePoint(srcCfg, "V1");
+        var existingPkg = Path.Combine(exportDir, "locked-target.contain-config-point");
+        Assert(svc.ExportRestorePointPackage(ptV1, existingPkg).Succeeded, "Exported V1 package");
+        var oldBytes = File.ReadAllBytes(existingPkg);
+        var oldSha = Sha256Hex(oldBytes);
+
+        File.WriteAllBytes(srcCfg, bytesV2);
+        var ptV2 = svc.CreateRestorePoint(srcCfg, "V2");
+
+        // Case 1: Target file is exclusively locked (occupied by another process/handle)
+        using (var exclusiveLock = new FileStream(existingPkg, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            var lockedRes = svc.ExportRestorePointPackage(ptV2, existingPkg);
+            Assert(!lockedRes.Succeeded, "Export over locked destination must fail");
+            Assert(Directory.GetFiles(exportDir, "*.tmp").Length == 0, "Temp file cleaned up when destination is locked");
+        }
+        Assert(Sha256Hex(File.ReadAllBytes(existingPkg)) == oldSha && File.ReadAllBytes(existingPkg).SequenceEqual(oldBytes),
+            "Locked destination preserved byte-for-byte");
+        var inspectedAfterLock = svc.InspectPortablePackage(existingPkg);
+        Assert(inspectedAfterLock.IsValid && inspectedAfterLock.Sha256 == shaV1, "Locked destination remains valid V1 package");
+
+        // Case 2: Target file is ReadOnly
+        File.SetAttributes(existingPkg, File.GetAttributes(existingPkg) | FileAttributes.ReadOnly);
+        try
+        {
+            var roRes = svc.ExportRestorePointPackage(ptV2, existingPkg);
+            Assert(!roRes.Succeeded, "Export over ReadOnly destination must fail");
+            Assert(Directory.GetFiles(exportDir, "*.tmp").Length == 0, "Temp file cleaned up when destination is ReadOnly");
+        }
+        finally
+        {
+            File.SetAttributes(existingPkg, File.GetAttributes(existingPkg) & ~FileAttributes.ReadOnly);
+        }
+        Assert(Sha256Hex(File.ReadAllBytes(existingPkg)) == oldSha && File.ReadAllBytes(existingPkg).SequenceEqual(oldBytes),
+            "ReadOnly destination preserved byte-for-byte");
+    }
+
+    private static void V080Rc1ImportTargetHelpAndDecoySameNameIsolation()
+    {
+        var bytesOn = EncodeUtf8Bom("{\r\n  \"editor.lineNumbers\": \"on\"\r\n}\r\n");
+        var bytesOff = EncodeUtf8Bom("{\r\n  \"editor.lineNumbers\": \"off\"\r\n}\r\n");
+        var bytesDecoy = EncodeUtf8Bom("{\r\n  \"otherApp\": true,\r\n  \"editor.lineNumbers\": \"decoy\"\r\n}\r\n");
+        var shaOn = Sha256Hex(bytesOn);
+        var shaOff = Sha256Hex(bytesOff);
+        var shaDecoy = Sha256Hex(bytesDecoy);
+
+        using var dir = new TempDir();
+        var srcStore = Path.Combine(dir.Path, "src-store");
+        var dstStore = Path.Combine(dir.Path, "dst-store");
+        var srcCfg = Path.Combine(dir.Path, "src", "settings.json");
+        var dstReal = Path.Combine(dir.Path, "Code", "User", "settings.json");
+        var dstDecoy = Path.Combine(dir.Path, "OtherApp", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(srcCfg)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(dstReal)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(dstDecoy)!);
+        File.WriteAllBytes(srcCfg, bytesOn);
+        File.WriteAllBytes(dstReal, bytesOff);
+        File.WriteAllBytes(dstDecoy, bytesDecoy);
+
+        var srcSvc = new LocalConfigRestorePointService(srcStore);
+        var pt = srcSvc.CreateRestorePoint(srcCfg, "VSCode线号on");
+        var pkgPath = Path.Combine(dir.Path, "vscode.contain-config-point");
+        Assert(srcSvc.ExportRestorePointPackage(pt, pkgPath).Succeeded, "Exported VS Code package");
+
+        var dstVm = new ConfigRestorePointsViewModel(new LocalConfigRestorePointService(dstStore));
+        dstVm.Refresh();
+        dstVm.OpenImportWorkspace();
+        Assert(!dstVm.ShowImportTargetHelp, "Target help hidden before package validated");
+
+        dstVm.OpenImportPackage(pkgPath);
+        Assert(dstVm.HasValidImportedPackage, "Valid package loaded");
+        Assert(string.IsNullOrEmpty(dstVm.ImportTargetPathInput), "Must NEVER auto-fill or guess target path for settings.json");
+        Assert(dstVm.ShowImportTargetHelp, "Lightweight target help auto-surfaces before target is chosen");
+        Assert(dstVm.ImportTargetHelpDetail.Contains("Preferences: Open User Settings (JSON)") &&
+               dstVm.ImportTargetHelpDetail.Contains("不") &&
+               dstVm.ImportTargetHelpDetail.Contains("settings.json"),
+            "Help includes VS Code Command Palette example and non-auto-guess guarantee");
+
+        // Selecting explicit target auto-collapses help so preview & diff stay above the fold
+        dstVm.SelectImportTargetPath(dstReal);
+        Assert(dstVm.HasImportPreview && !dstVm.ShowImportTargetHelp, "Selecting target auto-collapses help");
+        dstVm.ToggleImportTargetHelp();
+        Assert(dstVm.ShowImportTargetHelp, "User can re-expand help on demand");
+        dstVm.ToggleImportTargetHelp();
+        Assert(!dstVm.ShowImportTargetHelp, "User can collapse help again");
+
+        // Restore real target -> decoy same-name settings.json MUST stay byte-identical; Undo returns real target to off!
+        var res = dstVm.ConfirmImportRestore();
+        Assert(res is { Outcome: ConfigRestoreOutcomeKind.Succeeded }, "Restore succeeded on chosen target");
+        Assert(Sha256Hex(File.ReadAllBytes(dstReal)) == shaOn, "Chosen target updated to on");
+        Assert(Sha256Hex(File.ReadAllBytes(dstDecoy)) == shaDecoy, "Decoy same-name settings.json untouched after restore");
+
+        dstVm.BeginUndoPreview();
+        dstVm.ConfirmUndoRestore();
+        Assert(Sha256Hex(File.ReadAllBytes(dstReal)) == shaOff, "Chosen target undone back to off");
+        Assert(Sha256Hex(File.ReadAllBytes(dstDecoy)) == shaDecoy, "Decoy same-name settings.json untouched after undo");
+    }
+
+    private static byte[] CreateSyntheticBytes(int totalBytes, string prefix)
+    {
+        var buffer = new byte[totalBytes];
+        var pattern = Encoding.ASCII.GetBytes(prefix + "0123456789abcdef\r\n");
+        var offset = 0;
+        while (offset < totalBytes)
+        {
+            var count = Math.Min(pattern.Length, totalBytes - offset);
+            Buffer.BlockCopy(pattern, 0, buffer, offset, count);
+            offset += count;
+        }
+        return buffer;
+    }
+
     private sealed class DelegateHooks : IConfigRestoreOperationHooks
     {
         public Action<string, string>? OnAfterRestorePrepared { get; init; }
@@ -1560,6 +2357,8 @@ internal static class ConfigRestorePointChecks
         public Action<string, string>? OnBeforePostRestoreRefresh { get; init; }
         public Action<string, string>? OnAfterUndoPrepared { get; init; }
         public Action<string, string>? OnAfterUndoTargetUpdatedBeforeMarkCompleted { get; init; }
+        public Action<string, string>? OnBeforeVerifyStagedExportPackage { get; init; }
+        public Action<string, string>? OnBeforeReplaceExportDestination { get; init; }
 
         public void AfterRestorePrepared(string undoId, string targetPath) => OnAfterRestorePrepared?.Invoke(undoId, targetPath);
         public void AfterTargetReplacedBeforeVerify(string undoId, string targetPath) => OnAfterTargetReplacedBeforeVerify?.Invoke(undoId, targetPath);
@@ -1567,6 +2366,8 @@ internal static class ConfigRestorePointChecks
         public void BeforePostRestoreRefresh(string undoId, string targetPath) => OnBeforePostRestoreRefresh?.Invoke(undoId, targetPath);
         public void AfterUndoPrepared(string undoId, string targetPath) => OnAfterUndoPrepared?.Invoke(undoId, targetPath);
         public void AfterUndoTargetUpdatedBeforeMarkCompleted(string undoId, string targetPath) => OnAfterUndoTargetUpdatedBeforeMarkCompleted?.Invoke(undoId, targetPath);
+        public void BeforeVerifyStagedExportPackage(string tempPackagePath, string destinationPath) => OnBeforeVerifyStagedExportPackage?.Invoke(tempPackagePath, destinationPath);
+        public void BeforeReplaceExportDestination(string tempPackagePath, string destinationPath) => OnBeforeReplaceExportDestination?.Invoke(tempPackagePath, destinationPath);
     }
 
     private static byte[] EncodeUtf8Bom(string text)

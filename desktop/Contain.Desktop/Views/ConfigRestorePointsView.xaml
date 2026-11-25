@@ -12,16 +12,24 @@
 
         <!-- Compact Page Header -->
         <DockPanel Margin="0,0,0,8">
+            <ui:Button DockPanel.Dock="Right" Content="导入还原点…" Appearance="Secondary" Padding="11,5.5" Margin="10,0,0,0" FontSize="12.5"
+                       Click="OnOpenImportWorkspace" IsEnabled="{Binding ConfigRestorePoints.CanOpenImportWorkspace}"
+                       ToolTip="打开从另一台电脑导出的 .contain-config-point 配置还原点迁移包，选择本机目标后预览差异再恢复。"
+                       AutomationProperties.AutomationId="ImportRestorePointButton">
+                <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowDownload24" /></ui:Button.Icon>
+            </ui:Button>
             <TextBlock DockPanel.Dock="Left" Text="配置还原点" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"
                        AutomationProperties.AutomationId="ConfigRestorePointsPageTitle" />
-            <TextBlock Text="单配置文件原始字节备份、逐行对比、恢复与撤销预览（无需管理员权限或 Windows 沙盒）"
+            <TextBlock Text="单配置文件原始字节备份、逐行对比、跨电脑迁移、恢复与撤销预览（无需管理员权限或 Windows 沙盒）"
                        Style="{StaticResource MutedText}" FontSize="12.5" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
-                       ToolTip="为单个本地配置文件保留原始字节备份，对比逐行差异后确认恢复并支持撤销预览（普通用户即可使用，无需管理员权限或 Windows 沙盒）。"
+                       ToolTip="为单个本地配置文件保留原始字节备份，支持跨电脑导出/导入迁移、对比逐行差异后确认恢复并支持撤销预览（普通用户即可使用，无需管理员权限或 Windows 沙盒）。"
                        AutomationProperties.AutomationId="ConfigRestorePointsPurposeText" />
         </DockPanel>
 
         <!-- Compact Single-Line Create Restore Point Strip -->
-        <Border Grid.Row="1" Style="{StaticResource Surface}" Padding="10,7" Margin="0,0,0,10" AutomationProperties.AutomationId="ConfigCreateCard">
+        <Border Grid.Row="1" Style="{StaticResource Surface}" Padding="10,7" Margin="0,0,0,10"
+                Visibility="{Binding ConfigRestorePoints.ShowCreateCard, Converter={StaticResource BoolVisibility}}"
+                AutomationProperties.AutomationId="ConfigCreateCard">
             <StackPanel>
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -198,6 +206,275 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- PORTABLE RESTORE POINT IMPORT WORKSPACE ("导入还原点…" — offline, read-only preview -> confirm -> v0.7.0 restore & undo) -->
+                    <StackPanel Visibility="{Binding ConfigRestorePoints.ShowImportPanel, Converter={StaticResource BoolVisibility}}"
+                                AutomationProperties.AutomationId="ConfigImportPanel">
+                        <!-- Step 1 & Step 2 Compact Setup Strip -->
+                        <Border Style="{StaticResource Surface}" Padding="10,6" Margin="0,0,0,6"
+                                AutomationProperties.AutomationId="ConfigImportSetupCard">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="62" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="迁移包：" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <ui:TextBox Grid.Column="1" FontSize="12" Padding="8,4"
+                                                Text="{Binding ConfigRestorePoints.ImportPackagePathInput, UpdateSourceTrigger=PropertyChanged}"
+                                                TextWrapping="NoWrap" MaxLines="1" VerticalContentAlignment="Center"
+                                                PlaceholderText="选择或粘贴 .contain-config-point 迁移包路径"
+                                                AutomationProperties.AutomationId="ImportPackagePathInput"
+                                                AutomationProperties.Name="配置还原点迁移包路径" />
+                                    <ui:Button Grid.Column="2" Content="选择迁移包…" Appearance="Secondary" Padding="8,4.5" Margin="5,0,4,0" FontSize="11.5"
+                                               Click="OnPickImportPackage" AutomationProperties.AutomationId="PickImportPackageButton">
+                                        <ui:Button.Icon><ui:SymbolIcon Symbol="FolderOpen24" /></ui:Button.Icon>
+                                    </ui:Button>
+                                    <ui:Button Grid.Column="3" Content="关闭" Appearance="Transparent" Padding="7,4.5" FontSize="11.5"
+                                               Click="OnCancelImport" AutomationProperties.AutomationId="CancelImportButton" />
+                                </Grid>
+
+                                <!-- Package Verified Summary (compact single/two-line strip for high DPI) -->
+                                <Border Background="#EAF5F1" BorderBrush="#8DC4B7" BorderThickness="1" CornerRadius="5" Padding="8,3" Margin="0,4,0,0"
+                                        Visibility="{Binding ConfigRestorePoints.HasValidImportedPackage, Converter={StaticResource BoolVisibility}}"
+                                        AutomationProperties.AutomationId="ConfigImportPackageSummaryBar">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding ConfigRestorePoints.ImportedPackageVerifiedHeadline}" Foreground="#0E5A53" FontWeight="SemiBold" FontSize="11.5"
+                                                   TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip="{Binding ConfigRestorePoints.ImportedPackageVerifiedHeadline}"
+                                                   AutomationProperties.AutomationId="ConfigImportPackageHeadline" />
+                                        <TextBlock Text="{Binding ConfigRestorePoints.ImportedPackageVerifiedMeta}" Style="{StaticResource MutedText}" FontSize="10.5"
+                                                   TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip="{Binding ConfigRestorePoints.ImportedPackageVerifiedMeta}"
+                                                   AutomationProperties.AutomationId="ConfigImportPackageMeta" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Package Validation Error -->
+                                <Border Background="#FFF0ED" BorderBrush="#C86D5D" BorderThickness="1" CornerRadius="5" Padding="8,4" Margin="0,4,0,0"
+                                        Visibility="{Binding ConfigRestorePoints.HasInvalidImportedPackage, Converter={StaticResource BoolVisibility}}"
+                                        AutomationProperties.AutomationId="ConfigImportPackageErrorBar">
+                                    <TextBlock Text="{Binding ConfigRestorePoints.ImportedPackageErrorMessage}" Foreground="#8F2D1E" FontWeight="SemiBold" FontSize="11.5" TextWrapping="Wrap"
+                                               AutomationProperties.AutomationId="ConfigImportPackageErrorText" />
+                                </Border>
+
+                                <!-- Step 2: Select Target Path on Receiving Machine (shown only after package passes validation) -->
+                                <StackPanel Margin="0,5,0,0"
+                                            Visibility="{Binding ConfigRestorePoints.HasValidImportedPackage, Converter={StaticResource BoolVisibility}}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="62" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="本机目标：" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        <ui:TextBox Grid.Column="1" FontSize="12" Padding="8,4"
+                                                    Text="{Binding ConfigRestorePoints.ImportTargetPathInput, UpdateSourceTrigger=PropertyChanged}"
+                                                    TextWrapping="NoWrap" MaxLines="1" VerticalContentAlignment="Center"
+                                                    PlaceholderText="选择或粘贴本机目标配置文件路径（已有文件或待新建路径）"
+                                                    AutomationProperties.AutomationId="ImportTargetPathInput"
+                                                    AutomationProperties.Name="本机目标配置文件路径" />
+                                        <ui:Button Grid.Column="2" Content="选择目标…" Appearance="Secondary" Padding="8,4.5" Margin="5,0,4,0" FontSize="11.5"
+                                                   Click="OnPickImportTarget" AutomationProperties.AutomationId="PickImportTargetButton">
+                                            <ui:Button.Icon><ui:SymbolIcon Symbol="Document24" /></ui:Button.Icon>
+                                        </ui:Button>
+                                        <ui:Button Grid.Column="3" Content="刷新" Appearance="Secondary" Padding="7,4.5" FontSize="11.5"
+                                                   ToolTip="重新检查本机目标文件状态"
+                                                   Click="OnRecheckImportTarget" AutomationProperties.AutomationId="RecheckImportTargetButton">
+                                            <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowClockwise24" /></ui:Button.Icon>
+                                        </ui:Button>
+                                    </Grid>
+
+                                    <!-- Lightweight "如何找到配置文件？" toggle & collapsible VS Code tip -->
+                                    <StackPanel Orientation="Horizontal" Margin="62,2.5,0,0">
+                                        <ui:Button Content="{Binding ConfigRestorePoints.ImportTargetHelpToggleText}" Appearance="Transparent"
+                                                   Padding="4,1.5" FontSize="11" Foreground="#0E5A53"
+                                                   Click="OnToggleImportTargetHelp"
+                                                   AutomationProperties.AutomationId="ToggleImportTargetHelpButton">
+                                            <ui:Button.Icon><ui:SymbolIcon Symbol="Info24" FontSize="12" /></ui:Button.Icon>
+                                        </ui:Button>
+                                    </StackPanel>
+
+                                    <Border Background="#F4F8FB" BorderBrush="#C4D6E7" BorderThickness="1" CornerRadius="5" Padding="9,6" Margin="0,3,0,0"
+                                            Visibility="{Binding ConfigRestorePoints.ShowImportTargetHelp, Converter={StaticResource BoolVisibility}}"
+                                            AutomationProperties.AutomationId="ConfigImportTargetHelpCard">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding ConfigRestorePoints.ImportTargetHelpTitle}" Foreground="#173A5A" FontSize="11.5" FontWeight="SemiBold"
+                                                       AutomationProperties.AutomationId="ConfigImportTargetHelpTitle" />
+                                            <TextBlock Text="{Binding ConfigRestorePoints.ImportTargetHelpDetail}" Foreground="#2B4B69" FontSize="11" LineHeight="16" TextWrapping="Wrap" Margin="0,2,0,0"
+                                                       AutomationProperties.AutomationId="ConfigImportTargetHelpText" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Step 3: Import Restore Preview & Confirm Card (Target path + Direction + Confirm + Diff all above the fold at 150% DPI!) -->
+                        <StackPanel Visibility="{Binding ConfigRestorePoints.HasImportPreview, Converter={StaticResource BoolVisibility}}">
+                            <Border CornerRadius="9" Padding="11,7" Margin="0,0,0,6" BorderThickness="1.5"
+                                    AutomationProperties.AutomationId="ConfigImportPreviewCard">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Background" Value="#FFFBF2" />
+                                        <Setter Property="BorderBrush" Value="#D99B26" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ConfigRestorePoints.IsImportReadyToCreate}" Value="True">
+                                                <Setter Property="Background" Value="#F2F8F6" />
+                                                <Setter Property="BorderBrush" Value="#2E7D72" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding ConfigRestorePoints.IsImportIdentical}" Value="True">
+                                                <Setter Property="Background" Value="#EAF5F1" />
+                                                <Setter Property="BorderBrush" Value="#8DC4B7" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding ConfigRestorePoints.IsImportPreviewError}" Value="True">
+                                                <Setter Property="Background" Value="#FFF6F4" />
+                                                <Setter Property="BorderBrush" Value="#C86D5D" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,4">
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Border Background="#FDE8C8" CornerRadius="4" Padding="6,1.5" Margin="0,0,5,0">
+                                                <TextBlock Text="{Binding ConfigRestorePoints.ImportPreviewDirectionLabel}" Foreground="#7A4300" FontSize="11" FontWeight="SemiBold"
+                                                           AutomationProperties.AutomationId="ConfigImportDirectionBadge" />
+                                            </Border>
+                                            <Border Background="#F3EBDD" CornerRadius="4" Padding="6,1.5">
+                                                <TextBlock Text="尚未写入磁盘" Foreground="#6E4E1B" FontSize="11" FontWeight="SemiBold" />
+                                            </Border>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding ConfigRestorePoints.ImportPreviewTitle}" FontSize="14" FontWeight="SemiBold" Foreground="#5C3100"
+                                                   TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                                                   AutomationProperties.AutomationId="ConfigImportPreviewTitle" />
+                                    </DockPanel>
+
+                                    <!-- Mid-confirmation external edit alert -->
+                                    <Border Background="#FDE8C8" BorderBrush="#D99B26" BorderThickness="1" CornerRadius="5" Padding="7,3.5" Margin="0,0,0,4"
+                                            Visibility="{Binding ConfigRestorePoints.HasImportMidConfirmWarning, Converter={StaticResource BoolVisibility}}"
+                                            AutomationProperties.AutomationId="ConfigImportMidEditBanner">
+                                        <TextBlock Text="{Binding ConfigRestorePoints.ImportMidConfirmWarningText}" Foreground="#7A4300" FontSize="11.5" FontWeight="SemiBold" TextWrapping="Wrap"
+                                                   AutomationProperties.AutomationId="ConfigImportMidEditText" />
+                                    </Border>
+
+                                    <!-- Full Target Path (always readable at high DPI) -->
+                                    <Border Background="White" BorderBrush="#E8CFA0" BorderThickness="1" CornerRadius="5" Padding="7,3" Margin="0,0,0,3">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Left" Text="本机目标路径：" FontSize="11" FontWeight="SemiBold" Foreground="#8A4B00" VerticalAlignment="Top" />
+                                            <TextBlock Text="{Binding ConfigRestorePoints.ImportPreviewTargetPath}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="11" FontWeight="SemiBold"
+                                                       TextWrapping="Wrap" AutomationProperties.AutomationId="ConfigImportTargetPath" />
+                                        </DockPanel>
+                                    </Border>
+
+                                    <TextBlock Text="{Binding ConfigRestorePoints.ImportPreviewFormatTransition}" FontSize="11" Foreground="#4A2E0B"
+                                               TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip="{Binding ConfigRestorePoints.ImportPreviewFormatTransition}" Margin="0,0,0,1.5"
+                                               AutomationProperties.AutomationId="ConfigImportFormatTransition" />
+                                    <TextBlock Text="{Binding ConfigRestorePoints.ImportPreviewActionSummary}" FontSize="11" Foreground="#354643"
+                                               TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip="{Binding ConfigRestorePoints.ImportPreviewActionSummary}" Margin="0,0,0,5"
+                                               AutomationProperties.AutomationId="ConfigImportActionSummary" />
+
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:Button Content="{Binding ConfigRestorePoints.ConfirmImportRestoreButtonText}" Padding="11,5" Margin="0,0,8,0" FontSize="12"
+                                                   Click="OnConfirmImportRestore" IsEnabled="{Binding ConfigRestorePoints.CanConfirmImportRestore}"
+                                                   AutomationProperties.AutomationId="ConfirmImportRestoreButton">
+                                            <ui:Button.Style>
+                                                <Style TargetType="{x:Type ui:Button}" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                                    <Setter Property="Appearance" Value="Danger" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ConfigRestorePoints.IsImportReadyToCreate}" Value="True">
+                                                            <Setter Property="Appearance" Value="Primary" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ui:Button.Style>
+                                            <ui:Button.Icon><ui:SymbolIcon Symbol="Checkmark24" /></ui:Button.Icon>
+                                        </ui:Button>
+                                        <ui:Button Content="取消（不写入磁盘）" Appearance="Secondary" Padding="10,5" FontSize="12"
+                                                   Click="OnCancelImport" AutomationProperties.AutomationId="CancelImportPreviewButton" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Directional Import Diff / Missing-Target Creation Card -->
+                            <Border Style="{StaticResource Surface}" Padding="11,6" Margin="0" AutomationProperties.AutomationId="ConfigImportDiffCard">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding ConfigRestorePoints.ImportDiffHeaderSummary}" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,4"
+                                               AutomationProperties.AutomationId="ConfigImportDiffHeaderSummary" />
+
+                                    <Border BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="5" Background="White"
+                                            Visibility="{Binding ConfigRestorePoints.HasImportTextDiff, Converter={StaticResource BoolVisibility}}"
+                                            AutomationProperties.AutomationId="ConfigImportDiffLinesContainer">
+                                        <ItemsControl ItemsSource="{Binding ConfigRestorePoints.ImportDiffLines}" AutomationProperties.AutomationId="ConfigImportDiffLinesList">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Padding="7,1.5" BorderBrush="#F0F3F2" BorderThickness="0,0,0,1">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Setter Property="Background" Value="White" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Kind}" Value="{x:Static model:ConfigDiffLineKind.Removed}">
+                                                                        <Setter Property="Background" Value="#FFF0ED" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Kind}" Value="{x:Static model:ConfigDiffLineKind.Added}">
+                                                                        <Setter Property="Background" Value="#EAF5F1" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Kind}" Value="{x:Static model:ConfigDiffLineKind.Ellipsis}">
+                                                                        <Setter Property="Background" Value="#F4F6F6" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="74" />
+                                                                <ColumnDefinition Width="*" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Grid.Column="0" Text="{Binding LineNumbersDisplay}"
+                                                                       FontFamily="Consolas, Microsoft YaHei UI" FontSize="11"
+                                                                       Foreground="#7A8C87" Margin="0,0,6,0" TextWrapping="NoWrap" />
+                                                            <TextBlock Grid.Column="1" Text="{Binding DisplayLine}"
+                                                                       FontFamily="Consolas, Microsoft YaHei UI" FontSize="11.5" TextWrapping="Wrap">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Foreground" Value="#213934" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding Kind}" Value="{x:Static model:ConfigDiffLineKind.Removed}">
+                                                                                <Setter Property="Foreground" Value="#8F2D1E" />
+                                                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding Kind}" Value="{x:Static model:ConfigDiffLineKind.Added}">
+                                                                                <Setter Property="Foreground" Value="#0E5A53" />
+                                                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding Kind}" Value="{x:Static model:ConfigDiffLineKind.Ellipsis}">
+                                                                                <Setter Property="Foreground" Value="#596D68" />
+                                                                                <Setter Property="FontStyle" Value="Italic" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Border>
+
+                                    <TextBlock Text="{Binding ConfigRestorePoints.ImportDiffFallbackNote}" Style="{StaticResource MutedText}" FontSize="11" Margin="0,4,0,0"
+                                               Visibility="{Binding ConfigRestorePoints.HasImportDiffTruncationNote, Converter={StaticResource BoolVisibility}}" />
+
+                                    <Border Background="#F7F9F9" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="5" Padding="9,6"
+                                            Visibility="{Binding ConfigRestorePoints.ShowImportDiffFallback, Converter={StaticResource BoolVisibility}}"
+                                            AutomationProperties.AutomationId="ConfigImportDiffFallbackCard">
+                                        <TextBlock Text="{Binding ConfigRestorePoints.ImportDiffFallbackNote}" Style="{StaticResource MutedText}" FontSize="11.5" TextWrapping="Wrap"
+                                                   AutomationProperties.AutomationId="ConfigImportDiffFallbackText" />
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+
                     <!-- Interrupted Operation Reconciliation Card (read-only startup/refresh verdict; NEVER auto-writes target!) -->
                     <Border CornerRadius="10" Padding="13,9" Margin="0,0,0,9" BorderThickness="1.5"
                             Visibility="{Binding ConfigRestorePoints.ShowRecoveryCard, Converter={StaticResource BoolVisibility}}"
@@ -299,6 +576,7 @@
                                 </ui:Button>
                                 <ui:Button Content="另存原副本…" Appearance="Secondary" Padding="10,5.5" Margin="0,0,6,4" FontSize="12"
                                            Click="OnExportOriginalCopy"
+                                           ToolTip="另存恢复覆盖前保存在本机的原副本（用于救回覆盖前版本，非跨电脑还原点迁移包）。"
                                            Visibility="{Binding ConfigRestorePoints.CanExportOriginalCopyFromRecovery, Converter={StaticResource BoolVisibility}}"
                                            AutomationProperties.AutomationId="RecoveryExportOriginalCopyButton">
                                     <ui:Button.Icon><ui:SymbolIcon Symbol="Save24" /></ui:Button.Icon>
@@ -345,6 +623,7 @@
                                 <WrapPanel Orientation="Horizontal">
                                     <ui:Button Content="另存原副本…" Appearance="Primary" Padding="12,6" Margin="0,0,8,4" FontSize="12.5"
                                                Click="OnExportOriginalCopy" IsEnabled="{Binding ConfigRestorePoints.CanExportFromOriginalCopyPreview}"
+                                               ToolTip="另存恢复覆盖前保存在本机的原副本（用于救回覆盖前版本，非跨电脑还原点迁移包）。"
                                                AutomationProperties.AutomationId="OriginalCopySaveAsButton">
                                         <ui:Button.Icon><ui:SymbolIcon Symbol="Save24" /></ui:Button.Icon>
                                     </ui:Button>
@@ -505,6 +784,7 @@
                                     </ui:Button>
                                     <ui:Button Content="另存原副本…" Appearance="Secondary" Padding="10,6" Margin="0,0,8,4" FontSize="12.5"
                                                Click="OnExportOriginalCopy"
+                                               ToolTip="另存恢复覆盖前保存在本机的原副本（用于救回覆盖前版本，非跨电脑还原点迁移包）。"
                                                Visibility="{Binding ConfigRestorePoints.CanExportOriginalCopyFromUndoPreview, Converter={StaticResource BoolVisibility}}"
                                                AutomationProperties.AutomationId="UndoConflictExportOriginalCopyButton">
                                         <ui:Button.Icon><ui:SymbolIcon Symbol="Save24" /></ui:Button.Icon>
@@ -662,6 +942,61 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Inline Export Portable Restore Point Card ("导出还原点…" — saved backup A + privacy reminder) -->
+                        <Border Background="#F2F8F6" BorderBrush="#2E7D72" BorderThickness="1.5" CornerRadius="10" Padding="14,10" Margin="0,0,0,10"
+                                Visibility="{Binding ConfigRestorePoints.ShowExportPackageCard, Converter={StaticResource BoolVisibility}}"
+                                AutomationProperties.AutomationId="ConfigExportPackageCard">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,5">
+                                    <Border DockPanel.Dock="Right" Background="#D6EDE5" CornerRadius="4" Padding="7,2" VerticalAlignment="Center" Margin="8,0,0,0">
+                                        <TextBlock Text="还原点保存的备份 · 不含源机路径" Foreground="#0E5A53" FontSize="11" FontWeight="SemiBold" />
+                                    </Border>
+                                    <TextBlock Text="{Binding ConfigRestorePoints.ExportPackageTitle}" FontSize="15" FontWeight="SemiBold" Foreground="#0E4A44"
+                                               TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                                               AutomationProperties.AutomationId="ConfigExportPackageTitle" />
+                                </DockPanel>
+
+                                <Border Background="White" BorderBrush="#BFDCD5" BorderThickness="1" CornerRadius="6" Padding="9,5" Margin="0,0,0,6">
+                                    <TextBlock Text="{Binding ConfigRestorePoints.ExportPackageVersionSummary}" FontSize="11.5" Foreground="#214E48" TextWrapping="Wrap"
+                                               AutomationProperties.AutomationId="ConfigExportVersionSummary" />
+                                </Border>
+
+                                <!-- Privacy Reminder -->
+                                <Border Background="#FFF8EB" BorderBrush="#D99B26" BorderThickness="1" CornerRadius="6" Padding="9,6" Margin="0,0,0,8"
+                                        AutomationProperties.AutomationId="ConfigExportPrivacyNoticeCard">
+                                    <TextBlock Text="{Binding ConfigRestorePoints.ExportPackagePrivacyNotice}" Foreground="#7A4300" FontSize="11.5" LineHeight="16" TextWrapping="Wrap"
+                                               AutomationProperties.AutomationId="ConfigExportPrivacyNotice" />
+                                </Border>
+
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ui:TextBox Grid.Column="0"
+                                                Text="{Binding ConfigRestorePoints.ExportPackagePathInput, UpdateSourceTrigger=PropertyChanged}"
+                                                TextWrapping="NoWrap" MaxLines="1" VerticalContentAlignment="Center"
+                                                PlaceholderText="选择或粘贴迁移包保存路径（.contain-config-point）"
+                                                AutomationProperties.AutomationId="ExportPackagePathInput"
+                                                AutomationProperties.Name="导出迁移包保存路径" />
+                                    <ui:Button Grid.Column="1" Content="选择保存位置…" Appearance="Secondary" Padding="10,6" Margin="6,0,0,0" FontSize="12"
+                                               Click="OnPickExportPackagePath" AutomationProperties.AutomationId="PickExportPackagePathButton">
+                                        <ui:Button.Icon><ui:SymbolIcon Symbol="FolderOpen24" /></ui:Button.Icon>
+                                    </ui:Button>
+                                </Grid>
+
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:Button Content="确认导出迁移包" Appearance="Primary" Padding="13,6.5" Margin="0,0,8,0"
+                                               Click="OnConfirmExportRestorePoint" IsEnabled="{Binding ConfigRestorePoints.CanConfirmExportPackage}"
+                                               AutomationProperties.AutomationId="ConfirmExportPackageButton">
+                                        <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowUpload24" /></ui:Button.Icon>
+                                    </ui:Button>
+                                    <ui:Button Content="取消" Appearance="Secondary" Padding="11,6.5" Click="OnCancelExportRestorePoint"
+                                               AutomationProperties.AutomationId="CancelExportPackageButton" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
                         <!-- Normal Browse Detail Header Card (hidden while confirming restore so Confirm + Diff stay above the fold!) -->
                         <Border Style="{StaticResource Surface}" Padding="14,10" Margin="0,0,0,10"
                                 Visibility="{Binding ConfigRestorePoints.ShowDetailHeaderCard, Converter={StaticResource BoolVisibility}}"
@@ -722,11 +1057,17 @@
                                     </StackPanel>
 
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
-                                        <ui:Button Content="重新检查" Appearance="Secondary" Padding="10,6" Margin="0,0,6,0" Click="OnRecheckComparison"
+                                        <ui:Button Content="重新检查" Appearance="Secondary" Padding="9,6" Margin="0,0,6,0" Click="OnRecheckComparison"
                                                    AutomationProperties.AutomationId="RecheckConfigComparisonButton">
                                             <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowClockwise24" /></ui:Button.Icon>
                                         </ui:Button>
-                                        <ui:Button Content="恢复" Appearance="Primary" Padding="14,6" Click="OnBeginRestore"
+                                        <ui:Button Content="导出还原点…" Appearance="Secondary" Padding="9,6" Margin="0,0,6,0" Click="OnBeginExportRestorePoint"
+                                                   IsEnabled="{Binding ConfigRestorePoints.CanBeginExportRestorePoint}"
+                                                   ToolTip="导出此还原点建点时保存的原始字节备份（.contain-config-point 迁移包，用于跨电脑迁移）；与恢复冲突时的「另存原副本…」不同。"
+                                                   AutomationProperties.AutomationId="BeginExportRestorePointButton">
+                                            <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowUpload24" /></ui:Button.Icon>
+                                        </ui:Button>
+                                        <ui:Button Content="恢复" Appearance="Primary" Padding="13,6" Click="OnBeginRestore"
                                                    IsEnabled="{Binding ConfigRestorePoints.CanBeginRestore}"
                                                    AutomationProperties.AutomationId="BeginRestoreButton">
                                             <ui:Button.Icon><ui:SymbolIcon Symbol="ArrowReset24" /></ui:Button.Icon>
